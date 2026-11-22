@@ -14,6 +14,7 @@ export {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
   createImportedMaterialDocument,
+  materialBlendModesFor,
   materialDependencies,
   missingPackedMaterialTextureGuids,
   normalizeMaterialDocument,

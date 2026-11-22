@@ -97,6 +97,8 @@ export function createReflectionProbeGuide(scene: Scene, name: string, propertie
   return guide;
 }
 
+const disposedGuides = new WeakSet<Mesh>();
+
 /** Keep the guide's editable local TRS separate from its complete component-parent chain. */
 export function syncFogVolumeGuideAttachments(
   guide: Mesh,
@@ -104,6 +106,13 @@ export function syncFogVolumeGuideAttachments(
   binding: { transforms: readonly SerializedTransform[]; error?: string },
   visible: boolean,
 ): void {
+  if (!disposedGuides.has(guide)) {
+    disposedGuides.add(guide);
+    guide.onDisposeObservable.addOnce(() => {
+      for (const ancestor of ancestorsByGuide.get(guide) ?? []) ancestor.dispose(true);
+      ancestorsByGuide.delete(guide);
+    });
+  }
   guide.setEnabled(visible && !binding.error);
   const transforms = binding.transforms.slice(1);
   let ancestors = ancestorsByGuide.get(guide);

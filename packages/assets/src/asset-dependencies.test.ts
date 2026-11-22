@@ -105,6 +105,20 @@ describe("typed asset dependencies", () => {
     expect(header.requiredDependencies).toEqual(["private-texture", "replacement", "surface"]);
   });
 
+  it("ships a Post Processing Panel's Material and its instance textures with the Scene Layer, switched off or not", () => {
+    const metadata = collectAssetDependencyMetadata("SceneLayer", {
+      actors: [{ classId: "engine:Actor", components: [
+        { classId: "2DPostProcessingPanelComponent", properties: { enabled: true, materialGuid: "blur-pass" }, materialInstance: {
+          materialGuid: "blur-pass", parameters: { Mask: { kind: "texture", textureAssetGuid: "mask-texture" } },
+        } },
+      ] }, { classId: "engine:Actor", components: [
+        { classId: "2DPostProcessingPanelComponent", properties: { enabled: false, materialGuid: "wobble-pass" } },
+        { classId: "2DPostProcessingPanelComponent", properties: { enabled: true, materialGuid: null } },
+      ] }],
+    });
+    expect([...metadata.requiredDependencies].sort()).toEqual(["blur-pass", "mask-texture", "wobble-pass"]);
+  });
+
   it("collects typed graph literals, nested structure collections and selected classes without treating free text as references", () => {
     const metadata = collectAssetDependencyMetadata("Class", {
       nodes: [{ id: "spawn", type: "spawn", data: { "default:class": "Enemy", asset: "bare-id-texture", Asset: "old-texture", text: "unrelated" } }], edges: [],
@@ -180,6 +194,36 @@ describe("typed asset dependencies", () => {
         edges: [],
       });
       expect(metadata.dependencies, type).toEqual(["sparks-system"]);
+    }
+  });
+
+  it("ships the Material a Spawn Decal node names, and nothing for a property the node has no pin for", () => {
+    const metadata = collectAssetDependencyMetadata("Class", {
+      nodes: [{ id: "decal", type: "decals.spawn", data: { "default:material": "scorch-material", "default:texture": "stale-texture" } }],
+      edges: [],
+    });
+    expect(metadata.dependencies).toEqual(["scorch-material"]);
+  });
+
+  it("ships a Decal component's Material", () => {
+    const metadata = collectAssetDependencyMetadata("Scene", { actors: [{ id: "mark", components: [
+      { id: "decal", classId: "DecalComponent", properties: { materialGuid: "decal-material", textureGuid: "stale-texture" } },
+    ] }] });
+    expect(metadata.dependencies).toEqual(["decal-material"]);
+  });
+
+  it("loads the Material a Register post-processing node attaches with its owner, and only ships an Unregister node's", () => {
+    for (const type of ["scene.registerPostProcess", "scene-layer.registerPostProcess"]) {
+      const metadata = collectAssetDependencyMetadata("Class", {
+        nodes: [
+          { id: "register", type, data: { "default:material": "grade" } },
+          { id: "unregister", type: type.replace("register", "unregister"), data: { "default:material": "removed-only" } },
+        ],
+        edges: [],
+      });
+      expect(metadata.dependencies, type).toEqual(["grade", "removed-only"]);
+      // The renderer compiles the pass from the Material's document the moment the node runs.
+      expect(metadata.requiredDependencies, type).toEqual(["grade"]);
     }
   });
 

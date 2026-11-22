@@ -9,7 +9,6 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { MultiMaterial } from "@babylonjs/core/Materials/multiMaterial";
 import type { MaterialParameterValue } from "@haptic/bridge";
 import {
-  lowerMaterialDocument,
   type MaterialBuildPlan,
   type MaterialDiagnostic,
   type MaterialDocument,
@@ -26,6 +25,7 @@ import { acceptsUserInterfaceMaterial, restoreUserInterfaceFallback } from "./us
 import { rebindWaterMeshMaterial } from "./water-mesh";
 import { markSceneReadinessDirty, onSceneReceiversChanged } from "./scene-readiness-signal";
 import { shaderLinkLog } from "./material-glsl-diagnostics";
+import { sharedMaterialPlan } from "./material-plan-cache";
 import {
   compileMaterialPlan,
   MaterialCompileStalled,
@@ -136,14 +136,6 @@ function failsPlan(diagnostics: readonly MaterialDiagnostic[]): boolean {
 }
 const NOT_THE_PLAN: ReadonlySet<string> = new Set(["material.compile.cancelled", "material.missingTexture", "material.compile.stalled"]);
 
-function documentForPlan(
-  doc: MaterialDocument,
-  unlit?: boolean,
-): MaterialDocument {
-  if (!unlit || doc.shadingModel === "unlit") return doc;
-  return { ...doc, shadingModel: "unlit" };
-}
-
 interface MaterialLibraryOptions {
   particlePreview?: boolean;
   /** `filter` is a Texture Sample's Filter, which a host passes on as `materialTextureSampling(filter)`. */
@@ -205,6 +197,7 @@ export class MaterialLibrary {
   private readonly receiverSubscriptions = new WeakMap<Scene, () => void>();
   // Reuse one lowering per document, shading variant and functions record
   // while the document content is unchanged (hosts may edit documents in place).
+  // A miss asks the realm's content-keyed cache (`material-plan-cache.ts`) before lowering.
   private readonly plans = new WeakMap<MaterialDocument, { lit?: PlanSlot; unlit?: PlanSlot }>();
   private readonly options: MaterialLibraryOptions;
 
@@ -235,7 +228,8 @@ export class MaterialLibrary {
   }
 
   /** Resolve the same function-aware plan as acquire, without taking GPU ownership.
-   * The lowering is memoized per document content and functions-record identity. */
+   * The lowering is memoized per document content and functions-record identity, then shared
+   * by content with every other library. Callers must not change the result. */
   planFor(doc: MaterialDocument, unlit?: boolean): MaterialLowerResult {
     const functions = this.options.functions?.() ?? NO_FUNCTIONS;
     let slots = this.plans.get(doc);
@@ -245,7 +239,7 @@ export class MaterialLibrary {
     // Serializing is far cheaper than lowering and catches in-place edits.
     const content = JSON.stringify(doc);
     if (cached?.functions === functions && cached.content === content) return cached.result;
-    const result = lowerMaterialDocument(documentForPlan(doc, unlit), { functions });
+    const result = sharedMaterialPlan(doc, content, variant === "unlit", functions);
     slots[variant] = { functions, content, result };
     return result;
   }
@@ -341,8 +335,9 @@ export class MaterialLibrary {
 
     const textures = materialTextureBindings(this.options.acquireTexture ? (guid, filter) => this.options.acquireTexture!(guid, scene, filter) : undefined, this.options.textureIdentity);
     let compiled: ReturnType<typeof compileMaterialPlan>;
-    // Instances compile under their root Material's name so generated block
-    // names, and therefore the shader text, match and the GPU program is shared.
+    // Any two Materials of one graph shape and values share a GPU program (the compiler names no block after its
+    // Material). Instances still compile under their root Material's name: a particle build shares its program only
+    // with builds of the same name (`shareParticleProgram`).
     const programGuid = doc.instanceOf ?? assetGuid;
     const materialName = unlit ? `material:${assetGuid}:unlit` : `material:${assetGuid}`;
     let retireUnlinkable: (diagnostic: MaterialDiagnostic) => void = () => {};

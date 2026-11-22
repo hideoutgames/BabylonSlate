@@ -160,6 +160,9 @@ export function createActorRealization(rt: RuntimeComposition): ActorRealization
     subsystems: () => rt.subsystems,
     cancelInvalidTweens: () => rt.tweens.cancelInvalid(),
     frameActors: () => rt.navFrameActors,
+    // Every actor is realized once, however it was created (Scene load, stream, spawn, Save Game restore): its terrain
+    // decodes from the chunks of the Scene it belongs to, a streamed instance's own Scene before the played one.
+    hydrateLandscapes: (actor) => rt.hydrateActorLandscapes(actor, rt.streams.sceneFor(actor)?.assetGuid ?? (rt.playSceneGuid || null)),
     reportLog: (message, severity, category) => rt.reportLog(message, severity, category),
     emit: (command) => rt.emit(command),
   });
@@ -216,6 +219,7 @@ export function createOverlay(rt: RuntimeComposition, options: RuntimeDriverOpti
     audioParticles: rt.audioParticles,
     texturePixelSizes: options.texturePixelSizes ?? {},
     designResolution: sceneLayerDesignResolution(options.renderSettings),
+    materialParameters: () => rt.materialParameters,
   }, {
     stopped: () => rt.stopped,
     saveBoundaryActive: () => rt.boundaries.saveBoundaryActive,
@@ -239,9 +243,10 @@ export function createOverlay(rt: RuntimeComposition, options: RuntimeDriverOpti
   });
 }
 
-export function createLayers(rt: RuntimeComposition): SceneLayers {
+export function createLayers(rt: RuntimeComposition, options: RuntimeDriverOptions): SceneLayers {
   return new SceneLayers(rt.admission, rt.overlay, {
     world: () => rt.world,
+    projectPostProcessStack: () => options.sceneLayerPostProcessStack ?? [],
     stopped: () => rt.stopped,
     frameId: () => rt.frameId,
     bootLoading: () => rt.bootLoading,

@@ -87,6 +87,9 @@ const row = (value: unknown): Row => value && typeof value === "object" && !Arra
 const rows = (value: unknown): Row[] => Array.isArray(value) ? value.map(row) : [];
 const values = (value: unknown): unknown[] => Array.isArray(value) ? value : [];
 
+/** Nodes whose Material loads with their owner: the pass they add is drawn from it as soon as they run. */
+const POST_PROCESS_REGISTER_NODES: ReadonlySet<string> = new Set(["scene.registerPostProcess", "scene-layer.registerPostProcess"]);
+
 // Asset pin ids of built-in nodes, for a graph read without pin snapshots.
 // Dynamic pins use host schemas.
 const BUILTIN_ASSET_PINS: Readonly<Record<string, string>> = {
@@ -105,6 +108,7 @@ const BUILTIN_ASSET_PINS: Readonly<Record<string, string>> = {
   "camera.playWorldShake": "shake",
   "particles.spawnAtLocation": "system",
   "particles.spawnAttached": "system",
+  "decals.spawn": "material",
   "audio.setChannelVolume": "channel",
   "scene.change": "scene",
   "scene-layer.create": "asset",
@@ -125,6 +129,7 @@ const COMPONENT_ASSET_FIELDS: Readonly<Record<string, readonly string[]>> = {
   DynamicRuntimeMeshComponent: ["materialGuid"],
   CableComponent: ["materialGuid"],
   MirrorComponent: ["materialGuid"],
+  DecalComponent: ["materialGuid"],
   SpriteComponent: ["assetGuid", "materialGuid"],
   TilemapComponent: ["assetGuid", "materialGuid"],
   LandscapeComponent: ["materialGuid"],
@@ -144,6 +149,8 @@ const COMPONENT_ASSET_FIELDS: Readonly<Record<string, readonly string[]>> = {
   "2DMaterialComponent": ["materialGuid"],
   "2DTextureComponent": ["textureGuid", "assetGuid"],
   "2DPanelComponent": ["textureGuid", "materialGuid"],
+  // Shipped whether the panel is enabled or not: a script can switch it on.
+  "2DPostProcessingPanelComponent": ["materialGuid"],
   "2DTextComponent": ["fontAssetGuid", "materialGuid"],
   "2DRichTextComponent": ["fontAssetGuid", "materialGuid", "appearSoundAssetGuid"],
   "2DJoystickComponent": ["backgroundMaterialGuid", "joystickMaterialGuid", "backgroundTextureGuid", "joystickTextureGuid"],
@@ -162,6 +169,28 @@ function declaredLoading(stored: Row[], declared: readonly unknown[] | undefined
     delete next.loading;
     return { ...next, ...hardLoadingProperty(live) };
   });
+}
+
+/**
+ * What the Project Settings Scene Layer post-processing passes ship and Play loads at start: each enabled pass's
+ * Material and the Textures its parameter overrides name, in pass order, once each. A disabled pass ships nothing,
+ * as a disabled Scene pass does (`collectAssetDependencyMetadata`); a script can still add its Material at run time
+ * through Register Scene Layer Post-Processing, whose node names it.
+ */
+export function sceneLayerPostProcessAssetGuids(stack: unknown): string[] {
+  const guids = new Set<string>();
+  const add = (value: unknown) => {
+    if (typeof value === "string" && value.trim() && !value.startsWith("engine:")) guids.add(value);
+  };
+  for (const pass of rows(stack)) {
+    if (pass.enabled === false) continue;
+    add(pass.materialGuid);
+    for (const parameter of Object.values(row(pass.parameters))) {
+      const spec = row(parameter);
+      if (spec.kind === "texture") add(spec.textureAssetGuid);
+    }
+  }
+  return [...guids];
 }
 
 /**
@@ -388,7 +417,10 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
         // Play Camera Shake reads its Camera Shake (and the shake's curves) from the session catalog.
         ["camera.playShake", "camera.playShakeOnSceneLayer", "camera.playWorldShake"].includes(entry.nodeType) ||
         // Set and Get Global Parameter resolve their collection from the session catalog the owner loads with.
-        entry.nodeType.startsWith("globalParameters.")) requireInputs(String(entry.node.id));
+        entry.nodeType.startsWith("globalParameters.") ||
+        // Register Scene (Layer) Post-Processing attaches its Material at once: the renderer compiles the pass from
+        // the Material's document, which nothing else loads when no Scene or Project Setting names it.
+        POST_PROCESS_REGISTER_NODES.has(entry.nodeType)) requireInputs(String(entry.node.id));
       for (const { node, properties, nodeType, pins } of nodes) {
         const needed = requiredNodes.has(String(node.id));
         const schemaNeeded = nodeType !== "data.readEntryAsync";

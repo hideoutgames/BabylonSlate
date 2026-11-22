@@ -7,16 +7,19 @@ import { Skeleton } from "@babylonjs/core/Bones/skeleton";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
-import { ShadowCasterList, type CasterChanges } from "./shadow-caster-list";
+import { setShadowDistanceCulled, ShadowCasterList, type CasterChanges } from "./shadow-caster-list";
 
 /** The caster walk's change log as `prepare` reads it: what a test lists, and what the stages counted. */
 function changeLog() {
   const log: Array<[AbstractMesh, boolean]> = [];
   const counted = { prepared: 0, prepareScans: 0, misses: 0 };
+  /** Each function `prepare` handed the log to read the changes with. */
+  const visitors = new Set<unknown>();
   let check: "verify" | "heal" | null = null;
   const changes: CasterChanges = {
     changeCursor: () => log.length,
     forEachChangeSince: (cursor, visit) => {
+      visitors.add(visit);
       for (let at = cursor; at < log.length; at++) visit(log[at]![0], log[at]![1]);
       return true;
     },
@@ -24,7 +27,7 @@ function changeLog() {
     noteStageMiss: (_kind, count = 1) => { counted.misses += count; },
     noteStage: (counter, count = 1) => { counted[counter] += count; },
   };
-  return { log, counted, changes, checkNext: (mode: "verify" | "heal" | null) => { check = mode; } };
+  return { log, counted, changes, visitors, checkNext: (mode: "verify" | "heal" | null) => { check = mode; } };
 }
 
 describe("a prepare from the walk's changes", () => {
@@ -32,7 +35,7 @@ describe("a prepare from the walk's changes", () => {
     const engine = new NullEngine();
     try {
       const scene = new Scene(engine);
-      const { log, counted, changes, checkNext } = changeLog();
+      const { log, counted, changes, visitors, checkNext } = changeLog();
       const incremental = new ShadowCasterList();
       const meshes = ["a", "b", "c", "d"].map((name, index) => {
         const mesh = MeshBuilder.CreateBox(name, {}, scene);
@@ -80,6 +83,8 @@ describe("a prepare from the walk's changes", () => {
       expect(counted.misses).toBe(1);
       // Healed: the full read's answer is kept.
       expect(query()).toEqual(["b", "c", "d", "e"]);
+      // Every frame's prepare read the log with the one function it made once, not a new one each frame.
+      expect(visitors.size).toBe(1);
       incremental.dispose();
     } finally {
       engine.dispose();
@@ -100,6 +105,30 @@ describe("shadow caster selection", () => {
       expect(index.queryPlanes([new Plane(-1, 0, 0, 10)])).toContain(mesh);
       mesh.setEnabled(false);
       expect(index.queryPlanes([new Plane(-1, 0, 0, 10)])).not.toContain(mesh);
+      index.dispose();
+    } finally {
+      engine.dispose();
+    }
+  });
+  it("excludes casters culled by shadow distance from both prepared and direct queries", () => {
+    const engine = new NullEngine();
+    try {
+      const scene = new Scene(engine);
+      const index = new ShadowCasterList();
+      const mesh = MeshBuilder.CreateBox("foliage-cell", {}, scene);
+      mesh.computeWorldMatrix(true);
+      index.add(mesh);
+      const planes = [new Plane(-1, 0, 0, 10)];
+      expect(index.queryPlanes(planes)).toContain(mesh);
+      setShadowDistanceCulled(mesh, true);
+      expect(index.queryPlanes(planes)).not.toContain(mesh);
+      index.prepare();
+      expect(index.queryPlanes(planes)).not.toContain(mesh);
+      index.release();
+      setShadowDistanceCulled(mesh, false);
+      index.prepare();
+      expect(index.queryPlanes(planes)).toContain(mesh);
+      index.release();
       index.dispose();
     } finally {
       engine.dispose();
@@ -241,6 +270,12 @@ describe("shadow caster selection", () => {
       const reused = [distant];
       expect(index.queryPlanes(volume, reused)).toBe(reused);
       expect(reused).toEqual([upstream]);
+      // A prepared frame's query writes over its list in place too, and leaves none of a longer list's casters.
+      const longer = [distant, distant, upstream];
+      index.prepare();
+      expect(index.queryPlanes(volume, longer)).toBe(longer);
+      expect(longer).toEqual([upstream]);
+      index.release();
       distant.position.copyFrom(Vector3.Zero());
       distant.computeWorldMatrix(true);
       expect(index.queryPlanes(volume)).toContain(distant);

@@ -55,6 +55,13 @@ export class FrameGraphSharedOutlineTask extends FrameGraphTask {
   sceneDepthTexture: FrameGraphTextureHandle | undefined;
   readonly outputTexture: FrameGraphTextureHandle;
   readonly view: SharedOutlineView;
+  /**
+   * The groups this task draws, fixed as it is built: those active then. An inactive group's targets and passes are
+   * never created (the selection group never is in Play, which has no selection). A group that activates later needs a
+   * new graph (`coversActiveGroups`); one that deactivates keeps its targets, its passes disabled, until the graph is
+   * built again, so outlines a script toggles each tick rebuild the graph at most once per group.
+   */
+  readonly groups: readonly SharedOutlineGroup[];
   private readonly masks: MaskRecord[] = [];
   private readonly compose: EffectWrapper;
   private readonly seed: EffectWrapper;
@@ -78,6 +85,7 @@ export class FrameGraphSharedOutlineTask extends FrameGraphTask {
     super(name, graph);
     if (view.scene !== graph.scene || view.isDisposed) throw new Error("Shared outline view does not belong to the live graph Scene.");
     this.view = view;
+    this.groups = view.active ? SHARED_OUTLINE_GROUPS.filter((group) => view.groupActive(group)) : [];
     this.outputTexture = graph.textureManager.createDanglingHandle();
     registerSharedOutlineShaders();
     this.compose = new EffectWrapper({
@@ -97,15 +105,21 @@ export class FrameGraphSharedOutlineTask extends FrameGraphTask {
     });
     this.onBeforeTaskExecute.add(() => this.sync(true));
   }
+  /** Whether every group the view has active has its targets here; when not, the graph must be built again. */
+  coversActiveGroups(): boolean {
+    return !this.view.active || SHARED_OUTLINE_GROUPS.every((group) => this.groups.includes(group) || !this.view.groupActive(group));
+  }
+  /** Whether `group` has its targets here and is active this frame. */
+  private drawsGroup(group: SharedOutlineGroup): boolean { return this.view.active && this.groups.includes(group) && this.view.groupActive(group); }
   /** Whether the strict mask's pass runs seeded from the scene's depth this frame. */
-  private get seeds(): boolean { return this.seeded && this.view.active && this.view.groupActive("strict"); }
+  private get seeds(): boolean { return this.seeded && this.drawsGroup("strict"); }
   /** The compose, each active group's mask and, where the strict mask is seeded, its depth copy. */
   get drawingPassCount(): number {
-    return this.view.active ? 1 + SHARED_OUTLINE_GROUPS.filter((group) => this.view.groupActive(group)).length + (this.seeds ? 1 : 0) : 0;
+    return this.view.active ? 1 + this.groups.filter((group) => this.drawsGroup(group)).length + (this.seeds ? 1 : 0) : 0;
   }
   get renderRecordCount(): number {
     if (!this.view.active) return 0;
-    const groups = SHARED_OUTLINE_GROUPS.filter((group) => this.view.groupActive(group)).length;
+    const groups = this.groups.filter((group) => this.drawsGroup(group)).length;
     return 1 + 2 * groups + (this.seeds ? 1 : 0);
   }
   override getClassName(): string { return "FrameGraphSharedOutlineTask"; }
@@ -121,11 +135,12 @@ export class FrameGraphSharedOutlineTask extends FrameGraphTask {
     const depthSize = sceneDepth === undefined ? undefined : textures.getTextureDescription(sceneDepth).size;
     // A scene depth of another size (an authored chain at its own resolution) is not this mask's pixels.
     this.seeded = depthSize?.width === this.width && depthSize.height === this.height;
-    if (!this.masks.length) {
-      // RGBA8 ID + depth32 per group, with no hidden MSAA/mipmap allocation.
-      this.lease = beginManagedRenderAllocation(graph.engine, this.width * this.height * 8 * 3);
+    if (!this.masks.length && this.groups.length) {
+      // RGBA8 ID + depth32 per drawn group at most (the through and selection groups may share one depth), with no
+      // hidden MSAA/mipmap allocation.
+      this.lease = beginManagedRenderAllocation(graph.engine, this.width * this.height * 8 * this.groups.length);
       if (!this.lease) throw new Error("Shared outline targets exceed the Engine resource reservation.");
-      for (const group of SHARED_OUTLINE_GROUPS) {
+      for (const group of this.groups) {
         const create = (suffix: string, format: number, type: number) => textures.createRenderTargetTexture(`${this.name} ${group} ${suffix}`, {
           size: { width: this.width, height: this.height }, sizeIsPercentage: false,
           options: { createMipMaps: false, samples: 1, formats: [format], types: [type], useSRGBBuffers: [false] },
@@ -161,13 +176,13 @@ export class FrameGraphSharedOutlineTask extends FrameGraphTask {
     const pass = graph.addRenderPass(`${this.name} Compose`);
     this.composePass = pass;
     pass.setRenderTarget(this.outputTexture);
-    // Every group's mask, but only the strict group's depth: the others end with their own mask pass, so the graph's
-    // allocator gives the through and selection passes one depth target in turn.
-    const strictDepth = this.masks[0]!.depth;
-    pass.addDependencies([...this.masks.map((record) => record.mask), strictDepth]);
+    // Every drawn group's mask, but only the strict group's depth: the others end with their own mask pass, so the
+    // graph's allocator gives the through and selection passes one depth target in turn.
+    const strictDepth = this.masks.find((record) => record.group === "strict")?.depth;
+    pass.addDependencies([...this.masks.map((record) => record.mask), ...strictDepth === undefined ? [] : [strictDepth]]);
     pass.setInitializeFunc((context) => {
       for (const record of this.masks) context.setTextureSamplingMode(record.mask, Texture.NEAREST_SAMPLINGMODE);
-      context.setTextureSamplingMode(strictDepth, Texture.NEAREST_SAMPLINGMODE);
+      if (strictDepth !== undefined) context.setTextureSamplingMode(strictDepth, Texture.NEAREST_SAMPLINGMODE);
     });
     pass.setExecuteFunc((context) => {
       if (!this.view.active) return;
@@ -185,12 +200,18 @@ export class FrameGraphSharedOutlineTask extends FrameGraphTask {
         this.camera.getProjectionMatrix().invertToRef(this.inverseProjection);
         effect.setMatrix("inverseProjection", this.inverseProjection);
         effect.setFloat2("depthRange", 2, -1);
-        effect.setFloat3("activeGroups", ...SHARED_OUTLINE_GROUPS.map((group) => this.view.groupActive(group) ? 1 : 0) as [number, number, number]);
-        for (const record of this.masks) {
-          context.bindTextureHandle(effect, `${record.group}Mask`, record.mask);
-          effect.setTexture(`${record.group}Style`, this.view.styleTexture(record.group));
+        effect.setFloat3("activeGroups", ...SHARED_OUTLINE_GROUPS.map((group) => this.drawsGroup(group) ? 1 : 0) as [number, number, number]);
+        // A group without targets reads as inactive, so its samplers are never read; each still takes a texture that is
+        // not this pass's target (its own style table), since WebGL rejects a draw whose program's samplers could.
+        for (const group of SHARED_OUTLINE_GROUPS) {
+          const style = this.view.styleTexture(group);
+          const record = this.masks.find((entry) => entry.group === group);
+          if (record) context.bindTextureHandle(effect, `${group}Mask`, record.mask);
+          else effect.setTexture(`${group}Mask`, style);
+          effect.setTexture(`${group}Style`, style);
         }
-        context.bindTextureHandle(effect, "strictDepth", strictDepth);
+        if (strictDepth !== undefined) context.bindTextureHandle(effect, "strictDepth", strictDepth);
+        else effect.setTexture("strictDepth", this.view.styleTexture("strict"));
       }, undefined, false, false, false, false, Constants.ALPHA_COMBINE);
     });
     this.sync();

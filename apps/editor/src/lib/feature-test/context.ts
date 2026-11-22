@@ -87,7 +87,19 @@ type FeatureTestMaterialKey =
   /** Landscape domain with paint layers. */
   | "landscape"
   /** User Interface domain for the HUD's 2D Material widgets, Material panels and control parts. */
-  | "overlayUnlit";
+  | "overlayUnlit"
+  /** Decal domain, lit and Translucent: the colormap through a round mask, normal-mapped, with a Tint parameter. */
+  | "decalLit"
+  /** Material Instance of `decalLit` with its own Tint. */
+  | "decalLitInstance"
+  /** Decal domain, unlit and Additive: an emissive glow. */
+  | "decalGlow"
+  /** Decal domain, unlit and Multiply: a stain darkening what it lands on. */
+  | "decalMultiply"
+  /** Decal domain, lit and Masked: Voronoi cells clipped by Alpha Cutoff. */
+  | "decalMasked"
+  /** Decal domain, unlit and Opaque: painted stripes. */
+  | "decalOpaque";
 
 export interface FeatureTestClassRef {
   path: string;

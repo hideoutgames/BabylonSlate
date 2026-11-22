@@ -19,6 +19,11 @@ Each stroke adds an actor named after the group, such as **Foliage Group 1 Strok
 | Weight | How often this Model is chosen, 0 to 100. Default 1. |
 | Scale Range | Minimum and maximum scale for each instance. Default 0.8 to 1.2. |
 | Material Override | A Material to use instead of the Model's own. |
+| Cull Distance | Distance from the camera, in meters, at which this Model's foliage stops drawing. 0 never culls. Default 120. |
+| Fade Range | Width, in meters, of the dithered fade-out that ends at **Cull Distance**. Default 15. |
+| Shadow Distance | Distance from the camera, in meters, beyond which this Model's foliage stops casting shadows. 0 follows **Cull Distance**. Default 45. |
+
+**Material Override**, **Cull Distance**, **Fade Range** and **Shadow Distance** also change the strokes already painted with the Model.
 
 ## Brush settings
 
@@ -37,6 +42,10 @@ In **Foliage Settings**:
 
 - World scenes only.
 - A Foliage component holds up to 20,000 instances. Paint more strokes for more.
+- In Play, foliage fades out and stops drawing past **Cull Distance**, and stops casting shadows past **Shadow Distance**. The project's **LOD Distance Scale** multiplies all three distances. Distances count from the area of foliage nearest the camera, so nearby instances share one decision.
+- The editor viewport always shows all foliage, however far the camera, so you can select and erase every stroke.
+- Foliage switches to the Model's simpler levels with distance when the project's **Auto LOD** is on ([Automatic LOD](../graphics/models.md#automatic-lod)).
+- Mirrors, Reflection Probes and Render Targets show the foliage the main camera shows, even when they look elsewhere.
 - Foliage lands on any visible surface the brush can hit, such as a [Landscape](landscape.md) or a [Mesh](mesh.md).
 
 ## Related

@@ -113,6 +113,25 @@ describe("Audio editor docks", () => {
     expect(screen.getByTestId("property-pitchMax")).toBeTruthy();
   });
 
+  it("renders Playback Mode and reflects Decoded and Streamed states", () => {
+    const view = render(
+      <AudioDetails
+        payload={{ playbackMode: "decoded" }}
+        assetName="Theme"
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId("property-playbackMode").textContent).toContain("Decoded");
+    view.rerender(
+      <AudioDetails
+        payload={{ playbackMode: "streamed" }}
+        assetName="Theme"
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId("property-playbackMode").textContent).toContain("Streamed");
+  });
+
   it("fills an empty source clip name as read-only text and keeps Weight editable", async () => {
     const onChange = vi.fn();
     render(

@@ -7,7 +7,9 @@ import {
   lookAtRotation,
   normalizeWaterBody,
   parseLandscapeProperties,
+  quantizeVertexWeights,
   RENDER_TARGET_CAPTURE_QUALITY_LABELS,
+  serializeLandscapeProperties,
   waterRiverCentreline,
   type FoliageBatch,
   type FoliageGroup,
@@ -646,8 +648,8 @@ function buildIsland(materialGuid: string): Island {
     curvature: 1,
   }, "river"));
   const side = LAND_SUBDIVISIONS + 1;
-  const heights = new Array<number>(side * side);
-  const weights = new Array<number>(side * side * 4);
+  const heights = new Float32Array(side * side);
+  const weights = new Uint8Array(side * side * 4);
   for (let iz = 0; iz < side; iz++) {
     for (let ix = 0; ix < side; ix++) {
       const x = (ix / LAND_SUBDIVISIONS) * LAND_SIZE - LAND_SIZE / 2;
@@ -661,12 +663,11 @@ function buildIsland(materialGuid: string): Island {
       ));
       const vertex = iz * side + ix;
       heights[vertex] = height;
-      paintLayers(height, channel, lake).forEach((weight, layer) => {
-        weights[vertex * 4 + layer] = weight;
-      });
+      const [w0, w1, w2, w3] = paintLayers(height, channel, lake);
+      quantizeVertexWeights(w0, w1, w2, w3, weights, vertex * 4);
     }
   }
-  const properties = {
+  const data = parseLandscapeProperties({
     width: LAND_SIZE,
     depth: LAND_SIZE,
     subdivisions: LAND_SUBDIVISIONS,
@@ -674,8 +675,9 @@ function buildIsland(materialGuid: string): Island {
     weights,
     materialGuid,
     collisionsEnabled: true,
-  };
-  return { properties, data: parseLandscapeProperties(properties), riverPoints, riverLine };
+  });
+  const properties = { ...serializeLandscapeProperties(data) };
+  return { properties, data, riverPoints, riverLine };
 }
 
 /** Uncarved terrain: land, mountain, hill and puddle terrace, masked into the seabed at the shores. */
@@ -817,7 +819,14 @@ function scatterIsland(
       if (height === null || height < spec.minHeight || slopeAt(island.data, x, z) > spec.maxSlope) continue;
       transforms.push(foliageTransform(x, height - 0.05, z, yaw, scale));
     }
-    return { modelGuid: requireRef(models[spec.model], `the ${spec.model} Model`), materialGuid: null, transforms };
+    return {
+      modelGuid: requireRef(models[spec.model], `the ${spec.model} Model`),
+      materialGuid: null,
+      cullDistance: 120,
+      fadeRange: 18,
+      shadowDistance: 45,
+      transforms,
+    };
   });
 }
 
@@ -827,6 +836,9 @@ function stressFoliage(models: Record<FeatureTestHolidayModel, string>): Foliage
   const batches = picks.map((model): FoliageBatch => ({
     modelGuid: requireRef(models[model], `the ${model} Model`),
     materialGuid: null,
+    cullDistance: 90,
+    fadeRange: 15,
+    shadowDistance: 35,
     transforms: [],
   }));
   const rng = createSeededRng(101);
@@ -855,6 +867,9 @@ function foliageGroup(models: Record<FeatureTestHolidayModel, string>): FoliageG
       weight: spec.count / 2,
       minScale: spec.minScale,
       maxScale: spec.maxScale,
+      cullDistance: 120,
+      fadeRange: 18,
+      shadowDistance: 45,
     })),
   };
 }

@@ -32,6 +32,9 @@ import { ownedActorProbeScript } from "./scene-scripts";
 import { FEATURE_TEST_EASING_CURVE_CLASS, featureTestCameraShakes } from "./scripting";
 import { withFeatureTestHudPulse } from "./timeline";
 
+/** The Entry ID of the Project Settings Scene Layer post-processing pass the HUD layers share. */
+export const FEATURE_TEST_SCENE_LAYER_POST_PROCESS_ENTRY_ID = "ft-scene-layer-post-grade";
+
 /** Folder under `assets/FeatureTest/` for the Scene Layers and their SceneLayerActor Classes. */
 const FEATURE_TEST_SCENE_LAYERS_FOLDER = "SceneLayers";
 
@@ -112,6 +115,8 @@ interface LayerRefs {
   overlayMaterial: string;
   /** The User Interface showcase Materials, and the Instance the Progress Bar's track draws. */
   uiMaterials: Record<"roundedPanel" | "roundedPanelInstance" | "healthBar" | "cooldown", string>;
+  /** The post-process grade, which the Texture Icon's Post Processing Panel names, switched off. */
+  postProcessMaterial: string;
   panelTexture: string;
   /** The optional one-shot Audio asset, which the rich text's reveal plays. */
   sound: string | null;
@@ -153,6 +158,7 @@ export async function buildFeatureTestSceneLayers(ctx: FeatureTestContext): Prom
       healthBar: featureTestMaterialAssetGuid(ctx, "Material", FEATURE_TEST_MATERIAL_NAMES.uiHealthBar),
       cooldown: featureTestMaterialAssetGuid(ctx, "Material", FEATURE_TEST_MATERIAL_NAMES.uiCooldown),
     },
+    postProcessMaterial: requireRef(ctx.assets.materials.postProcess, "the post-process Material"),
     panelTexture: requireRef(ctx.assets.textures.colormapPixelArt, "the pixel art colormap Texture"),
     sound: ctx.assets.audio.oneShot,
     icons: {
@@ -212,10 +218,19 @@ export async function buildFeatureTestSceneLayers(ctx: FeatureTestContext): Prom
     .list()
     .find((asset) => asset.rootId === "project" && asset.header.type === "InputAction" && asset.header.name === "Confirm");
   const activateInputGuid = requireRef(confirm?.header.guid, "the Basic 3D Confirm Input Action");
+  // Scene Layer post-processing: authored but off. Main is the performance benchmark, and an enabled pass adds a
+  // full-screen target, copy, pass and blend per frame (every layer drawn into one target the pass grades before it is
+  // blended over the world). Switched on, it is a slight desaturation without the vignette, which would fade the HUD's
+  // edges. See the Feature Test reference's Known gaps for how to turn it on.
+  const layerGrade = requireRef(ctx.assets.materials.postProcess, "the post-process Material");
   // Enter / Face Button Right activate HUD focus; Space stays Jump.
   ctx.patchSettings((settings) => ({
     ...settings,
     focusNavigation: { ...settings.focusNavigation, enabled: true, activateInputGuid, wrap: true },
+    sceneLayerPostProcessStack: [{
+      id: FEATURE_TEST_SCENE_LAYER_POST_PROCESS_ENTRY_ID, materialGuid: layerGrade, enabled: false,
+      parameters: { Desaturation: { kind: "float", value: 0.15 }, Vignette: { kind: "float", value: 0 } },
+    }],
   }));
 }
 
@@ -720,8 +735,13 @@ function addWidgetRow(refs: LayerRefs, add: AddActor): void {
     ui(`${row}-box`, "2DHorizontalBoxComponent", { width: 13.8, height: 0.6, gap: 0.21, verticalAlignment: "center" }),
     ui(`${row}-padding`, "2DPaddingComponent", { paddingLeft: 0.18, paddingRight: 0.18 }, undefined, `${row}-box`),
   ], { position: [0, -3.93], folderId: "ft-ui-folder-widgets" }));
+  // A Post Processing Panel round the icon, authored switched off like the Scene Layer pass: main is the performance
+  // benchmark, and an enabled panel adds a target and a pass every frame. See the Feature Test reference's Known gaps.
   add(layerActor("ft-ui-texture", "Texture Icon", [
     ui("ft-ui-texture-image", "2DTextureComponent", { textureGuid: refs.icons.camera }, at(0, 0, 0, 0.6)),
+    ui("ft-ui-texture-post-process", "2DPostProcessingPanelComponent", {
+      enabled: false, materialGuid: refs.postProcessMaterial,
+    }),
   ], { parentId: row }));
   add(layerActor("ft-ui-material", "Material Swatch", [
     ui("ft-ui-material-quad", "2DMaterialComponent", { materialGuid: refs.overlayMaterial }, at(0, 0, 0, 0.54)),

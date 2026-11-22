@@ -4,7 +4,7 @@ import type { RenderTargetWrapper } from "@babylonjs/core/Engines/renderTargetWr
 import { ShaderStore } from "@babylonjs/core/Engines/shaderStore";
 import { EffectRenderer, EffectWrapper } from "@babylonjs/core/Materials/effectRenderer";
 import { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
-import type { InternalTexture } from "@babylonjs/core/Materials/Textures/internalTexture";
+import { InternalTextureSource, type InternalTexture } from "@babylonjs/core/Materials/Textures/internalTexture";
 import { Viewport } from "@babylonjs/core/Maths/math.viewport";
 import type { Observer } from "@babylonjs/core/Misc/observable";
 import type { Scene } from "@babylonjs/core/scene";
@@ -12,6 +12,7 @@ import type { Nullable } from "@babylonjs/core/types";
 import { createEngineDrawingState, restoreEngineDrawingState, saveEngineDrawingState } from "./engine-drawing-state";
 import { beginManagedRenderAllocation, releaseManagedRenderLeaseAfterDisposal, type ManagedRenderLease } from "./managed-render-resources";
 import { renderTargetAllocationBytes } from "./render-target-resource-cost";
+import { noteLayerUpload } from "./layer-frame-stats";
 
 /**
  * A Scene's small layer images on one shared page, so a batch can draw visuals that differ in image alone
@@ -126,6 +127,8 @@ class Shelves {
 /** Whether the page can hold `internal`'s texels as they are, and has a cell size for them (see the module comment). */
 function copies(internal: InternalTexture): boolean {
   if (internal.isCube || internal.is3D || internal.is2DArray || internal.isMultiview || internal.samples > 1) return false;
+  // A render target's texels change as it is drawn (a Post Processing Panel's result): a copy would freeze them.
+  if (internal.source === InternalTextureSource.RenderTarget || internal.source === InternalTextureSource.MultiRenderTarget) return false;
   if (internal.type !== Constants.TEXTURETYPE_UNSIGNED_BYTE || internal._compression || internal._useSRGBBuffer || internal._isRGBD) return false;
   if (internal.format !== Constants.TEXTUREFORMAT_RGBA && internal.format !== Constants.TEXTUREFORMAT_RGB) return false;
   // A cell is copied by the size the texture records, which is its storage's for a single level only: Babylon leaves
@@ -327,8 +330,12 @@ export class LayerImageAtlas {
     }
   }
 
-  /** Copies the images asked for since the last frame into their cells; those whose texture is not ready wait. */
-  private flush(): void {
+  /**
+   * Copies the images asked for since the last frame into their cells; those whose texture is not ready wait. The
+   * Scene's before-render work runs it, and a Play layer's work before the world draws runs it first
+   * (`flushSceneImagePages`), so its framebuffer changes fall outside the backbuffer's pass.
+   */
+  flush(): void {
     const pending = this.pending;
     if (!pending.length) return;
     const effect = this.effect!, renderer = this.renderer!, target = this.target!, engine = this.engine;
@@ -361,6 +368,7 @@ export class LayerImageAtlas {
         effect.effect.setTexture("atlasSource", image.texture);
         effect.effect.setFloat4("atlasCell", cell.x, cell.y, 0, 0);
         renderer.draw();
+        noteLayerUpload();
         image.drawn = true;
         this.revision += 1;
       }

@@ -139,7 +139,10 @@ void main(void) {
     float center = decodeId(texture2DLodEXT(${group}Mask, vUV, 0.0).rgb);
     float best = 1e10;
     float chosen = 1e10;
-    vec4 stroke = vec4(0.0);
+    vec4 stroke = vec4(0.0);${group === "strict" ? `
+    // This pixel's own depth, read at its first candidate: once per pixel, and not at all where no neighbour differs.
+    float destinationDepth = 0.0;
+    bool destinationRead = false;` : ""}
     for (int radius = 1; radius <= ${SHARED_OUTLINE_MAX_WIDTH}; ++radius) {
       if (float(radius) > min(maximumWidth, ceil(maximumWidths[${groupIndex}])) + 0.75) break;
       for (int direction = 0; direction < 8; ++direction) {
@@ -153,7 +156,7 @@ void main(void) {
           float coverage = 1.0;
           bool visible = true;
           ${group === "strict" ? `float candidateDepth = texture2DLodEXT(strictDepth, uv, 0.0).r;
-          float destinationDepth = texture2DLodEXT(strictDepth, vUV, 0.0).r;
+          if (!destinationRead) { destinationDepth = texture2DLodEXT(strictDepth, vUV, 0.0).r; destinationRead = true; }
           visible = reverseDepth > 0.5 ? candidateDepth >= destinationDepth : candidateDepth <= destinationDepth;
           if (distanceFadeEnabled > 0.5) {
             vec4 fade = texture2DLodEXT(strictStyle, idUV(id) + vec2(0.0, 0.5), 0.0);

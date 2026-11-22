@@ -30,6 +30,7 @@ import { useOptionalPlay } from "../context/play-context";
 import { useProjectState } from "../context/document-context";
 import { useModelSlotMaterials } from "../lib/use-model-slot-materials";
 import { watchBlockingEditorOverlay } from "../lib/viewport-render-gate";
+import { createPreviewFrameLoop, type PreviewFrameLoop } from "../lib/preview-loop";
 
 /**
  * Where an Animation the graph plays comes from on the preview Model: one of its own clips, a clip of another Model
@@ -86,6 +87,7 @@ export function AnimGraphPreviewCanvas({
   showBones,
   getState,
   subscribe,
+  active = true,
 }: {
   modelBytes: Uint8Array;
   materialSlots: readonly ModelMaterialSlot[];
@@ -97,8 +99,13 @@ export function AnimGraphPreviewCanvas({
   showBones: boolean;
   getState: () => AnimEvalState | null;
   subscribe: (listener: () => void) => () => void;
+  /** Whether the preview is on screen (`usePreviewLoopActive`); it requests no frames otherwise. */
+  active?: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const activeRef = useRef(active);
+  activeRef.current = active;
+  const loopRef = useRef<PreviewFrameLoop | null>(null);
   const gesturesRef = useRef<ReturnType<typeof attachMaterialPreviewGestures> | null>(null);
   const zoomDrive = useCallback(() => gesturesRef.current?.zoomDrive, []);
   const play = useOptionalPlay();
@@ -152,10 +159,11 @@ export function AnimGraphPreviewCanvas({
     const clips: Array<PoseClip & { dispose(): void }> = [];
     // The Model's own clips go with the Model; clips bound from other files are this preview's to dispose.
     const ownClips = new Set<PoseClip>();
-    const raf = { id: 0 };
+    let loop: PreviewFrameLoop | null = null;
     const overlay = watchBlockingEditorOverlay();
     const dispose = () => {
-      window.cancelAnimationFrame(raf.id);
+      loop?.dispose();
+      if (loopRef.current === loop) loopRef.current = null;
       unsubscribe?.();
       for (const clip of clips) {
         if (!ownClips.has(clip)) clip.dispose();
@@ -241,8 +249,9 @@ export function AnimGraphPreviewCanvas({
         unsubscribe = stateRef.current.subscribe(() => {
           pending = true;
         });
+        // The session owns time, so a paused loop resumes at the evaluation it holds.
+        const view = presenter;
         const tick = () => {
-          if (cancelled) return;
           const state = stateRef.current.getState();
           if (pending && state && state !== applied) {
             applied = state;
@@ -253,15 +262,15 @@ export function AnimGraphPreviewCanvas({
               setMarkerCount(markers.targetCount);
               setColliderCount(markers.colliderCount);
             }
-            presenter?.present({ force: true });
+            view.present({ force: true });
           } else {
             grid?.sync();
-            presenter?.present();
+            view.present();
           }
           pending = false;
-          raf.id = window.requestAnimationFrame(tick);
         };
-        raf.id = window.requestAnimationFrame(tick);
+        loop = loopRef.current = createPreviewFrameLoop(tick, () => view.present({ force: true }));
+        loop.setActive(activeRef.current);
       } catch (error) {
         console.warn("[render] Animation Graph preview failed", error);
         dispose();
@@ -279,6 +288,8 @@ export function AnimGraphPreviewCanvas({
     };
     // `clips` and `readModelBytes` are read through refs; the key says when the clip set changed.
   }, [clipsKey, engine, importScale, modelBytes, releaseMaterials]);
+
+  useEffect(() => loopRef.current?.setActive(active), [active]);
 
   useEffect(() => {
     const host = hostRef.current;

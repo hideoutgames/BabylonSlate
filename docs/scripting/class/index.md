@@ -846,9 +846,9 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Clear Scene Layer](clear-scene-layer.md) | Removes every Scene Layer and all of their actors. |
 | [Create Scene Layer](create-scene-layer.md) | Creates a Scene Layer from an asset and waits until it is ready. |
 | [Get Owning Scene Layer](get-owning-scene-layer.md) | Returns the Scene Layer an actor belongs to. |
-| [Register Scene Layer Post-Processing](register-scene-layer-post-processing.md) | Adds a post-process Material to the effects applied to a Scene Layer and returns the new pass's Material Object. |
+| [Register Scene Layer Post-Processing](register-scene-layer-post-processing.md) | Adds a post-process Material to the passes every Scene Layer shares and returns the new pass's Material Object. |
 | [Remove Scene Layer](remove-scene-layer.md) | Removes a Scene Layer and all of its actors. |
-| [Unregister Scene Layer Post-Processing](unregister-scene-layer-post-processing.md) | Removes a post-process Material from the effects applied to a Scene Layer. |
+| [Unregister Scene Layer Post-Processing](unregister-scene-layer-post-processing.md) | Removes a post-process Material from the passes every Scene Layer shares. |
 
 ## Rich Text
 
@@ -880,6 +880,7 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Set Capture Near Clip](set-capture-near-clip.md) | Sets the near clip distance of a capture actor's camera. |
 | [Set Capture Only Actors](set-capture-only-actors.md) | Sets whether a capture draws only the actors in its list. |
 | [Set Capture Render Target](set-capture-render-target.md) | Changes the Render Target that a Render Target Capture actor draws into. |
+| [Spawn Decal](spawn-decal.md) | Projects a pooled runtime decal onto opaque world surfaces at a location and orientation. |
 
 ## Scalability
 
@@ -897,9 +898,9 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Set Post Processing Quality](set-post-processing-quality.md) | Scales the resolution of post-process passes that allow scalable resolution. |
 | [Set Render Mode](set-render-mode.md) | Switches between PBR and CEL rendering for the current session. |
 | [Set Render Resolution](set-render-resolution.md) | Locks the rendered output to a fixed width and height, with black bars if needed. |
-| [Set Render Scale](set-render-scale.md) | Sets a fixed render scale and turns off dynamic resolution. |
+| [Set Render Scale](set-render-scale.md) | Sets the render scale of the 3D world. |
 | [Set Rendering Effects](set-rendering-effects.md) | Sets the colour pipeline, tone mapping, exposure, bloom and vignette. |
-| [Set Resolution Quality](set-resolution-quality.md) | Sets render scale, dynamic resolution limits and the target frame rate. |
+| [Set Resolution Quality](set-resolution-quality.md) | Sets the render scale of the 3D world. |
 | [Set Scalability Preset](set-scalability-preset.md) | Applies a Low, Medium, High or Ultra quality tier to the current session. |
 | [Set Shadow Quality](set-shadow-quality.md) | Sets shadow map size, filtering, distance and the limits for local-light shadows. |
 | [Set Shadows Enabled](set-shadows-enabled.md) | Turns shadows on or off for the current session without losing their settings. |
@@ -918,7 +919,7 @@ Nodes for Class graphs: the event graphs and functions of Objects, Actors, compo
 | [Get Material Vector2 Parameter](get-material-vector2-parameter.md) | Returns the current value of a named Vector2 parameter on a Material Object. |
 | [Get Material Vector3 Parameter](get-material-vector3-parameter.md) | Returns the current value of a named Vector3 parameter on a Material Object. |
 | [Get Material Vector4 Parameter](get-material-vector4-parameter.md) | Returns the current value of a named Vector4 parameter on a Material Object. |
-| [Get Post Process Entry](get-post-process-entry.md) | Returns the Material Object of one post-process pass on a Scene or Scene Layer. |
+| [Get Post Process Entry](get-post-process-entry.md) | Returns the Material Object of one post-process pass of a Scene, or of the passes every Scene Layer shares. |
 | [Reset Material Color Parameter](reset-material-color-parameter.md) | Restores a Color parameter on a Material Object to its original value. |
 | [Reset Material Float Parameter](reset-material-float-parameter.md) | Restores a Float parameter on a Material Object to its original value. |
 | [Reset Material Texture Parameter](reset-material-texture-parameter.md) | Restores a Texture parameter on a Material Object to its original Texture. |

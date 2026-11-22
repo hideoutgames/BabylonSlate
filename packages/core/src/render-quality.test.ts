@@ -16,6 +16,7 @@ import {
 import {
   DEFAULT_RENDER_PROJECT_SETTINGS,
   normalizeProjectSettings,
+  normalizeRenderProjectSettings,
 } from "./project";
 
 describe("rendering quality sessions", () => {
@@ -38,6 +39,14 @@ describe("rendering quality sessions", () => {
       localLightMode: "auto",
       mapSize: 4096,
     });
+  });
+  it("resets a project's First Cascade Detail of twice the map size to the level's when a level is applied", () => {
+    const session = new RenderingQualitySession({ shadows: { profile: "high", firstCascadeScale: 2 } });
+    expect(qualityGroupLabel(session.effective(), "shadows")).toBe("custom");
+    session.execute("shadows", "high");
+    expect(session.effective().shadows).toMatchObject({ firstCascadeScale: 1, preset: "high" });
+    expect(applyProjectQualityPatch(normalizeRenderProjectSettings({ shadows: { profile: "high", firstCascadeScale: 2 } }), qualityPresetPatch("high"))
+      .shadows).toMatchObject({ firstCascadeScale: 1, preset: "high" });
   });
   it("sets the shadow filter quality from the console and refuses one that does not exist", () => {
     const session = new RenderingQualitySession({ shadows: { profile: "high" } });
@@ -88,13 +97,8 @@ describe("rendering quality sessions", () => {
     expect(session.effective().shadows.distance).toBe(120);
     expect(session.effective().resolution.scale).toBe(0.5);
     session.execute(undefined, "reset");
-    expect(session.effective().resolution.scale).toBe(1);
-  });
-  it("fingerprints whether resolution may drop, and to what, so a report tells a dropped level from a set scale", () => {
-    const session = new RenderingQualitySession({ quality: RENDER_QUALITY_PROFILES.high });
-    expect(qualitySettingsFingerprint(session.effective())["resolution.dynamic"]).toBe("on 0.75");
-    session.execute("resolution", "scale", "0.5");
-    expect(qualitySettingsFingerprint(session.effective())["resolution.dynamic"]).toBe("off");
+    // Back to the inherited Medium tier's scale.
+    expect(session.effective().resolution.scale).toBe(0.85);
   });
   it("reports each chosen tier even when two tiers share a setting value", () => {
     const session = new RenderingQualitySession();

@@ -30,6 +30,8 @@ export type GameSourceContent = {
   payloads: Map<string, Uint8Array>;
   navmeshBytes: Map<string, Uint8Array>;
   audioReverbBytes: Map<string, Uint8Array>;
+  /** Binary `BSLD` landscape chunks keyed by `<ownerGuid>:<chunkId>`. */
+  landscapeBytes?: Map<string, Uint8Array>;
 };
 
 /** Required edges only; deferred references stay in the catalog for later use. */
@@ -54,7 +56,7 @@ export function gameSourceSubset(game: GameSourceContent, ids: ReadonlySet<strin
   for (const entry of game.manifest.assets) if (entry.ownerGuid) owners.set(entry.guid, entry.ownerGuid);
   const keys = new Set(ids);
   for (const id of ids) {
-    // Prefixed sidecars (`navmesh:<scene>`) are keyed by the guid after the prefix.
+    // Prefixed sidecars (`navmesh:<scene>`, `landscape:<scene>:<chunkId>`) are keyed by their owner.
     const owner = owners.get(id) ?? (id.includes(":") ? id.slice(id.indexOf(":") + 1) : undefined);
     if (owner) keys.add(owner);
   }
@@ -68,6 +70,13 @@ export function gameSourceSubset(game: GameSourceContent, ids: ReadonlySet<strin
     const colon = key.indexOf(":");
     return keys.has(key) || (colon > 0 && keys.has(key.slice(0, colon)));
   }));
+  // Binary landscape chunks are keyed `<ownerGuid>:<chunkId>`.
+  const landscapeBytes = game.landscapeBytes
+    ? new Map([...game.landscapeBytes].filter(([key]) => {
+        const colon = key.indexOf(":");
+        return keys.has(key) || (colon > 0 && keys.has(key.slice(0, colon)));
+      }))
+    : undefined;
   return {
     ...game,
     manifest: { ...game.manifest, assets: game.manifest.assets.filter(entry => keys.has(entry.guid)) },
@@ -81,5 +90,6 @@ export function gameSourceSubset(game: GameSourceContent, ids: ReadonlySet<strin
     fontFacetypeBytes: select(game.fontFacetypeBytes), fontMsdfJson: select(game.fontMsdfJson), fontMsdfPng: select(game.fontMsdfPng),
     audioBytes, audioPayloads: select(game.audioPayloads),
     payloads: select(game.payloads), navmeshBytes: select(game.navmeshBytes), audioReverbBytes: select(game.audioReverbBytes),
+    ...(landscapeBytes ? { landscapeBytes } : {}),
   };
 }

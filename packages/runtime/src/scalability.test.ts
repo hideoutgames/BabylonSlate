@@ -76,7 +76,7 @@ describe("compiled Class Graph scalability", () => {
       edge("changed", "execOut", "log", "execIn"), edge("changed", "settings", "revision", "in"), edge("revision", "appliedRevision", "revisionText", "in"), edge("revisionText", "out", "log", "message"), edge("resetEvent", "execOut", "reset", "execIn")] });
     try {
       const snapshot = runtime.getScalability();
-      expect(snapshot.requested).toMatchObject({ frameCap: 20, render: { quality: { resolution: { scale: 0.5, dynamic: false }, postprocessing: { antiAliasing: "msaa2" } } } });
+      expect(snapshot.requested).toMatchObject({ frameCap: 20, render: { quality: { resolution: { scale: 0.5 }, postprocessing: { antiAliasing: "msaa2" } } } });
       runtime.applyScalabilityStatus({ revision: snapshot.result.revision, status: "applied", message: "Ready", effective: snapshot.requested });
       const logs = commands.filter((command) => command.type === "log");
       expect(logs).toHaveLength(1);
@@ -87,7 +87,8 @@ describe("compiled Class Graph scalability", () => {
       expect(runtime.getScalability().requested.render.quality?.lighting.maxLocalLights).toBe(3);
       runtime.invokeScriptEvent("SettingsSubsystem", "Restore", subsystem);
       expect(runtime.getScalability().requested.frameCap).toBe(30);
-      expect(runtime.getScalability().requested.render.quality?.resolution.scale).toBe(1);
+      // The project's Medium tier, not Set Render Scale's 0.5.
+      expect(runtime.getScalability().requested.render.quality?.resolution.scale).toBe(0.85);
     } finally { runtime.stop(); }
   });
   it("returns validation failures from a graph instead of changing requested settings", async () => {

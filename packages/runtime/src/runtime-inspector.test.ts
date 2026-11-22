@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createActor, createDefaultScene, createMeshComponent, identitySerializedTransform } from "@haptic/core";
+import { createActor, createDefaultScene, createDefaultSceneLayer, createMeshComponent, identitySerializedTransform } from "@haptic/core";
 import { readSnapshotHeader, snapshotFloatCount, type CommandMessage, type RuntimeInspectorAction, type RuntimeInspectorResult,
   type RuntimeObjectIdentity } from "@haptic/bridge";
 import { createInProcessRuntime } from "./driver";
@@ -29,6 +29,39 @@ async function fixture(mode: "simulate" | "play" = "simulate", deferMaterialEdit
 }
 const mutation = (target: RuntimeObjectIdentity, sequence: number, value: number): RuntimeInspectorAction =>
   ({ kind: "setProperty", target, sequence, property: "health", value });
+
+describe("runtime Inspector on a Post Processing Panel", () => {
+  it.each([false, true])("assigns only post-process Materials and writes its pass's parameters (deferred material edits %s)", async (deferMaterialEdits) => {
+    const commands: CommandMessage[] = [];
+    const panel = { id: "panel", classId: "2DPostProcessingPanelComponent", properties: { enabled: true, materialGuid: "blur" } };
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, sessionGeneration: 4, sessionMode: "simulate",
+      playSceneGuid: "root", deferMaterialEdits, playScene: createDefaultScene(),
+      sceneLayerLibrary: { hud: { ...createDefaultSceneLayer(), actors: [createActor("frame", "Frame", { classId: "SceneLayerActor", components: [panel] })] } },
+      materialParameterCatalog: { ...catalog,
+        blur: { domain: "postProcess", planHash: "blur", parameters: { Strength: { kind: "float", value: 1 } } },
+        wobble: { domain: "postProcess", planHash: "wobble", parameters: {} } },
+      onCommand: command => commands.push(command) });
+    try {
+      runtime.realizePlayWorld(); runtime.createSceneLayer("hud", 0); runtime.start(); runtime.pause();
+      let requestId = 0;
+      const request = (action: RuntimeInspectorAction) => runtime.requestRuntimeInspector({ sessionGeneration: 4, requestId: ++requestId, action });
+      const tree = await request({ kind: "identities" });
+      const rows = tree.payload?.kind === "identities" ? tree.payload.rows : [];
+      const component = rows.find(row => row.kind === "component" && row.classId === "2DPostProcessingPanelComponent")!.identity;
+      const assign = (sequence: number, value: string) => request({ kind: "setProperty", target: component, sequence, property: "materialGuid", value });
+      // A surface Material is refused; a post-process one is taken, without any surface preparation.
+      expect(await assign(1, "mat")).toMatchObject({ success: false, reason: "The material is unavailable or is not a post-process material." });
+      expect(await assign(2, "wobble")).toMatchObject({ success: true });
+      expect(commands.some(command => command.type === "prepareRuntimeMaterialEdit")).toBe(false);
+      expect(await assign(3, "blur")).toMatchObject({ success: true });
+      const from = commands.length;
+      expect(await request({ kind: "setMaterialParameter", target: component, sequence: 1, materialGuid: "blur",
+        parameter: "Strength", value: { kind: "float", value: 0.25 } })).toMatchObject({ success: true });
+      expect(commands.slice(from)).toContainEqual(expect.objectContaining({ type: "setMaterialParameter", materialAssetGuid: "blur",
+        parameterName: "Strength", parameter: { kind: "float", value: 0.25 } }));
+    } finally { runtime.stop(); }
+  });
+});
 
 describe("bounded runtime Inspector", () => {
   it("reads selected reflection metadata and applies correlated writes while paused without authoring or ticking", async () => {
@@ -250,6 +283,33 @@ describe("bounded runtime Inspector", () => {
       ragdolls[0]!.setVariable("enabled", true);
       expect((await request({ kind: "selection", target: actor })).payload).toMatchObject({ transformCapability: "restart" });
       expect(hero.transform.position.x).toBe(7);
+    } finally { runtime.stop(); }
+  });
+
+  it("rolls back a transform edit that physics rejects, reports its error, and keeps ticking", async () => {
+    const { runtime, commands, request, actor } = await fixture();
+    try {
+      const world = runtime.getWorld(); const hero = world.findActor("hero")!;
+      // An oblique static child: a nonuniform scale on its parent would shear it, which physics rejects.
+      const rider = world.createActor({ classId: "Actor", guid: "rider", transform: { position: { x: 0, y: 2, z: 0 },
+        rotation: { x: 0, y: 0, z: Math.sin(Math.PI / 8), w: Math.cos(Math.PI / 8) }, scale: { x: 1, y: 1, z: 1 } } });
+      rider.attachComponent(world.createComponent({ classId: "RigidBodyComponent", variables: { motionType: "static" } }));
+      rider.attachComponent(world.createComponent({ classId: "ColliderComponent", variables: {
+        shape: { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } } } }));
+      world.spawnActorNow(rider); rider.setVariable("parentId", hero.guid);
+      runtime.getPhysicsSync()!.syncFromWorld(world);
+      runtime.pause();
+
+      const transform = identitySerializedTransform(); transform.position = [3, 0, 0]; transform.scale = [2, 1, 1];
+      const result = await request({ kind: "setTransform", target: actor, sequence: 1, transform });
+      expect(result).toMatchObject({ success: false, reason: "Collider transform contains unsupported shear" });
+      expect(hero.transform).toEqual({ position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 } });
+      expect(runtime.getPhysicsSync()!.getBackend().getBodyTransform("body:rider")!.position).toEqual({ x: 0, y: 2, z: 0 });
+
+      runtime.resume();
+      runtime.tick(); runtime.tick();
+      expect(world.clock.tickIndex).toBe(2);
+      expect(commands.filter(command => command.type === "diagnostic")).toEqual([]);
     } finally { runtime.stop(); }
   });
 

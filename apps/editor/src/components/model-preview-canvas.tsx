@@ -45,6 +45,7 @@ import { useModelColliderSession } from "../context/model-collider-session";
 import { useModelSlotMaterials } from "../lib/use-model-slot-materials";
 import { scaleGizmoLinked, scaleLinkKey, useLinkedScale } from "../lib/linked-scale";
 import { watchBlockingEditorOverlay } from "../lib/viewport-render-gate";
+import { createPreviewFrameLoop, type PreviewFrameLoop } from "../lib/preview-loop";
 
 const MODEL_PREVIEW_SHADING: { value: ViewportShadingMode; label: string }[] = [
   { value: "pbr", label: "PBR" },
@@ -65,12 +66,18 @@ export function ModelPreviewCanvas({
   payload,
   sourceBytes,
   onChange,
+  active = true,
 }: {
   payload: Record<string, unknown>;
   sourceBytes: Uint8Array;
   onChange?: (next: Record<string, unknown>) => void;
+  /** Whether the preview is on screen (`usePreviewLoopActive`); it requests no frames otherwise. */
+  active?: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const activeRef = useRef(active);
+  activeRef.current = active;
+  const loopRef = useRef<PreviewFrameLoop | null>(null);
   const gesturesRef = useRef<ReturnType<typeof attachMaterialPreviewGestures> | null>(null);
   const zoomDrive = useCallback(() => gesturesRef.current?.zoomDrive, []);
   const play = useOptionalPlay();
@@ -140,7 +147,7 @@ export function ModelPreviewCanvas({
     let presenter: MaterialPreviewPresenter | null = null;
     let gestures: { dispose: () => void } | null = null;
     let loaded: { dispose: () => void } | null = null;
-    const raf = { id: 0 };
+    let loop: PreviewFrameLoop | null = null;
     const visuals = colliderVisualsRef.current;
     const overlay = watchBlockingEditorOverlay();
     void (async () => {
@@ -251,12 +258,12 @@ export function ModelPreviewCanvas({
         presenterRef.current = presenter;
         presenter.present({ force: true });
         setPreviewGeneration((value) => value + 1);
-        const tick = () => {
-          if (cancelled) return;
-          presenter?.present();
-          raf.id = window.requestAnimationFrame(tick);
-        };
-        raf.id = window.requestAnimationFrame(tick);
+        const view = presenter;
+        loop = loopRef.current = createPreviewFrameLoop(
+          () => view.present(),
+          () => view.present({ force: true }),
+        );
+        loop.setActive(activeRef.current);
       } catch (error) {
         reportGlbLoadFailure("preview", error);
         setLoadError("Failed to Load Mesh");
@@ -273,7 +280,8 @@ export function ModelPreviewCanvas({
     })();
     return () => {
       cancelled = true;
-      window.cancelAnimationFrame(raf.id);
+      loop?.dispose();
+      if (loopRef.current === loop) loopRef.current = null;
       overlay.dispose();
       releaseMaterials();
       gestures?.dispose();
@@ -289,6 +297,8 @@ export function ModelPreviewCanvas({
       visuals.clear();
     };
   }, [engine, sourceBytes, model.importScale, setSelectedColliderId, releaseMaterials]);
+
+  useEffect(() => loopRef.current?.setActive(active), [active]);
 
   useEffect(() => {
     const overlay = shadingRef.current;

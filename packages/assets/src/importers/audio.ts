@@ -1,7 +1,10 @@
 import { newAssetGuid } from "../guid";
 import type { ImportOptions, ImportResult } from "./types";
 import { baseName, extensionOf } from "./util";
-import { AUDIO_DEFAULT_SOURCE_CHUNK } from "../audio-payload";
+import {
+  AUDIO_AUTO_STREAM_MIN_BYTES,
+  AUDIO_DEFAULT_SOURCE_CHUNK,
+} from "../audio-payload";
 
 const MIME_BY_EXTENSION: Record<string, string> = {
   mp3: "audio/mpeg",
@@ -69,6 +72,10 @@ export async function importAudio(
       dependencies: [],
       parentClass: null,
       payload: {
+        playbackMode:
+          bytes.byteLength >= AUDIO_AUTO_STREAM_MIN_BYTES
+            ? "streamed"
+            : "decoded",
         clips: [
           {
             chunkId: AUDIO_DEFAULT_SOURCE_CHUNK,

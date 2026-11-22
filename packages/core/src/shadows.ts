@@ -14,6 +14,14 @@ export interface ShadowSettings {
   fadeFraction: number;
   profile: ShadowProfile;
   mapSize: number;
+  /**
+   * The sun's first cascade tile edge as a multiple of `mapSize` (First Cascade Detail): the first cascade holds the
+   * shadows nearest the camera, where a texel is largest on screen, so 2 gives it twice the edge (four times the texels)
+   * over the same slice. Every level uses 1; 2 is a Custom choice. The renderer halves it while the first tile would be
+   * wider than half the shadow atlas's edge (`cascadeTileSizes`), so it never asks for a tile the atlas cannot hold
+   * beside the other cascades: at Low and Medium (a 4096 atlas) and at a map size of 4096 or more it keeps the map size.
+   */
+  firstCascadeScale: ShadowFirstCascadeScale;
   cascades: number;
   filter: "pcf" | "pcss";
   filterQuality: "low" | "medium" | "high";
@@ -36,6 +44,8 @@ export interface ShadowSettings {
   reflections: boolean;
 }
 export type ShadowOverrides = Partial<ShadowSettings>;
+export type ShadowFirstCascadeScale = 1 | 2;
+export const SHADOW_FIRST_CASCADE_SCALES: readonly ShadowFirstCascadeScale[] = [1, 2];
 const SHADOW_PROFILE_COMMON = {
   enabled: true,
   fadeFraction: 0.1,
@@ -45,6 +55,7 @@ const SHADOW_PROFILE_COMMON = {
   depthBias: 0.0001,
   normalBias: 0.005,
   localLightMode: "auto",
+  firstCascadeScale: 1,
 } as const;
 export const SHADOW_PROFILES = {
   low: {
@@ -134,6 +145,8 @@ export function normalizeShadowOverrides(value: unknown): ShadowOverrides {
     Object.hasOwn(SHADOW_PROFILES, source.profile)
   )
     result.profile = source.profile as ShadowProfile;
+  if ((SHADOW_FIRST_CASCADE_SCALES as readonly unknown[]).includes(source.firstCascadeScale))
+    result.firstCascadeScale = source.firstCascadeScale as ShadowFirstCascadeScale;
   if (source.filter === "pcf" || source.filter === "pcss")
     result.filter = source.filter;
   if (typeof source.screenShadows === "string" && (SCREEN_SHADOWS_QUALITIES as readonly string[]).includes(source.screenShadows))
@@ -167,25 +180,15 @@ export function normalizeShadowOverrides(value: unknown): ShadowOverrides {
 }
 
 /**
- * Per shadow quality level, the smallest caster a sun cascade after the first draws: its bounding sphere's diameter in
- * that cascade's texels. A smaller one's shadow is too small to resolve there; the first cascade draws every caster.
- */
-/**
  * Per shadow quality level, how many of the sun's last cascades get a tile of half the map size's edge: far cascades
  * cover more ground per texel anyway, and their shadows are seen small. The first cascade always keeps the full size.
  */
 export const SHADOW_HALF_TILE_CASCADES = { low: 0, medium: 1, high: 1, ultra: 2 } as const satisfies Record<ShadowProfile, number>;
 
 /**
- * Per shadow quality level, the sun's first cascade tile edge as a multiple of the map size: the first cascade holds
- * the shadows nearest the camera, where a texel is largest on screen, so at High its tile has twice the edge (four
- * times the texels) over the same slice. Low and Medium have no atlas room for it, and Ultra's 4096-texel map would
- * need an 8192-texel tile, its whole atlas. A scale is halved while the first tile would be wider than half the atlas's
- * edge (`cascadeTileSizes` in the renderer), so a Custom map size never asks for a tile the atlas cannot hold beside
- * the other cascades: High at 4096 or 8192 keeps the map size there.
+ * Per shadow quality level, the smallest caster a sun cascade after the first draws: its bounding sphere's diameter in
+ * that cascade's texels. A smaller one's shadow is too small to resolve there; the first cascade draws every caster.
  */
-export const SHADOW_FIRST_CASCADE_SCALE = { low: 1, medium: 1, high: 2, ultra: 1 } as const satisfies Record<ShadowProfile, number>;
-
 export const SHADOW_FAR_CASTER_MIN_TEXELS = { low: 3, medium: 2, high: 1.5, ultra: 1 } as const satisfies Record<ShadowProfile, number>;
 
 /** Conservative admission policy; these are not device performance measurements. */
@@ -282,7 +285,10 @@ export function componentCastsShadows(classId: string, castShadows: unknown): bo
  * clamped to it in the vertex stage, so no caster fragment writes its own depth; a triangle crossing the plane then
  * draws slightly differently), and the sun's far cascades drawn in every frame the map draws (`farcascades`: off, the
  * cascades after the first two are cleared and drawn only in every second Engine frame and keep their depth and the
- * view they were drawn with in between, so a moving caster's far shadow may lag a frame).
+ * view they were drawn with in between, so a moving caster's far shadow may lag a frame), and the map passes of the
+ * sun alone (`sunpasses`) or of the spot and point lights alone (`localpasses`), each as `passes` is for its maps, and
+ * every tile at its full size (`fulltiles`: off, every map is drawn again at half its edge, a quarter of its texels,
+ * with the same cascades, lights and casters, into the same atlas: the level's edge and pages do not change).
  */
-export const SHADOW_DEBUG_PARTS = ["casters", "passes", "atlasfit", "depthclamp", "farcascades"] as const;
+export const SHADOW_DEBUG_PARTS = ["casters", "passes", "sunpasses", "localpasses", "atlasfit", "fulltiles", "depthclamp", "farcascades"] as const;
 export type ShadowDebugPart = (typeof SHADOW_DEBUG_PARTS)[number];

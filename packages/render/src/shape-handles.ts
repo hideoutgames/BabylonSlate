@@ -36,7 +36,14 @@ export interface ShapeHandlesOptions {
   onCommit?: (edit: ComponentShapeEdit) => void;
   /** The selected handle or its world placement node changed; re-attach the transform gizmo. */
   onSelectionChange?: () => void;
+  /** The viewport's height in CSS pixels, which keeps a handle's hit area at `HANDLE_MIN_HIT_PX`; without it the hit area is the dot's own. */
+  viewportCssHeight?: () => number;
 }
+
+/** Smallest diameter of a handle's hit area in CSS pixels: a finger's touch target, whatever the viewport's size or the camera's field of view. */
+export const HANDLE_MIN_HIT_PX = 44;
+/** A handle's hit sphere as a fraction of its distance from the camera (of the view height in an orthographic view); the dot is drawn inside it. */
+const HANDLE_VIEW_SCALE = 0.045;
 export interface ShapeHandlesHost<Target extends ShapeHandleTarget> {
   attach: (target: Target | null) => void;
   isDragging: () => boolean;
@@ -85,6 +92,7 @@ export function createShapeHandles<Body extends object, Handle extends ShapeHand
 ): ShapeHandlesHost<Target> {
   const util = layer.utilityLayerScene;
   const meshes = new Map<string, Mesh>();
+  const visuals = new Map<string, Mesh>();
   let target: Target | null = null;
   let body: Body | null = null;
   let handles: Handle[] = [];
@@ -108,7 +116,7 @@ export function createShapeHandles<Body extends object, Handle extends ShapeHand
   };
   const clear = () => {
     for (const mesh of meshes.values()) mesh.dispose(false, false);
-    meshes.clear();
+    meshes.clear(); visuals.clear();
     outline?.dispose(); outline = null; outlineBody = null; outlineWorld = null;
     handlesBody = null; localOutline = []; meshesDirty = true;
   };
@@ -208,7 +216,7 @@ export function createShapeHandles<Body extends object, Handle extends ShapeHand
     for (const [id, mesh] of meshes) {
       if (ids.has(id)) continue;
       if (drag?.meshId === id) { mesh.setEnabled(false); continue; }
-      mesh.dispose(false, false); meshes.delete(id);
+      mesh.dispose(false, false); meshes.delete(id); visuals.delete(id);
     }
     for (const handle of handles) {
       if (meshes.has(handle.id)) continue;
@@ -220,7 +228,7 @@ export function createShapeHandles<Body extends object, Handle extends ShapeHand
       setUnlitMaterial(visual, HANDLE_MATERIAL, {
         texture: null, color: [color.r, color.g, color.b], alpha, cutoff: 0, blend: false, textureAlpha: false, twoSided: false,
       });
-      bind(pick, handle.id); meshes.set(handle.id, pick);
+      bind(pick, handle.id); meshes.set(handle.id, pick); visuals.set(handle.id, visual);
     }
   };
   const layout = () => {
@@ -243,6 +251,7 @@ export function createShapeHandles<Body extends object, Handle extends ShapeHand
     if (meshesDirty) { syncMeshes(); meshesDirty = false; }
     const matrix = source.computeWorldMatrix(true), camera = layer.getRenderCamera();
     const view = camera?.getViewMatrix() ?? null;
+    const cssHeight = options.viewportCssHeight?.() ?? 0;
     const stale = !drag && (constraintsDirty || !constraintWorld || !constraintWorld.equals(matrix) || !view || !constraintView || !constraintView.equals(view));
     for (const handle of handles) {
       const pick = meshes.get(handle.id)!;
@@ -250,7 +259,12 @@ export function createShapeHandles<Body extends object, Handle extends ShapeHand
       Vector3.TransformCoordinatesFromFloatsToRef(handle.position[0], handle.position[1], handle.position[2], matrix, pick.position);
       const distance = camera ? Vector3.Distance(camera.globalPosition, pick.position) : 10;
       const ortho = camera?.mode === Camera.ORTHOGRAPHIC_CAMERA ? (camera.orthoTop ?? 1) - (camera.orthoBottom ?? -1) : 0;
-      pick.scaling.setAll(Math.max(0.01, (ortho || distance) * 0.045));
+      // The dot keeps its size; the hit sphere around it grows to a touch target where the view draws it smaller.
+      const dot = Math.max(0.01, (ortho || distance) * HANDLE_VIEW_SCALE);
+      const viewSpan = ortho || 2 * distance * Math.tan((camera?.fov ?? 0.8) / 2);
+      const hit = cssHeight > 0 ? Math.max(dot, viewSpan * HANDLE_MIN_HIT_PX / cssHeight) : dot;
+      pick.scaling.setAll(hit);
+      visuals.get(handle.id)?.scaling.setAll(dot / hit);
       const behavior = pick.getBehaviorByName("PointerDrag") as PointerDragBehavior | null;
       if (behavior && stale) behavior.options = adapter.constraint(handle, matrix, camera);
     }

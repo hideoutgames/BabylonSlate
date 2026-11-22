@@ -422,7 +422,7 @@ it("adds and retires implicit bodies after direct variable-map writes", () => {
   actor.attachComponent(mesh);
   const landscape = world.createComponent({
     classId: "LandscapeComponent",
-    variables: { width: 4, depth: 4, subdivisions: 1, heights: [0, 0, 0, 0] },
+    variables: { width: 4, depth: 4, subdivisions: 4, heights: new Float32Array(25) },
   });
   actor.attachComponent(landscape);
   const hasBody = () => backend.getBodyTransform(`body:${actor.guid}`) !== null;

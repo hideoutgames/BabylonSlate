@@ -67,6 +67,27 @@ function rowsFor(
   return { rows, update, onPickAsset };
 }
 
+it("authors a Post Processing Panel with Enabled and a post-process Material picker, and no raw rows", () => {
+  const { rows, update, onPickAsset } = rowsFor({ id: "panel", classId: "2DPostProcessingPanelComponent",
+    properties: { ...defaultPropertiesFor("2DPostProcessingPanelComponent"), materialGuid: "blur" } });
+  expect(rows.map((row) => row.label)).toEqual(["Enabled", "Material"]);
+  const enabled = rows.find((row) => row.label === "Enabled");
+  const material = rows.find((row) => row.label === "Material");
+  if (enabled?.kind !== "boolean" || material?.kind !== "asset") throw new Error("Missing Post Processing Panel rows");
+  expect([enabled.value, material.value]).toEqual([true, "blur"]);
+  // Tooltips only: what switching it off does, and what the Material runs over.
+  expect(enabled.description).toBeTruthy();
+  expect(material.description).toBeTruthy();
+  enabled.onChange(false);
+  expect(update).toHaveBeenLastCalledWith("enabled", false);
+  material.onPick();
+  expect(onPickAsset).toHaveBeenLastCalledWith(expect.objectContaining({
+    property: "materialGuid", allowedTypes: ["Material", "MaterialInstance"], materialDomain: "postProcess",
+  }));
+  material.onChange(null);
+  expect(update).toHaveBeenLastCalledWith("materialGuid", null);
+});
+
 it("edits the joystick's two material references independently with User Interface Material pickers", () => {
   const { rows, update, onPickAsset } = rowsFor({ id: "stick", classId: "2DJoystickComponent",
     properties: { ...defaultPropertiesFor("2DJoystickComponent"), backgroundMaterialGuid: "base", joystickMaterialGuid: "thumb" } });
@@ -308,6 +329,29 @@ describe("componentPropertyRows", () => {
     expect(update).toHaveBeenLastCalledWith("density", 0);
     edge.onChange(2);
     expect(update).toHaveBeenLastCalledWith("edgeFalloff", 1);
+  });
+  it("keeps Decal row tooltips to what the row cannot show, and clamps Fade Angle to 1 to 180 degrees", () => {
+    const { rows, update, onPickAsset } = rowsFor({ id: "decal", classId: "DecalComponent", properties: defaultPropertiesFor("DecalComponent") });
+    // The Material row offers Decal Materials (and their Instances) only, and creates new ones in that domain.
+    const material = rows.find((row) => row.label === "Material");
+    if (material?.kind !== "asset") throw new Error("Missing Decal Material row");
+    material.onPick?.();
+    expect(onPickAsset).toHaveBeenLastCalledWith(expect.objectContaining({ property: "materialGuid", allowedTypes: ["Material", "MaterialInstance"], materialDomain: "decal" }));
+    // The look is the Material's: no Texture, Roughness, Blend Mode or Receive Lighting rows of the decal's own.
+    expect(rows.map((row) => row.label)).toEqual(["Enabled", "Material", "Tint", "Opacity", "Size", "Fade Angle", "Sort Order", "Cull Distance"]);
+    // Rows whose label and control say it all carry no tooltip (row-descriptions rule).
+    for (const label of ["Enabled", "Material"]) expect(rows.find((row) => row.label === label)!.description, label).toBeUndefined();
+    // Tint and Opacity say how they meet the Material's own values, which the row cannot show.
+    for (const label of ["Tint", "Opacity"]) expect(rows.find((row) => row.label === label)!.description, label).toContain("Material");
+    // The projection axis is the one thing Size cannot show.
+    expect(rows.find((row) => row.label === "Size")?.description).toContain("-Y");
+    const fade = rows.find((row) => row.label === "Fade Angle");
+    if (fade?.kind !== "slider") throw new Error("Missing Decal Fade Angle");
+    expect([fade.min, fade.max]).toEqual([1, 180]);
+    fade.onChange(200);
+    expect(update).toHaveBeenLastCalledWith("fadeAngle", 180);
+    fade.onChange(0);
+    expect(update).toHaveBeenLastCalledWith("fadeAngle", 1);
   });
   it("authors independent outline appearance and explicit through-mesh visibility", () => {
     const properties = defaultPropertiesFor("OutlineComponent");
@@ -1582,21 +1626,30 @@ it("edits slider visual asset slots independently and exposes ordered range valu
   expect(lower).toMatchObject({ kind: "number", value: 20, min: 10, max: 40 });
 });
 
-it("edits a Landscape's size, cells, collisions and landscape Material without exposing its heights or paint weights", () => {
+it("edits a Landscape's size, cells, collisions and landscape Material without exposing its heights or paint weights", async () => {
+  const { parseLandscapeProperties, serializeLandscapeProperties } = await import("@haptic/core");
+  const sculpted = serializeLandscapeProperties(parseLandscapeProperties({
+    width: 32,
+    depth: 32,
+    subdivisions: 4,
+    heights: Float32Array.from({ length: 25 }, (_, i) => (i === 12 ? 3 : 0)),
+    materialGuid: "ground",
+  }));
   const { rows, update, onPickAsset } = rowsFor({ id: "terrain", classId: "LandscapeComponent",
-    properties: { ...defaultPropertiesFor("LandscapeComponent"), subdivisions: 4, materialGuid: "ground" } });
+    properties: { ...sculpted } });
   expect(rows.map((row) => row.label)).toEqual(["Size", "Cells", "Landscape Collisions", "Landscape Material"]);
 
   const cells = rows.find((row) => row.label === "Cells");
   if (cells?.kind !== "number") throw new Error("Missing Cells row");
   cells.onChange(8);
-  // The height and weight grids are resampled in the same edit as the resolution.
+  // The height and weight grids are resampled and serialized into compact BSLD data in the same edit.
   expect(update).toHaveBeenLastCalledWith("subdivisions", 8, {
-    heights: expect.any(Array),
-    weights: expect.any(Array),
+    data: expect.any(String),
   });
-  const alsoSet = update.mock.lastCall![2] as { heights: number[]; weights: number[] };
-  expect([alsoSet.heights.length, alsoSet.weights.length]).toEqual([81, 81 * 4]);
+  const alsoSet = update.mock.lastCall![2] as { data: string | null };
+  const decoded = parseLandscapeProperties({ subdivisions: 8, data: alsoSet.data });
+  expect([decoded.heights.length, decoded.weights.length]).toEqual([81, 81 * 4]);
+  expect(decoded.heights[4 * 9 + 4]).toBeCloseTo(3, 4);
 
   const material = rows.find((row) => row.label === "Landscape Material");
   if (material?.kind !== "asset") throw new Error("Missing Landscape Material row");
@@ -1609,4 +1662,55 @@ it("shows no raw Foliage instance data or group id", () => {
   const { rows } = rowsFor({ id: "grass", classId: "FoliageComponent",
     properties: { groupId: "group-1", batches: [{ modelGuid: "m", transforms: [[0, 0, 0, 0, 1]] }] } });
   expect(rows).toEqual([]);
+});
+
+describe("Material slots by domain", () => {
+  // One Material of each domain; "inst" is a Material Instance whose root is a Decal Material.
+  const domains: Record<string, string> = {
+    surface: "surface", landscape: "landscape", postProcess: "postProcess", particle: "particle", text: "text", decal: "decal", ui: "ui", inst: "decal",
+  };
+  const context = { materialDomain: (guid: string) => domains[guid], assetType: () => "Material" };
+
+  it.each([
+    ["MeshComponent", "materialGuid", "surface"],
+    ["DynamicRuntimeMeshComponent", "materialGuid", "surface"],
+    ["CableComponent", "materialGuid", "surface"],
+    ["MirrorComponent", "materialGuid", "surface"],
+    ["2DMaterialComponent", "materialGuid", "ui"],
+    ["2DJoystickComponent", "backgroundMaterialGuid", "ui"],
+    ["2DJoystickComponent", "joystickMaterialGuid", "ui"],
+    ["2DCheckboxComponent", "backgroundMaterialGuid", "ui"],
+    ["2DSliderComponent", "thumbMaterialGuid", "ui"],
+    ["LandscapeComponent", "materialGuid", "landscape"],
+    ["DecalComponent", "materialGuid", "decal"],
+    ["2DTextComponent", "materialGuid", "text"],
+    ["2DPostProcessingPanelComponent", "materialGuid", "postProcess"],
+  ])("%s's %s picks, pastes and keeps only %s Materials", (classId, property, domain) => {
+    const { rows, onPickAsset } = rowsFor({ id: "c", classId, properties: { ...defaultPropertiesFor(classId), [property]: domain } }, context);
+    const row = rows.find((entry) => entry.id === `actor-1-c-${property}`);
+    if (row?.kind !== "asset") throw new Error(`Missing ${property} row`);
+    row.onPick();
+    expect(onPickAsset).toHaveBeenLastCalledWith(expect.objectContaining({ property, materialDomain: domain }));
+    expect(Object.keys(domains).filter((guid) => row.acceptsAsset?.(guid))).toEqual(Object.keys(domains).filter((guid) => domains[guid] === domain));
+    expect(row.error).toBeUndefined();
+  });
+
+  it("flags a slot that already holds a Material of another domain, and an Instance by its root's domain", () => {
+    const decalOnMesh = rowsFor({ id: "c", classId: "MeshComponent", properties: { meshKind: "box", materialGuid: "inst" } }, context)
+      .rows.find((entry) => entry.id === "actor-1-c-materialGuid");
+    expect(decalOnMesh).toMatchObject({ kind: "asset", value: "inst", error: "Needs a Surface Material; this is a Decal Material." });
+    const surfaceOnDecal = rowsFor({ id: "c", classId: "DecalComponent", properties: { materialGuid: "surface" } }, context)
+      .rows.find((entry) => entry.id === "actor-1-c-materialGuid");
+    expect(surfaceOnDecal).toMatchObject({ error: "Needs a Decal Material; this is a Surface Material." });
+    const surfaceOnPanel = rowsFor({ id: "c", classId: "2DPanelComponent", properties: { source: "material", materialGuid: "surface" } }, context)
+      .rows.find((entry) => entry.id === "actor-1-c-materialGuid");
+    expect(surfaceOnPanel).toMatchObject({ error: "Needs a User Interface Material; this is a Surface Material." });
+  });
+
+  it("still pastes a Mesh's Model Materials onto a Mesh with a Model", () => {
+    const row = rowsFor({ id: "c", classId: "MeshComponent", properties: { assetGuid: "mesh-1", materialGuid: null } }, context)
+      .rows.find((entry) => entry.id === "actor-1-c-materialGuid");
+    if (row?.kind !== "asset") throw new Error("Missing Material row");
+    expect([MODEL_MATERIALS_PICKER_VALUE, "surface", "decal"].map((guid) => row.acceptsAsset?.(guid))).toEqual([true, true, false]);
+  });
 });

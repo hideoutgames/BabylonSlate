@@ -16,15 +16,18 @@ import {
   Scene,
   SceneLayer,
   SceneCameraManager,
+  SceneLayerPostProcessing,
   SceneStreamingActor,
   SceneLayerActorSwitcher,
   SceneSubsystem,
+  type ComponentChangeKind,
   type GameInstanceHooks,
   type GameSubsystemHooks,
   type LifecycleHooks,
   type SceneSubsystemHooks,
   type Subsystem,
   type TickContext,
+  type TransformChangeSource,
 } from "./objects";
 import {
   compareClassIds,
@@ -32,6 +35,21 @@ import {
   sceneSubsystemGuid,
 } from "./subsystems";
 import { TICK_PHASES, TickClock, type PhaseHook, type TickPhase } from "./tick";
+
+/**
+ * Passive observer notified of live-world actor mutations so multiple runtime
+ * consumers (each PhysicsWorldSync, SnapshotPublisher, etc.) can maintain
+ * independent dirty sets without mutating shared flags on World.
+ */
+export interface WorldChangeObserver {
+  onActorSpawned?(actor: Actor): void;
+  onActorDestroyed?(actor: Actor): void;
+  onActorParentChanged?(actor: Actor, previousParentGuid: Guid | null, nextParentGuid: Guid | null): void;
+  onActorTransformChanged?(actor: Actor, source: TransformChangeSource): void;
+  onActorVariableChanged?(actor: Actor, name: string | null): void;
+  onActorComponentChanged?(actor: Actor, component: ActorComponent, kind: ComponentChangeKind): void;
+  onActorLayerChanged?(actor: Actor, previousLayerId: Guid | null, nextLayerId: Guid | null): void;
+}
 
 export type WorldInputProvider = Pick<
   TickContext,
@@ -144,6 +162,8 @@ export class World {
   currentScene: Scene | null = null;
   /** The session's Scene Camera Manager (fixed guid, never from `guidFactory`). */
   readonly sceneCameraManager = new SceneCameraManager();
+  /** The session's Scene Layer post-processing, shared by every Scene Layer (fixed guid, never from `guidFactory`). */
+  readonly sceneLayerPostProcessing = new SceneLayerPostProcessing();
   /** Session GameSubsystems in class-id order. */
   private gameSubsystems: GameSubsystem[] = [];
   /** Current main Scene's SceneSubsystems in class-id order. */
@@ -166,6 +186,10 @@ export class World {
   private readonly actors: Actor[] = [];
   /** Live actors by guid, including ones queued for destruction. Guids are unique. */
   private readonly actorsByGuid = new Map<Guid, Actor>();
+  /** Live actors indexed by their current `parentId` variable for O(descendants) invalidation. */
+  private readonly childrenByParentGuid = new Map<Guid, Set<Actor>>();
+  /** Multi-consumer change observers (each PhysicsWorldSync, SnapshotPublisher, etc.). */
+  private readonly changeObservers: WorldChangeObserver[] = [];
   /** Guids reserved by queued spawns until each commits or is cancelled. */
   private readonly pendingSpawnGuids = new Set<Guid>();
   private readonly sceneLayers: SceneLayer[] = [];
@@ -558,7 +582,6 @@ export class World {
     assetGuid: string;
     zOrder: number;
     ownerSceneGuid?: string | null;
-    postProcessStack?: ScenePostProcessEntry[];
     canvas?: import("@haptic/core").SceneLayerCanvasDesign;
     cameraLocation?: readonly [number, number] | null;
     tickOnPause?: boolean;
@@ -693,6 +716,89 @@ export class World {
     return this.actorsByGuid.get(guid);
   }
 
+  /** Live direct children whose `parentId` variable points to `parentGuid`. */
+  getChildren(parentGuid: Guid): ReadonlySet<Actor> | undefined {
+    return this.childrenByParentGuid.get(parentGuid);
+  }
+
+  /** Register a passive change observer; returns an unsubscribe callback. */
+  addChangeObserver(observer: WorldChangeObserver): () => void {
+    if (!this.changeObservers.includes(observer)) {
+      this.changeObservers.push(observer);
+    }
+    return () => {
+      const index = this.changeObservers.indexOf(observer);
+      if (index >= 0) this.changeObservers.splice(index, 1);
+    };
+  }
+
+  private parentGuidOf(actor: Actor): Guid | null {
+    const raw = actor.variables.get("parentId");
+    return typeof raw === "string" && raw.length > 0 ? raw : null;
+  }
+
+  private linkChild(parentGuid: Guid, child: Actor): void {
+    let children = this.childrenByParentGuid.get(parentGuid);
+    if (!children) {
+      children = new Set();
+      this.childrenByParentGuid.set(parentGuid, children);
+    }
+    children.add(child);
+  }
+
+  private unlinkChild(parentGuid: Guid, child: Actor): void {
+    const children = this.childrenByParentGuid.get(parentGuid);
+    if (!children) return;
+    children.delete(child);
+    if (children.size === 0) this.childrenByParentGuid.delete(parentGuid);
+  }
+
+  noteActorParentChanged(
+    actor: Actor,
+    previousParentGuid: Guid | null,
+    nextParentGuid: Guid | null,
+  ): void {
+    if (previousParentGuid !== null) this.unlinkChild(previousParentGuid, actor);
+    if (nextParentGuid !== null) this.linkChild(nextParentGuid, actor);
+    this.markStructureChanged();
+    for (let i = 0; i < this.changeObservers.length; i++) {
+      this.changeObservers[i]!.onActorParentChanged?.(actor, previousParentGuid, nextParentGuid);
+    }
+  }
+
+  noteActorTransformChanged(actor: Actor, source: TransformChangeSource): void {
+    for (let i = 0; i < this.changeObservers.length; i++) {
+      this.changeObservers[i]!.onActorTransformChanged?.(actor, source);
+    }
+  }
+
+  noteActorVariableChanged(actor: Actor, name: string | null): void {
+    for (let i = 0; i < this.changeObservers.length; i++) {
+      this.changeObservers[i]!.onActorVariableChanged?.(actor, name);
+    }
+  }
+
+  noteActorComponentChanged(
+    actor: Actor,
+    component: ActorComponent,
+    kind: ComponentChangeKind,
+  ): void {
+    for (let i = 0; i < this.changeObservers.length; i++) {
+      this.changeObservers[i]!.onActorComponentChanged?.(actor, component, kind);
+    }
+  }
+
+  noteActorLayerChanged(
+    actor: Actor,
+    previousLayerId: Guid | null,
+    nextLayerId: Guid | null,
+  ): void {
+    this.markStructureChanged();
+    for (let i = 0; i < this.changeObservers.length; i++) {
+      this.changeObservers[i]!.onActorLayerChanged?.(actor, previousLayerId, nextLayerId);
+    }
+  }
+
   private commitSpawn(actor: Actor): void {
     if (actor.destroyed) return;
     // Nothing begins play once the session ended: the spawn is cancelled.
@@ -705,6 +811,11 @@ export class World {
     this.actors.push(actor);
     this.markStructureChanged();
     this.actorsByGuid.set(actor.guid, actor);
+    const parentGuid = this.parentGuidOf(actor);
+    if (parentGuid !== null) this.linkChild(parentGuid, actor);
+    for (let i = 0; i < this.changeObservers.length; i++) {
+      this.changeObservers[i]!.onActorSpawned?.(actor);
+    }
     this.announceSceneActor(actor);
     // A Spawned hook may have destroyed it already; it then never begins play.
     if (actor.destroyed) return;
@@ -753,6 +864,8 @@ export class World {
     this.staleSpawnIndexFrom = Math.min(this.staleSpawnIndexFrom, index);
     this.markStructureChanged();
     this.actorsByGuid.delete(actor.guid);
+    const parentGuid = this.parentGuidOf(actor);
+    if (parentGuid !== null) this.unlinkChild(parentGuid, actor);
     // Unlinked but intact, before its own teardown; only to subsystems that heard it spawn.
     for (const subsystem of this.takeSceneSubsystemAudience(actor)) {
       subsystem.callOnSceneActorDestroyed(actor);
@@ -770,6 +883,9 @@ export class World {
     this.destroyCount++;
     actor.callOnDestroyed();
     actor.world = null;
+    for (let i = 0; i < this.changeObservers.length; i++) {
+      this.changeObservers[i]!.onActorDestroyed?.(actor);
+    }
     // Reassign dense spawn indices so order stays contiguous after removal.
     // Hooks above still saw the shifted indices, as before; positions ahead of
     // the earliest unsettled removal (including a re-entrant one) never moved.

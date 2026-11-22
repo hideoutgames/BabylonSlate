@@ -1,6 +1,5 @@
 import { readEngineDrawCalls } from "./draw-calls";
 import { managedRenderReservations } from "./managed-render-resources";
-import type { FramePressureSample } from "./hardware-scaling";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import type { Scene } from "@babylonjs/core/scene";
 import { liveShadowAtlasEdge } from "./shadow-atlas";
@@ -19,15 +18,30 @@ import type { FrameBackpressureStats } from "./frame-backpressure";
 import type { GpuProbeSnapshot } from "./gpu-probe-engine";
 import type { DrawPassCounts } from "./draw-passes";
 import type { OverlayBatchStats, OverlayBatchWork } from "./overlay-draw-batcher";
+import type { LayerFrameStats } from "./layer-frame-stats";
 import type { LayerDrawableMeshWork } from "./layer-drawable-meshes";
 import type { LayerDrawListWork } from "./layer-draw-list";
 import type { LeanPreparationWork } from "./lean-render-preparation";
 import type { RetainedShadowDiagnostics } from "./shadow-retained-casters";
 import { existingSceneInstancePool, type InstancePoolDiagnostics } from "./instance-pool";
+import { worldSpriteBatchStats, type WorldSpriteBatchStats } from "./world-sprite-batcher";
 
 import { engineGpuTimingUnavailableReason, readEngineGpuTiming } from "./engine-gpu-timing";
 import { deviceTextureLimits } from "./device-profile";
 export type GpuAttribution = "view" | "shared-engine" | "unavailable";
+
+/**
+ * Per-view frame cost, measured across one rendered (non-loading) frame.
+ * `presentationMs` is the interval since the view's previous presented frame —
+ * `null` when that interval is unknown (skipped/capped/hidden/loading frames
+ * break the chain). `gpuMs` is the engine GPU frame time — `null` whenever it
+ * is unavailable or shared with sibling registered views. Unknown is never 0.
+ */
+export interface FramePressureSample {
+  presentationMs: number | null;
+  cpuMs: number;
+  gpuMs: number | null;
+}
 
 export type RenderDiagnostics = {
   /** Play: Effects first drawn since its world load presented (`first-draw-stats.ts`); null elsewhere. */
@@ -61,6 +75,12 @@ export type RenderDiagnostics = {
    * rest drew on their own (`OverlayBatchStats`); all zero where it drew none.
    */
   layerBatches?: OverlayBatchStats;
+  /**
+   * The Scene Layer work of the view's last drawn frame (`LayerFrameStats`): the layer Scenes rendered, the layer pass's
+   * time and the part of it in batched passes, its clears, framebuffer changes and uploads, and the same for the work
+   * done before the world; all zero where it drew none.
+   */
+  layerFrame?: LayerFrameStats;
   /**
    * GPU-busy time per Engine frame while the `gpubusy` debug command measures (`gpu-busy-probe.ts`); null when it has
    * not measured a frame or the Engine has no fences.
@@ -204,6 +224,8 @@ export type RenderDiagnostics = {
   };
   /** Textures the Engine holds and their estimated GPU bytes (`estimateTextureMemory`). */
   textureMemory?: { bytes: number; textures: number };
+  /** The world Scene's decals: how many, how many drew and batches, and how many waited for their Material's program. */
+  decals?: import("./decal-pass").SceneDecalStats;
   /** While the world loads: the first frame's attempts. */
   worldLoad?: {
     presentation: { ready: boolean; draws: number; rendered: boolean; gpuPending: boolean; copied: boolean } | null;
@@ -233,9 +255,9 @@ export type RenderDiagnostics = {
   gpuMs: number | null;
   gpuStatus: "available" | "pending" | "unsupported";
   /**
-   * Last per-view pressure sample feeding the dynamic scaling valve (null
-   * before the first presented frame). `gpuMs` there is only attributed when
-   * this view is the Engine's sole rendering view.
+   * Last per-view frame cost sample (null before the first presented frame).
+   * `gpuMs` there is only attributed when this view is the Engine's sole
+   * rendering view.
    */
   pressure: FramePressureSample | null;
   /** Why `gpuMs` is this view's own cost, shared with siblings, or missing. */
@@ -285,6 +307,11 @@ export type RenderDiagnostics = {
   autoLod: ReturnType<typeof autoLodDiagnostics>;
   /** The Scene's instance pool (`SceneInstancePool.diagnostics`): groups, retained groups, pooled members and re-keys; null without one. */
   instancePool: InstancePoolDiagnostics | null;
+  /**
+   * Play world sprite batching (`WorldSpriteBatcher.stats`): sprites and batches drawing, pooled batch meshes, atlas
+   * images, and buffer uploads and the instances they carried since Play began; null without a batcher.
+   */
+  worldSprites: WorldSpriteBatchStats | null;
   /**
    * The world view's last frame culled by occlusion (meshes tested and culled, occluders, their triangles, ms; on an idle
    * frame the last run's counts and 0 ms), whether that frame was idle (backing off while its runs cull nothing) and the
@@ -375,6 +402,7 @@ export function createRenderDiagnostics(
       drawCalls: readEngineDrawCalls(engine),
       autoLod: autoLodDiagnostics(scene),
       instancePool: existingSceneInstancePool(scene)?.diagnostics() ?? null,
+      worldSprites: worldSpriteBatchStats(scene),
       occlusion: occlusionCounts(scene),
       resources: {
         meshes: liveMeshCount(scene),

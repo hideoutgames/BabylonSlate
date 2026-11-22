@@ -38,6 +38,8 @@ export type ViewportTestHost = {
     /** The editor camera's zoom: 3D orbit radius and 2D orthographic half height (both shrink as it zooms in). */
     editorCameraZoom: () => { mode: "2d" | "3d"; radius: number; orthoHalfHeight: number } | null;
     postProcessPassCount: () => number | null;
+    /** The editor Scene's decals (`sceneDecalStats`): authored, visible, batches drawn and pending. */
+    decalStats: () => import("@haptic/render").SceneDecalStats | null;
     renderingBaseline: () => Record<string, unknown> | null;
     /** Babylon Engines alive in the page; answers while Play or Preview Build has released this viewport. */
     engineCount: () => number;
@@ -375,6 +377,7 @@ export function installViewportTestHost({
     },
     postProcessPassCount: () =>
       engineRef.current?.postProcessPassCount() ?? null,
+    decalStats: () => engineRef.current?.renderDiagnostics().decals ?? null,
     /**
      * Simulate a finished gizmo drag: mutate the live Babylon mesh, then
      * commit through the same path as onGizmoDragEnd (not a document-only nudge).

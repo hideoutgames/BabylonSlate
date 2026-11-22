@@ -11,7 +11,19 @@ export type MaterialBlendMode =
   | "opaque"
   | "masked"
   | "translucent"
-  | "additive";
+  | "additive"
+  | "multiply";
+
+/**
+ * The Blend Modes a domain offers. Text and User Interface draw on Scene Layers, whose post-processed layers composite
+ * through a transparent target, so they blend only Translucent or Additive; Particle and Post Process have none (emitters own blending, a pass replaces
+ * the image, and a Post Process Material always stores Opaque).
+ */
+export function materialBlendModesFor(domain: MaterialDomain): readonly MaterialBlendMode[] {
+  if (domain === "text" || domain === "ui") return ["translucent", "additive"];
+  if (domain === "particle" || domain === "postProcess") return [];
+  return ["opaque", "masked", "translucent", "additive", "multiply"];
+}
 
 export type MaterialShadingModel = "pbr" | "unlit";
 
@@ -217,6 +229,18 @@ function defaultSurfaceGraph(): {
   };
 }
 
+/** The surface seed (a Base Color constant) wired into a Decal Output instead. */
+function defaultDecalGraph(): {
+  nodes: MaterialGraphNode[];
+  edges: MaterialGraphEdge[];
+} {
+  const graph = defaultSurfaceGraph();
+  return {
+    nodes: graph.nodes.map((node) => node.type === "output.surface" ? { ...node, type: "output.decal" } : node),
+    edges: graph.edges,
+  };
+}
+
 function defaultPostProcessGraph(): {
   nodes: MaterialGraphNode[];
   edges: MaterialGraphEdge[];
@@ -331,6 +355,7 @@ function defaultUserInterfaceGraph(): {
 function isOverlayDomain(domain: MaterialDomain): boolean {
   return domain === "text" || domain === "ui";
 }
+const RETYPED_TERMINALS: ReadonlySet<string> = new Set(["output.surface", "output.decal"]);
 
 export function createDefaultMaterialDocument(
   name = "Material",
@@ -345,12 +370,15 @@ export function createDefaultMaterialDocument(
       ? defaultPostProcessGraph()
       : domain === "particle"
         ? defaultParticleGraph()
-        : defaultSurfaceGraph();
+        : domain === "decal"
+          ? defaultDecalGraph()
+          : defaultSurfaceGraph();
   return {
     name,
     domain,
     shadingModel: domain === "particle" || isOverlayDomain(domain) ? "unlit" : "pbr",
-    blendMode: isOverlayDomain(domain) ? "translucent" : domain === "particle" ? "additive" : "opaque",
+    // A decal blends over the surface it lands on.
+    blendMode: isOverlayDomain(domain) || domain === "decal" ? "translucent" : domain === "particle" ? "additive" : "opaque",
     twoSided: isOverlayDomain(domain),
     defaultNormals: "model",
     alphaCutoff: 0.5,
@@ -365,9 +393,10 @@ export function createDefaultMaterialDocument(
  * Switching would otherwise leave, say, a Scene Color node in a surface
  * material, which only surfaces later as a validation error. Surface and
  * Landscape draw through the same Material Output, so it stays with its
- * position, pin defaults and wires; any other switch replaces the terminal with
- * an unwired one. Switching to Particle also wires Particle Color into the new
- * Particle Output.
+ * position, pin defaults and wires. Between Material Output and Decal Output
+ * the node changes type and keeps the wires and defaults of the pins both have;
+ * any other switch replaces the terminal with an unwired one. Switching to
+ * Particle also wires Particle Color into the new Particle Output.
  */
 export function setMaterialDomain(
   doc: MaterialDocument,
@@ -375,14 +404,26 @@ export function setMaterialDomain(
 ): MaterialDocument {
   if (doc.domain === domain) return doc;
   const terminalType = terminalNodeTypeFor(domain);
-  const keepsTerminal = terminalNodeTypeFor(doc.domain) === terminalType;
-  const kept = doc.nodes.filter((node) => {
+  const previousTerminal = terminalNodeTypeFor(doc.domain);
+  const keepsTerminal = previousTerminal === terminalType;
+  // Material Output and Decal Output share their pin ids: a switch between them retypes the output node, keeping the
+  // wires and pin defaults of the pins the new one has.
+  const retypesTerminal = !keepsTerminal && RETYPED_TERMINALS.has(previousTerminal) && RETYPED_TERMINALS.has(terminalType);
+  const terminalPins = new Set(materialNodeDefinition(terminalType)?.inputs.map((pin) => pin.id) ?? []);
+  const kept = doc.nodes.flatMap((node) => {
     const definition = materialNodeDefinition(node.type);
-    if (!definition) return true;
-    if (definition.terminal) return keepsTerminal && node.type === terminalType;
-    return definition.domains ? definition.domains.includes(domain) || (domain === "landscape" && definition.domains.includes("surface")) : true;
+    if (!definition) return [node];
+    if (definition.terminal) {
+      if (keepsTerminal && node.type === terminalType) return [node];
+      if (!retypesTerminal || node.type !== previousTerminal) return [];
+      const properties = Object.fromEntries(Object.entries(node.properties)
+        .filter(([key]) => !key.startsWith("default:") || terminalPins.has(key.slice("default:".length))));
+      return [{ ...node, type: terminalType, properties }];
+    }
+    return (definition.domains ? definition.domains.includes(domain) || (domain === "landscape" && definition.domains.includes("surface")) : true) ? [node] : [];
   });
   const keptIds = new Set(kept.map((node) => node.id));
+  const retyped = new Set(retypesTerminal ? kept.filter((node) => node.type === terminalType).map((node) => node.id) : []);
   // Text and User Interface force unlit, translucent and two-sided, so those
   // values were never authored. Leaving either, or entering User Interface,
   // takes the new domain's defaults instead.
@@ -397,7 +438,8 @@ export function setMaterialDomain(
     nodes: kept,
     edges: doc.edges.filter(
       (edge) =>
-        keptIds.has(edge.sourceNodeId) && keptIds.has(edge.targetNodeId),
+        keptIds.has(edge.sourceNodeId) && keptIds.has(edge.targetNodeId) &&
+        (!retyped.has(edge.targetNodeId) || terminalPins.has(edge.targetPinId)),
     ),
   });
   return domain === "particle" ? withParticleColorWired(switched) : switched;
@@ -491,10 +533,12 @@ export function normalizeMaterialDocument(
     name: asString(record.name, fallbackName),
     domain,
     shadingModel: isOverlayDomain(domain) || record.shadingModel === "unlit" ? "unlit" : "pbr",
+    // A post-process pass replaces the image, so it has no Blend Mode: always Opaque.
     blendMode:
-      isOverlayDomain(domain) ? (record.blendMode === "additive" ? "additive" : "translucent") : record.blendMode === "masked" ||
+      isOverlayDomain(domain) ? (record.blendMode === "additive" ? "additive" : "translucent") : domain === "postProcess" ? "opaque" : record.blendMode === "masked" ||
       record.blendMode === "translucent" ||
-      record.blendMode === "additive"
+      record.blendMode === "additive" ||
+      record.blendMode === "multiply"
         ? record.blendMode
         : "opaque",
     twoSided: isOverlayDomain(domain) || record.twoSided === true,

@@ -15,9 +15,11 @@ import { effectDrawnOn } from "./first-draw-stats";
  * while the frame has room), so a burst of swaps spreads its first draws over frames: a new program's first draw can
  * hold a thread (about 100 ms on iPad WebKit WebGL2). A cold Effect is admissible once linked.
  *
- * Admission happens in tolerant rounds and at the start of each steady frame of a view that has drawn one
- * (`admitSteadyFirstDraws`, sharing the frame's budget): a cold variant that no probe counts as a swap (a re-planned
- * graph's new pass, whose draw wrappers keep no previous Effect) starts no round of its own. A strict round of a view's
+ * Admission happens in tolerant rounds, in the strict rounds of a view that has drawn steady frames, and at the start of
+ * each steady frame of such a view (`admitSteadyFirstDraws`), all sharing the Engine frame's budget: a cold variant that
+ * no probe counts as a swap (a re-planned graph's new pass, whose draw wrappers keep no previous Effect) starts no round
+ * of its own, and a strict question waiting on several cold variants (a quality change's preparation) passes once the
+ * frames have admitted them one by one, never with all their first draws in one frame. A strict round of a view's
  * new run (after an invalidation, until it draws steady frames again) probes a cold Effect as it is and settles it once
  * ready: that run waits for every variant anyway, and an Effect left cold by the previous run would otherwise hold its
  * preparation for good.
@@ -93,6 +95,7 @@ function install(engine: AbstractEngine): WarmupState {
     // installation or returned since as drawn.
     if (effectDrawnOn(engine, effect) ?? known) return effect;
     // A variant linked as soon as it is requested (a synchronous driver) draws in this frame while it has room.
+    if (variantSwapsTolerated()) refreshBudget(engine, state);
     if (variantSwapsTolerated() && state.budget > 0 && effect.isReady()) {
       state.budget -= 1;
       state.settled.add(effect);
@@ -135,8 +138,8 @@ function warmUp(state: WarmupState, effect: Effect): void {
 
 /**
  * Runs a world view's readiness round: the Effects it requests first are cold when the round is tolerant, or when the
- * view has drawn steady frames (`steady`). A tolerant round (one per steady frame) first admits up to
- * `FIRST_DRAWS_PER_FRAME` admissible cold Effects, oldest first.
+ * view has drawn steady frames (`steady`). Such a round first admits admissible cold Effects, oldest first, up to what
+ * is left of the Engine frame's `FIRST_DRAWS_PER_FRAME`.
  */
 export function withFirstDrawRound<T>(engine: AbstractEngine, steady: boolean, run: () => T): T {
   const tolerated = variantSwapsTolerated();
@@ -152,13 +155,11 @@ export function withFirstDrawRound<T>(engine: AbstractEngine, steady: boolean, r
   }
   let state = states.get(engine);
   if (!state) states.set(engine, (state = install(engine)));
-  if (tolerated) admitColdEffects(engine, state);
-  else {
-    // A steady view's strict question (a preparation after the view drew): it draws no frame, so no tolerant round
-    // follows to admit a cold Effect, and one that is linked would hold it until its stall. It answers as it is; the
-    // first draws it spreads are the frames' own.
-    for (const [effect, entry] of state.cold) if (entry.base()) warmUp(state, effect);
-  }
+  // A tolerant round, and a steady view's strict question (a preparation after the view drew, which draws no frame of
+  // its own, so no tolerant round need follow it), admit from the Engine frame's budget alike: each Engine frame admits
+  // `FIRST_DRAWS_PER_FRAME` more, so a question that waits on several linked cold Effects passes within as many frames,
+  // and their first draws stay spread instead of landing in one frame together.
+  admitColdEffects(engine, state);
   state.marking += 1;
   try {
     return run();
@@ -167,20 +168,25 @@ export function withFirstDrawRound<T>(engine: AbstractEngine, steady: boolean, r
   }
 }
 
+/** Every Engine frame starts with its own first-draw budget, whichever path asks first. */
+function refreshBudget(engine: AbstractEngine, state: WarmupState): void {
+  if (state.budgetFrame === engine.frameId) return;
+  state.budgetFrame = engine.frameId;
+  state.budget = FIRST_DRAWS_PER_FRAME;
+}
+
 /**
  * Admits up to the Engine frame's remaining first-draw budget of admissible cold Effects, oldest first. The budget is
  * per Engine frame: a frame's tolerant rounds, its views and the steady frame itself (`admitSteadyFirstDraws`) share it.
  */
 function admitColdEffects(engine: AbstractEngine, state: WarmupState): void {
-  if (state.budgetFrame !== engine.frameId) {
-    state.budgetFrame = engine.frameId;
-    state.budget = FIRST_DRAWS_PER_FRAME;
-  }
+  refreshBudget(engine, state);
   let budget = state.budget;
   for (const [effect, entry] of state.cold) {
     // A variant that failed to link, every fallback included, never turns ready (the mesh keeps its previous
-    // Effect for good): it leaves the queue without a first draw to spread.
-    if (effect.getCompilationError() && effect.allFallbacksProcessed()) {
+    // Effect for good), and a disposed one (its pass released by a re-planned graph) is never drawn: both leave the
+    // queue without a first draw to spread.
+    if ((effect.getCompilationError() && effect.allFallbacksProcessed()) || (effect as unknown as { _isDisposed?: boolean })._isDisposed) {
       warmUp(state, effect);
       continue;
     }

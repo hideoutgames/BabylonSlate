@@ -70,6 +70,7 @@ export {
   MaterialObject,
   PostProcessMaterialObject,
   getPostProcessMaterialObject,
+  type PostProcessOwner,
   type MaterialInstanceObject,
   GameInstance,
   GameSubsystem,
@@ -77,15 +78,18 @@ export {
   Scene,
   SceneCameraManager,
   SceneLayer,
+  SceneLayerPostProcessing,
   SceneLayerActorSwitcher,
   SceneStreamingActor,
   SceneSubsystem,
   Subsystem,
+  type ComponentChangeKind,
   type GameInstanceHooks,
   type GameSubsystemHooks,
   type LifecycleHooks,
   type SceneSubsystemHooks,
   type TickContext,
+  type TransformChangeSource,
   type WorldLike,
 } from "./objects";
 export {
@@ -101,7 +105,13 @@ export {
   type SubsystemBaseClassId,
   type SubsystemClassHierarchy,
 } from "./subsystems";
-export { DuplicateActorGuidError, World, type WorldOptions, type WorldInputProvider } from "./world";
+export {
+  DuplicateActorGuidError,
+  World,
+  type WorldChangeObserver,
+  type WorldOptions,
+  type WorldInputProvider,
+} from "./world";
 export {
   attachSerializedComponents,
   runtimeTransformFromSerialized,

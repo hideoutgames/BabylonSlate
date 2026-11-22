@@ -150,8 +150,8 @@ test("a Scene Layer keeps its device-pixel size and sharpness at the Low and Hig
   await command("quality low");
   await expect.poll(async () => (await sizes(page)).profile, { timeout: 30_000 }).toBe("low");
   const low = await sizes(page);
-  // Low renders the world below the CSS size (render scale 0.85 at most); the canvas keeps its pixels.
-  expect(low.world![0]).toBeLessThanOrEqual(Math.floor(low.css[0]! * 0.85));
+  // Low renders the world below the CSS size (render scale 0.75); the canvas keeps its pixels.
+  expect(low.world![0]).toBeLessThanOrEqual(Math.floor(low.css[0]! * 0.75));
   expect(low.canvas).toEqual(high.canvas);
   const lowEdges = await settledEdges();
 

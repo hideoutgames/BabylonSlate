@@ -2,6 +2,7 @@ import { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { Scene } from "@babylonjs/core/scene";
 import { isMesh, type SnapshotSceneBinding } from "./snapshot-binding";
+import { batchedSpriteOf } from "./sprite-batch-handle";
 
 function playMeshMetadata(mesh: Mesh): {
   playActorOrigin?: boolean;
@@ -59,7 +60,11 @@ export function rememberComponentPartVisibility(parts: ReadonlyMap<string, Mesh>
     const pending: VisualNode[] = [part];
     for (let node = pending.pop(); node; node = pending.pop()) {
       if (node !== part && componentPartRoots.has(node)) continue;
-      if (node instanceof AbstractMesh) node.isVisible = false;
+      if (node instanceof AbstractMesh) {
+        const batched = batchedSpriteOf(node);
+        if (batched) batched.setVisible(false);
+        node.isVisible = false;
+      }
       pending.push(...node.getChildren());
     }
   }
@@ -102,12 +107,26 @@ export function setPlayVisualVisibility(
 ): void {
   if (!force && appliedPlayVisibility.get(mesh) === visible) return;
   appliedPlayVisibility.set(mesh, visible);
-  mesh.isVisible = isPlayHelperVisual(mesh) || inHiddenComponentPart(mesh) ? false : visible;
+  const rootVisible = isPlayHelperVisual(mesh) || inHiddenComponentPart(mesh) ? false : visible;
+  const rootBatched = batchedSpriteOf(mesh);
+  if (rootBatched) {
+    rootBatched.setVisible(rootVisible);
+    mesh.isVisible = false;
+  } else {
+    mesh.isVisible = rootVisible;
+  }
   const pending = mesh.getChildren();
   for (let node = pending.pop(); node; node = pending.pop()) {
     if (node.name.startsWith("particleEmitter:") || isOtherSlotRoot(binding, mesh, node)) continue;
     if (node instanceof AbstractMesh) {
-      node.isVisible = (isMesh(node) && isPlayHelperVisual(node)) || (visible && inHiddenComponentPart(node)) ? false : visible;
+      const nodeVisible = (isMesh(node) && isPlayHelperVisual(node)) || (visible && inHiddenComponentPart(node)) ? false : visible;
+      const nodeBatched = batchedSpriteOf(node);
+      if (nodeBatched) {
+        nodeBatched.setVisible(nodeVisible);
+        node.isVisible = false;
+      } else {
+        node.isVisible = nodeVisible;
+      }
     }
     pending.push(...node.getChildren());
   }

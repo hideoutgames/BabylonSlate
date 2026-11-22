@@ -28,14 +28,19 @@ import {
   sceneRenderingSettings,
   updateSceneRenderingSettings,
 } from "./render-settings";
-import { normalizeShadowSettings, normalizeWaterBody, qualityPresetPatch, SHADOW_CAPACITY_PROFILES, SHADOW_FIRST_CASCADE_SCALE, SHADOW_HALF_TILE_CASCADES } from "@haptic/core";
+import { normalizeShadowSettings, normalizeWaterBody, qualityPresetPatch, SHADOW_CAPACITY_PROFILES, SHADOW_HALF_TILE_CASCADES } from "@haptic/core";
 import { ENGINE_SHADOW_BUDGET } from "./shadow-admission";
 import { managedRenderReservations } from "./managed-render-resources";
 import { unsupportedManagedShadows } from "./framegraph-managed-shadows";
 import { createColliderVisualMesh } from "./collider-visual";
 import { createWaterMesh } from "./water-mesh";
 import { ShadowAtlasAllocator } from "./shadow-atlas-allocator";
-import { AtlasCascadedShadowGenerator, AtlasShadowGenerator, cascadeTileSizes, isAtlasShadow, PARKED_SHADOW_ATLAS_MS, shadowAtlasBytes, shadowAtlasGeneration, shadowAtlasTexture } from "./shadow-atlas";
+import {
+  AtlasCascadedShadowGenerator, AtlasShadowGenerator, cascadeTileSizes, holdShadowAtlasPages, isAtlasShadow, PARKED_SHADOW_ATLAS_MS, shadowAtlasBytes,
+  shadowAtlasDrawCounts, shadowAtlasGeneration, shadowAtlasRenderTarget, shadowAtlasTexture,
+} from "./shadow-atlas";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import type { Viewport } from "@babylonjs/core/Maths/math.viewport";
 import { captureShadowDiagnostics } from "./shadow-diagnostics";
 import { builtInWaterMaterial } from "./water-template";
 import { PlanarMirrorCamera } from "./planar-mirror";
@@ -94,6 +99,35 @@ function prepareShadowLayers(generator: ShadowGenerator): void {
   scene.updateTransformMatrix(true);
   const map = generator.getShadowMap()!;
   map.render();
+}
+
+/**
+ * Gives a NullEngine WebGL's framebuffer binding as Babylon's ThinEngine keeps it (`_currentFramebuffer`, a bind only
+ * when it changes, a layer attached at every bind), recording the GL calls it makes.
+ */
+function recordFramebuffers(engine: AbstractEngine): string[] {
+  const gl: string[] = [];
+  const binding = engine as unknown as {
+    _currentFramebuffer: { name: string } | null; _cachedViewport: Viewport | null; _bindUnboundFramebuffer(framebuffer: { name: string } | null): void;
+  };
+  binding._currentFramebuffer = null;
+  binding._bindUnboundFramebuffer = (framebuffer) => {
+    if (binding._currentFramebuffer === framebuffer) return;
+    gl.push(`bind ${framebuffer?.name ?? "default"}`);
+    binding._currentFramebuffer = framebuffer;
+  };
+  engine.bindFramebuffer = (target, _face, width, height, full, _lod, layer = 0) => {
+    engine._currentRenderTarget = target;
+    binding._bindUnboundFramebuffer((target as unknown as { _framebuffer?: { name: string } })._framebuffer ?? null);
+    gl.push(`attach ${layer}`);
+    if (binding._cachedViewport && !full) engine.setViewport(binding._cachedViewport, width, height);
+  };
+  engine.unBindFramebuffer = (_target, _mips, before) => {
+    engine._currentRenderTarget = null;
+    before?.();
+    binding._bindUnboundFramebuffer(null);
+  };
+  return gl;
 }
 
 /** The edge of what the light block samples: its pages' edge times their count along an edge (the stand-in's is 1). */
@@ -265,10 +299,65 @@ describe("shared shadow lifecycle", () => {
     expect(render().clears).toEqual(["0 page", "4 tile", "5 tile"]);
   });
 
-  it("gives a level's first cascade its larger tile and its last cascades tiles of half the edge, never the first two and never below the floor", () => {
+  it("binds an atlas page once for consecutive tile passes on it, across the maps of a shadow stage", () => {
+    const { scene, controller } = fixture();
+    const engine = scene.getEngine();
+    updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ maxLocalLights: 2 }) });
+    const lamp = new PointLight("lamp", new Vector3(0, 2, 0), scene);
+    const spot = new SpotLight("spot", new Vector3(0, 4, 0), Vector3.Down(), 1, 2, scene);
+    controller.register(lamp, true);
+    controller.register(spot, true);
+    controller.sync();
+    const faces = lamp.getShadowGenerator() as AtlasShadowGenerator, tile = spot.getShadowGenerator() as AtlasShadowGenerator;
+    // Four faces fill the first page; the last two and the spot light's tile share the second.
+    expect([...faces.tiles.map((entry) => entry.layer), tile.tile.layer]).toEqual([0, 0, 0, 0, 1, 1, 1]);
+    const gl = recordFramebuffers(engine);
+    const atlas = shadowAtlasTexture(scene).renderTarget as unknown as { _framebuffer: unknown };
+    atlas._framebuffer = { name: "atlas" };
+    const ended: string[] = [];
+    faces.getShadowMap()!.onAfterRenderObservable.add((face) => ended.push(`face ${face}`));
+    tile.getShadowMap()!.onAfterRenderObservable.add(() => ended.push("spot"));
+    const passes = () => shadowAtlasDrawCounts(scene).passes;
+    // One map: the second page is attached without binding the framebuffer again, and the render ends unbound.
+    let before = passes();
+    prepareShadowLayers(faces);
+    expect(gl.splice(0)).toEqual(["bind atlas", "attach 0", "attach 1", "bind default"]);
+    expect(passes() - before).toBe(2);
+    expect(engine._currentRenderTarget).toBeNull();
+    // Each pass's end is still told, its clear and its viewport still its tile's.
+    expect(ended.splice(0)).toEqual(["face 0", "face 0", "face 0", "face 0", "face 0", "face 0"]);
+    // A stage: the spot light's tile follows the faces on the second page without a bind; the stage ends unbound.
+    before = passes();
+    const stage = holdShadowAtlasPages(scene);
+    prepareShadowLayers(faces);
+    prepareShadowLayers(tile);
+    expect(gl).toEqual(["bind atlas", "attach 0", "attach 1"]);
+    stage.release();
+    expect(gl.splice(0)).toEqual(["bind atlas", "attach 0", "attach 1", "bind default"]);
+    expect(passes() - before).toBe(2);
+    expect(ended.splice(0)).toHaveLength(7);
+    expect(engine._currentRenderTarget).toBeNull();
+    // Anything bound between the maps ends the hold: the next map binds its page again.
+    const other = { _framebuffer: { name: "other" } };
+    const again = holdShadowAtlasPages(scene);
+    prepareShadowLayers(faces);
+    engine.bindFramebuffer(other as never);
+    engine.unBindFramebuffer(other as never);
+    prepareShadowLayers(tile);
+    again.release();
+    expect(gl.splice(0)).toEqual([
+      "bind atlas", "attach 0", "attach 1", "bind other", "attach 0", "bind default", "bind atlas", "attach 1", "bind default",
+    ]);
+    expect(engine._currentRenderTarget).toBeNull();
+    // A map drawn outside a stage after it ends its render unbound, as Babylon's does.
+    prepareShadowLayers(tile);
+    expect(gl.splice(0)).toEqual(["bind atlas", "attach 1", "bind default"]);
+  });
+
+  it("gives a level's first cascade the map size and its last cascades tiles of half the edge, never the first two and never below the floor", () => {
     expect((["low", "medium", "high", "ultra"] as const).map((level) =>
-      cascadeTileSizes(2048, 4, SHADOW_HALF_TILE_CASCADES[level], SHADOW_FIRST_CASCADE_SCALE[level]))).toEqual([
-      [2048, 2048, 2048, 2048], [2048, 2048, 2048, 1024], [4096, 2048, 2048, 1024], [2048, 2048, 1024, 1024],
+      cascadeTileSizes(2048, 4, SHADOW_HALF_TILE_CASCADES[level], normalizeShadowSettings({ profile: level }).firstCascadeScale))).toEqual([
+      [2048, 2048, 2048, 2048], [2048, 2048, 2048, 1024], [2048, 2048, 2048, 1024], [2048, 2048, 1024, 1024],
     ]);
     // The first two hold the near shadows; a 256 tile is the floor; a stand-in's smaller tiles stay as they are.
     expect([cascadeTileSizes(2048, 1, 2), cascadeTileSizes(2048, 2, 2), cascadeTileSizes(2048, 3, 2), cascadeTileSizes(512, 3, 1),
@@ -601,16 +690,17 @@ describe("shared shadow lifecycle", () => {
   });
   // The sun, admitted first, leaves the atlas room for the planned point light's six faces at the level's local size:
   // Medium's 4096 atlas keeps 10.5 M texels for its three 2048 cascades (9.4 M, the last at half edge), High's 8192
-  // atlas 41.9 M for four 2048 ones (26.2 M, the first at twice and the last at half edge), and Ultra's exactly the
-  // 41.9 M its four 4096 ones take, its last two at half edge.
+  // atlas 41.9 M for four 2048 ones (13.6 M, the last at half edge; 26.2 M with the first at twice the edge), and
+  // Ultra's exactly the 41.9 M its four 4096 ones take, its last two at half edge.
   it.each([
-    ["medium", 2048, [2048, 2048, 1024]],
-    ["high", 2048, [4096, 2048, 2048, 1024]],
-    ["ultra", 4096, [4096, 4096, 2048, 2048]],
-  ] as const)("admits the %s sun beside a local shadow light at the largest cascades the atlas holds after the light's faces (%i)", (level, mapSize, tiles) => {
+    ["medium", {}, 2048, [2048, 2048, 1024]],
+    ["high", {}, 2048, [2048, 2048, 2048, 1024]],
+    ["high", { firstCascadeScale: 2 }, 2048, [4096, 2048, 2048, 1024]],
+    ["ultra", {}, 4096, [4096, 4096, 2048, 2048]],
+  ] as const)("admits the %s sun %j beside a local shadow light at the largest cascades the atlas holds after the light's faces (%i)", (level, custom, mapSize, tiles) => {
     const { scene, controller } = fixture();
     Object.assign(scene.getEngine().getCaps(), { maxTextureSize: 16384 });
-    const shadows = normalizeShadowSettings(qualityPresetPatch(level).shadows);
+    const shadows = normalizeShadowSettings({ ...qualityPresetPatch(level).shadows, ...custom });
     updateSceneRenderingSettings(scene, { shadows });
     const sun = new DirectionalLight("sun", Vector3.Down(), scene);
     controller.register(sun, true);
@@ -625,6 +715,30 @@ describe("shared shadow lifecycle", () => {
     expect(controller.diagnostics().find((entry) => entry.name === "point")).toMatchObject({
       status: "active", mapSize: shadows.localMapSize, reason: null,
     });
+  });
+  it("rebuilds the sun's map with its first cascade at twice the map size and back as First Cascade Detail changes", () => {
+    const { scene, controller } = fixture();
+    Object.assign(scene.getEngine().getCaps(), { maxTextureSize: 16384 });
+    const firstCascade = (firstCascadeScale?: 1 | 2) => updateSceneRenderingSettings(scene, {
+      shadows: normalizeShadowSettings({ ...qualityPresetPatch("high").shadows, ...(firstCascadeScale ? { firstCascadeScale } : {}) }),
+    });
+    const sun = new DirectionalLight("sun", Vector3.Down(), scene);
+    controller.register(sun, true);
+    firstCascade();
+    controller.sync();
+    // High's own first cascade has the map size's edge.
+    const high = controller.generator(sun);
+    expect(tileSizes(high)).toEqual([2048, 2048, 2048, 1024]);
+    firstCascade(2);
+    controller.sync();
+    const twice = controller.generator(sun);
+    expect(twice).not.toBe(high);
+    expect(tileSizes(twice)).toEqual([4096, 2048, 2048, 1024]);
+    expect(atlasTextureEdge(scene)).toBe(8192);
+    firstCascade(1);
+    controller.sync();
+    expect(controller.generator(sun)).not.toBe(twice);
+    expect(tileSizes(controller.generator(sun))).toEqual([2048, 2048, 2048, 1024]);
   });
   describe("an 8192 Directional Map Size", () => {
     const MIB = 1024 ** 2;
@@ -2140,6 +2254,35 @@ describe("view sun shadow maps", () => {
     controller.sync();
     expect(shadowAtlasGeneration(scene)).toBe(2);
     expect(controller.generator(sun)).not.toBeNull();
+  });
+  it("draws every map at half its edge with `shadowdebug fulltiles off` and back, in the same High atlas, never making another", () => {
+    const { scene, controller } = fixture();
+    Object.assign(scene.getEngine().getCaps(), { maxTextureSize: 8192 });
+    updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ profile: "high" }) });
+    const sun = new DirectionalLight("sun", new Vector3(0.2, -1, 0.3), scene);
+    const spot = new SpotLight("spot", new Vector3(0, 4, -4), new Vector3(0, -1, 0.5), 1, 1, scene);
+    controller.register(sun, true);
+    controller.register(spot, true);
+    controller.sync();
+    const atlas = shadowAtlasRenderTarget(scene);
+    const full = { sun: [2048, 2048, 2048, 1024], spot: [2048] };
+    const sizes = () => ({ sun: tileSizes(controller.generator(sun)), spot: tileSizes(controller.generator(spot)) });
+    expect([atlasTextureEdge(scene), shadowAtlasGeneration(scene), sizes()]).toEqual([8192, 1, full]);
+    // As a Profile step runs it: the switch, the frames it is measured over, then the switch back and the frames after.
+    expect(controller.setDebug("fulltiles", false)).toBe(true);
+    for (let frame = 0; frame < 3; frame++) {
+      endFrame(scene);
+      controller.sync();
+      expect(shadowAtlasRenderTarget(scene)).toBe(atlas);
+      expect([shadowAtlasGeneration(scene), sizes()]).toEqual([1, { sun: [1024, 1024, 1024, 512], spot: [1024] }]);
+    }
+    expect(controller.setDebug("fulltiles", true)).toBe(true);
+    for (let frame = 0; frame < 3; frame++) {
+      endFrame(scene);
+      controller.sync();
+      expect(shadowAtlasRenderTarget(scene)).toBe(atlas);
+      expect([atlasTextureEdge(scene), shadowAtlasGeneration(scene), sizes()]).toEqual([8192, 1, full]);
+    }
   });
   it("mirrors each admitted sun map for an attached view, fitted to that view's camera, and shares local maps", async () => {
     const { scene, controller } = fixture();

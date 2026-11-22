@@ -1,30 +1,46 @@
-import "@babylonjs/core/Physics/physicsEngineComponent";
-import { Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
-import type { Scene } from "@babylonjs/core/scene";
-import type { HavokPlugin } from "@babylonjs/core/Physics/v2/Plugins/havokPlugin";
-import type { PhysicsBody } from "@babylonjs/core/Physics/v2/physicsBody";
-import { PhysicsShapeSphere, type PhysicsShape } from "@babylonjs/core/Physics/v2/physicsShape";
-import type { CastingResult } from "@babylonjs/core/Physics/castingResult";
-import { ShapeCastResult } from "@babylonjs/core/Physics/shapeCastResult";
-import { ProximityCastResult } from "@babylonjs/core/Physics/proximityCastResult";
+import type {
+  ContactPoint,
+  HavokPhysicsWithBindings,
+  HP_CollectorId,
+  HP_ShapeId,
+  HP_WorldId,
+} from "@babylonjs/havok";
 import type { SphereSweepQuery } from "./backend";
-import type { ColliderDesc, ColliderShape, HitResult, LineTraceOptions, OverlapResult, PhysicsTransform, Vec3 } from "./types";
+import type {
+  ColliderDesc,
+  ColliderShape,
+  HitResult,
+  LineTraceOptions,
+  OverlapResult,
+  PhysicsTransform,
+  Vec3,
+} from "./types";
 import { linearSweepPoses, validateColliderShape } from "./collider-validation";
 import { ownIgnoredActors, queryHitsTriggers } from "./query-filter";
 import {
   colliderShapes,
   createHavokShape,
   isShape3D,
-  toQuaternion,
-  toVector3,
+  releaseHavokShape,
+  setShapeMembershipMask,
   type BodyRecord,
   type ColliderRecord,
 } from "./havok-records";
+import {
+  checked,
+  checkedValue,
+  IDENTITY_HAVOK_QUAT,
+  NULL_BODY_ID,
+  toHavokQuat,
+  toHavokVec3,
+  ZERO_HAVOK_VEC3,
+} from "./havok-wasm-memory";
 
 /** Native shapes `shapeSweep` keeps for reuse; a script sweeping ever-changing sizes churns within this bound. */
 const QUERY_SHAPE_LIMIT = 16;
 /** Ignored shapes a query masks up front; past this, each ignored owner is masked only once the query reaches it. */
 const EAGER_IGNORED_SHAPES = 16;
+const ALL_FILTER: [number, number] = [0xffffffff, 0xffffffff];
 
 function miss(): HitResult {
   return {
@@ -37,137 +53,200 @@ function miss(): HitResult {
   };
 }
 
-function shapeOwner(record: BodyRecord, shape: PhysicsShape | undefined): string {
-  return shapeCollider(record, shape)?.desc.actorId ?? record.desc.actorId;
+type NativeHit = {
+  hasHit: boolean;
+  bodyHpId: bigint;
+  shapeHpId: bigint;
+  px: number;
+  py: number;
+  pz: number;
+  nx: number;
+  ny: number;
+  nz: number;
+  fraction: number;
+  distance: number;
+};
+
+function clearNativeHit(hit: NativeHit): NativeHit {
+  hit.hasHit = false;
+  hit.bodyHpId = 0n;
+  hit.shapeHpId = 0n;
+  hit.px = 0; hit.py = 0; hit.pz = 0;
+  hit.nx = 0; hit.ny = 0; hit.nz = 0;
+  hit.fraction = 0;
+  hit.distance = 0;
+  return hit;
+}
+
+function fillContactPoint(hit: NativeHit, cp: ContactPoint, fraction: number, distance: number): NativeHit {
+  hit.hasHit = true;
+  hit.bodyHpId = cp[0][0];
+  hit.shapeHpId = cp[1][0];
+  hit.px = cp[3][0];
+  hit.py = cp[3][1];
+  hit.pz = cp[3][2];
+  hit.nx = cp[4][0];
+  hit.ny = cp[4][1];
+  hit.nz = cp[4][2];
+  hit.fraction = fraction;
+  hit.distance = distance;
+  return hit;
+}
+
+function shapeOwner(record: BodyRecord, shapeHpId: bigint): string {
+  return shapeCollider(record, shapeHpId)?.desc.actorId ?? record.desc.actorId;
 }
 
 /** The collider a query hit named on this body; undefined when it names none and the body has several. */
-function shapeCollider(record: BodyRecord, shape: PhysicsShape | undefined): ColliderRecord | undefined {
-  if (shape)
-    for (const collider of record.colliders.values())
-      if (collider.shape === shape || collider.proxy === shape) return collider;
+function shapeCollider(record: BodyRecord, shapeHpId: bigint): ColliderRecord | undefined {
+  if (shapeHpId !== 0n) {
+    for (const collider of record.colliders.values()) {
+      if (collider.shape[0] === shapeHpId || collider.proxy?.[0] === shapeHpId) return collider;
+    }
+  }
   // Havok reports no child shape for a body with a single collider.
   return record.colliders.size === 1 ? record.colliders.values().next().value : undefined;
 }
 
 /** What the queries read from the backend that owns the world. */
 export interface HavokQueryHost {
-  readonly scene: Scene;
-  readonly plugin: HavokPlugin;
+  readonly havok: HavokPhysicsWithBindings;
+  readonly worldId: HP_WorldId;
   readonly bodies: ReadonlyMap<string, BodyRecord>;
-  readonly bodyIdByPhysicsBody: ReadonlyMap<PhysicsBody, string>;
+  readonly bodyIdByHpId: ReadonlyMap<number, string>;
   readonly collidersByOwner: ReadonlyMap<string, ReadonlySet<ColliderRecord>>;
   readonly triggerColliders: ReadonlySet<ColliderRecord>;
   isDisposed(): boolean;
-  flushMutations(): void;
+  assertUsable(): void;
 }
 
 /**
- * The Havok backend's script queries (`lineTrace`, `sphereOverlap`, `shapeSweep`, sphere sweeps) and their per-query
- * filtering, which masks the shapes a query excludes and restores them before returning.
+ * The Havok backend's direct script queries (`lineTrace`, `sphereOverlap`, `shapeSweep`, sphere sweeps) over
+ * `HP_QueryCollector_*` and `HP_World_*WithCollector`, with per-query filtering that masks excluded shapes and
+ * restores them before returning.
  */
 export class HavokQueries {
   private readonly host: HavokQueryHost;
+  private readonly collector: HP_CollectorId;
   /** Shapes a running query filter masked and their memberships; empty between queries. */
-  private readonly queryMemberships = new Map<PhysicsShape, number>();
-  /**
-   * Whether the running query peels its ignored actors as it reaches them (`peelHit`): its own `ignoreActorIds` as a
-   * set (null when none) and its `ignoreActorSet`. Off between queries and when its ignored shapes were masked up front.
-   */
+  private readonly queryMemberships = new Map<HP_ShapeId, number>();
   private peelingIgnores = false;
   private queryIgnoredOwn: ReadonlySet<string> | null = null;
   private queryIgnoredSet: ReadonlySet<string> | null = null;
   private readonly sphereSweeps = new Set<SphereSweepQuery>();
-  /** Native shapes for primitive `shapeSweep` casts by kind and dimensions, least recently used first (`reusableQueryShape`). */
-  private readonly queryShapes = new Map<string, PhysicsShape>();
-  /** Result holders the synchronous queries share; the plugin resets them at the start of every query. */
-  private readonly proximityInput = new ProximityCastResult();
-  private readonly proximityHit = new ProximityCastResult();
-  private readonly castInput = new ShapeCastResult();
-  private readonly castHit = new ShapeCastResult();
-  private readonly tmpFrom = new Vector3();
-  private readonly tmpTo = new Vector3();
+  /** Native shapes for primitive `shapeSweep` casts by kind and dimensions, least recently used first. */
+  private readonly queryShapes = new Map<string, HP_ShapeId>();
+  private readonly hitScratch: NativeHit = {
+    hasHit: false,
+    bodyHpId: 0n,
+    shapeHpId: 0n,
+    px: 0, py: 0, pz: 0,
+    nx: 0, ny: 0, nz: 0,
+    fraction: 0,
+    distance: 0,
+  };
 
   constructor(host: HavokQueryHost) {
     this.host = host;
+    this.collector = checkedValue(
+      host.havok,
+      host.havok.HP_QueryCollector_Create(1),
+      "query collector creation",
+    );
   }
 
-  /** Releases the sphere sweeps and cached query shapes. */
+  /** Releases the collector, sphere sweeps, and cached query shapes. */
   dispose(): void {
     for (const query of this.sphereSweeps) query.dispose();
-    for (const shape of this.queryShapes.values()) shape.dispose();
+    for (const shape of this.queryShapes.values()) releaseHavokShape(this.host.havok, shape);
     this.queryShapes.clear();
+    if (this.collector[0] !== 0n) {
+      this.host.havok.HP_QueryCollector_Release(this.collector);
+    }
   }
 
   lineTrace(start: Vec3, end: Vec3, options?: LineTraceOptions): HitResult {
-    this.host.flushMutations();
-    const engine = this.host.scene.getPhysicsEngine();
-    if (!engine) return miss();
-    this.tmpFrom.copyFrom(toVector3(start));
-    this.tmpTo.copyFrom(toVector3(end));
+    this.host.assertUsable();
+    if (this.host.isDisposed()) return miss();
+    const havok = this.host.havok;
+    const worldId = this.host.worldId;
+    const from = toHavokVec3(start);
+    const to = toHavokVec3(end);
     return this.withQueryFilter(options, () => {
-      // Triggers are hit unless excluded, as on every backend (Babylon's default skips them).
       const shouldHitTriggers = queryHitsTriggers(options);
-      const hit = this.untilAdmitted(options, () => engine.raycast(this.tmpFrom, this.tmpTo, { shouldHitTriggers }));
+      const hit = this.untilAdmitted(options, () => {
+        clearNativeHit(this.hitScratch);
+        checked(
+          havok,
+          havok.HP_World_CastRayWithCollector(worldId, this.collector, [
+            from,
+            to,
+            ALL_FILTER,
+            shouldHitTriggers,
+            NULL_BODY_ID,
+          ]),
+          "raycast",
+        );
+        const numHits = checkedValue(havok, havok.HP_QueryCollector_GetNumHits(this.collector), "raycast hit count");
+        if (numHits <= 0) return this.hitScratch;
+        const [fraction, cp] = checkedValue(
+          havok,
+          havok.HP_QueryCollector_GetCastRayResult(this.collector, 0),
+          "raycast result",
+        );
+        const dist = Math.hypot(cp[3][0] - start.x, cp[3][1] - start.y, cp[3][2] - start.z);
+        return fillContactPoint(this.hitScratch, cp, fraction, dist);
+      });
       if (!hit?.hasHit) return miss();
-      return this.hitFromCast(hit, hit.hitDistance);
+      return this.hitFromNative(hit, hit.distance);
     });
   }
 
   /**
-   * Runs `find`, one native query, and returns its hit. Havok cannot be asked to skip actors or to find trigger shapes
-   * alone: all 32 membership bits belong to the collision layers, so none can tag them, and the hit collector keeps
-   * one hit, so a rejected hit cannot be dropped afterwards. A query therefore masks each ignored actor or, when
-   * trigger-only, each solid shape it reaches and repeats, until it finds an admitted shape or nothing. Its cost
-   * follows the rejected shapes ahead of the first admitted one, not the shapes in the world or the length of the
-   * ignore list. `withQueryFilter` restores the masks. Null: no admitted shape could be proven hit.
+   * Runs `find`, one native query, and returns its hit, peeling ignored actors or non-trigger shapes on demand.
    */
-  private untilAdmitted<T extends CastingResult>(options: LineTraceOptions | undefined, find: () => T): T | null {
+  private untilAdmitted(options: LineTraceOptions | undefined, find: () => NativeHit): NativeHit | null {
     for (;;) {
       const result = find();
       if ((!options?.onlyTriggers && !this.peelingIgnores) || !result.hasHit) return result;
-      const bodyId = result.body ? this.host.bodyIdByPhysicsBody.get(result.body) : undefined;
-      const peeled = this.peelHit(options, bodyId ? this.host.bodies.get(bodyId) : undefined, result.shape);
+      const bodyId = this.host.bodyIdByHpId.get(Number(result.bodyHpId));
+      const peeled = this.peelHit(options, bodyId ? this.host.bodies.get(bodyId) : undefined, result.shapeHpId);
       if (peeled === "keep") return result;
       if (peeled === "stop") return null;
     }
   }
 
-  /**
-   * What to do with the shape a query just hit: keep it, or mask its ignored owner's shapes or, for a trigger-only
-   * query, its solid collider for a repeat ("peeled"), or give up when it cannot be classified or masking again would
-   * not change the next result.
-   */
-  private peelHit(options: LineTraceOptions | undefined, record: BodyRecord | undefined, shape: PhysicsShape | undefined): "keep" | "peeled" | "stop" {
+  private peelHit(
+    options: LineTraceOptions | undefined,
+    record: BodyRecord | undefined,
+    shapeHpId: bigint,
+  ): "keep" | "peeled" | "stop" {
     const ignoring = this.peelingIgnores;
     if (!options?.onlyTriggers && !ignoring) return "keep";
-    // A body the backend does not index was never masked, so only a trigger-only query rejects it.
     if (!record) return options?.onlyTriggers ? "stop" : "keep";
-    const collider = shapeCollider(record, shape);
-    // Hits name each shape's owner, so ignoring an actor excludes only its own shapes: a host's shapes, or the shapes
-    // hosted for a child.
+    const collider = shapeCollider(record, shapeHpId);
     const owner = collider?.desc.actorId ?? record.desc.actorId;
     if (ignoring && (this.queryIgnoredOwn?.has(owner) === true || this.queryIgnoredSet?.has(owner) === true)) {
       const before = this.queryMemberships.size;
-      for (const owned of this.host.collidersByOwner.get(owner) ?? []) for (const masked of colliderShapes(owned)) this.maskQueryShape(masked);
+      for (const owned of this.host.collidersByOwner.get(owner) ?? []) {
+        for (const masked of colliderShapes(owned)) this.maskQueryShape(masked);
+      }
       return this.queryMemberships.size > before ? "peeled" : "stop";
     }
     if (!options?.onlyTriggers) return "keep";
     if (!collider) return "stop";
     if (collider.desc.isTrigger) return "keep";
-    if (this.queryMemberships.has(shape ?? collider.shape)) return "stop";
+    const alreadyMasked =
+      (shapeHpId !== 0n && [...this.queryMemberships.keys()].some((s) => s[0] === shapeHpId)) ||
+      this.queryMemberships.has(collider.shape);
+    if (alreadyMasked) return "stop";
     for (const owned of colliderShapes(collider)) this.maskQueryShape(owned);
     return "peeled";
   }
 
   private withQueryFilter<T>(options: LineTraceOptions | undefined, query: () => T): T {
     const memberships = this.queryMemberships;
-    // Havok exposes one ignoreBody, but the graph accepts multiple actors. A few ignored shapes (a sweep ignoring its
-    // own actor) are masked up front, which costs less than the repeat a peel needs; a long list (a channel's every
-    // static or dynamic actor) is masked only as the query reaches each owner (`peelHit`). This synchronous query
-    // restores every mask afterwards.
     try {
-      // The caller's own ids come first, then the kept set (a channel's list), which is never copied or re-hashed.
       const own = options?.ignoreActorIds, kept = options?.ignoreActorSet;
       if ((own?.length || kept?.size) && this.ignoredShapeCount(own, kept) > EAGER_IGNORED_SHAPES) {
         this.peelingIgnores = true;
@@ -187,7 +266,7 @@ export class HavokQueries {
       this.queryIgnoredSet = null;
       try {
         for (const [shape, membership] of memberships) {
-          shape.filterMembershipMask = membership;
+          setShapeMembershipMask(this.host.havok, shape, membership);
         }
       } finally {
         memberships.clear();
@@ -195,7 +274,6 @@ export class HavokQueries {
     }
   }
 
-  /** The shapes the ignored actors own (`own`, then `kept`), counted only until it passes `EAGER_IGNORED_SHAPES`. */
   private ignoredShapeCount(own: readonly string[] | undefined, kept: ReadonlySet<string> | undefined): number {
     let count = 0;
     if (own) for (const actorId of own) {
@@ -209,7 +287,6 @@ export class HavokQueries {
     return count;
   }
 
-  /** `count` plus the shapes `actorId` owns, stopping once past `EAGER_IGNORED_SHAPES`. */
   private countOwnerShapes(actorId: string, count: number): number {
     for (const collider of this.host.collidersByOwner.get(actorId) ?? []) {
       count += collider.proxy ? 2 : 1;
@@ -219,46 +296,55 @@ export class HavokQueries {
   }
 
   private maskOwnerShapes(actorId: string): void {
-    for (const collider of this.host.collidersByOwner.get(actorId) ?? []) for (const shape of colliderShapes(collider)) this.maskQueryShape(shape);
+    for (const collider of this.host.collidersByOwner.get(actorId) ?? []) {
+      for (const shape of colliderShapes(collider)) this.maskQueryShape(shape);
+    }
   }
 
-  private maskQueryShape(shape: PhysicsShape): void {
+  private maskQueryShape(shape: HP_ShapeId): void {
     if (this.queryMemberships.has(shape)) return;
-    this.queryMemberships.set(shape, shape.filterMembershipMask);
-    shape.filterMembershipMask = 0;
+    const prev = setShapeMembershipMask(this.host.havok, shape, 0);
+    this.queryMemberships.set(shape, prev);
   }
 
-  /**
-   * Tests the collider shapes, not body bounds: a point proximity query within
-   * `radius` finds the closest shape, whose owner's shapes on that body are then
-   * excluded until no shape is left in range. Like traces, it names the shape's
-   * owner, so a body lists itself and each actor it hosts once; ignored actors
-   * are masked once in range and excluded triggers shape by shape. Results keep body order.
-   */
   sphereOverlap(center: Vec3, radius: number, options?: LineTraceOptions): OverlapResult {
-    this.host.flushMutations();
+    this.host.assertUsable();
     const found = new Map<BodyRecord, Set<string>>();
-    if ([center.x, center.y, center.z, radius].every(Number.isFinite) && radius >= 0) {
-      const query = {
-        position: toVector3(center),
-        maxDistance: radius,
-        collisionFilter: {},
-        shouldHitTriggers: queryHitsTriggers(options),
-      };
-      const result = this.proximityHit;
+    if (!this.host.isDisposed() && [center.x, center.y, center.z, radius].every(Number.isFinite) && radius >= 0) {
+      const havok = this.host.havok;
+      const worldId = this.host.worldId;
+      const centerVec = toHavokVec3(center);
+      const shouldHitTriggers = queryHitsTriggers(options);
       this.withQueryFilter(options, () => {
-        const memberships = new Map<PhysicsShape, number>();
+        const memberships = new Map<HP_ShapeId, number>();
         try {
           for (;;) {
-            this.host.plugin.pointProximity(query, result);
-            const bodyId = result.hasHit && result.body ? this.host.bodyIdByPhysicsBody.get(result.body) : undefined;
+            checked(
+              havok,
+              havok.HP_World_PointProximityWithCollector(worldId, this.collector, [
+                centerVec,
+                radius,
+                ALL_FILTER,
+                shouldHitTriggers,
+                NULL_BODY_ID,
+              ]),
+              "point proximity",
+            );
+            const numHits = checkedValue(havok, havok.HP_QueryCollector_GetNumHits(this.collector), "proximity hit count");
+            if (numHits <= 0) break;
+            const [, cp] = checkedValue(
+              havok,
+              havok.HP_QueryCollector_GetPointProximityResult(this.collector, 0),
+              "point proximity result",
+            );
+            const bodyId = this.host.bodyIdByHpId.get(Number(cp[0][0]));
             const record = bodyId ? this.host.bodies.get(bodyId) : undefined;
             if (!record) break;
-            // Ignored actors, and solid shapes for a trigger-only query, are masked as reached, as in `untilAdmitted`.
-            const peeled = this.peelHit(options, record, result.shape);
+            const hitShapeId = cp[1][0];
+            const peeled = this.peelHit(options, record, hitShapeId);
             if (peeled === "stop") break;
             if (peeled === "peeled") continue;
-            const owner = shapeOwner(record, result.shape);
+            const owner = shapeOwner(record, hitShapeId);
             const owners = found.get(record) ?? new Set<string>();
             if (owners.has(owner)) break;
             owners.add(owner);
@@ -267,19 +353,19 @@ export class HavokQueries {
               if ((collider.desc.actorId ?? record.desc.actorId) !== owner) continue;
               for (const shape of colliderShapes(collider)) {
                 if (memberships.has(shape)) continue;
-                memberships.set(shape, shape.filterMembershipMask);
-                shape.filterMembershipMask = 0;
+                memberships.set(shape, setShapeMembershipMask(havok, shape, 0));
               }
             }
           }
         } finally {
-          for (const [shape, membership] of memberships) shape.filterMembershipMask = membership;
+          for (const [shape, membership] of memberships) {
+            setShapeMembershipMask(havok, shape, membership);
+          }
         }
       });
     }
     const actorIds: string[] = [];
     const bodyIds: string[] = [];
-    // Only the bodies the query found, in body order.
     const records = [...found.keys()].sort((a, b) => a.order - b.order);
     for (const record of records) {
       const owners = found.get(record)!;
@@ -299,60 +385,90 @@ export class HavokQueries {
     end: PhysicsTransform,
     options?: LineTraceOptions,
   ): HitResult {
-    this.host.flushMutations();
+    this.host.assertUsable();
+    if (this.host.isDisposed()) return miss();
     const sweep = linearSweepPoses(start, end);
     if (!sweep || !isShape3D(shape)) return miss();
+    const havok = this.host.havok;
+    const worldId = this.host.worldId;
     const reused = this.reusableQueryShape(shape);
-    const queryShape = reused ?? createHavokShape(shape, this.host.scene);
+    const queryShape = reused ?? createHavokShape(havok, shape);
     try {
-      const rotation = toQuaternion(sweep.start.rotation);
-      const from = toVector3(sweep.start.position);
-      const to = toVector3(sweep.end);
+      const rotation = toHavokQuat(sweep.start.rotation);
+      const from = toHavokVec3(sweep.start.position);
+      const to = toHavokVec3(sweep.end);
+      const castLength = Math.hypot(
+        sweep.end.x - sweep.start.position.x,
+        sweep.end.y - sweep.start.position.y,
+        sweep.end.z - sweep.start.position.z,
+      );
       const shouldHitTriggers = queryHitsTriggers(options);
       return this.withQueryFilter(options, () => {
         let distance = 0;
         let mayPenetrate = true;
         const found = this.untilAdmitted(options, () => {
+          clearNativeHit(this.hitScratch);
           // A cast alone misses shapes the swept shape already penetrates at its start.
           if (mayPenetrate) {
-            const proximityInput = this.proximityInput;
-            const proximity = this.proximityHit;
-            this.host.plugin.shapeProximity(
-              { shape: queryShape, position: from, rotation, maxDistance: 0, shouldHitTriggers },
-              proximityInput,
-              proximity,
+            checked(
+              havok,
+              havok.HP_World_ShapeProximityWithCollector(worldId, this.collector, [
+                queryShape,
+                from,
+                rotation,
+                0,
+                shouldHitTriggers,
+                NULL_BODY_ID,
+              ]),
+              "shape proximity",
             );
-            if (proximity.hasHit && proximity.hitDistance < -1e-6) {
-              distance = 0;
-              return proximity;
+            const proxHits = checkedValue(havok, havok.HP_QueryCollector_GetNumHits(this.collector), "shape proximity count");
+            if (proxHits > 0) {
+              const [proxDist, , hitWorld] = checkedValue(
+                havok,
+                havok.HP_QueryCollector_GetShapeProximityResult(this.collector, 0),
+                "shape proximity result",
+              );
+              if (proxDist < -1e-6) {
+                distance = 0;
+                return fillContactPoint(this.hitScratch, hitWorld, 0, proxDist);
+              }
             }
-            // Masking shapes for a repeat cannot make one penetrate that did not.
             mayPenetrate = false;
           }
-          const input = this.castInput;
-          const hit = this.castHit;
-          this.host.plugin.shapeCast(
-            { shape: queryShape, rotation, startPosition: from, endPosition: to, shouldHitTriggers },
-            input,
-            hit,
+          checked(
+            havok,
+            havok.HP_World_ShapeCastWithCollector(worldId, this.collector, [
+              queryShape,
+              rotation,
+              from,
+              to,
+              shouldHitTriggers,
+              NULL_BODY_ID,
+            ]),
+            "shape cast",
           );
-          distance = Vector3.Distance(from, to) * hit.hitFraction;
-          return hit;
+          const castHits = checkedValue(havok, havok.HP_QueryCollector_GetNumHits(this.collector), "shape cast count");
+          if (castHits <= 0) {
+            distance = 0;
+            return this.hitScratch;
+          }
+          const [fraction, , hitWorld] = checkedValue(
+            havok,
+            havok.HP_QueryCollector_GetShapeCastResult(this.collector, 0),
+            "shape cast result",
+          );
+          distance = castLength * fraction;
+          return fillContactPoint(this.hitScratch, hitWorld, fraction, distance);
         });
-        return found?.hasHit ? this.hitFromCast(found, distance) : miss();
+        return found?.hasHit ? this.hitFromNative(found, distance) : miss();
       });
     } finally {
-      if (!reused) queryShape.dispose();
+      if (!reused) releaseHavokShape(havok, queryShape);
     }
   }
 
-  /**
-   * The cached native shape for a primitive query shape of these dimensions, created on first use; null for hulls
-   * and meshes, whose callers own a fresh shape. A cast only reads the native shape, so repeated sweeps share it.
-   * These shapes belong to no collider, so the query filter's masking never reaches them. The set is bounded:
-   * the least recently used shape is released when a new size arrives, and `dispose` releases the rest.
-   */
-  private reusableQueryShape(shape: ColliderShape): PhysicsShape | null {
+  private reusableQueryShape(shape: ColliderShape): HP_ShapeId | null {
     let key: string;
     switch (shape.kind) {
       case "box":
@@ -370,44 +486,42 @@ export class HavokQueries {
       default:
         return null;
     }
-    // After disposal nothing is kept: the caller builds and releases its own, as for any other shape.
     if (this.host.isDisposed()) return null;
     validateColliderShape(shape);
     const cached = this.queryShapes.get(key);
     if (cached) {
-      // Reinserted last: iteration order is recency.
       this.queryShapes.delete(key);
       this.queryShapes.set(key, cached);
       return cached;
     }
-    const created = createHavokShape(shape, this.host.scene);
+    const created = createHavokShape(this.host.havok, shape);
     if (this.queryShapes.size >= QUERY_SHAPE_LIMIT) {
       const [oldest, evicted] = this.queryShapes.entries().next().value!;
       this.queryShapes.delete(oldest);
-      evicted.dispose();
+      releaseHavokShape(this.host.havok, evicted);
     }
     this.queryShapes.set(key, created);
     return created;
   }
 
   createSphereSweep(radius: number): SphereSweepQuery {
-    this.host.flushMutations();
+    this.host.assertUsable();
     if (this.host.isDisposed()) throw new Error("Cannot create a sphere sweep on a disposed physics backend");
     if (!Number.isFinite(radius) || radius <= 0) throw new Error("Sphere sweep radius must be finite and positive");
-    const shape = new PhysicsShapeSphere(Vector3.Zero(), radius, this.host.scene);
-    const start = new Vector3();
-    const end = new Vector3();
-    const rotation = Quaternion.Identity();
-    const cast = { shape, rotation, startPosition: start, endPosition: end, shouldHitTriggers: false };
-    const proximity = { shape, rotation, position: start, maxDistance: 0, shouldHitTriggers: false };
-    const input = new ShapeCastResult();
-    const hit = new ShapeCastResult();
-    const proximityInput = new ProximityCastResult();
-    const proximityHit = new ProximityCastResult();
+    const havok = this.host.havok;
+    const worldId = this.host.worldId;
+    const shape = checkedValue(
+      havok,
+      havok.HP_Shape_CreateSphere(ZERO_HAVOK_VEC3, radius),
+      "sphere sweep shape creation",
+    );
     const result = miss();
     const location = { x: 0, y: 0, z: 0 };
     const normal = { x: 0, y: 0, z: 0 };
+    const startVec: [number, number, number] = [0, 0, 0];
+    const endVec: [number, number, number] = [0, 0, 0];
     let disposed = false;
+
     const clear = (): HitResult => {
       result.hit = false;
       result.location = null;
@@ -417,38 +531,80 @@ export class HavokQueries {
       result.bodyId = null;
       return result;
     };
-    const copyHit = (native: ShapeCastResult | ProximityCastResult, distance: number): HitResult => {
-      location.x = native.hitPoint.x; location.y = native.hitPoint.y; location.z = native.hitPoint.z;
-      normal.x = native.hitNormal.x; normal.y = native.hitNormal.y; normal.z = native.hitNormal.z;
+
+    const copyHit = (cp: ContactPoint, distance: number): HitResult => {
+      location.x = cp[3][0]; location.y = cp[3][1]; location.z = cp[3][2];
+      normal.x = cp[4][0]; normal.y = cp[4][1]; normal.z = cp[4][2];
       result.hit = true;
       result.location = location;
       result.normal = normal;
       result.distance = distance;
-      const owner = this.castHitOwner(native);
+      const owner = this.castHitOwner(cp[0][0], cp[1][0]);
       result.bodyId = owner.bodyId;
       result.actorId = owner.actorId;
       return result;
     };
+
     const query: SphereSweepQuery = {
       sweep: (sx, sy, sz, ex, ey, ez) => {
         if (disposed || this.host.isDisposed()) return clear();
-        this.host.flushMutations();
-        if (disposed || this.host.isDisposed() || !Number.isFinite(sx) || !Number.isFinite(sy) || !Number.isFinite(sz) ||
-          !Number.isFinite(ex) || !Number.isFinite(ey) || !Number.isFinite(ez)) return clear();
-        start.set(sx, sy, sz);
-        end.set(ex, ey, ez);
-        // Casts alone can miss shapes already penetrating at the start, including
-        // a stationary particle overlapped by a moving collider.
-        this.host.plugin.shapeProximity(proximity, proximityInput, proximityHit);
-        if (proximityHit.hasHit && proximityHit.hitDistance < -1e-6) return copyHit(proximityHit, 0);
-        this.host.plugin.shapeCast(cast, input, hit);
-        if (!hit.hasHit) return clear();
-        return copyHit(hit, Math.hypot(ex - sx, ey - sy, ez - sz) * hit.hitFraction);
+        this.host.assertUsable();
+        if (
+          disposed ||
+          this.host.isDisposed() ||
+          !Number.isFinite(sx) || !Number.isFinite(sy) || !Number.isFinite(sz) ||
+          !Number.isFinite(ex) || !Number.isFinite(ey) || !Number.isFinite(ez)
+        ) {
+          return clear();
+        }
+        startVec[0] = sx; startVec[1] = sy; startVec[2] = sz;
+        endVec[0] = ex; endVec[1] = ey; endVec[2] = ez;
+        checked(
+          havok,
+          havok.HP_World_ShapeProximityWithCollector(worldId, this.collector, [
+            shape,
+            startVec,
+            IDENTITY_HAVOK_QUAT,
+            0,
+            false,
+            NULL_BODY_ID,
+          ]),
+          "sphere sweep proximity",
+        );
+        if (checkedValue(havok, havok.HP_QueryCollector_GetNumHits(this.collector), "sphere sweep proximity count") > 0) {
+          const [proxDist, , hitWorld] = checkedValue(
+            havok,
+            havok.HP_QueryCollector_GetShapeProximityResult(this.collector, 0),
+            "sphere sweep proximity result",
+          );
+          if (proxDist < -1e-6) return copyHit(hitWorld, 0);
+        }
+        checked(
+          havok,
+          havok.HP_World_ShapeCastWithCollector(worldId, this.collector, [
+            shape,
+            IDENTITY_HAVOK_QUAT,
+            startVec,
+            endVec,
+            false,
+            NULL_BODY_ID,
+          ]),
+          "sphere sweep cast",
+        );
+        if (checkedValue(havok, havok.HP_QueryCollector_GetNumHits(this.collector), "sphere sweep cast count") <= 0) {
+          return clear();
+        }
+        const [fraction, , hitWorld] = checkedValue(
+          havok,
+          havok.HP_QueryCollector_GetShapeCastResult(this.collector, 0),
+          "sphere sweep cast result",
+        );
+        return copyHit(hitWorld, Math.hypot(ex - sx, ey - sy, ez - sz) * fraction);
       },
       dispose: () => {
         if (disposed) return;
         disposed = true;
-        shape.dispose();
+        releaseHavokShape(havok, shape);
         this.sphereSweeps.delete(query);
         clear();
       },
@@ -457,27 +613,23 @@ export class HavokQueries {
     return query;
   }
 
-  private hitFromCast(native: CastingResult, distance: number): HitResult {
-    if (!native.hasHit) return miss();
-    const { bodyId, actorId } = this.castHitOwner(native);
+  private hitFromNative(hit: NativeHit, distance: number): HitResult {
+    if (!hit.hasHit) return miss();
+    const { bodyId, actorId } = this.castHitOwner(hit.bodyHpId, hit.shapeHpId);
     return {
       hit: true,
-      location: { x: native.hitPoint.x, y: native.hitPoint.y, z: native.hitPoint.z },
-      normal: { x: native.hitNormal.x, y: native.hitNormal.y, z: native.hitNormal.z },
+      location: { x: hit.px, y: hit.py, z: hit.pz },
+      normal: { x: hit.nx, y: hit.ny, z: hit.nz },
       distance,
       actorId,
       bodyId,
     };
   }
 
-  /**
-   * Query hits name the leaf shape inside a compound, so a shape hosted for
-   * another actor names that actor, as on software and Rapier.
-   */
-  private castHitOwner(native: CastingResult): { bodyId: string | null; actorId: string | null } {
-    const bodyId = native.body ? (this.host.bodyIdByPhysicsBody.get(native.body) ?? null) : null;
+  private castHitOwner(bodyHpId: bigint, shapeHpId: bigint): { bodyId: string | null; actorId: string | null } {
+    const bodyId = this.host.bodyIdByHpId.get(Number(bodyHpId)) ?? null;
     const record = bodyId ? this.host.bodies.get(bodyId) : undefined;
     if (!bodyId || !record) return { bodyId, actorId: null };
-    return { bodyId, actorId: shapeOwner(record, native.shape) };
+    return { bodyId, actorId: shapeOwner(record, shapeHpId) };
   }
 }

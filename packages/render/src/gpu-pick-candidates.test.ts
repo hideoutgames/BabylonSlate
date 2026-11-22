@@ -120,7 +120,7 @@ describe("pickCandidates", () => {
       ["has morph targets", (mesh, { scene }) => { mesh.morphTargetManager = new MorphTargetManager(scene); }],
       ["has a material with padded bounds", (mesh) => { mesh.material!.metadata = { boundsPadding: 0.5 }; }],
       ["is deformed by a lattice", (mesh) => {
-        setLatticeBinding(mesh, { active: true, bindEffect: () => {}, bindBuffer: () => {} });
+        setLatticeBinding(mesh, { active: true, revision: () => 0, widens: () => false, bindEffect: () => {}, bindBuffer: () => {} });
         cleanups.push(() => setLatticeBinding(mesh));
       }],
       ["is water", (mesh) => { mesh.metadata = { slateWater: true }; }],

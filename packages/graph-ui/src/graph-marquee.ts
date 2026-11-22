@@ -146,6 +146,7 @@ function isEmptyPaneTarget(target: EventTarget | null): boolean {
  * Hold empty pane ~250ms then move to marquee. Immediate move pans (React Flow).
  * Once armed, window-capture mouse/touch/pointer moves are swallowed so d3-zoom
  * cannot pan under the overlay. XYFlow `selectionOnDrag` is not used.
+ * `onMarqueePoint` receives every point of the drag, for hosts that follow its path.
  */
 export function attachGraphPaneMarquee(
   wrapper: HTMLElement,
@@ -156,6 +157,10 @@ export function attachGraphPaneMarquee(
       endClient: { x: number; y: number },
     ) => void;
     onArmedChange?: (armed: boolean) => void;
+    onMarqueePoint?: (
+      client: { x: number; y: number },
+      startClient: { x: number; y: number },
+    ) => void;
   },
 ): GraphMarqueeGestureHandle {
   let gesture: {
@@ -258,6 +263,7 @@ export function attachGraphPaneMarquee(
       return;
     }
     if (phase !== "marquee") return;
+    options.onMarqueePoint?.(point, gesture.startClient);
     options.onMarqueeRect(
       screenRectRelativeTo(
         gesture.startClient,

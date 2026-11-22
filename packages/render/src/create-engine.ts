@@ -1,6 +1,7 @@
 import "./babylon-registrations";
 import { RenderingContextLostError } from "./context-lost-error";
 import { setSceneInstancing } from "./instance-pool";
+import { findWorldSpriteBatcher, setSceneWorldSpriteBatching } from "./world-sprite-batcher";
 import { ejectPooledLeaf } from "./pooled-visuals";
 import { allowSceneOcclusionCulling, sceneOcclusionBuffer, setSceneOcclusionFrozen } from "./view-occlusion";
 import { applyGamepadRumble } from "./gamepad-rumble";
@@ -29,23 +30,26 @@ import { admitRegisteredViewFrames, registeredViewIsEnabled, retainOffscreenFram
 import { configureCutoutSorting, configureEditorRenderingGroups } from "./sorting";
 import { nodeMaterialTexturesSampleReady } from "./material-compiler";
 import { hasFogVolumes, removeFogVolumes, upsertFogVolumes } from "./fog-volumes";
+import { clearDecals, refreshDecalMaterials, sceneDecalStats, removeDecals, setDecalMaterialSource, setDecalPendingListener, setDecalTimePaused, upsertDecals, warmDecalMaterials } from "./decal-pass";
 import { findSceneReflectionProbes } from "./reflection-probes";
 import { isFogVolumeOnlySceneEdit } from "./fog-volume-edit";
+import { isFoliageDistanceOnlySceneEdit } from "./foliage-mesh";
 import { isBuiltInWaterMesh, setSceneWaterDebug, setSceneWaterTime, settleSceneWater } from "./water-mesh";
 import { waterDebugFingerprint } from "./water-debug";
-import { setSceneWorldDebug, worldDebugFingerprint } from "./world-debug";
+import { setSceneWorldDebug, worldDebugFingerprint, worldDebugOff } from "./world-debug";
 import { shadowDebugFingerprint } from "./shadow-debug";
 import { discardsSamples, setDiscardSamples } from "./sample-discard";
 import { RuntimeScalability } from "./runtime-scalability";
 import { RagdollPoseController } from "./ragdoll-pose";
 import { updateBoneAttachments } from "./bone-attachment";
-import { normalizeRenderProjectSettings, normalizePlayFrameCap, pixelatedExtend, pixelatedLensExtent, pixelatedUpscaling, playFramebufferSize, fogVolumeBindings, outlineBindings, deformerBindings, reflectionProbeStaticActors, type RenderProjectSettings, type ResolutionQuality, type ScalabilityAcknowledgement } from "@haptic/core";
+import { normalizeRenderProjectSettings, normalizePlayFrameCap, pixelatedExtend, pixelatedLensExtent, pixelatedUpscaling, playFramebufferSize, fogVolumeBindings, decalBindings, outlineBindings, deformerBindings, reflectionProbeStaticActors, type RenderProjectSettings, type ResolutionQuality, type ScalabilityAcknowledgement } from "@haptic/core";
 import { assetByteFingerprint } from "./asset-byte-fingerprint";
 import { PostProcessParameterState } from "./post-process-parameter-state";
 import { applyPostProcessParameterCommand } from "./post-process-parameter-command";
 import { submitPresentedFrame } from "./presented-frame";
 import { samplePresentedImage, type PresentedImageSample } from "./presented-image";
-import { stubWebGlDraws } from "./webgl-draw-stub";
+import { stubWebGlDraws, webGlDrawsStubbed } from "./webgl-draw-stub";
+import { timeWebGlCalls, webGlCallsTimed, webGlCallTotals } from "./webgl-call-timer";
 import { SceneRenderCoordinator } from "./scene-render-coordinator";
 import { setSceneBindsPreviousEffects } from "./variant-swaps";
 import { setSceneHonoursUpdateRates } from "./update-rate-gate";
@@ -88,7 +92,7 @@ import { parseEasingCurve, setCustomEasingCurves, qualitySettingsFingerprint, qu
 import { captureView, ViewBlend } from "./view-blend";
 import { CameraShakeView } from "./camera-shake-view";
 import { isEnvironmentLightingReady } from "./environment-lighting";
-import { createRenderDiagnostics, type GpuAttribution } from "./render-diagnostics";
+import { createRenderDiagnostics, type FramePressureSample, type GpuAttribution } from "./render-diagnostics";
 import { RenderPerformanceFeed, type RenderPerformanceReceipt } from "./render-performance";
 import { Engine } from "@babylonjs/core/Engines/engine";
 import { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
@@ -163,7 +167,7 @@ import {
   resourceCacheForEngine,
 } from "./resource-cache";
 import { largeWorldEngineOptions } from "./large-world";
-import { HardwareScalingController, type FramePressureSample } from "./hardware-scaling";
+import { HardwareScalingController } from "./hardware-scaling";
 import { sceneViewRenderSize, setSceneOutputScale } from "./scene-output-scale";
 import {
   applyPlayFreeCamCommand,
@@ -219,7 +223,7 @@ import {
 import { applyAlbedoTexture, installModelSources, installTextureBytes, type MeshAssetContext } from "./mesh-assets";
 import { nearestTexturesEnabled, observeNearestTextures, setNearestTextures } from "./nearest-textures";
 import { FontRegistry } from "./font-registry";
-import { applyAnimStateToScene, onceMissingClip, sceneAnimHostFromBinding, type MissingAnimClip } from "./anim-apply";
+import { applyAnimStateToScene, ejectAllPlaySprites, onceMissingClip, sceneAnimHostFromBinding, type MissingAnimClip } from "./anim-apply";
 import { AnimVisibilityGate } from "./anim-visibility";
 import { shareFootPlacementBounds } from "./anim-foot-placement";
 import { applyBoneAttachmentAudioPoses } from "./bone-attachment";
@@ -247,6 +251,7 @@ import {
   beginDrawPassFrame, DrawPassFrame, endDrawPassFrame, enterDrawPass, leaveDrawPass, publishDrawPassFrame,
 } from "./draw-passes";
 import { copyOverlayBatchStats, countOverlayBatches, emptyOverlayBatchStats } from "./overlay-draw-batcher";
+import { copyLayerFrameStats, emptyLayerFrameStats } from "./layer-frame-stats";
 import { GlobalParameterSession, globalParameterDefaults } from "./global-parameter-values";
 import { MaterialLibrary } from "./material-library";
 import { refreshText2DMaterials } from "./text2d-mesh";
@@ -396,6 +401,7 @@ function projectEngineOptions(largeWorldRendering: boolean): EngineOptions {
 const NO_PRESENTING_LAYERS: ReadonlySet<string> = new Set();
 /** A frame whose Scene Layers have drawn nothing yet. */
 const NO_LAYER_BATCHES = emptyOverlayBatchStats();
+const NO_LAYER_FRAME = emptyLayerFrameStats();
 
 function initializeEngine(
   canvas: HTMLCanvasElement,
@@ -720,16 +726,16 @@ function initializeEngine(
   let lockedViewSize: { width: number; height: number } | null = null;
   /** Play's output settings (resolution, Black Bars, Upscaling) as the runtime last applied them. */
   let playOutput: RenderProjectSettings | null = options.playMode ? normalizeRenderProjectSettings(options.renderSettings) : null;
-  /** Upscaling Pixelated draws the world at the full design size: Resolution Scale and Dynamic Resolution do not apply. */
+  /** Upscaling Pixelated draws the world at the full design size: Resolution Scale does not apply. */
   const effectiveResolution = (resolution: ResolutionQuality): ResolutionQuality =>
-    pixelatedUpscaling(playOutput) ? { ...resolution, scale: 1, minScale: 1, dynamic: false } : resolution;
+    pixelatedUpscaling(playOutput) ? { ...resolution, scale: 1 } : resolution;
   const scaledLockedViewSize = () => lockedViewSize ? {
     width: Math.max(1, Math.floor(lockedViewSize.width / engine.getHardwareScalingLevel())),
     height: Math.max(1, Math.floor(lockedViewSize.height / engine.getHardwareScalingLevel())),
   } : null;
   /**
-   * Play's world scale: the `HardwareScalingController` level (render scale,
-   * dynamic resolution, Engine Settings). Without Scene Layers it is the
+   * Play's world scale: the `HardwareScalingController` level (Resolution
+   * Scale or Engine Settings). Without Scene Layers it is the
    * Engine's level, so the backbuffer is the world's size, as in the editor.
    * With Scene Layers (`composited`) the backbuffer is the full output, the
    * view's device pixels or the locked resolution, for the layers, and the
@@ -898,6 +904,7 @@ function initializeEngine(
         onVoiceEnded: options.onAudioVoiceEnded,
         onAssetReady: options.onAudioAssetReady,
         loadSourceBytes: options.loadAudioSourceBytes,
+        resolveStreamUrl: options.resolveAudioStreamUrl,
         prepareAsset: options.prepareAudioAsset,
         preparation: nativePreparation,
       })
@@ -917,8 +924,6 @@ function initializeEngine(
   }
   const settingsLevel = options.hardwareScalingLevel ?? 1;
   const scaling = new HardwareScalingController(engine, {
-    minLevel: settingsLevel,
-    maxLevel: 4,
     initialLevel: settingsLevel,
     apply: options.playMode && !presentRtt ? (level) => {
       worldLevel = level;
@@ -927,10 +932,6 @@ function initializeEngine(
       // A device-pixel view (a Scene Layer tab, a Pixel-Perfect 2D view) never writes the Engine-wide level.
       if (!deviceView()) engine.setHardwareScalingLevel(level);
     },
-    targetFrameMs:
-      options.frameCap && options.frameCap > 0
-        ? 1000 / options.frameCap
-        : 1000 / 60,
   });
   const snapshots = new SnapshotSampler(INITIAL_SNAPSHOT_CAPACITY);
   const binding: SnapshotSceneBinding = createSnapshotSceneBinding();
@@ -1090,6 +1091,8 @@ function initializeEngine(
       // Rebuilding here releases the ready material and starts compilation again.
       // Only the editor actors that resolved this Material are rebound.
       if (materialScene === scene) editorSync?.refreshMaterialsCoalesced(assetGuid);
+      // A published generation replaces the one the decals drew (disposed with its predecessor's last reference).
+      refreshDecalMaterials(materialScene);
       for (const root of binding.meshes.values()) {
         if (root.getScene() === materialScene) { refreshText2DMaterials(root, binding); refreshJoystick2DMaterials(root, binding); refreshUIControl2DMaterials(root, binding); }
       }
@@ -1162,6 +1165,21 @@ function initializeEngine(
   // unseen When Visible actor's waits until a camera can see it.
   const animVisibility = new AnimVisibilityGate(scene, binding, (command) => applyAnimStateToScene(animHostReportingMissing, command));
   scene.onBeforeRenderObservable.add(() => animVisibility.flush());
+  // Play world sprites batch into persistent thin-instanced quads, flushed after animVisibility and LayerImageAtlas.
+  // Simulation Edit's transform tools pick and outline meshes, which a batch's sprites are not, and
+  // `worlddebug spritebatching off` sizes what batching saves: both eject every sprite to a quad of its own (the
+  // picture unchanged) and batch none built while they last.
+  let spriteBatching = false;
+  const syncWorldSpriteBatching = () => {
+    const batch = !!options.playMode && !worldDebugOff(scene, "spritebatching") &&
+      !(runtimeTransformTools && runtimeTransformToolsEnabled && simulationEditMode);
+    if (batch === spriteBatching) return;
+    spriteBatching = batch;
+    if (!batch) ejectAllPlaySprites(binding);
+    setSceneWorldSpriteBatching(scene, batch);
+    scheduler.invalidate("asset");
+  };
+  syncWorldSpriteBatching();
   // Many actors place their feet each frame: they share one snapshot of the meshes' world bounds, dropped before each
   // render (after the flush above).
   shareFootPlacementBounds(scene);
@@ -1305,8 +1323,8 @@ function initializeEngine(
     const quality = resolveSceneRenderingQuality(scene);
     const previous = appliedQuality;
     appliedQuality = quality;
-    // By value: a level label alone (Custom, then the level again) must not restart dynamic resolution at its floor,
-    // which would rebuild the view's graph at another size.
+    // By value: a level label alone (Custom, then the level again) changes nothing drawn, so it must not reapply the
+    // Resolution Scale over a level set since (Engine Settings), which would rebuild the view's graph at another size.
     if (qualityValuesKey(previous?.resolution) !== qualityValuesKey(quality.resolution)) {
       scaling.configureQuality(effectiveResolution(quality.resolution));
       syncLockedViewSize();
@@ -1364,8 +1382,15 @@ function initializeEngine(
           return { width: output.width / ppu, height: output.height / ppu };
         },
         onLayerView: (layerId, view) => options.onSceneLayerView?.(layerId, view),
+        // Post Processing Panels draw the meshes of their content actors' slots.
+        slotRoot: (slotId) => binding.meshes.get(slotId),
         postProcessingEnabled: () => postProcessingEnabled,
         isLayerReady: (layerId) => layerLoads.get(layerId)?.ready !== false,
+        // The Scene Layer post-processing passes' Scene follows the world's settings and keeps full quality, as layer Scenes do.
+        preparePostProcessScene: (layerScene) => {
+          followSceneRenderSettings(layerScene, scene);
+          pinFullRenderQuality(layerScene);
+        },
         attachLayerPostProcess: (layer, stack, renderer) => {
           return renderer.attachPostProcess({
             scene: layer.scene,
@@ -1551,7 +1576,7 @@ function initializeEngine(
         releaseMaterialInstance: (key, guid) => binding.releaseMaterialInstance?.(key, guid),
         validateMaterialParameter: (guid, name, value) => binding.validateMaterialParameter?.(guid, name, value) ?? false,
         onAfterApply: () => {
-          viewportShading?.apply(); syncEditorDeformers(); syncEditorOutlines(); syncEditorFogVolumes();
+          viewportShading?.apply(); syncEditorDeformers(); syncEditorOutlines(); syncEditorFogVolumes(); syncEditorDecals();
           editorToolsRef.current?.refreshSelectionGizmo();
         },
       })
@@ -1603,6 +1628,31 @@ function initializeEngine(
     editorFogActors.clear();
     for (const id of retained) editorFogActors.add(id);
   };
+  const editorDecalActors = new Set<string>();
+  const syncEditorDecals = () => {
+    const data = editorSync?.serializedScene();
+    if (!editorSync || !data) return;
+    const retained = new Set<string>();
+    for (const actor of data.actors) {
+      const root = editorSync.meshForActor(actor.id);
+      const decals = actor.visible ? decalBindings(actor.components) : [];
+      if (root && decals.length) {
+        upsertDecals(scene, actor.id, root, decals);
+        retained.add(actor.id);
+      }
+    }
+    for (const id of editorDecalActors) if (!retained.has(id)) removeDecals(scene, id);
+    editorDecalActors.clear();
+    for (const id of retained) editorDecalActors.add(id);
+  };
+  // Decals draw their Decal Materials from the library, as meshes do: the asset's, or a component's private copy with
+  // its own values. A decal whose Material is still compiling is skipped, and the view draws again once it links.
+  setDecalMaterialSource(scene, {
+    resolve: (guid, instance) => binding.resolveMaterial?.(guid, instance ? { instanceKey: instance.key, parameters: instance.parameters } : undefined) ?? null,
+    release: (key, guid) => binding.releaseMaterialInstance?.(key, guid),
+  });
+  setDecalPendingListener(scene, () => scheduler.invalidate("asset"));
+  scene.onDisposeObservable.addOnce(() => setDecalMaterialSource(scene, null));
   const playVisuals = createPlayVisualBindings({
     options,
     scene,
@@ -1654,6 +1704,8 @@ function initializeEngine(
         binding.pixelsPerUnit = assets.pixelsPerUnit;
       }
       claimTextureHandover();
+      // A Material's generation follows its textures' bytes: the decals ask for theirs again.
+      refreshDecalMaterials(scene);
       return { ...assets, modelSources: binding.modelSources, textureBytes: binding.textureBytes, fontMsdfPng: binding.fontMsdfPng };
   };
   const installMaterialDocuments = (
@@ -1678,6 +1730,7 @@ function initializeEngine(
         }
       }
       materialFunctionRecord = Object.fromEntries(materialFunctions);
+      refreshDecalMaterials(scene);
       return true;
   };
 
@@ -1776,6 +1829,11 @@ function initializeEngine(
       editorSync.apply(sceneData);
       return;
     }
+    // A Foliage distance edit applies to the existing cells (`applyFoliageDistances`): no rebuild, no new variant.
+    if (editorSync && sameScene && isFoliageDistanceOnlySceneEdit(editorSync.serializedScene(), sceneData)) {
+      editorSync.apply(sceneData);
+      return;
+    }
     if (editorSync && sameScene &&
       isOutlineOnlySceneEdit(editorSync.serializedScene(), sceneData)) {
       applySceneDocumentRenderSettings(sceneData);
@@ -1822,6 +1880,7 @@ function initializeEngine(
       appliedSnapshotIdentity = null;
       lastRenderedSnapshotFrame = null;
       retirePlayWorldSlots(binding);
+      clearDecals(scene);
       commandSources.releaseSlots(worldPlaySlots);
       worldPlaySlots.clear();
       refreshPlayActiveCamera(scene, binding);
@@ -2002,12 +2061,14 @@ function initializeEngine(
   const drawPasses = new DrawPassFrame(engine);
   /** How the view's Scene Layers drew (`RenderDiagnostics.layerBatches`): the frame being drawn, and the last one drawn. */
   const layerBatches = { current: emptyOverlayBatchStats(), last: emptyOverlayBatchStats() };
+  /** The Scene Layer work of the last frame the view drew (`RenderDiagnostics.layerFrame`). */
+  const layerFrame = emptyLayerFrameStats();
   /** `showocclusion`: hosts draw the world view's occlusion buffer over the view. */
   let occlusionOverlay = false;
   let lastRenderCpuMs = 0;
   /** `RenderDiagnostics.cpuMeanMs`: the mean of the last rendered frames' CPU time. */
   const renderCpuMean = new TrailingMean(RENDER_CPU_MEAN_FRAMES);
-  // Dynamic scaling input: whether this view presented the current and previous
+  // Frame cost sample: whether this view presented the current and previous
   // engine frames (non-loading), when the last presentation happened, and the
   // most recent pressure sample surfaced through diagnostics.
   let framePresented = false;
@@ -2058,7 +2119,7 @@ function initializeEngine(
     ))(), ...(options.playMode && !presentRtt ? { scalingLevel: worldLevel } : {}),
       cpuMeanMs: renderCpuMean.mean(),
       backbuffer: { width: engine.getRenderWidth(true), height: engine.getRenderHeight(true) }, firstDraws: firstDraws?.stats() ?? null, programs: programInventory(engine), settings: breakdownSettings(),
-      drawPasses: { ...drawPasses.last }, drawPassMs: { ...drawPasses.lastMs }, layerBatches: copyOverlayBatchStats(layerBatches.last),
+      drawPasses: { ...drawPasses.last }, drawPassMs: { ...drawPasses.lastMs }, layerBatches: copyOverlayBatchStats(layerBatches.last), layerFrame: copyLayerFrameStats(layerFrame),
       gpuBusy: existingGpuBusyProbe(engine)?.stats() ?? null, gpuProbe: existingGpuProbe(engine)?.snapshot() ?? null, frameBackpressure: engineFrameBackpressure(engine).stats(), presentation: { ...presentationStats, heldReasons: heldFrames.snapshot(), direct: registeredView ? viewPresentedDirectly(engine, registeredView) : false }, rendererWork: worldRenderer.diagnostics(),
       layerWork: sceneLayerCompositor?.diagnostics() ?? [],
       frameAdmission: { ...scheduler.gateState(), worldLoading,
@@ -2068,6 +2129,7 @@ function initializeEngine(
         rttPresenting: rttPresent?.isPresenting() ?? false, contextLost },
       worldLoad: worldLoading ? worldLoadDiagnostics() : null,
       textureMemory: estimateTextureMemory(engine),
+      decals: sceneDecalStats(scene),
       engineLoop: { frameId: engine.frameId, activeLoops: engine.activeRenderLoops.length,
         ownsLoop: engine.activeRenderLoops.includes(renderLoop), frameHandler: engine._frameHandler,
         disposed: engine.isDisposed, contextLost: native._contextWasLost,
@@ -2106,11 +2168,13 @@ function initializeEngine(
   const warmPlaySpawnables = async (assertCurrent: () => void) => {
     const started = performance.now();
     const materials: Material[] = [];
-    // Surface Materials only: post-process, particle, text and landscape graphs never draw on a spawned mesh.
+    // Surface Materials only: post-process, particle, text and landscape graphs never draw on a spawned mesh. Decal
+    // Materials compile on the decal pass's own boxes (`warmDecalMaterials`).
+    const decalMaterials: Material[] = [];
     for (const [guid, document] of materialDocuments) {
-      if (document.domain !== "surface") continue;
+      if (document.domain !== "surface" && document.domain !== "decal") continue;
       const material = binding.resolveMaterial?.(guid);
-      if (material) materials.push(material);
+      if (material) (document.domain === "decal" ? decalMaterials : materials).push(material);
     }
     const leases: { release(): void }[] = [];
     const containers: AssetContainer[] = [];
@@ -2123,7 +2187,8 @@ function initializeEngine(
       assertCurrent();
       releaseStaged();
       releaseStagedSpawnables = await warmSpawnables(scene, { materials, containers }, assertCurrent, { keepForFirstDraw: true });
-      spawnableWarm = { materials: materials.length, models: containers.length, ms: performance.now() - started };
+      await warmDecalMaterials(scene, decalMaterials, assertCurrent);
+      spawnableWarm = { materials: materials.length + decalMaterials.length, models: containers.length, ms: performance.now() - started };
     } finally {
       for (const lease of leases) lease.release();
     }
@@ -2192,6 +2257,7 @@ function initializeEngine(
     const previousCamera = scene.activeCamera;
     // The snapshot's spawns, rebuilt visuals and despawns publish their outlines once, not once each.
     outlineHost.batch(() => applySnapshotToScene(scene, binding, sampled));
+    findWorldSpriteBatcher(scene)?.flush();
     playViz?.refresh();
     rebuildIfActiveCameraChanged(previousCamera);
     publishPositions(sampled);
@@ -2290,7 +2356,7 @@ function initializeEngine(
         const water = sceneWaterQualityDeviceClamp(scene);
         quality.water = { ...quality.water, ...water.quality };
         const limits = [...water.limits,
-          ...(pixelatedFullResolution ? ["Upscaling Pixelated draws at full resolution: Resolution Scale and Dynamic Resolution do not apply."] : [])];
+          ...(pixelatedFullResolution ? ["Upscaling Pixelated draws at full resolution: Resolution Scale does not apply."] : [])];
         return { revision: transaction.revision, status: transaction.clamped || limits.length || quality.textures.anisotropy !== transaction.settings.render.quality?.textures.anisotropy ? "clamped" : "applied",
           message: limits.join(" ") || (transaction.clamped ? "Clamped rendering settings presented." : "Rendering settings presented."),
           effective: { frameCap: transaction.settings.frameCap, render: { ...transaction.settings.render,
@@ -2340,8 +2406,7 @@ function initializeEngine(
     stepViewBlend(frameStart);
     // Measure render cost only, not wall-clock gap since the previous
     // rendered frame — a frozen obstructed viewport can idle for seconds
-    // between frames, and feeding that gap to the scaling valve would read
-    // as a catastrophic frame time and drop quality for no reason.
+    // between frames, and that gap would read as a catastrophic frame time.
     const renderStart = performance.now();
     presentationStats.attempted += 1;
     if (measurePhases) presentationStats.preparationMs = renderStart - preparationStart;
@@ -2449,6 +2514,15 @@ function initializeEngine(
           if (pendingPresentations.get(key) === pending) cancelPresentation(error instanceof Error ? error : new Error(String(error)), key);
         });
       };
+      // The layers' atlas uploads and cell copies, before the world, so none falls in the backbuffer's pass after it.
+      if (sceneLayerCompositor && !layersHidden) {
+        enterDrawPass(engine, "layers", true);
+        try {
+          sceneLayerCompositor.beforeWorld(presentingLayers);
+        } finally {
+          leaveDrawPass(engine);
+        }
+      }
       if (!worldLoading || pendingPresentations.has("world")) drawOwner("world", () => {
         const result = frameScope
           ? frameScope.capture.stage(scene, { name: "World output", kind: "composition", sceneId: lastSceneAssetGuid },
@@ -2534,6 +2608,7 @@ function initializeEngine(
     publishDrawPassFrame(drawPasses);
     existingGpuProbe(engine)?.frameDrawn();
     copyOverlayBatchStats(layerBatches.current, layerBatches.last);
+    copyLayerFrameStats(sceneLayerCompositor && !layersHidden ? sceneLayerCompositor.frameStats : NO_LAYER_FRAME, layerFrame);
     scheduler.noteRendered(frameStart, performance.now());
     // After `noteRendered`, so camera motion counts as activity (Half Rate When Idle) though the frame drew it.
     if (cameraMoved?.(scene.frameGraph?.findMainCamera() ?? scene.activeCamera)) scheduler.noteActivity();
@@ -2574,8 +2649,8 @@ function initializeEngine(
       const presentedAt = performance.now();
       // Only Play handles pace frames: their presented-frame interval measures
       // sustainable frame cost. Editor/prefab viewports are free-running, so
-      // the same interval mostly measures host event-loop contention and must
-      // not drive resolution scaling — they keep the cpuMs-only input.
+      // the same interval mostly measures host event-loop contention — they
+      // report cpuMs only.
       const presentationSignals = options.playMode === true;
       // GPU timing only means this view when it owns the Engine's render —
       // siblings would fold their cost into the same counter.
@@ -2591,10 +2666,6 @@ function initializeEngine(
       lastPressureSample.gpuMs = counter && counter.count > 0 ? counter.current / 1_000_000 : null;
       pressureSampled = true;
       lastPresentedAt = presentedAt;
-      // The scaling level is Engine-wide: only the sole rendering view drives
-      // it, so sibling views on a shared Engine cannot ratchet it against
-      // each other.
-      if (sole && !deviceView()) scaling.noteFramePressure(lastPressureSample);
       if (!registeredView) syncLockedViewSize();
     }
     previousFramePresented = framePresented;
@@ -2621,6 +2692,7 @@ function initializeEngine(
     if (disposed) return;
     contextLost = true;
     stubWebGlDraws(engine, false);
+    timeWebGlCalls(engine, false);
     finalAuthoringDrain?.abort(new Error("The graphics context was lost during final scene capture."));
     runtimeMaterialEdits.cancelAll();
     frameReportFeed.cancel("The graphics context was lost before frame capture completed.");
@@ -2641,7 +2713,6 @@ function initializeEngine(
       type: "log",
       message: "WebGL context restored",
     });
-    scaling.noteRestore();
     // A preparation that ran while the context was lost failed (Babylon throws creating GPU resources then) and
     // latched its failure, which holds every later frame: restart the world's and the layers' preparation.
     worldRenderer.invalidate();
@@ -2716,6 +2787,7 @@ function initializeEngine(
     debugOverlay?.setPaused(paused);
     audioService?.setPaused(paused || held);
     particleService?.setPaused(paused || held);
+    setDecalTimePaused(scene, paused || held);
   };
   /** When the current run of held frames began, until the hold pauses or ends. */
   let holdSince: number | undefined;
@@ -2758,6 +2830,7 @@ function initializeEngine(
       disposed = true;
       // A measurement this view left running must not outlive it on the shared Engine.
       stubWebGlDraws(engine, false);
+      timeWebGlCalls(engine, false);
       finalAuthoringDrain?.abort(new Error("The game view stopped during final scene capture."));
       runtimeMaterialEdits.dispose();
       performanceFeed.dispose();
@@ -3184,10 +3257,11 @@ function initializeEngine(
         scheduler.invalidate("asset");
       }
       if (command.type === "sceneLayerPostProcess") {
-        sceneLayerCompositor?.setPostProcess(
-          command.layerId,
-          command.postProcessStack,
-        );
+        sceneLayerCompositor?.setPostProcess(command.postProcessStack);
+        scheduler.invalidate("asset");
+      }
+      if (command.type === "sceneLayerPostProcessPanels") {
+        sceneLayerCompositor?.setPostProcessPanels(command.layerId, command.panels);
         scheduler.invalidate("asset");
       }
       if (command.type === "sceneLayerLayout") {
@@ -3292,7 +3366,13 @@ function initializeEngine(
         scheduler.invalidate("snapshot");
       }
       if (command.type === "setMaterialParameter") {
-        applySetMaterialParameter(binding, command);
+        // A Post Processing Panel's Material Object writes to its pass; any other to the slot's surface.
+        const panelWrite = sceneLayerCompositor?.setPostProcessPanelParameter(command.slotId, command.componentId ?? undefined, command.materialAssetGuid,
+          command.parameterName, command.parameter, () => {
+            const document = materialDocuments.get(command.materialAssetGuid);
+            return document?.domain === "postProcess" && materialLibrary.acceptsParameter(document, command.parameterName, command.parameter);
+          }) ?? false;
+        if (!panelWrite) applySetMaterialParameter(binding, command);
         scheduler.invalidate("asset");
       }
       if (command.type === "setGlobalParameter") {
@@ -3305,7 +3385,6 @@ function initializeEngine(
         };
         const applied = applyPostProcessParameterCommand(command, {
           world: { sceneAssetGuid: worldSceneAssetGuid, sceneLoadId: worldLoadId, ready: !worldLoading },
-          layer: (id) => layerLoads.get(id),
           setWorld: (write) => {
             if (!postProcessStack.some((entry) => entry.id === write.entryId && entry.materialGuid === write.materialAssetGuid) || !validParameter() ||
               !postProcessParameters.set(postProcessStack, write.entryId, write.materialAssetGuid, write.parameterName, write.parameter)) return false;
@@ -3313,7 +3392,7 @@ function initializeEngine(
             renderTargetCaptures.setPostProcessParameter(write.entryId, write.parameterName, write.parameter);
             return true;
           },
-          setLayer: (id, write) => sceneLayerCompositor?.setPostProcessParameter(id, write.entryId, write.materialAssetGuid, write.parameterName, write.parameter, validParameter) ?? false,
+          setLayers: (write) => sceneLayerCompositor?.setPostProcessParameter(write.entryId, write.materialAssetGuid, write.parameterName, write.parameter, validParameter) ?? false,
         });
         if (applied) scheduler.invalidate("asset");
       }
@@ -3404,7 +3483,10 @@ function initializeEngine(
         scheduler.invalidate("asset");
       }
       if (command.type === "setWaterDebug" && setSceneWaterDebug(scene, command.part, command.enabled)) scheduler.invalidate("asset");
-      if (command.type === "setWorldDebug" && setSceneWorldDebug(scene, command.part, command.enabled)) scheduler.invalidate("asset");
+      if (command.type === "setWorldDebug" && setSceneWorldDebug(scene, command.part, command.enabled)) {
+        syncWorldSpriteBatching();
+        scheduler.invalidate("asset");
+      }
       if (command.type === "setShadowDebug" && findSceneShadowController(scene)?.setDebug(command.part, command.enabled)) scheduler.invalidate("asset");
       if (command.type === "tilemapAnimationTime") {
         binding.tilemapAnimationTimeMs = command.elapsedMs;
@@ -3456,6 +3538,7 @@ function initializeEngine(
       resetJoysticks();
       playFreeCamInput?.reset();
       simulationEditMode = enabled;
+      syncWorldSpriteBatching();
       runtimeTransformTools?.setEnabled(enabled && runtimeTransformToolsEnabled);
       const previous = scene.activeCamera;
       playFreeCam.setEnabled(enabled);
@@ -3511,7 +3594,10 @@ function initializeEngine(
     samplePresentedImage: () => disposed || contextLost
       ? Promise.resolve(null)
       : new Promise<PresentedImageSample | null>((resolve) => { presentedImageRequests.push(resolve); }),
-    stubWebGlDraws: (on) => !disposed && !contextLost && stubWebGlDraws(engine, on),
+    // The two measurements never overlap: each puts back the context calls it found.
+    stubWebGlDraws: (on) => !disposed && !contextLost && !(on && webGlCallsTimed(engine)) && stubWebGlDraws(engine, on),
+    timeWebGlCalls: (on) => !disposed && !contextLost && !(on && webGlDrawsStubbed(engine)) && timeWebGlCalls(engine, on),
+    webGlCallTotals: () => webGlCallTotals(engine),
     sceneLayerHitTargets: () => sceneLayerCompositor?.hitTargets() ?? [],
     sceneLayerPickHits: (points) => points.map(({ x, y }) => (sceneLayerCompositor?.pickHits(x, y, {
       minTargetPx: options.touchMinTargetPx ?? 44, canvasCssHeight: pointerCanvas().height,
@@ -3579,11 +3665,13 @@ function initializeEngine(
         setEnabled: (enabled) => {
           if (runtimeTransformTools !== owner) return;
           runtimeTransformToolsEnabled = enabled;
+          syncWorldSpriteBatching();
           owner.setEnabled(enabled && simulationEditMode);
         },
         dispose: () => {
           if (runtimeTransformTools !== owner) return;
           owner.dispose(); runtimeTransformTools = null; runtimeTransformToolsEnabled = false;
+          syncWorldSpriteBatching();
         },
       };
     },
@@ -3827,6 +3915,7 @@ function initializeEngine(
         if (!owner && options.playMode) await warmPlaySpawnables(scope.assert);
         freezeLibraryMaterials();
         outlineHost.refreshSettings();
+        if (!owner) findWorldSpriteBatcher(scene)?.flush();
         if (owner) await sceneLayerCompositor?.prepare(owner.layerId, scope.assert);
         else await worldRenderer.prepare(scope.assert);
       } finally {
@@ -4046,6 +4135,7 @@ function isOverlayOnlyMeshKind(meshKind: string | null | undefined): boolean {
     case "2dbutton":
     case "2dpanel":
     case "2dlayout":
+    case "2dpostprocesspanel":
     case "2dpainter":
     case "2dtext":
     case "2drichtext":

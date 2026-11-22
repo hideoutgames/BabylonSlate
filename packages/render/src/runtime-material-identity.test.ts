@@ -13,17 +13,14 @@ import {
   applySetMaterialParameter,
   createSnapshotSceneBinding,
 } from "./snapshot-apply";
+import { nodeBlockName } from "./test-support/material-node-blocks";
 
 const disposers: Array<() => void> = [];
 afterEach(() => {
   while (disposers.length) disposers.pop()?.();
 });
 
-function setup() {
-  const engine = new NullEngine();
-  const scene = new Scene(engine);
-  const library = new MaterialLibrary();
-  const binding = createSnapshotSceneBinding();
+function roughnessDocument() {
   const doc = createDefaultMaterialDocument();
   doc.nodes.push({
     id: "roughness",
@@ -38,6 +35,15 @@ function setup() {
     targetNodeId: "output",
     targetPinId: "roughness",
   });
+  return doc;
+}
+
+function setup() {
+  const engine = new NullEngine();
+  const scene = new Scene(engine);
+  const library = new MaterialLibrary();
+  const binding = createSnapshotSceneBinding();
+  const doc = roughnessDocument();
   binding.resolveMaterial = (guid, options) =>
     library.resolve(options?.scene ?? scene, guid, doc, options);
   binding.releaseMaterialInstance = (key) => library.releaseInstance(key);
@@ -94,7 +100,7 @@ function setup() {
 function roughness(mesh: Mesh): number {
   expect(mesh.material).toBeInstanceOf(NodeMaterial);
   return (
-    (mesh.material as NodeMaterial).getBlockByName("roughness") as InputBlock
+    (mesh.material as NodeMaterial).getBlockByName(nodeBlockName(roughnessDocument(), "roughness")) as InputBlock
   ).value as number;
 }
 

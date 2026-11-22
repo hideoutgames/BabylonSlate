@@ -155,6 +155,7 @@ export async function exportProjectGameArtifact(
     fontMsdfPngByGuid: loaded.fontMsdfPngByGuid,
     navmeshByGuid: loaded.navmeshByGuid,
     audioReverbByGuid: loaded.audioReverbByGuid,
+    landscapeChunksByGuid: loaded.landscapeChunksByGuid,
     renderSettings:
       exportDocument?.settings.render ?? DEFAULT_RENDER_PROJECT_SETTINGS,
     playFrameCap:
@@ -176,6 +177,7 @@ export async function exportProjectGameArtifact(
       exportDocument?.settings.infiniteLoopDetection,
     loopCount: exportDocument?.settings.loopCount,
     focusNavigation: exportDocument?.settings.focusNavigation,
+    sceneLayerPostProcessStack: exportDocument?.settings.sceneLayerPostProcessStack,
     tagRegistry: exportDocument?.settings.tags,
     playerFiles,
     platform: options.platform,

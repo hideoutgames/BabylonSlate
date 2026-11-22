@@ -34,14 +34,14 @@ Play keeps the shaders it compiled when you stop it, so the next Play in the sam
 
 | Level | Target device | Resolution Scale | Texture Budget | Local lights | Shadow Distance | Screen-Space Shadows | Reflection Shadows |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Low | Budget Android phone | 0.85 | 384 MiB | 6 | 120 | Off | Off |
-| Medium | Apple A16 | 1 | 768 MiB | 32 | 250 | Off | Off |
+| Low | Budget Android phone | 0.75 | 384 MiB | 6 | 120 | Off | Off |
+| Medium | Apple A16 | 0.85 | 768 MiB | 32 | 250 | Off | Off |
 | High | Performance desktop | 1 | 1024 MiB | 64 | 350 | Medium | Off |
 | Ultra | High-end gaming PC | 1 | 2048 MiB | 256 | 600 | High | On |
 
 Targets are guides, not guarantees. Profile on the devices you ship to.
 
-- **Resolution Scale**, **Dynamic Resolution**, **Minimum Resolution Scale** and **Dynamic Resolution Target FPS** trade sharpness for frame rate. Dynamic Resolution is on below Ultra. They scale the world only, never [Scene Layers](../scenes/scene-layers.md).
+- **Resolution Scale** trades sharpness for frame rate: the world draws at that fraction of the output's width and height. It stays fixed while the game runs, so pick the scale your target device holds its frame rate at. It scales the world only, never [Scene Layers](../scenes/scene-layers.md).
 - Scalability never lowers Scene Layers: they keep the screen's full device resolution and full quality on every level.
 - **Texture LOD Bias**, **Texture Anisotropy** and **Texture Budget (MiB)** control texture detail and memory. Unused textures are released above the budget.
 - **Auto LOD** and **LOD Distance Scale** control simplified model levels. See [Models](models.md#automatic-lod).
@@ -69,7 +69,7 @@ With **Occlusion Culling** on (the **Geometry** group of Scalability), Play and 
 | **Custom Resolution** | Sets a design size for Play and exported games. On for new projects. A Scene Layer's Fullscreen canvas is this size ([Canvas size and scaling](../scenes/scene-layers.md#canvas-size-and-scaling)). |
 | **Render Size** | The design width and height. Default 1920 × 1080. |
 | **Black Bars** | Adds bars to keep the design size. Off fills the window without stretching. |
-| **Upscaling** | Shown with Custom Resolution. **Smooth** fits the design size to the window. **Pixelated** enlarges it by the largest whole multiple that fits, so every game pixel is the same sharp square: a 320 × 180 game shows at × 4 in a 1366 × 768 window. With **Black Bars**, bars fill the rest. Without them, the view extends past the design size to fill the window, and cameras show more of the scene there instead of stretching it. Pixelated always draws at full resolution: **Resolution Scale** and **Dynamic Resolution** do not apply, and neither do **FSR Upscaling** or **Anti-Aliasing**, which would soften the pixels. Menus and text from Scene Layers enlarge with the game. |
+| **Upscaling** | Shown with Custom Resolution. **Smooth** fits the design size to the window. **Pixelated** enlarges it by the largest whole multiple that fits, so every game pixel is the same sharp square: a 320 × 180 game shows at × 4 in a 1366 × 768 window. With **Black Bars**, bars fill the rest. Without them, the view extends past the design size to fill the window, and cameras show more of the scene there instead of stretching it. Pixelated always draws at full resolution: **Resolution Scale** does not apply, and neither do **FSR Upscaling** or **Anti-Aliasing**, which would soften the pixels. Menus and text from Scene Layers enlarge with the game. |
 | **Play Frame Cap** | Frames per second for Play and Preview. Default 60. |
 | **Follow System**, **Aspect Ratio** | Play Preview aspect. Turn off Follow System to use a fixed ratio. |
 

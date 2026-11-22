@@ -200,6 +200,8 @@ export function playLoadControl(options: {
   /** Packaged authored assets the Asset Registry nodes query. */
   assetCatalog?: import("@haptic/core").RuntimeAssetCatalogEntry[];
   focusNavigation?: import("@haptic/core").FocusNavigationSettings;
+  /** Project Scene Layer post-processing: the passes the session's shared layer stack starts with. */
+  sceneLayerPostProcessStack?: import("@haptic/core").SceneLayerPostProcessEntry[];
   pixelsPerUnit?: number;
   /** Pixel-Perfect Mode with Nearest Texture Filtering (`pixelMatchedCameras`). */
   pixelMatchedCameras?: boolean;
@@ -213,6 +215,7 @@ export function playLoadControl(options: {
   gameInstanceClass?: string;
   scenes?: Array<{ guid: string; scene: SerializedScene }>;
   sceneNavmeshBytes?: Record<string, Uint8Array>;
+  sceneLandscapeBytes?: Record<string, Uint8Array>;
   sceneLayers?: Array<{ guid: string; layer: SerializedSceneLayer }>;
   infiniteLoopDetection?: boolean;
   /** Simulation's Pause On Errors. */
@@ -262,6 +265,7 @@ export function playLoadControl(options: {
     ...(options.timelineClipAssets ? { timelineClipAssets: options.timelineClipAssets } : {}),
     assetCatalog: options.assetCatalog,
     focusNavigation: options.focusNavigation,
+    ...(options.sceneLayerPostProcessStack ? { sceneLayerPostProcessStack: options.sceneLayerPostProcessStack } : {}),
     pixelsPerUnit: options.pixelsPerUnit,
     ...(options.pixelMatchedCameras ? { pixelMatchedCameras: true } : {}),
     texturePixelSizes: options.texturePixelSizes,
@@ -275,6 +279,7 @@ export function playLoadControl(options: {
     gameInstanceClass: options.gameInstanceClass,
     scenes: options.scenes,
     sceneNavmeshBytes: options.sceneNavmeshBytes,
+    ...(options.sceneLandscapeBytes ? { sceneLandscapeBytes: options.sceneLandscapeBytes } : {}),
     sceneLayers: options.sceneLayers,
     infiniteLoopDetection: options.infiniteLoopDetection,
     ...(options.pauseOnErrors ? { pauseOnErrors: true } : {}),

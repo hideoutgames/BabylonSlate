@@ -1,8 +1,4 @@
 import { describe, expect, it, beforeAll } from "vitest";
-import "@babylonjs/core/Physics/physicsEngineComponent";
-import { HavokPlugin } from "@babylonjs/core/Physics/v2/Plugins/havokPlugin";
-import { PhysicsBody } from "@babylonjs/core/Physics/v2/physicsBody";
-import { Scene } from "@babylonjs/core/scene";
 import {
   createPhysicsBackend,
   type PhysicsBackend,
@@ -10,16 +6,6 @@ import {
 import { resetLoadedBackendModules } from "./create-backend";
 import { HavokPhysicsBackend } from "./havok-backend";
 import { resetHavokModuleCache } from "./havok-loader";
-
-/**
- * Inspection surface the Babylon Physics V2 backend exposes so tests can
- * assert we are driving HavokPlugin, not a custom AABB stepper.
- * `plugin` and `scene` are public fields on `HavokPhysicsBackend`.
- */
-type HavokV2Surface = {
-  plugin?: unknown;
-  scene?: unknown;
-};
 
 function identity() {
   return {
@@ -74,42 +60,66 @@ function spawnFallingBox(backend: PhysicsBackend): void {
   });
 }
 
-describe("Havok 3D backend uses Babylon Physics V2", () => {
+function placeBox(
+  backend: PhysicsBackend,
+  id: string,
+  motionType: "static" | "dynamic",
+  position: { x: number; y: number; z: number },
+  halfExtents: { x: number; y: number; z: number },
+): void {
+  backend.createBody({
+    id, actorId: id, motionType, mass: 1, linearDamping: 0, angularDamping: 0, gravityScale: 1,
+    transform: { position, rotation: { x: 0, y: 0, z: 0, w: 1 } },
+  });
+  backend.createCollider({
+    id: `${id}:shape`, bodyId: id, shape: { kind: "box", halfExtents },
+    friction: 0.5, restitution: 0, isTrigger: false, layer: 1, mask: 0xffffffff,
+  });
+}
+
+/** Four 1 m boxes, `box0` to `box3`, stacked on a static floor. */
+function placeStack(backend: PhysicsBackend): void {
+  placeBox(backend, "floor", "static", { x: 0, y: -0.5, z: 0 }, { x: 10, y: 0.5, z: 10 });
+  for (let i = 0; i < 4; i++) placeBox(backend, `box${i}`, "dynamic", { x: 0, y: 0.5 + i, z: 0 }, { x: 0.5, y: 0.5, z: 0.5 });
+}
+
+describe("Havok 3D backend drives Havok WASM directly", () => {
   beforeAll(() => {
     resetLoadedBackendModules();
     resetHavokModuleCache();
   });
 
-  it("createPhysicsBackend(3d) drives a HavokPlugin on a NullEngine Scene", async () => {
+  it("createPhysicsBackend(3d) initializes a native Havok WASM world directly", async () => {
     const backend = await createPhysicsBackend({
       kind: "3d",
       gravity: { x: 0, y: -9.81, z: 0 },
     });
     expect(backend).toBeInstanceOf(HavokPhysicsBackend);
-    const surface = backend as unknown as HavokV2Surface;
-    expect(surface.plugin).toBeInstanceOf(HavokPlugin);
-    expect(surface.scene).toBeInstanceOf(Scene);
-    const scene = surface.scene as Scene;
-    expect(scene.getPhysicsEngine()?.getPhysicsPlugin()).toBeInstanceOf(
-      HavokPlugin,
-    );
+    const havokBackend = backend as HavokPhysicsBackend;
+    expect(typeof havokBackend.havok.HP_World_Step).toBe("function");
+    expect(havokBackend.worldId[0]).not.toBe(0n);
+    expect(havokBackend.numBodies).toBe(0);
+    expect(havokBackend.isDisposed).toBe(false);
     backend.dispose();
+    expect(havokBackend.isDisposed).toBe(true);
   });
 
-  it("createCollider attaches a collider to its explicitly owned PhysicsBody", async () => {
+  it("createCollider attaches a native shape to its explicitly owned Havok body", async () => {
     const backend = await createPhysicsBackend({
       kind: "3d",
       gravity: { x: 0, y: -9.81, z: 0 },
     });
     spawnFallingBox(backend);
-    const scene = (backend as unknown as HavokV2Surface).scene;
-    expect(scene).toBeInstanceOf(Scene);
-    const node = (scene as Scene).getTransformNodeByName("dynamic");
-    expect(node?.physicsBody).toBeInstanceOf(PhysicsBody);
+    const havokBackend = backend as HavokPhysicsBackend;
+    const hpBodyId = havokBackend.getNativeBodyId("dynamic");
+    expect(hpBodyId).not.toBeNull();
+    const [res, shapeId] = havokBackend.havok.HP_Body_GetShape(hpBodyId!);
+    expect(res).toBe(havokBackend.havok.Result.RESULT_OK);
+    expect(shapeId[0]).not.toBe(0n);
     backend.dispose();
   });
 
-  it("HavokPlugin steps a dynamic box onto static ground and raycast hits", async () => {
+  it("Havok steps a dynamic box onto static ground and raycast hits", async () => {
     const backend = await createPhysicsBackend({
       kind: "3d",
       gravity: { x: 0, y: -9.81, z: 0 },
@@ -123,9 +133,7 @@ describe("Havok 3D backend uses Babylon Physics V2", () => {
     const hit = backend.lineTrace({ x: 0, y: 10, z: 0 }, { x: 0, y: -1, z: 0 });
     expect(hit.hit).toBe(true);
     expect(hit.actorId).toBeTruthy();
-    expect((backend as unknown as HavokV2Surface).plugin).toBeInstanceOf(
-      HavokPlugin,
-    );
+    expect(backend).toBeInstanceOf(HavokPhysicsBackend);
     backend.dispose();
   });
 
@@ -150,6 +158,38 @@ describe("Havok 3D backend uses Babylon Physics V2", () => {
     } finally {
       backend.dispose();
     }
+  });
+
+  // Expected values were recorded from the Babylon HavokPlugin path, which made every step's length Havok's ideal step
+  // time and capped a step at 0.1 s; at 1/60 both paths already agreed.
+  it.each([
+    { dt: 1 / 240, steps: 600, top: 3.49985 },
+    { dt: 1 / 30, steps: 600, top: 3.48991 },
+  ])("simulates a stack with steps of $dt s as long as each step is", async ({ dt, steps, top }) => {
+    const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: -9.81, z: 0 } });
+    try {
+      placeStack(backend);
+      for (let i = 0; i < steps; i++) backend.step(dt);
+      expect(backend.getBodyTransform("box3")!.position.y).toBeCloseTo(top, 4);
+    } finally {
+      backend.dispose();
+    }
+  });
+
+  it("simulates at most 0.1 s per step", async () => {
+    const fallAfter = async (dt: number) => {
+      const backend = await createPhysicsBackend({ kind: "3d", gravity: { x: 0, y: -9.81, z: 0 } });
+      try {
+        placeBox(backend, "ball", "dynamic", { x: 0, y: 100, z: 0 }, { x: 0.5, y: 0.5, z: 0.5 });
+        for (let i = 0; i < 20; i++) backend.step(dt);
+        return backend.getBodyTransform("ball")!.position.y;
+      } finally {
+        backend.dispose();
+      }
+    };
+    const capped = await fallAfter(0.1);
+    expect(capped).toBeCloseTo(80.1347, 3);
+    expect(await fallAfter(0.2)).toBe(capped);
   });
 
   it("names the hosted shape a contact touched on a rotated compound", async () => {
@@ -209,7 +249,7 @@ describe("Havok 3D backend uses Babylon Physics V2", () => {
     }
   });
 
-  it("HavokPlugin applyImpulse moves a dynamic body and shapeCast hits", async () => {
+  it("Havok applyImpulse moves a dynamic body and shapeCast hits", async () => {
     const backend = await createPhysicsBackend({
       kind: "3d",
       gravity: { x: 0, y: 0, z: 0 },
@@ -253,9 +293,6 @@ describe("Havok 3D backend uses Babylon Physics V2", () => {
       },
     );
     expect(sweep.hit).toBe(true);
-    expect((backend as unknown as HavokV2Surface).plugin).toBeInstanceOf(
-      HavokPlugin,
-    );
     backend.dispose();
   });
 });

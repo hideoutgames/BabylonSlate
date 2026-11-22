@@ -43,7 +43,7 @@ function setup() {
 }
 
 describe("first draw stats", () => {
-  it("counts Effects first drawn while counting, and which of them the load compiled without drawing", async () => {
+  it("counts Effects first drawn while counting, which of them the load compiled without drawing, and every program the load compiled", async () => {
     const { engine, scene, frame } = setup();
     const drawn = MeshBuilder.CreateBox("drawn", {}, scene);
     drawn.material = new StandardMaterial("standard", scene);
@@ -55,8 +55,10 @@ describe("first draw stats", () => {
     frame();
     const session = openFirstDrawStats(engine)!;
     session.resume();
+    const loadPrograms = programInventory(engine)!.programs;
+    expect(loadPrograms).toBeGreaterThanOrEqual(2);
     frame();
-    expect(session.stats().draws).toBe(0);
+    expect(session.stats()).toMatchObject({ draws: 0, loadPrograms });
 
     offscreen.setEnabled(true);
     frame();
@@ -66,7 +68,9 @@ describe("first draw stats", () => {
     spawned.material = variant(scene, "unlit", "unlit");
     await spawned.material.forceCompilationAsync(spawned);
     frame();
-    expect(session.stats()).toMatchObject({ draws: 2, loadCompiled: 1 });
+    // A program compiled during play is not the load's.
+    expect(session.stats()).toMatchObject({ draws: 2, loadCompiled: 1, loadPrograms });
+    expect(programInventory(engine)!.programs).toBe(loadPrograms + 1);
     session.close();
   });
 

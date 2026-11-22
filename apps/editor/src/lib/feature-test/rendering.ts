@@ -10,6 +10,7 @@ import {
   normalizeRenderEffectsSettings,
   normalizeShadowSettings,
   parseAreaRectLightProperties,
+  parseDecalProperties,
   parseDeformerProperties,
   parseFogVolumeProperties,
   parseMirrorProperties,
@@ -103,6 +104,7 @@ interface RenderingRefs {
   tourPath: PlacedClass;
   cameraTour: PlacedClass;
   dynamicMesh: PlacedClass;
+  decalSpawner: PlacedClass;
   manualCapture: PlacedClass;
   /** Material override that ripples a Mirror's reflection through a Mirror Reflection node. */
   mirrorRipple: string;
@@ -129,6 +131,7 @@ export async function buildFeatureTestRendering(ctx: FeatureTestContext): Promis
   const springArm = await saveSpringArmRig(ctx);
   const { tourPath, cameraTour } = await saveCameraTour(ctx);
   const dynamicMesh = await saveDynamicMesh(ctx);
+  const decalSpawner = await saveDecalSpawner(ctx);
   const manualCapture = await saveManualCapture(ctx, targets.WorldNormal.renderTarget);
   const mirrorRipple = (await ctx.createAsset("Material", RENDER_FOLDER, "FT_RenderMirrorRipple", {
     payload: mirrorRippleMaterial("FT_RenderMirrorRipple"),
@@ -136,7 +139,7 @@ export async function buildFeatureTestRendering(ctx: FeatureTestContext): Promis
   await saveScalabilityCommands(ctx);
   await addLightsScene(ctx);
   const chrome = await ctx.createAsset("Material", RENDER_FOLDER, "FT_RenderChrome", { payload: chromeMaterial("FT_RenderChrome") });
-  refsByContext.set(ctx, { targets, springArm, tourPath, cameraTour, dynamicMesh, manualCapture, mirrorRipple, chrome: chrome.guid });
+  refsByContext.set(ctx, { targets, springArm, tourPath, cameraTour, dynamicMesh, decalSpawner, manualCapture, mirrorRipple, chrome: chrome.guid });
 }
 
 /**
@@ -521,6 +524,43 @@ async function saveDynamicMesh(ctx: FeatureTestContext): Promise<PlacedClass> {
 }
 
 /**
+ * Spawns a pooled runtime decal of a Decal Material Instance at its own location on Begin Play via the Spawn Decal
+ * node, beside a Decal component of its own on a plate of its own (a decal in a Prefab, which its Prefab Preview shows).
+ */
+async function saveDecalSpawner(ctx: FeatureTestContext): Promise<PlacedClass> {
+  const decalMaterial = requireRef(ctx.assets.materials.decalLitInstance, "the decal Material Instance");
+  const components = [
+    // A plate of its own for its decal to land on, so the Prefab Preview (which has no floor) shows it.
+    { ...meshComp("prefab-decal-plate", "box"), transform: tf([1.6, -0.02, 0], { scale: [1.4, 0.04, 1.4] }) },
+    comp("prefab-decal", "DecalComponent", {
+      ...parseDecalProperties({ materialGuid: requireRef(ctx.assets.materials.decalGlow, "the Additive decal Material"), size: [1.2, 1, 1.2], tint: [1, 0.6, 0.3] }),
+    }, tf([1.6, 0, 0])),
+  ];
+  const graph = classGraph({
+    members: [],
+    components,
+    nodes: [
+      gNode("begin", "flow.event.beginPlay", 0, 0),
+      gNode("self-loc", "transform.getActorLocation", 0, 140),
+      gNode("spawn", "decals.spawn", 320, 0, {
+        "default:material": decalMaterial,
+        "default:size": { x: 1.5, y: 1, z: 1.5 },
+        "default:tint": { x: 1, y: 0.9, z: 0.8, w: 1 },
+        "default:opacity": 0.9,
+        "default:lifetime": 0,
+        "default:fadeOutDuration": 0,
+      }),
+    ],
+    edges: [
+      gWire("begin", "execOut", "spawn", "execIn"),
+      gWire("self-loc", "location", "spawn", "location"),
+    ],
+  });
+  const ref = await ctx.saveClass({ folder: RENDER_FOLDER, name: "FT_RenderDecalSpawner", parentClass: "Actor", graph });
+  return { ref, components };
+}
+
+/**
  * Every capture renders only this subject group. A full-scene capture warms
  * every main-scene shader for each pass, which misses the first-frame deadline
  * on software GL.
@@ -819,6 +859,60 @@ function placeEffects(ctx: FeatureTestContext, refs: RenderingRefs): void {
   ]));
   add(primitive("ft-render-fog-glow", "Fog Glow Sphere", "sphere", zone.at(-7, 0.75, -6), {
     materialGuid: ctx.assets.materials.emissive ?? null,
+  }));
+
+  // Projected Decals, one Decal Material root per Blend Mode: a lit, normal-mapped Translucent floor decal and a
+  // scene-owned override of it, an unlit Additive emissive ramp decal (angular fade), a Multiply stain, a lit Masked
+  // decal, an unlit Opaque one, and a dynamic Spawn Decal of a Material Instance.
+  const decals = ctx.assets.materials;
+  const decalLit = requireRef(decals.decalLit, "the lit decal Material");
+  add(actor("ft-render-decal-floor", "Lit Floor Decal", tf(zone.at(2, 0.1, 4.5)), [
+    comp("ft-render-decal-floor-comp", "DecalComponent", {
+      ...parseDecalProperties({ materialGuid: decalLit, size: [2.2, 1.0, 2.2], sortOrder: 0 }),
+    }),
+  ]));
+  add(actor("ft-render-decal-override", "Decal With Own Tint", tf(zone.at(-0.6, 0.1, 4.5)), [{
+    ...comp("ft-render-decal-override-comp", "DecalComponent", {
+      ...parseDecalProperties({ materialGuid: decalLit, size: [1.6, 1.0, 1.6], tint: [0.9, 0.9, 1] }),
+    }),
+    // Scene-owned values of the Material's parameters: a private copy of it, which shares its program.
+    materialInstance: { materialGuid: decalLit, parameters: { Tint: { kind: "color", value: [0.4, 0.6, 1, 1] } } },
+  }]));
+  add(actor("ft-render-decal-multiply", "Multiply Stain Decal", tf(zone.at(4.6, 0.1, 2.4)), [
+    comp("ft-render-decal-multiply-comp", "DecalComponent", {
+      ...parseDecalProperties({ materialGuid: requireRef(decals.decalMultiply, "the Multiply decal Material"), size: [1.8, 1.0, 1.8], sortOrder: 2 }),
+    }),
+  ]));
+  add(actor("ft-render-decal-masked", "Masked Cells Decal", tf(zone.at(-0.6, 0.1, 6.8)), [
+    comp("ft-render-decal-masked-comp", "DecalComponent", {
+      ...parseDecalProperties({ materialGuid: requireRef(decals.decalMasked, "the Masked decal Material"), size: [1.6, 1.0, 1.6] }),
+    }),
+  ]));
+  add(actor("ft-render-decal-opaque", "Opaque Stripes Decal", tf(zone.at(4.6, 0.1, 7.4)), [
+    comp("ft-render-decal-opaque-comp", "DecalComponent", {
+      ...parseDecalProperties({ materialGuid: requireRef(decals.decalOpaque, "the Opaque decal Material"), size: [1.6, 1.0, 0.8] }),
+    }),
+  ]));
+  add(primitive("ft-render-decal-ramp", "Decal Test Ramp", "box", zone.at(5.5, 0.55, 5.2), {
+    materialGuid: surface,
+    rotationDeg: [0, 0, 28],
+    scale: [2.4, 0.2, 2.0],
+  }));
+  add(actor("ft-render-decal-angled", "Unlit Ramp Decal", tf(zone.at(5.5, 0.6, 5.2)), [
+    comp("ft-render-decal-angled-comp", "DecalComponent", {
+      ...parseDecalProperties({
+        materialGuid: requireRef(decals.decalGlow, "the Additive decal Material"),
+        tint: [0.4, 0.9, 1.0],
+        opacity: 0.85,
+        size: [2.2, 1.8, 1.8],
+        fadeAngle: 60,
+        sortOrder: 1,
+      }),
+    }),
+  ]));
+  add(actor("ft-render-decal-spawner", "Runtime Decal Spawner", tf(zone.at(2, 0.1, 7.2)),
+    instanceComponents("ft-render-decal-spawner", refs.decalSpawner.components), {
+    classId: refs.decalSpawner.ref.classId,
   }));
 
   // A three-walled, roofed booth: the probe captures its static walls, so the chrome ball inside

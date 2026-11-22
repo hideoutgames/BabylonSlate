@@ -299,6 +299,17 @@ interface AlbedoBinding {
 }
 const albedoBindings = new WeakMap<AbstractMesh, AlbedoBinding>();
 
+type BatchedSpriteTextureHooks = {
+  preparation: (mesh: AbstractMesh) => Promise<void> | undefined;
+  refresh: (mesh: AbstractMesh, assets: MeshAssetContext, changed: ReadonlySet<string>) => Promise<void>[];
+};
+let batchedSpriteTextureHooks: BatchedSpriteTextureHooks | null = null;
+
+/** Registers `WorldSpriteBatcher`'s texture preparation/refresh hooks without creating a module cycle. */
+export function registerBatchedSpriteTextureHooks(hooks: BatchedSpriteTextureHooks): void {
+  batchedSpriteTextureHooks = hooks;
+}
+
 /** Construction-time readiness for owned sprite/tilemap and skybox textures only. */
 export function ownedVisualTexturePreparation(root: AbstractMesh): Promise<void> | undefined {
   const pending: Promise<void>[] = [];
@@ -310,8 +321,10 @@ export function ownedVisualTexturePreparation(root: AbstractMesh): Promise<void>
     const binding = albedoBindings.get(mesh);
     const albedo = binding?.preparation;
     const skybox = skyboxMeshPreparation(mesh);
+    const batchedSprite = batchedSpriteTextureHooks?.preparation(mesh);
     if (albedo) pending.push(albedo);
     if (skybox) pending.push(skybox);
+    if (batchedSprite) pending.push(batchedSprite);
   }
   return pending.length ? Promise.all(pending).then(() => undefined) : undefined;
 }
@@ -512,6 +525,8 @@ export function refreshAlbedoTextures(
 ): Promise<void>[] {
   const pending: Promise<void>[] = [];
   for (const mesh of [root, ...root.getChildMeshes()]) {
+    const batched = batchedSpriteTextureHooks?.refresh(mesh, assets, changed);
+    if (batched?.length) pending.push(...batched);
     const binding = albedoBindings.get(mesh);
     if (!binding?.guid || !changed.has(binding.guid)) continue;
     const before = binding.preparation;

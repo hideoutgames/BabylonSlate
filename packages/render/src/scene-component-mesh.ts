@@ -12,7 +12,7 @@ import type { Scene } from "@babylonjs/core/scene";
 import {
   isOverlayLayoutClass, isUIControl2DClass, LIGHT_2D_CLASS_ID, MIRROR_CLASS_ID, parseSurfaceShadingMode, normalizeWaterBody, overlayPanelDestFromScale,
   parseCableProperties, parseMirrorProperties, parseOverlayLayoutProperties, parseOverlayPanelProperties,
-  parseSpringArmProperties, SPRING_ARM_COMPONENT_CLASS_ID, supportsOverlayVisualStyle, waterKindForClass,
+  parseSpringArmProperties, POST_PROCESSING_PANEL_CLASS_ID, SPRING_ARM_COMPONENT_CLASS_ID, supportsOverlayVisualStyle, waterKindForClass,
   type SerializedActor, type SerializedComponent,
 } from "@haptic/core";
 import type { TilemapPayload } from "@haptic/assets";
@@ -32,6 +32,7 @@ import {
   type EditorVolumeKind,
 } from "./editor-volume";
 import { createFogVolumeGuide, createReflectionProbeGuide } from "./fog-volume-guide";
+import { createDecalGuide } from "./decal-guide";
 import { createFoliageMesh } from "./foliage-mesh";
 import { GIZMO_AXIS_COLORS } from "./gizmo-host";
 import { createModelActorRoot } from "./glb-anim";
@@ -251,6 +252,13 @@ function createComponentMesh(
     mesh.visibility = 0;
     return mesh;
   }
+  if (component.classId === POST_PROCESSING_PANEL_CLASS_ID) {
+    // The panel's rectangle: the actor's centred unit square, sized by its scale. It draws nothing in the editor; its
+    // Material runs only in Play.
+    const mesh = MeshBuilder.CreatePlane(name, { width: 1, height: 1 }, scene);
+    mesh.visibility = 0;
+    return mesh;
+  }
   if (component.classId === "CableComponent") {
     const properties = parseCableProperties(component.properties);
     const mesh = createCableMesh(scene, name, properties);
@@ -271,6 +279,7 @@ function createComponentMesh(
   }
   if (component.classId === "WaterRemovalVolumeComponent") return createWaterRemovalMesh(scene, name, component.properties, { editor: true });
   if (component.classId === "FogVolumeComponent") return createFogVolumeGuide(scene, name, component.properties);
+  if (component.classId === "DecalComponent") return createDecalGuide(scene, name, component.properties);
   if (component.classId === "ReflectionProbeComponent") return createReflectionProbeGuide(scene, name, component.properties);
   if (component.classId === "LandscapeComponent") return createLandscapeMesh(scene, name, component.properties, assets);
   if (component.classId === "FoliageComponent") return createFoliageMesh(scene, name, component.properties, assets);

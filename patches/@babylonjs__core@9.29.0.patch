@@ -81,6 +81,7 @@ index e33593b25e62a6cb9f47cd552ee314d4b0805236..22f10c03a1f446614259761612624a31
          gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, rtWrapper._framebuffer);
          for (let i = 0; i < count; i++) {
 diff --git a/Engines/renderTargetWrapper.js b/Engines/renderTargetWrapper.js
+index 48786afb1507f2fd0bfdcccdb9bba60ea008d1ed..cb3b3237755017c05e6d525ad268fc26d43bf7ec 100644
 --- a/Engines/renderTargetWrapper.js
 +++ b/Engines/renderTargetWrapper.js
 @@ -460,7 +460,7 @@ export class RenderTargetWrapper {
@@ -114,7 +115,7 @@ index 24b6329cb60c28f279e16018f9a3f5566d8c30b5..82cfaba9ce0c12d963c3b5074fe51494
       * Unbind all textures from the webGL context
       */
 diff --git a/Engines/thinEngine.pure.js b/Engines/thinEngine.pure.js
-index 1b0259a1a514fadb726788114650232754c0287f..cab2bd4229f50b188966c51806254d28348fdab4 100644
+index 1b0259a1a514fadb726788114650232754c0287f..d7b0deca05e881f7a0d15959e0034025270309a6 100644
 --- a/Engines/thinEngine.pure.js
 +++ b/Engines/thinEngine.pure.js
 @@ -728,6 +728,8 @@ export class ThinEngine extends AbstractEngine {
@@ -513,8 +514,23 @@ index ab05306fb817aad240785800d2c19d8165d78c77..39cb6197a7c41627cd8939cefc2ded81
                  this._markSubMeshesAsDirty((defines) => defines.markAsLightDirty(dispose));
              }
              /** @internal */
+diff --git a/Meshes/instancedMesh.pure.js b/Meshes/instancedMesh.pure.js
+index d7fd2799b66c7b00e2d6d563ea47d59d39ad9a5c..824ff4aa4980176c98f7f3e0e716a63907db1ec8 100644
+--- a/Meshes/instancedMesh.pure.js
++++ b/Meshes/instancedMesh.pure.js
+@@ -709,7 +709,9 @@ export function RegisterInstancedMesh() {
+                     this._userInstancedBuffersStorage.vertexBuffers[kind] = new VertexBuffer(this.getEngine(), this._userInstancedBuffersStorage.data[kind], kind, true, false, stride, true);
+                     this._invalidateInstanceVertexArrayObject();
+                 }
+-                else {
++                // Haptic: an attribute buffer that already holds these values this frame (`Scene._instanceUploads`) is not
++                // uploaded again. Unset, every draw uploads.
++                else if (!this._scene._instanceUploads?.attributesKept(this, this._userInstancedBuffersStorage.vertexBuffers[kind], data, offset)) {
+                     this._userInstancedBuffersStorage.vertexBuffers[kind].updateDirectly(data, 0);
+                 }
+             }
 diff --git a/Meshes/mesh.pure.js b/Meshes/mesh.pure.js
-index 4b5dc52902b25c69fa8fad82bc9a8067ee48ad6b..8a8974d1399a12b4621f0af950819a323019fa5d 100644
+index 4b5dc52902b25c69fa8fad82bc9a8067ee48ad6b..88c3286f81242572d971fe1f6611773e34d5ce52 100644
 --- a/Meshes/mesh.pure.js
 +++ b/Meshes/mesh.pure.js
 @@ -1188,6 +1188,18 @@ export class Mesh extends AbstractMesh {
@@ -536,6 +552,39 @@ index 4b5dc52902b25c69fa8fad82bc9a8067ee48ad6b..8a8974d1399a12b4621f0af950819a32
          if (!instanceDataStorage.visibleInstances) {
              instanceDataStorage.visibleInstances = {
                  defaultRenderId: renderId,
+@@ -1726,7 +1738,17 @@ export class Mesh extends AbstractMesh {
+         const needUpdateBuffer = !instancesBuffer ||
+             currentInstancesBufferSize !== instanceStorage.instancesBufferSize ||
+             (this._scene.needsPreviousWorldMatrices && !instanceStorage.instancesPreviousBuffer);
+-        if (!this._instanceDataStorage.manualUpdate && (!instanceDataStorage.isFrozen || needUpdateBuffer)) {
++        // Haptic: the Scene's optional record of what each batch's buffer holds (`_instanceUploads`): a draw whose rows the
++        // buffer already holds this frame neither fills nor uploads them again. Unset, every draw fills and uploads.
++        const uploads = instanceDataStorage.useMonoDataStorageRenderPass ? this._scene._instanceUploads : undefined;
++        const kept = uploads && !needUpdateBuffer && !instanceDataStorage.manualUpdate && !instanceDataStorage.isFrozen
++            ? uploads.kept(this, instanceStorage, visibleInstances, renderSelf)
++            : -1;
++        const fills = kept < 0 && !this._instanceDataStorage.manualUpdate && (!instanceDataStorage.isFrozen || needUpdateBuffer);
++        if (kept >= 0) {
++            instancesCount = kept;
++        }
++        else if (fills) {
+             const world = this.getWorldMatrix();
+             if (renderSelf) {
+                 if (this._scene.needsPreviousWorldMatrices) {
+@@ -1833,10 +1855,12 @@ export class Mesh extends AbstractMesh {
+                 vertexAndArrayObjectBuffers["previousWorld3"] = instancesPreviousBuffer.createVertexBuffer("previousWorld3", 12, 4);
+             }
+             this._invalidateInstanceVertexArrayObject();
++            uploads?.uploaded(this, instanceStorage, visibleInstances, renderSelf, fills);
+         }
+-        else {
++        else if (kept < 0) {
+             if (!this._instanceDataStorage.isFrozen || this._instanceDataStorage.forceMatrixUpdates) {
+                 instancesBuffer.updateDirectly(instanceStorage.instancesData, 0, instancesCount);
++                uploads?.uploaded(this, instanceStorage, visibleInstances, renderSelf, fills);
+                 if (this._scene.needsPreviousWorldMatrices && (!this._instanceDataStorage.manualUpdate || this._instanceDataStorage.previousManualUpdate)) {
+                     instancesPreviousBuffer.updateDirectly(instanceStorage.instancesPreviousData, 0, instancesCount);
+                 }
 diff --git a/Meshes/subMesh.pure.js b/Meshes/subMesh.pure.js
 index ba4dae8e545feb1331a9a9ff8bfd3523e040429f..11b3e464408ee6b1e66f0466f1e996f669614358 100644
 --- a/Meshes/subMesh.pure.js
@@ -1097,37 +1146,6 @@ index 23cc4b44ae5ddaa1a098cc367cbe2b53fb5c8196..bacc8b9795a0f0634198be4e50fbb399
              this._update(emitterWM);
          }
          let outparticles = 0;
-diff --git a/Physics/v2/Plugins/havokPlugin.js b/Physics/v2/Plugins/havokPlugin.js
-index 3d66a1233b00a9d792d58bb0b233cf8815e5a9de..e73a4da64e042d7c2f0a9f44b4777721e51b58d7 100644
---- a/Physics/v2/Plugins/havokPlugin.js
-+++ b/Physics/v2/Plugins/havokPlugin.js
-@@ -918,9 +918,13 @@ export class HavokPlugin {
-      * will set the shape for each instance of the mesh.
-      */
-     setShape(body, shape) {
--        const shapeHandle = shape && shape._pluginData ? shape._pluginData : BigInt(0);
-+        // Havok 1.3.14 binds HP_ShapeId as a one-element tuple, including null.
-+        // Keep public setShape(body, null) usable for final collider detachment.
-+        const shapeHandle = shape && shape._pluginData ? shape._pluginData : [BigInt(0)];
-         if (!(body.transformNode instanceof Mesh) || !body.transformNode._thinInstanceDataStorage?.matrixData) {
--            this._hknp.HP_Body_SetShape(body._pluginData.hpBodyId, shapeHandle);
-+            if (this._hknp.HP_Body_SetShape(body._pluginData.hpBodyId, shapeHandle) !== this._hknp.Result.RESULT_OK) {
-+                throw new Error("Havok native shape attachment failed");
-+            }
-             this._internalUpdateMassProperties(body._pluginData);
-             return;
-         }
-@@ -1383,7 +1387,9 @@ export class HavokPlugin {
-                 }
-                 // Set transform using the (possibly updated) region offset
-                 const offset = body._pluginData.worldRegion.floatingOrigin;
--                this._hknp.HP_Body_SetQTransform(body._pluginData.hpBodyId, this._getTransformInfos(node, offset));
-+                if (this._hknp.HP_Body_SetQTransform(body._pluginData.hpBodyId, this._getTransformInfos(node, offset)) !== this._hknp.Result.RESULT_OK) {
-+                    throw new Error("Havok native body teleport failed");
-+                }
-             }
-         }
-         else if (body.getPrestepType() == PhysicsPrestepType.ACTION) {
 diff --git a/Shaders/particles.vertex.js b/Shaders/particles.vertex.js
 index 7b31cf7b7346a75ef2454e19770130d44c4e1fcd..8b56520e694ce9537726ffdc3edda905a33c4f18 100644
 --- a/Shaders/particles.vertex.js
@@ -1167,10 +1185,10 @@ index 046984e478022e39c2405a1fa1d86c5326015e25..b516442421c03d91a13171478e349f6f
          for (const camera of cameras) {
              camera.dispose();
 diff --git a/scene.pure.d.ts b/scene.pure.d.ts
-index 87086e3298f112a76b9e324e2d04d6b1ea60cd47..f55d117c2039dab5494eacedb2426e63159fc5ea 100644
+index 87086e3298f112a76b9e324e2d04d6b1ea60cd47..5c9f06343fe1b3f263704fd97c0ea29e53347b5d 100644
 --- a/scene.pure.d.ts
 +++ b/scene.pure.d.ts
-@@ -173,6 +173,12 @@ export declare class Scene implements IAnimatable, IClipPlanesHolder, IAssetCont
+@@ -173,6 +173,22 @@ export declare class Scene implements IAnimatable, IClipPlanesHolder, IAssetCont
      readonly _isScene = true;
      /** @internal */
      _blockEntityCollection: boolean;
@@ -1180,10 +1198,20 @@ index 87086e3298f112a76b9e324e2d04d6b1ea60cd47..f55d117c2039dab5494eacedb2426e63
 +     * @internal
 +     */
 +    _lightFreeMesh?: (mesh: AbstractMesh) => boolean;
++    /**
++     * Haptic: the record of what each instanced batch's buffers hold (`instance-uploads.ts`), so a draw whose instance
++     * rows or attribute values its buffers already hold this frame uploads nothing. Unset, every draw uploads as upstream.
++     * @internal
++     */
++    _instanceUploads?: {
++        kept(mesh: AbstractMesh, storage: object, instances: Nullable<readonly AbstractMesh[]> | undefined, renderSelf: boolean): number;
++        uploaded(mesh: AbstractMesh, storage: object, instances: Nullable<readonly AbstractMesh[]> | undefined, renderSelf: boolean, filled: boolean): void;
++        attributesKept(mesh: AbstractMesh, buffer: object, data: Float32Array, used: number): boolean;
++    };
      /**
       * Executes a synchronous action without allowing it to weaken an existing entity-collection block.
       * @param blockEntityCollection whether the action requires entity collection to be blocked
-@@ -2365,8 +2371,9 @@ export declare class Scene implements IAnimatable, IClipPlanesHolder, IAssetCont
+@@ -2365,8 +2381,9 @@ export declare class Scene implements IAnimatable, IClipPlanesHolder, IAssetCont
       * Render the scene
       * @param updateCameras defines a boolean indicating if cameras must update according to their inputs (true by default)
       * @param ignoreAnimations defines a boolean indicating if animations should not be executed (false by default)

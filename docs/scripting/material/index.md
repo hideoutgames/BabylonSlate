@@ -6,6 +6,7 @@ Nodes for Material and Material Function graphs, grouped as in **Add Node**.
 
 | Node | Description |
 | --- | --- |
+| [Decal Output](decal-output.md) | Receives what a Decal Material draws on the surfaces inside a decal's box. |
 | [Material Output](material-output.md) | Receives the final surface settings of a material, such as colour, roughness and opacity. |
 | [Particle Output](particle-output.md) | Sets the colour and alpha of each particle drawn with the material. |
 | [Post Process Output](post-process-output.md) | Sets the colour of each pixel in a post-process pass. |

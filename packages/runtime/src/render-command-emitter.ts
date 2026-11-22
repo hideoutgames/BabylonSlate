@@ -8,6 +8,7 @@ import {
   deformerBindings,
   DEFORMER_PROPERTY_KEYS,
   fogVolumeBindings,
+  decalBindings,
   reflectionProbeBindings,
   isInteractiveUIControl2DClass,
   isOverlayLayoutClass,
@@ -27,6 +28,7 @@ import {
   parseSkyboxSize,
   parseSpringArmProperties,
   parseText2DProperties,
+  POST_PROCESSING_PANEL_CLASS_ID,
   parseText3DProperties,
   SPRING_ARM_COMPONENT_CLASS_ID,
   supportsOverlayVisualStyle,
@@ -170,6 +172,22 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
       (volumes) => this.host.emit({ type: "setFogVolumes", slotId, actorId: actor.guid, volumes }));
   }
 
+  emitActorDecals(actor: Actor, slotId: number): void {
+    this.emitComponentBindings(slotId, this.state.decalSlots,
+      !actor.sceneLayerId && hasLiveComponent(actor, "DecalComponent"),
+      () => decalBindings(liveBindingInputs(actor, "DecalComponent", (component) => ({
+        enabled: component.getVariable("enabled"),
+        materialGuid: component.getVariable("materialGuid"),
+        tint: rgbTuple(component.getVariable("tint")),
+        opacity: component.getVariable("opacity"),
+        size: sizeTuple(component),
+        fadeAngle: component.getVariable("fadeAngle"),
+        sortOrder: component.getVariable("sortOrder"),
+        cullDistance: component.getVariable("cullDistance"),
+      }))),
+      (decals) => this.host.emit({ type: "setDecals", slotId, actorId: actor.guid, decals }));
+  }
+
   emitActorReflectionProbes(actor: Actor, slotId: number): void {
     this.emitComponentBindings(slotId, this.state.reflectionProbeSlots,
       !actor.sceneLayerId && hasLiveComponent(actor, "ReflectionProbeComponent"),
@@ -257,6 +275,7 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
     this.emitActorOutlines(actor, slotId);
     this.emitActorDeformers(actor, slotId);
     this.emitActorFogVolumes(actor, slotId);
+    this.emitActorDecals(actor, slotId);
     this.emitActorReflectionProbes(actor, slotId);
     this.emitActorAreaLights(actor, slotId);
     this.emitActorLights2D(actor, slotId);
@@ -285,7 +304,8 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
       const componentAssetGuid =
         primary.assetGuid ?? primary.getVariable("assetGuid");
       const assetGuid =
-        overlayPanel
+        primary.classId === POST_PROCESSING_PANEL_CLASS_ID ? null
+        : overlayPanel
           ? overlayPanel.source === "material"
             ? overlayPanel.materialGuid
             : overlayPanel.textureGuid
@@ -454,6 +474,8 @@ export class RenderCommandEmitter implements RuntimeSubsystem {
   ): void {
     for (const component of renderables) {
       if (component.classId === "2DTextComponent" || component.classId === "2DRichTextComponent") continue;
+      // Its Material is a pass the Scene Layer compositor runs (`sceneLayerPostProcessPanels`), never a surface.
+      if (component.classId === POST_PROCESSING_PANEL_CLASS_ID) continue;
       const material = component.getVariable("materialObject");
       // The renderer may have rebuilt the slot and lost earlier writes, so the next write of each parameter is sent.
       if (material instanceof MaterialObject) this.host.materialParameters().resend(material);
@@ -522,9 +544,11 @@ const hasLiveComponent = (actor: Actor, classId: string): boolean =>
 function liveBindingInputs(actor: Actor, classId: string, properties: (component: ActorComponent) => Record<string, unknown>): SerializedComponent[] {
   return actor.components.filter((component) => !component.destroyed).map((component) => {
     const { position, rotation, scale } = component.transform;
+    const own = component.classId === classId;
     return {
       id: component.guid, classId: component.classId, parentId: component.parentId,
-      properties: component.classId === classId ? properties(component) : {},
+      properties: own ? properties(component) : {},
+      ...(own && component.materialInstance ? { materialInstance: component.materialInstance } : {}),
       transform: { position: [position.x, position.y, position.z], rotation: [rotation.x, rotation.y, rotation.z, rotation.w], scale: [scale.x, scale.y, scale.z] },
     };
   });
@@ -592,6 +616,8 @@ function isPlayRenderable(
   if (component.destroyed || component.getVariable("editorOnly") === true) return false;
   if (isUIControl2DClass(component.classId)) return !!component.owner?.sceneLayerId;
   if (isOverlayLayoutClass(component.classId)) return true;
+  // An empty node that carries the panel actor's pose, from which the compositor frames the panel.
+  if (component.classId === POST_PROCESSING_PANEL_CLASS_ID) return !!component.owner?.sceneLayerId;
   if (component.classId === "LightComponent" || component.classId === "HemisphericFillLightComponent" || component.classId === "CameraComponent" || component.classId === SPRING_ARM_COMPONENT_CLASS_ID) return true;
   if (waterKindForClass(component.classId) || component.classId === "WaterRemovalVolumeComponent") return true;
   if (component.classId === "2DButtonComponent") return !skipButtonMesh;
@@ -679,6 +705,7 @@ function playShadingOf(component: ActorComponent): { shadingMode?: "3d" | "unlit
 function playMeshKindOf(component: ActorComponent): string | null {
   if (isUIControl2DClass(component.classId)) return "2dcontrol";
   if (isOverlayLayoutClass(component.classId)) return "2dlayout";
+  if (component.classId === POST_PROCESSING_PANEL_CLASS_ID) return "2dpostprocesspanel";
   if (component.classId === "CableComponent") return "cable";
   if (component.classId === "MirrorComponent") return "mirror";
   if (component.classId === "DynamicRuntimeMeshComponent") return "dynamicRuntimeMesh";
@@ -856,7 +883,7 @@ function playMeshPartOf(
     componentId: component.guid,
     ...(component.getVariable("visible") === false ? { hidden: true } : {}),
     ...(component.classId === "LandscapeComponent" ? { landscape: parseLandscapeProperties(Object.fromEntries(
-      ["width", "depth", "subdivisions", "heights", "weights", "materialGuid", "collisionsEnabled"].map((key) => [key, component.getVariable(key)]),
+      ["width", "depth", "subdivisions", "heights", "weights", "data", "materialGuid", "collisionsEnabled"].map((key) => [key, component.getVariable(key)]),
     )) } : {}),
     ...(component.classId === "FoliageComponent" ? { foliage: parseFoliageProperties({ groupId: component.getVariable("groupId"), batches: component.getVariable("batches") }) } : {}),
     castShadows: componentCastsShadows(component.classId, component.getVariable("castShadows")),

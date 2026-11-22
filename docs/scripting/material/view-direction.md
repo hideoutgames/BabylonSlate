@@ -14,4 +14,4 @@ Returns the direction from the surface point toward the camera, scaled to a leng
 
 ## Notes
 
-- Only in Surface and Landscape materials.
+- Only in Surface, Landscape and Decal materials.

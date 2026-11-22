@@ -7,6 +7,7 @@ export type AssetCreateMaterialDomain =
   | "postProcess"
   | "particle"
   | "text"
+  | "decal"
   | "ui";
 
 export type AssetCreateRequest = {

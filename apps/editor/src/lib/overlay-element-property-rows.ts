@@ -1,6 +1,7 @@
 import {
   parseJoystick2DProperties,
   parseOverlayPanelProperties,
+  parsePostProcessingPanelProperties,
   SCENE_LAYER_ANCHOR_LABELS,
   SCENE_LAYER_ANCHORS,
   SCENE_LAYER_HIT_TEST_LABELS,
@@ -64,8 +65,8 @@ export function joystick2DPropertyRows(
   });
   return [
     { kind: "boolean", id: rowId(actorId, component.id, "enabled"), label: "Enabled", value: joystick.enabled, onChange: value => update("enabled", value) },
-    assetRow(actorId, component, "backgroundMaterialGuid", "Background Material", ["Material", "MaterialInstance"], update, context, "Pick Background Material", undefined, "ui"),
-    assetRow(actorId, component, "joystickMaterialGuid", "Joystick Material", ["Material", "MaterialInstance"], update, context, "Pick Joystick Material", undefined, "ui"),
+    assetRow(actorId, component, "backgroundMaterialGuid", "Background Material", ["Material", "MaterialInstance"], update, context, "Pick Background Material", "None", "ui"),
+    assetRow(actorId, component, "joystickMaterialGuid", "Joystick Material", ["Material", "MaterialInstance"], update, context, "Pick Joystick Material", "None", "ui"),
     numeric("radius", "Background Radius", 0.01),
     numeric("joystickRadius", "Joystick Radius", 0.01, joystick.radius * 0.95),
     numeric("deadZone", "Dead Zone", 0, 0.99),
@@ -103,7 +104,7 @@ export function visual2DPropertyRows(
           assetProperty === "materialGuid"
             ? "Pick Material"
             : "Pick Texture",
-          undefined,
+          "None",
           assetProperty === "materialGuid" ? "ui" : undefined,
         ),
       ]
@@ -132,6 +133,31 @@ export function visual2DPropertyRows(
         ...(component.classId === "2DButtonComponent" ? ["focusEnabled", "focusInitial", "focusUp", "focusDown", "focusLeft", "focusRight", "focused"] : []),
       ]),
     ),
+  ];
+}
+
+export function postProcessingPanelPropertyRows(
+  actorId: string,
+  component: SerializedComponent,
+  update: ComponentPropertyUpdate,
+  context: ComponentPropertyContext,
+): PropertyRow[] {
+  const parsed = parsePostProcessingPanelProperties(component.properties);
+  return [
+    {
+      kind: "boolean",
+      id: rowId(actorId, component.id, "enabled"),
+      label: "Enabled",
+      value: parsed.enabled,
+      description: "Off, the actors inside draw as under a plain parent, at no extra cost.",
+      onChange: (value) => update("enabled", value),
+    },
+    {
+      ...assetRow(actorId, component, "materialGuid", "Material", ["Material", "MaterialInstance"], update, context,
+        "Pick Post-Process Material", "None", "postProcess"),
+      description: "Runs in Play over this actor and everything under it, cut to the panel's rectangle.",
+    },
+    ...genericRows(actorId, component, update, new Set(["enabled", "materialGuid"])),
   ];
 }
 
@@ -165,7 +191,7 @@ export function panel2DPropertyRows(
       update,
       context,
       parsed.source === "material" ? "Pick Material" : "Pick Texture",
-      undefined,
+      "None",
       parsed.source === "material" ? "ui" : undefined,
     ),
     sliderRow(

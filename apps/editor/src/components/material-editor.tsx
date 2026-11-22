@@ -35,6 +35,7 @@ import {
 import { GraphEditor, type GraphPasteElements, type PaletteNode } from "@haptic/graph-ui";
 import { useGraphSessionViewport } from "../lib/graph-session-viewport";
 import { useRevealResultWindow } from "../lib/use-reveal-result-window";
+import { useDockPanelShown } from "../lib/use-dock-panel-shown";
 import { primaryDockPanel } from "../shell/window-catalog";
 import { isMaterialSamplerTextureAsset } from "../lib/content-browser-helpers";
 import {
@@ -84,8 +85,10 @@ import {
   serializedToMaterialGraph,
   setMaterialDomain,
   parseMaterialDomain,
+  materialBlendModesFor,
   validateMaterialDocument,
   validateMaterialFunctionDocument,
+  type MaterialBlendMode,
   type MaterialDocument,
   type MaterialFunctionDocument,
   type MaterialDomain,
@@ -710,8 +713,8 @@ export function MaterialFunctionGraphPanel(_props: IDockviewPanelProps) {
  * Preview dock: primitive picker, the Render control, and the live canvas the
  * render host draws into.
  */
-export function MaterialPreviewPanel(_props: IDockviewPanelProps) {
-  void _props;
+export function MaterialPreviewPanel(props: IDockviewPanelProps) {
+  const shown = useDockPanelShown(props.api);
   const { document, commit } = useMaterialDocument();
   const { setPreviewNode } = useMaterialEditing();
   return (
@@ -721,6 +724,7 @@ export function MaterialPreviewPanel(_props: IDockviewPanelProps) {
       onPreviewChange={(preview) => commit({ ...document, preview })}
       previewedNode={usePreviewedNode(document)}
       onStopPreviewingNode={() => setPreviewNode(null)}
+      shown={shown}
     />
   );
 }
@@ -732,6 +736,7 @@ export function MaterialPreviewSurface({
   onPreviewChange,
   previewedNode = null,
   onStopPreviewingNode,
+  shown = true,
 }: {
   preview: MaterialPreviewSettings;
   domain: MaterialDomain | null;
@@ -739,6 +744,8 @@ export function MaterialPreviewSurface({
   /** The node the preview shows instead of the Material's output (**Preview Node**). */
   previewedNode?: { title: string; output: string | null } | null;
   onStopPreviewingNode?: () => void;
+  /** Whether the Preview window is on screen (`useDockPanelShown`); the preview requests no frames otherwise. */
+  shown?: boolean;
 }) {
   const editing = useMaterialEditing();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -749,6 +756,8 @@ export function MaterialPreviewSurface({
     editing.attachPreviewCanvas(canvasRef.current);
     return () => editing.attachPreviewCanvas(null);
   }, [editing.attachPreviewCanvas]);
+  const { setPreviewShown } = editing;
+  useEffect(() => setPreviewShown(shown), [setPreviewShown, shown]);
 
   const modelAssets = useMemo(() => {
     void registryEpoch; // Registry contents mutate without replacing its instance.
@@ -794,7 +803,7 @@ export function MaterialPreviewSurface({
       <div className="relative flex h-full min-h-0 flex-col">
         {/* Frames the canvas so a node's value is never taken for the Material. */}
         {previewedNode ? <div className="pointer-events-none absolute inset-0 z-10 ring-2 ring-inset ring-(--warning)" aria-hidden="true" /> : null}
-        {domain !== "particle" && domain !== "text" && domain !== "ui" ? <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-2">
+        {domain !== "particle" && domain !== "text" && domain !== "decal" && domain !== "ui" ? <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-2">
           <div
             className="pointer-events-auto toolbar-island flex-wrap"
             data-testid="material-preview-overlay"
@@ -881,6 +890,13 @@ export function MaterialPreviewSurface({
   );
 }
 
+const MATERIAL_BLEND_MODE_LABELS: Record<MaterialBlendMode, string> = {
+  opaque: "Opaque",
+  masked: "Masked",
+  translucent: "Translucent",
+  additive: "Additive",
+  multiply: "Multiply",
+};
 /** Domain, shading and blend settings plus the selected node's properties. */
 export function MaterialDetailsPanel(_props: IDockviewPanelProps) {
   void _props;
@@ -909,6 +925,7 @@ function MaterialDocumentDetails() {
         { value: "postProcess", label: "Post Process" },
         { value: "particle", label: "Particle" },
         { value: "text", label: "Text" },
+        { value: "decal", label: "Decal" },
         { value: "ui", label: "User Interface" },
       ],
       onChange: (value) =>
@@ -934,14 +951,8 @@ function MaterialDocumentDetails() {
       kind: "enum",
       label: "Blend Mode",
       value: document.blendMode,
-      options: [
-        ...(document.domain === "ui" ? [] : [
-          { value: "opaque", label: "Opaque" },
-          { value: "masked", label: "Masked" },
-        ]),
-        { value: "translucent", label: "Translucent" },
-        { value: "additive", label: "Additive" },
-      ],
+      options: materialBlendModesFor(document.domain)
+        .map((mode) => ({ value: mode, label: MATERIAL_BLEND_MODE_LABELS[mode] })),
       onChange: (value) =>
         commit({
           ...document,
@@ -971,11 +982,15 @@ function MaterialDocumentDetails() {
   ];
   if ((document.domain === "surface" || document.domain === "landscape")) rows.push({ id: "boundsPadding", kind: "number", label: "Bounds Padding (Local)", value: document.boundsPadding ?? 0, min: 0, onChange: (boundsPadding) => commit({ ...document, boundsPadding }, "material:boundsPadding") });
   if ((document.domain !== "surface" && document.domain !== "landscape")) {
-    // Particle emitters own blending (their Render module), so particle Materials hide Blend Mode.
-    const hidden = document.domain === "particle" || document.domain === "text" ? ["shadingModel", "blendMode", "twoSided", "defaultNormals"] : ["shadingModel", "twoSided", "defaultNormals"];
+    // Particle emitters own blending (their Render module) and a post-process pass replaces the image, so neither has
+    // Blend Mode. A decal draws a box's far faces over the surfaces in it, and its normal is the surface's: no Two
+    // Sided or Default Normals. A User Interface Material is always unlit and two-sided; it shows only its Blend Mode.
+    const hidden = document.domain === "decal" ? ["twoSided", "defaultNormals"]
+      : document.domain === "ui" ? ["shadingModel", "twoSided", "defaultNormals"]
+        : ["shadingModel", "blendMode", "twoSided", "defaultNormals"];
     for (let i = rows.length - 1; i >= 0; i--) if (hidden.includes(rows[i]!.id)) rows.splice(i, 1);
   }
-  if ((document.domain === "surface" || document.domain === "landscape") && document.blendMode === "masked") {
+  if ((document.domain === "surface" || document.domain === "landscape" || document.domain === "decal") && document.blendMode === "masked") {
     rows.push({
       id: "alphaCutoff",
       kind: "slider",

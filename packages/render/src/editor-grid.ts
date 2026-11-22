@@ -478,6 +478,12 @@ export function createEditorGrid(
     orthoTop: null as number | null, orthoRight: null as number | null,
     px: 0, py: 0, pz: 0, scale: 0,
   };
+  // The vector uniforms, written in place on each sync. ShaderMaterial keeps the reference and reads it at
+  // every bind, and the effect caches uniforms by value, so a moved camera still uploads the new values.
+  const macroOffsets0 = new Vector4();
+  const macroOffsets1 = new Vector4();
+  const axisOrigin = new Vector2();
+  const fadeCenter = new Vector2();
 
   const sync = () => {
     if (!camera) return;
@@ -535,10 +541,10 @@ export function createEditorGrid(
     // Coarser levels and the world axes get their offsets from the origin here.
     const macro = gridMacroOffsets(origin, spacing);
     material.setFloat("gridExtent", coverage);
-    material.setVector4("macroOffsets0", new Vector4(macro[0], macro[1], macro[2], macro[3]));
-    material.setVector4("macroOffsets1", new Vector4(macro[4], macro[5], macro[6], macro[7]));
-    material.setVector2("axisOrigin", new Vector2(-origin.u, -origin.v));
-    material.setVector2("fadeCenter", new Vector2(center.u, center.v));
+    material.setVector4("macroOffsets0", macroOffsets0.set(macro[0], macro[1], macro[2], macro[3]));
+    material.setVector4("macroOffsets1", macroOffsets1.set(macro[4], macro[5], macro[6], macro[7]));
+    material.setVector2("axisOrigin", axisOrigin.set(-origin.u, -origin.v));
+    material.setVector2("fadeCenter", fadeCenter.set(center.u, center.v));
     material.setFloat("fadeStart", fadeStart);
     material.setFloat("fadeEnd", fadeEnd);
   };

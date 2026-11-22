@@ -3,18 +3,22 @@ import { Constants } from "@babylonjs/core/Engines/constants";
 import type { InternalTexture } from "@babylonjs/core/Materials/Textures/internalTexture";
 import type { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
+import type { FrameGraphTask } from "@babylonjs/core/FrameGraph/frameGraphTask";
 import { FrameGraphPostProcessTask } from "@babylonjs/core/FrameGraph/Tasks/PostProcesses/postProcessTask";
 import { geometryDepthTextureType, LogicalGeometryTask } from "./framegraph-logical-buffers";
 import { createGeometryDepthSeed } from "./geometry-depth-seed";
+import { GeometryRepeatProbeTask } from "./geometry-repeat-probe";
+import { geometryRepeat, worldDebugOff } from "./world-debug";
 import { registerSpatialGeometryPass, unregisterSpatialGeometryPass } from "./spatial-geometry-passes";
 // Unlit Standard surfaces write no reflectivity: installed before any reflectivity geometry pass compiles.
 import {
   createSpatialStages,
+  SCREEN_SHADOW_SCALE,
   spatialEffectsUnsupported,
   type SpatialStage,
 } from "./spatial-effects";
 import type { SceneEffectsPlan } from "./scene-effects";
-import { ScreenShadowsGraph } from "./screen-shadows";
+import { ScreenShadowsGraph, type MergedMarchStage } from "./screen-shadows";
 import {
   releaseManagedRenderLeaseAfterDisposal,
   type ManagedRenderCategory,
@@ -39,6 +43,7 @@ class SpatialTask extends FrameGraphPostProcessTask {
     buffers: Record<string, FrameGraphTextureHandle>,
     reads: Record<string, FrameGraphTextureHandle>,
   ) {
+    if (!stage.wrapper) throw new Error(`${stage.name} draws in the merged march pass, not a pass of its own.`);
     super(stage.wrapper.name, graph, stage.wrapper);
     this.stage = stage;
     this.buffers = buffers;
@@ -97,9 +102,24 @@ export class SpatialEffectsGraph {
   readonly compileFailure = new EffectCompileFailure();
   private readonly graph: FrameGraph;
   readonly geometry: LogicalGeometryTask;
+  /**
+   * `worlddebug geometryonce off` (or `geometryoncescissor off`): a second geometry pass the owner adds right before
+   * `geometry`, drawing its object list into scratch targets nothing reads (`GeometryRepeatProbeTask`); absent otherwise.
+   */
+  readonly geometryProbe?: GeometryRepeatProbeTask;
+  /** The passes of its stages that draw on their own: every stage but the marches merged into `screenShadows`. */
   readonly tasks: SpatialTask[] = [];
+  /** Every stage, in chain order. */
+  private readonly stages: SpatialStage[];
+  /** The stages merged into the Screen-Space Shadows pass, in chain order. */
+  private readonly merged: MergedMarchStage[];
+  /** Each stage's name, its target, and the task that writes it (`screenShadows.task` for a merged march), in order. */
+  readonly stageTargets: readonly { name: string; output: FrameGraphTextureHandle; writer: FrameGraphTask }[];
   readonly output: FrameGraphTextureHandle;
-  /** Screen-Space Shadows: a pass after the geometry pass that the owner adds before its objects (`screen-shadows.ts`). */
+  /**
+   * Screen-Space Shadows: a pass after the geometry pass that the owner adds before its objects (`screen-shadows.ts`),
+   * which also draws the ambient occlusion and volumetric marches of its target's size (`merged-marches.ts`).
+   */
   readonly screenShadows?: ScreenShadowsGraph;
   /**
    * The geometry pass starts from the scene's depth (`sceneDepth`): every stage reads the view depth alone (no ambient
@@ -180,6 +200,8 @@ export class SpatialEffectsGraph {
       // The pass clears its depth itself (`clearsDepth`): a clear task would be a render pass of its own.
       this.geometry.depthTexture = target("Spatial Geometry Z", 1, true);
       this.geometry.clearsDepth = true;
+      // Nothing reads that depth after the pass, and the next frame clears or seeds it again.
+      this.geometry.discardsDepth = true;
       this.geometry.size = { width, height };
       this.geometry.sizeIsPercentage = false;
       this.geometry.textureDescriptions = [
@@ -212,11 +234,35 @@ export class SpatialEffectsGraph {
       }
       for (const handle of Object.values(buffers))
         this.handles.push({ handle, category: "geometry" });
+      const repeat = geometryRepeat(graph.scene);
+      if (repeat !== "none") {
+        // `worlddebug geometryonce off`: the same pass once more first, into scratch targets nothing reads.
+        const probe = new GeometryRepeatProbeTask("Spatial Geometry Probe", graph, graph.scene, repeat === "scissor");
+        registerSpatialGeometryPass(graph.scene, probe.objectRenderer.renderPassId);
+        probe.camera = camera;
+        probe.objectList = this.geometry.objectList;
+        probe.depthTexture = target("Spatial Geometry Probe Z", 1, true);
+        probe.clearsDepth = true;
+        // As the real pass: its depth is not stored, so the repeat costs what that pass costs.
+        probe.discardsDepth = true;
+        probe.size = { width, height };
+        probe.sizeIsPercentage = false;
+        probe.textureDescriptions = this.geometry.textureDescriptions.map((description) => ({ ...description }));
+        this.handles.push({ handle: probe.geometryViewDepthTexture, category: "geometry" });
+        if (plan.reflections || plan.ambientOcclusion) this.handles.push({ handle: probe.geometryWorldNormalTexture, category: "geometry" });
+        if (plan.reflections) this.handles.push({ handle: probe.geometryReflectivityTexture, category: "geometry" });
+        this.geometryProbe = probe;
+      }
       if (sceneDepth !== undefined && !plan.ambientOcclusion && !plan.reflections && !plan.screenShadows) {
         this.geometry.seed = createGeometryDepthSeed(graph.engine, "Spatial Geometry Depth Seed", sceneDepth,
           this.compileFailure.for("Spatial Geometry Depth Seed"));
         this.seeded = true;
       }
+      // With Screen-Space Shadows and `worlddebug mergedmarches on` (off by default, until a native GPU proves the merge),
+      // the ambient occlusion and volumetric marches of the same target size draw in their pass (`merged-marches.ts`).
+      const marchSize = plan.screenShadows && !worldDebugOff(graph.scene, "mergedmarches")
+        ? { width: Math.ceil(width / SCREEN_SHADOW_SCALE), height: Math.ceil(height / SCREEN_SHADOW_SCALE) }
+        : undefined;
       const stages = createSpatialStages(
         graph.scene,
         camera,
@@ -224,28 +270,53 @@ export class SpatialEffectsGraph {
         width,
         height,
         this.compileFailure,
+        marchSize,
       );
+      this.stages = stages;
       for (const stage of stages) unattached.add(stage);
-      if (plan.screenShadows) {
-        this.screenShadows = new ScreenShadowsGraph(graph, camera, plan.screenShadows, this.geometry.geometryViewDepthTexture,
-          width, height, this.compileFailure);
-        this.handles.push({ handle: this.screenShadows.output, category: "geometry" });
-      }
+      const marches = (merged?: { buffers: Record<string, FrameGraphTextureHandle>; marches: MergedMarchStage[] }) => {
+        const shadows = new ScreenShadowsGraph(graph, camera, plan.screenShadows!, this.geometry.geometryViewDepthTexture,
+          width, height, this.compileFailure, merged);
+        this.handles.push({ handle: shadows.output, category: "geometry" });
+        return shadows;
+      };
+      // Declared first, as with no march merged; with marches, once their targets are.
+      const merging = stages.some((stage) => stage.march);
+      if (plan.screenShadows && !merging) this.screenShadows = marches();
       const sceneColor = source;
+      const outputs: FrameGraphTextureHandle[] = [];
+      const writers: (SpatialTask | undefined)[] = [];
+      const merged: MergedMarchStage[] = [];
       for (const stage of stages) {
         const reads: Record<string, FrameGraphTextureHandle> = {};
-        for (const [name, index] of Object.entries(stage.reads ?? {})) reads[name] = this.tasks[index]!.outputTexture;
+        for (const [name, index] of Object.entries(stage.reads ?? {})) reads[name] = outputs[index]!;
+        if (stage.march) {
+          // Drawn by the Screen-Space Shadows pass, before the objects; its readers follow as they did.
+          const output = target(stage.name, stage.scale, false, stage.format);
+          merged.push({ stage, output, running: true });
+          unattached.delete(stage);
+          outputs.push(output);
+          writers.push(undefined);
+          source = output;
+          continue;
+        }
         const task = new SpatialTask(graph, stage, buffers, reads);
         this.tasks.push(task);
         unattached.delete(stage);
         task.sourceTexture = stage.source === "scene" ? sceneColor : source;
-        task.targetTexture = target(stage.wrapper.name, stage.scale, false, stage.format);
+        task.targetTexture = target(stage.name, stage.scale, false, stage.format);
+        outputs.push(task.outputTexture);
+        writers.push(task);
         source = task.outputTexture;
       }
+      this.merged = merged;
+      if (merging) this.screenShadows = marches({ buffers, marches: merged });
+      const shadows = this.screenShadows;
+      this.stageTargets = stages.map((stage, index) => ({ name: stage.name, output: outputs[index]!, writer: writers[index] ?? shadows!.task }));
       this.output = source;
     } catch (error) {
-      for (const stage of unattached)
-        retireOwnedEffect(stage.wrapper.effect, () => stage.wrapper.dispose());
+      for (const { wrapper } of unattached)
+        if (wrapper) retireOwnedEffect(wrapper.effect, () => wrapper.dispose());
       this.disposeTasks();
       // Declarations allocate no targets until graph.build. The caller still
       // owns and retires that graph after a failed construction.
@@ -260,7 +331,9 @@ export class SpatialEffectsGraph {
    * nothing for this camera, Screen-Space Shadows without a shadowed sun or with an
    * orthographic camera, and the geometry passes once nothing running reads
    * them (the stages flagged `geometry` and the march; no other pass samples
-   * these buffers); toggling flags never rebuilds the graph.
+   * these buffers); toggling flags never rebuilds the graph. A march merged
+   * into the Screen-Space Shadows pass skips its branch there instead, and the
+   * pass runs while anything in it marches.
    */
   syncIdle(): void {
     let geometryRead = false;
@@ -268,18 +341,33 @@ export class SpatialEffectsGraph {
     // the Fog Volumes: evaluate each distinct function once.
     let evaluated: (() => boolean) | undefined;
     let skipped = false;
-    for (const task of this.tasks) {
-      const idle = task.stage.idle;
+    let task = 0, march = 0;
+    for (const stage of this.stages) {
+      const idle = stage.idle;
       if (idle && idle !== evaluated) {
         evaluated = idle;
         skipped = idle();
       }
-      task.disabled = idle !== undefined && skipped;
-      if (!task.disabled && task.stage.geometry) geometryRead = true;
+      const running = idle === undefined || !skipped;
+      if (stage.march) {
+        // The merged pass marches it this frame or leaves its branch (`ScreenShadowsGraph.sync`).
+        this.merged[march++]!.running = running;
+        continue;
+      }
+      const own = this.tasks[task++]!;
+      own.disabled = !running;
+      if (running && stage.geometry) geometryRead = true;
     }
-    // Screen-Space Shadows read the depth (and the caster mark) while they march: a shadowed sun and a perspective view.
+    // The Screen-Space Shadows pass reads the depth (and the caster mark) while it runs: while they march (a shadowed sun
+    // and a perspective view), or while a march merged into it does.
     if (this.screenShadows?.sync()) geometryRead = true;
     this.geometry.disabled = !geometryRead;
+    if (this.geometryProbe) {
+      // The repeat draws what the real pass draws this frame, as it draws it.
+      this.geometryProbe.objectList = this.geometry.objectList;
+      this.geometryProbe.camera = this.geometry.camera;
+      this.geometryProbe.disabled = this.geometry.disabled;
+    }
   }
   reconcile(): void {
     this.screenShadows?.reconcile(this.graph);
@@ -306,6 +394,8 @@ export class SpatialEffectsGraph {
     if (seed) this.seedRetirement = retireOwnedEffect(seed.effect, () => seed.dispose());
     if (this.geometry) unregisterSpatialGeometryPass(this.graph.scene, this.geometry.objectRenderer.renderPassId);
     this.geometry?.dispose();
+    if (this.geometryProbe) unregisterSpatialGeometryPass(this.graph.scene, this.geometryProbe.objectRenderer.renderPassId);
+    this.geometryProbe?.dispose();
     this.disposed = true;
   }
   whenDisposed(): Promise<void> {

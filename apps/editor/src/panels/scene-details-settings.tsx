@@ -17,63 +17,22 @@ import {
 import {
   normalizeRenderEffectsOverrides,
   normalizeScenePostProcessStack,
+  normalizeSceneLayerPostProcessStack,
   resolveRenderEffectsSettings,
-  newGuid,
   type ProjectDocument,
   type SerializedScene,
 } from "@haptic/core";
-import { HashIcon } from "lucide-react";
 import { Button } from "@haptic/ui/components/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@haptic/ui/components/dialog";
 import { Switch } from "@haptic/ui/components/switch";
 import {
   Field,
   FieldGroup,
   FieldLabel,
 } from "@haptic/ui/components/field";
-import { IconActionButton } from "../components/icon-action-button";
+import { PostProcessPassList, type PostProcessPassPick } from "../components/post-process-pass-list";
+import type { DocumentActions } from "../context/document-context-types";
 import { sceneDefaultCameraEntries } from "../lib/scene-actor-entries";
 import { ENVIRONMENT_ROW_IDS, sceneDetailsSettingsRows } from "./scene-details-settings-rows";
-
-function PostProcessEntryId({ id, index }: { id: string; index: number }) {
-  return (
-    <Dialog>
-      <DialogTrigger
-        render={
-          <IconActionButton
-            label={`Pass ${index + 1} Entry ID`}
-            className="shrink-0 pointer-coarse:size-11"
-          />
-        }
-      >
-        <HashIcon />
-      </DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Pass {index + 1} Entry ID</DialogTitle>
-          <DialogDescription>
-            Copy this ID to target this pass with Get Post Process Entry.
-          </DialogDescription>
-        </DialogHeader>
-        <PropertyGrid density="compact" rows={[{
-          kind: "text",
-          id: `scene-post-process-${id}-entry-id`,
-          label: "Entry ID",
-          value: id,
-          readOnly: true,
-          onChange: () => {},
-        }]} />
-      </DialogContent>
-    </Dialog>
-  );
-}
 
 /** Inspector state and actions the Scene Settings sections read; the Inspector owns all of it. */
 export interface SceneDetailsSettingsProps {
@@ -97,8 +56,10 @@ export interface SceneDetailsSettingsProps {
   setEffectsLutPickOpen: Dispatch<SetStateAction<boolean>>;
   cameraPickerOpen: boolean;
   setCameraPickerOpen: Dispatch<SetStateAction<boolean>>;
-  postProcessPick: "add" | { id: string } | null;
-  setPostProcessPick: Dispatch<SetStateAction<"add" | { id: string } | null>>;
+  postProcessPick: PostProcessPassPick;
+  setPostProcessPick: Dispatch<SetStateAction<PostProcessPassPick>>;
+  /** A Scene Layer shows the Project Settings Scene Layer post-processing, and edits it there. */
+  updateProjectSettings: DocumentActions["updateProjectSettings"];
   sceneLayerPick: "add" | number | null;
   setSceneLayerPick: Dispatch<SetStateAction<"add" | number | null>>;
 }
@@ -135,6 +96,7 @@ export function SceneDetailsSettings(props: SceneDetailsSettingsProps) {
     setPostProcessPick,
     sceneLayerPick,
     setSceneLayerPick,
+    updateProjectSettings,
   } = props;
   const { settingsRows, overlaySettingsRows } = sceneDetailsSettingsRows({
     scene,
@@ -184,7 +146,9 @@ export function SceneDetailsSettings(props: SceneDetailsSettingsProps) {
     overlay ? overlaySettingsRows : settingsRows.filter((row) => !ENVIRONMENT_ROW_IDS.has(row.id)),
     "Scene Settings",
   );
-  const showPostProcess = matches("Post-Process Passes Material Entry ID Enabled Scalable Resolution");
+  const showPostProcess = overlay
+    ? matches("Scene Layer Post-Processing Post-Process Passes Material Entry ID Enabled")
+    : matches("Post-Process Passes Material Entry ID Enabled Scalable Resolution");
   const projectRender = projectDocument?.settings.render;
   const effectsOverrides = scene.settings.effectsOverrides ?? {};
   const setEffectsLut = (lutTextureGuid: string | null) =>
@@ -235,64 +199,33 @@ export function SceneDetailsSettings(props: SceneDetailsSettingsProps) {
       ) : null}
       {showPostProcess ? (
         <div className="px-2 pb-3">
-          <EntryListEditor
-            title="Post-Process Passes"
-            data-testid="scene-post-process-stack"
-            items={postProcessEntries}
-            getItemKey={(item) => item.id}
-            addLabel="Add Pass"
-            countNoun={{ one: "pass", other: "passes" }}
-            onAdd={() => setPostProcessPick("add")}
-            onChange={(postProcessStack) =>
-              mutate({
-                ...scene,
-                settings: {
-                  ...scene.settings,
-                  postProcessStack: normalizeScenePostProcessStack(postProcessStack),
-                },
-              })
-            }
-            renderItemHeader={({ item, index }) => (
-              <div className="flex items-center gap-1">
-                <div className="min-w-0 flex-1">
-                  {stackAssetPicker(
-                    item.materialGuid,
-                    `scene-post-process-${index}-material`,
-                    `Pass ${index + 1} Material`,
-                    () => setPostProcessPick({ id: item.id }),
-                  )}
-                </div>
-                <PostProcessEntryId id={item.id} index={index} />
-              </div>
-            )}
-            renderItem={({ item, index, onChange }) => (
-              <div className="flex items-center justify-between gap-2 px-2 pointer-coarse:flex-wrap">
-              <Field
-                orientation="horizontal"
-                className="w-fit min-h-7 gap-1 pointer-coarse:min-h-11"
-              >
-                <FieldLabel htmlFor={`scene-post-process-${index}-enabled`}>
-                  Enabled
-                </FieldLabel>
-                <Switch
-                  size="sm"
-                  className="pointer-coarse:after:-inset-y-[15px]"
-                  id={`scene-post-process-${index}-enabled`}
-                  data-testid={`scene-post-process-${index}-enabled`}
-                  aria-label={`Pass ${index + 1} Enabled`}
-                  checked={item.enabled !== false}
-                  onCheckedChange={(enabled) =>
-                    onChange({ ...item, enabled })
-                  }
-                />
-              </Field>
-              <Field orientation="horizontal" className="w-fit min-h-7 gap-1 pointer-coarse:min-h-11">
-                <FieldLabel htmlFor={`scene-post-process-${index}-scalable`} title="Allow quality settings to scale this pass resolution">Scalable</FieldLabel>
-                <Switch size="sm" className="pointer-coarse:after:-inset-y-[15px]" id={`scene-post-process-${index}-scalable`} aria-label={`Pass ${index + 1} Scalable Resolution`} checked={item.scalable === true} onCheckedChange={(scalable) => onChange({ ...item, scalable })} />
-              </Field>
-              </div>
-            )}
-          />
+          {overlay ? (
+            // Not a per-layer override: the Project Setting itself, so an edit here is an edit there.
+            <PostProcessPassList
+              idPrefix="scene-layer-post-process"
+              title="Scene Layer Post-Processing"
+              hint="Project Settings: every Scene Layer shares these passes, drawn over all layers together."
+              entries={projectDocument?.settings.sceneLayerPostProcessStack ?? []}
+              onChange={(entries) => updateProjectSettings({ sceneLayerPostProcessStack: normalizeSceneLayerPostProcessStack(entries) })}
+              assets={pickerAssets}
+              materialAssets={postProcessPickerAssets}
+              pick={postProcessPick}
+              onPickChange={setPostProcessPick}
+            />
+          ) : (
+            <PostProcessPassList
+              idPrefix="scene-post-process"
+              title="Post-Process Passes"
+              entries={postProcessEntries}
+              onChange={(entries) =>
+                mutate({ ...scene, settings: { ...scene.settings, postProcessStack: normalizeScenePostProcessStack(entries) } })}
+              assets={pickerAssets}
+              materialAssets={postProcessPickerAssets}
+              scalable
+              pick={postProcessPick}
+              onPickChange={setPostProcessPick}
+            />
+          )}
         </div>
       ) : null}
       {overrideSections.map((section) => (
@@ -443,48 +376,6 @@ export function SceneDetailsSettings(props: SceneDetailsSettingsProps) {
           setSceneLayerPick(null);
         }}
         data-testid="scene-layers-picker"
-      />
-      <AssetPicker
-        open={postProcessPick !== null}
-        onOpenChange={(open) => {
-          if (!open) setPostProcessPick(null);
-        }}
-        assets={postProcessPickerAssets}
-        allowedTypes={["Material", "MaterialInstance"]}
-        createTypes={["Material"]}
-        createOptions={{ materialDomain: "postProcess" }}
-        title="Pick Post-Process Material"
-        allowNone={postProcessPick !== "add"}
-        onPick={(materialGuid) => {
-          const stack = [...postProcessEntries];
-          if (postProcessPick === "add") {
-            if (materialGuid) {
-              stack.push({ id: newGuid(), materialGuid, enabled: true });
-            }
-          } else if (postProcessPick) {
-            const index = stack.findIndex((entry) => entry.id === postProcessPick.id);
-            if (index < 0) {
-              setPostProcessPick(null);
-              return;
-            }
-            if (!materialGuid) {
-              stack.splice(index, 1);
-            } else {
-              const current = stack[index]!;
-              stack[index] = {
-                ...current,
-                materialGuid,
-                enabled: current?.enabled !== false,
-              };
-            }
-          }
-          mutate({
-            ...scene,
-            settings: { ...scene.settings, postProcessStack: normalizeScenePostProcessStack(stack) },
-          });
-          setPostProcessPick(null);
-        }}
-        data-testid="scene-post-process-picker"
       />
       <SceneActorPicker
         open={cameraPickerOpen}

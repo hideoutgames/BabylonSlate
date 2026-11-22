@@ -1,4 +1,5 @@
 import {
+  mimeForAudioBytes,
   normalizeAudioPayload,
   pickWeightedAudioClip,
   resolveAudioPitch,
@@ -102,6 +103,8 @@ export function createAudioPreviewSession(options: {
         voiceId: id,
         assetGuid: "preview",
         source: bytes,
+        playbackMode: audio.playbackMode,
+        ...(audio.playbackMode === "streamed" ? { mimeType: mimeForAudioBytes(bytes) } : {}),
         gain: audio.volume,
         loop: audio.loop,
         spatial: null,

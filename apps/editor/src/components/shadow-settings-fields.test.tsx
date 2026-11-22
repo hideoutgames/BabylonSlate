@@ -97,6 +97,25 @@ it("offers an 8192 Directional Map Size only, which makes the project's level Cu
   fireEvent.click(screen.getByLabelText("Local Shadow Map Size"));
   expect(await listed()).toEqual(["256", "512", "1024", "2048", "4096"]);
 });
+it("writes a numeric First Cascade Detail of twice the map size, which makes High Custom", async () => {
+  const written: ShadowOverrides[] = [];
+  function Fields() {
+    const [project, setProject] = useState(() => normalizeShadowSettings({ profile: "high" }));
+    return <ShadowSettingsFields project={project}
+      onChange={(next) => { written.push(next); setProject(normalizeShadowSettings(next)); }} />;
+  }
+  render(<Fields />);
+  const field = () => screen.getByLabelText("First Cascade Detail");
+  expect(field().textContent).toMatch(/^Map Size/);
+  fireEvent.click(field());
+  expect((await screen.findAllByRole("option")).map((option) => option.textContent)).toEqual(["Map Size", "Twice Map Size"]);
+  const twice = screen.getByRole("option", { name: "Twice Map Size" });
+  fireEvent.pointerDown(twice);
+  fireEvent.click(twice);
+  await waitFor(() => expect(written.at(-1)).toMatchObject({ firstCascadeScale: 2, preset: "custom" }));
+  expect(normalizeShadowSettings(written.at(-1))).toMatchObject({ profile: "high", preset: "custom", firstCascadeScale: 2 });
+  expect(field().textContent).toMatch(/^Twice Map Size/);
+});
 it("overrides Screen-Space Shadows for a scene and shows the project level", async () => {
   const written: ShadowOverrides[] = [];
   function Fields() {

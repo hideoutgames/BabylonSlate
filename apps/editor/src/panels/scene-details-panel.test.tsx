@@ -64,6 +64,9 @@ const harness = vi.hoisted(() => ({
   applySceneChange: vi.fn<
     (id: string, scene: SerializedScene) => Promise<boolean>
   >(async () => true),
+  /** Project Settings Scene Layer post-processing, which a Scene Layer's Inspector shows and edits. */
+  sceneLayerPostProcessStack: [] as Array<{ id: string; materialGuid: string; enabled: boolean }>,
+  updateProjectSettings: vi.fn<(settings: Record<string, unknown>) => void>(),
 }));
 
 vi.mock("../context/document-workspace-context", () => ({
@@ -95,8 +98,10 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
     },
   ],
   applySceneChange: harness.applySceneChange,
+  updateProjectSettings: harness.updateProjectSettings,
   projectDocument: {
     settings: {
+      sceneLayerPostProcessStack: harness.sceneLayerPostProcessStack,
       twoD: { sortingLayers: ["Background", "Default", "UI"] },
       fonts: { defaultFontGuid: null, globalFallback: "sans-serif" },
       gameInstanceClass: "MyGame",
@@ -194,6 +199,8 @@ beforeEach(() => {
   harness.setSelectedActorIds.mockReset();
   harness.documentKind = "scene";
   harness.documentId = "scene:assets/Main.scene.hasset";
+  harness.sceneLayerPostProcessStack = [];
+  harness.updateProjectSettings.mockReset();
   harness.render.mode = "pbr";
   harness.render.shadows = undefined;
   harness.render.effects = undefined;
@@ -1226,6 +1233,36 @@ describe("SceneDetailsPanel authoring", () => {
     ]);
   });
 
+  it("edits the Project Settings Scene Layer post-processing from a Scene Layer, never the layer document", async () => {
+    harness.documentKind = "scene-layer";
+    harness.documentId = "scene-layer:assets/Hud.scenelayer.hasset";
+    harness.scene = sceneLayerToEditorScene(createDefaultSceneLayer());
+    harness.sceneLayerPostProcessStack = [{ id: "glow", materialGuid: "pp-blur", enabled: true }];
+    const { unmount } = render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    expect(screen.getByTestId("scene-layer-post-process-0-material").textContent).toContain("Blur");
+    // Layers always draw at full resolution: no Scalable switch.
+    expect(screen.queryByRole("switch", { name: "Pass 1 Scalable Resolution" })).toBeNull();
+    fireEvent.click(screen.getByTestId("scene-layer-post-process-0-enabled"));
+    expect(harness.updateProjectSettings).toHaveBeenLastCalledWith({
+      sceneLayerPostProcessStack: [{ id: "glow", materialGuid: "pp-blur", enabled: false }],
+    });
+    fireEvent.click(screen.getByTestId("scene-layer-post-process-stack-add"));
+    fireEvent.click(await screen.findByTestId("search-item-pp-blur"));
+    expect(harness.updateProjectSettings).toHaveBeenLastCalledWith({
+      sceneLayerPostProcessStack: [
+        { id: "glow", materialGuid: "pp-blur", enabled: true },
+        { id: expect.any(String), materialGuid: "pp-blur", enabled: true },
+      ],
+    });
+    // A Project Settings edit, not a document edit: the layer's own undo history never sees it.
+    expect(harness.applySceneChange).not.toHaveBeenCalled();
+    unmount();
+    // An edit made in Project Settings shows here too.
+    harness.sceneLayerPostProcessStack = [];
+    render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    expect(screen.getByTestId("scene-layer-post-process-stack-count").textContent).toBe("0 passes");
+  });
+
   it("lists only post-process Materials in the stack picker", async () => {
     render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
     fireEvent.click(screen.getByTestId("scene-post-process-stack-add"));
@@ -1448,7 +1485,8 @@ describe("SceneDetailsPanel authoring", () => {
     render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
     expect(screen.getByTestId("scene-settings-grid")).toBeTruthy();
     expect(screen.getByTestId("property-row-scene-gravity")).toBeTruthy();
-    expect(screen.getByTestId("scene-post-process-stack")).toBeTruthy();
+    expect(screen.getByTestId("scene-layer-post-process-stack")).toBeTruthy();
+    expect(screen.queryByTestId("scene-post-process-stack")).toBeNull();
     expect(screen.queryByTestId("property-scene-viewport-mode")).toBeNull();
     expect(screen.queryByTestId("property-scene-physics-world")).toBeNull();
     expect(screen.queryByTestId("property-scene-default-camera")).toBeNull();

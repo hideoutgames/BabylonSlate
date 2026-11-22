@@ -1,6 +1,6 @@
 import type { CommandMessage, ControlMessage, RuntimeInspectorRequest, RuntimeInspectorResult, RuntimeMaterialEditPreparation } from "@haptic/bridge";
 import { ActorComponent, MaterialObject } from "@haptic/object-model";
-import type { MaterialParameterValue } from "@haptic/core";
+import { POST_PROCESSING_PANEL_CLASS_ID, type MaterialParameterValue } from "@haptic/core";
 import type { RuntimeInspector } from "./runtime-inspector";
 import type { RuntimeMaterialParameters } from "./runtime-material-parameters";
 
@@ -46,6 +46,10 @@ export class RuntimeMaterialEditGate {
   stage(request: RuntimeInspectorRequest, resolve: (result: RuntimeInspectorResult) => void): boolean {
     const action = request.action;
     if (action.kind !== "setMaterialParameter" && !(action.kind === "setProperty" && action.property === "materialGuid")) return false;
+    // A Post Processing Panel's Material is a pass the Scene Layer compositor builds from the panel list: no surface is
+    // prepared for it, so the Inspector applies the edit directly.
+    const selected = this.host.inspector.resolveTarget(action.target);
+    if (selected instanceof ActorComponent && selected.classId === POST_PROCESSING_PANEL_CLASS_ID) return false;
     const fail = (reason: string) => { resolve(this.host.inspector.result(request, reason)); return true; };
     const invalid = this.host.inspector.validateRequest(request);
     if (invalid) return fail(invalid);

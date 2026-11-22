@@ -10,6 +10,8 @@ import { Color4 } from "@babylonjs/core/Maths/math.color";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import { DEFAULT_DECAL_PROPERTIES } from "@haptic/core";
 import type { AssetContainer } from "@babylonjs/core/assetContainer";
 import { Scene } from "@babylonjs/core/scene";
 import type { MaterialParameterValue } from "@haptic/bridge";
@@ -37,6 +39,42 @@ import { MAX_CAMERA_RADIUS, MIN_CAMERA_RADIUS } from "./editor-camera";
 import type { RenderScheduler } from "./render-scheduler";
 import { createViewportZoomDrive, type ViewportZoomDirection, type ViewportZoomDrive } from "./viewport-zoom-drive";
 import type { HeldThreadBudget } from "./stall-deadline";
+import { refreshDecalMaterials, removeDecals, sceneDecalsPending, setDecalMaterialSource, upsertDecals } from "./decal-pass";
+
+/** Names of the Decal domain's preview stage: a floor and a ball, which one decal projects onto from above. */
+export const MATERIAL_PREVIEW_DECAL_RECEIVER = "materialPreviewDecalReceiver";
+const MATERIAL_PREVIEW_DECAL_ACTOR = "materialPreviewDecal";
+
+/**
+ * A Decal Material's preview: a floor and a ball half sunk in it, under one decal box projecting straight down, so the
+ * projection, its wrap over a curved surface and its Fade Angle show. Drawn with the Scene's own decal pass.
+ */
+function createDecalPreviewStage(scene: Scene): { meshes: Mesh[]; dispose(): void } {
+  const floor = MeshBuilder.CreateGround(MATERIAL_PREVIEW_DECAL_RECEIVER, { width: 3, height: 3 }, scene);
+  const ball = MeshBuilder.CreateSphere(`${MATERIAL_PREVIEW_DECAL_RECEIVER}:ball`, { diameter: 1.1, segments: 24 }, scene);
+  ball.position.y = 0.15;
+  const anchor = new TransformNode(`${MATERIAL_PREVIEW_DECAL_ACTOR}:anchor`, scene);
+  anchor.position.y = 0.5;
+  upsertDecals(scene, MATERIAL_PREVIEW_DECAL_ACTOR, anchor, [{
+    id: "decal",
+    properties: { ...DEFAULT_DECAL_PROPERTIES, materialGuid: "preview", size: [2.2, 2, 2.2], fadeAngle: 80 },
+    transforms: [],
+  }]);
+  return {
+    meshes: [floor, ball],
+    dispose: () => {
+      removeDecals(scene, MATERIAL_PREVIEW_DECAL_ACTOR);
+      anchor.dispose();
+      ball.dispose();
+      floor.dispose();
+    },
+  };
+}
+
+/** Whether `material` is a Decal-domain Material (`compileMaterialPlan` stamps its domain). */
+export function isDecalDomainMaterial(material: Material | null | undefined): boolean {
+  return (material?.metadata as { materialDomain?: unknown } | null | undefined)?.materialDomain === "decal";
+}
 
 export const MATERIAL_PREVIEW_MESH_NAME = "materialPreviewMesh";
 /** The quad a User Interface Material previews on, filling the view (`MaterialPreviewScene.flat`). */
@@ -134,6 +172,8 @@ export interface MaterialPreviewScene {
    * canvas's device pixels. Applying another domain's Material restores the orbit camera as it was.
    */
   readonly flat: boolean;
+  /** The Decal domain's stage meshes while a Decal Material is previewed, else none. */
+  decalStageMeshes: () => readonly Mesh[];
   dispose: () => void;
   /** Disposes, then resolves once the renderer's native resources are released
    * and the Scene is disposed; rejects if release failed. */
@@ -188,6 +228,10 @@ export function createMaterialPreviewScene(
   let particlePlane: Mesh | null = null;
   let textPreview: Mesh | null = null;
   const disposeTextPreview = () => { textPreview?.dispose(); textPreview = null; mesh.setEnabled(true); };
+  let decalStage: ReturnType<typeof createDecalPreviewStage> | null = null;
+  let decalMaterial: Material | null = null;
+  setDecalMaterialSource(scene, { resolve: () => decalMaterial });
+  const disposeDecalStage = () => { decalStage?.dispose(); decalStage = null; decalMaterial = null; mesh.setEnabled(true); };
   const disposeParticles = () => { particlePlane?.dispose(); particlePlane = null; mesh.setEnabled(true); };
   // The User Interface state: its quad, and the orbit camera it replaced.
   let flatQuad: Mesh | null = null;
@@ -289,8 +333,8 @@ export function createMaterialPreviewScene(
         }
       }
       if (generation !== meshGeneration) return mesh;
-      applyMaterialToVisualMeshes(mesh, currentMaterial);
-      if (particlePlane || textPreview || flatQuad) mesh.setEnabled(false);
+      applyMaterialToVisualMeshes(mesh, decalStage ? null : currentMaterial);
+      if (particlePlane || textPreview || flatQuad || decalStage) mesh.setEnabled(false);
       else aimPreviewCameraAtMesh(camera, mesh);
       return mesh;
     },
@@ -299,10 +343,25 @@ export function createMaterialPreviewScene(
       disposeTextPreview();
       currentMaterial = material;
       if (material?.metadata?.materialDomain === "ui") {
+        disposeDecalStage();
         showFlat(material);
         return;
       }
       disposeFlat();
+      if (isDecalDomainMaterial(material)) {
+        mesh.setEnabled(false);
+        if (!decalStage) {
+          decalStage = createDecalPreviewStage(scene);
+          camera.alpha = -Math.PI / 3;
+          camera.beta = 0.95;
+          camera.radius = 4.2;
+          camera.setTarget(new Vector3(0, 0.2, 0));
+        }
+        decalMaterial = material;
+        refreshDecalMaterials(scene);
+        return;
+      }
+      if (decalStage) disposeDecalStage();
       if (material?.metadata?.materialDomain === "text") {
         mesh.setEnabled(false);
         textPreview = createText2DMesh(scene, "materialPreviewText", {
@@ -319,6 +378,7 @@ export function createMaterialPreviewScene(
       disposePostProcess();
       if (!source) return;
       disposeTextPreview();
+      disposeDecalStage();
       disposeParticles();
       disposeFlat();
       postProcess = renderer.attachPostProcess({
@@ -341,6 +401,7 @@ export function createMaterialPreviewScene(
       if (!material) return;
       disposeTextPreview();
       disposeFlat();
+      disposeDecalStage();
       mesh.setEnabled(false);
       particlePlane = MeshBuilder.CreatePlane("materialPreviewParticlePlane", { size: 1.6 }, scene);
       particlePlane.material = material;
@@ -348,9 +409,11 @@ export function createMaterialPreviewScene(
       camera.beta = Math.PI / 2;
       camera.setTarget(Vector3.Zero());
     },
+    decalStageMeshes: () => decalStage?.meshes ?? [],
     dispose: () => {
       meshGeneration += 1;
       disposeTextPreview();
+      disposeDecalStage();
       disposeParticles();
       disposeFlat();
       disposePostProcess();
@@ -392,7 +455,8 @@ export async function renderPreviewFrame(
   });
   return waitUntilReady(() => {
     const frame = host.renderer.render();
-    return frame.rendered && frame.readyForPresentation;
+    // A decal whose Material still compiles was left out of the frame.
+    return frame.rendered && frame.readyForPresentation && !sceneDecalsPending(host.scene);
   }, isCurrent, budget, compiles ?? new DriverCompileWatch(host.scene.getEngine()));
 }
 
@@ -834,10 +898,12 @@ export function createMaterialPreviewPresenter(
         const texture = ensureRtt(Math.max(1, Math.round(size.width * scale)), Math.max(1, Math.round(size.height * scale)));
         // Shader warm-up must not consume a static preview's presentation interval.
         const preview = host.scene.getMeshByName("materialPreviewText") ?? host.scene.getMeshByName("materialPreviewParticlePlane") ??
-          host.scene.getMeshByName(MATERIAL_PREVIEW_USER_INTERFACE_NAME) ?? host.mesh;
+          host.scene.getMeshByName(MATERIAL_PREVIEW_USER_INTERFACE_NAME) ?? host.scene.getMeshByName(MATERIAL_PREVIEW_DECAL_RECEIVER) ??
+          host.mesh;
         if (!previewMeshesReady(preview)) return;
         const frame = host.renderer.render();
-        if (!frame.rendered || !frame.readyForPresentation) {
+        // A decal whose Material still compiles was skipped: keep the last image until it draws.
+        if (!frame.rendered || !frame.readyForPresentation || sceneDecalsPending(host.scene)) {
           // Surfaces a failed preparation; otherwise the frame stays pending.
           host.renderer.isReady();
           return;

@@ -11,6 +11,8 @@ import {
   navmeshExportGuid,
   AUDIO_REVERB_EXPORT_TYPE,
   audioReverbExportGuid,
+  LANDSCAPE_EXPORT_TYPE,
+  landscapeExportGuid,
   FONT_FACETYPE_EXPORT_TYPE,
   AREA_EMISSION_EXPORT_TYPE,
   areaEmissionExportGuid,
@@ -29,6 +31,7 @@ import {
   type ExportPreset,
   type PluginEnableOverride,
   type RenderProjectSettings,
+  type SceneLayerPostProcessEntry,
   isErr,
   isOk,
   type Result,
@@ -41,6 +44,7 @@ import {
   resolveAssetCatalogDependencies,
   resolvePluginEnabled,
   resolvePluginGraph,
+  sceneLayerPostProcessAssetGuids,
   type IndexedAsset,
   type PluginGraphInput,
 } from "@haptic/assets";
@@ -85,13 +89,15 @@ export function exportRootSettings(settings: {
   gameInstanceClass?: string | null;
   audioMixerGuid?: string | null;
   renderSettings: RenderProjectSettings;
+  sceneLayerPostProcessStack?: readonly SceneLayerPostProcessEntry[];
   alwaysPackageFolders?: readonly string[];
 }): Pick<ExportRootInput, "saveGameDefinitionGuid" | "gameInstanceClass" | "audioMixerGuid" | "renderAssetGuids" | "alwaysPackageFolders"> {
   return {
     saveGameDefinitionGuid: settings.saveGameDefinitionGuid,
     gameInstanceClass: settings.gameInstanceClass,
     audioMixerGuid: settings.audioMixerGuid,
-    renderAssetGuids: [...renderEffectsAssetGuids(settings.renderSettings.effects), ...(settings.defaultFontGuid ? [settings.defaultFontGuid] : [])],
+    renderAssetGuids: [...renderEffectsAssetGuids(settings.renderSettings.effects),
+      ...sceneLayerPostProcessAssetGuids(settings.sceneLayerPostProcessStack), ...(settings.defaultFontGuid ? [settings.defaultFontGuid] : [])],
     alwaysPackageFolders: settings.alwaysPackageFolders,
   };
 }
@@ -128,6 +134,8 @@ export type CollectExportGameParams = {
   fontMsdfPngByGuid?: (guid: string) => Uint8Array | null;
   /** Throws for a Scene whose reverb could not be baked or saved; a reached one fails the export. */
   audioReverbByGuid?: (guid: string) => Uint8Array | null;
+  /** Raw binary `BSLD` landscape chunks owned by a Scene. */
+  landscapeChunksByGuid?: (guid: string) => ReadonlyArray<{ chunkId: string; bytes: Uint8Array }>;
   renderSettings: RenderProjectSettings;
   defaultFontGuid?: string | null;
   /** Project Global Fallback, written to game.json for the player's font stacks. */
@@ -148,6 +156,8 @@ export type CollectExportGameParams = {
   infiniteLoopDetection?: boolean;
   loopCount?: number;
   focusNavigation?: import("@haptic/core").FocusNavigationSettings;
+  /** Project Scene Layer post-processing passes: a closure root, written to `game.json`. */
+  sceneLayerPostProcessStack?: SceneLayerPostProcessEntry[];
   tagRegistry?: TagRegistry;
   playerFiles: Map<string, Uint8Array>;
   /** Game libraries of enabled gameplay Extensions, dependencies first. */
@@ -348,6 +358,7 @@ export async function collectAndExportGame(
       gameInstanceClass: params.gameInstanceClass,
       audioMixerGuid: params.audioMixerGuid,
       renderSettings: params.renderSettings,
+      sceneLayerPostProcessStack: params.sceneLayerPostProcessStack,
       alwaysPackageFolders: params.alwaysPackageFolders,
     }),
     assets: params.assets,
@@ -501,6 +512,22 @@ export async function collectAndExportGame(
   }
   for (const guid of closure.value.guids) {
     const asset = params.assets.find((entry) => entry.guid === guid);
+    if (!asset || asset.type !== "Scene") continue;
+    for (const { chunkId, bytes } of params.landscapeChunksByGuid?.(guid) ?? []) {
+      if (!bytes || bytes.byteLength === 0) continue;
+      exportAssets.push({
+        guid: landscapeExportGuid(guid, chunkId),
+        ownerGuid: guid,
+        type: LANDSCAPE_EXPORT_TYPE,
+        sceneGuid: guid,
+        bytes,
+        encoding: "bytes",
+        name: `${asset.name} ${chunkId}`,
+      });
+    }
+  }
+  for (const guid of closure.value.guids) {
+    const asset = params.assets.find((entry) => entry.guid === guid);
     if (!asset || asset.type !== "Font") continue;
     const facetype = params.fontFacetypeBytesByGuid?.(guid);
     if (!facetype || facetype.byteLength === 0) continue;
@@ -639,6 +666,7 @@ export async function collectAndExportGame(
     loopCount: params.loopCount,
     inputAssets,
     focusNavigation: params.focusNavigation,
+    sceneLayerPostProcessStack: params.sceneLayerPostProcessStack,
     scripts,
     ...(params.extensionLibraries?.length ? { extensionLibraries: params.extensionLibraries } : {}),
     assets: exportAssets,

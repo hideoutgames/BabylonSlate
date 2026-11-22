@@ -19,6 +19,7 @@ import { registerPhysicsValidationRules } from "./physics";
 import { inputNodes } from "./input";
 import { audioNodes } from "./audio";
 import { particleNodes } from "./particles";
+import { decalNodes } from "./decals";
 import { globalParameterNodes } from "./global-parameters";
 import { sceneNodes } from "./scene";
 import { sceneStreamingNodes } from "./scene-streaming";
@@ -33,7 +34,8 @@ import { sceneOwnedNodes } from "./scene-owned";
 import { timelineClipNodes } from "./timeline-clips";
 import { timelineAssetNodes } from "./timeline-assets";
 import { timelineProxyNodes } from "./timeline-proxies";
-import { sceneLayerNodes, registerSceneLayerValidationRules } from "./scene-layer";
+import { sceneLayerNodes } from "./scene-layer";
+import { registerMaterialPinDomainValidationRules } from "./material-pin-domains";
 import { scalabilityNodes } from "./scalability";
 import { renderTargetNodes } from "./render-target";
 import { materialNodes } from "./material";
@@ -84,6 +86,7 @@ export * from "./water";
 export * from "./input";
 export * from "./audio";
 export * from "./particles";
+export * from "./decals";
 export * from "./scene";
 export * from "./scene-streaming";
 export * from "./asset-loading";
@@ -98,6 +101,7 @@ export * from "./timeline-clips";
 export * from "./timeline-assets";
 export * from "./timeline-proxies";
 export * from "./scene-layer";
+export * from "./material-pin-domains";
 export * from "./render-target";
 export * from "./scalability";
 export * from "./material";
@@ -148,6 +152,7 @@ export function allNodeDefinitions(): NodeDefinition[] {
     ...inputNodes,
     ...audioNodes,
     ...particleNodes,
+    ...decalNodes,
     ...globalParameterNodes,
     ...sceneNodes,
     ...sceneStreamingNodes,
@@ -205,7 +210,7 @@ for (const definition of allNodeDefinitions()) {
 
 export function createDefaultNodeRegistry(): NodeRegistry {
   registerPhysicsValidationRules();
-  registerSceneLayerValidationRules();
+  registerMaterialPinDomainValidationRules();
   registerNumericOperatorValidationRules();
   const registry = new NodeRegistry();
   registry.registerAll(allNodeDefinitions());

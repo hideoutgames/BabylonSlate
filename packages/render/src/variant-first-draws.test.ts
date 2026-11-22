@@ -55,4 +55,52 @@ describe("first draws of new variants in a world view's steady frames", () => {
     admitSteadyFirstDraws(engine);
     expect(variants.map((variant) => variant.isReady())).toEqual(admitted(2 * budget));
   });
+
+  it("a steady view's strict question admits linked cold variants from the frame's budget, so it passes within as many frames, never all at once", () => {
+    const { engine, nextFrame } = steadyView();
+    const variants = coldVariants(engine, [1, 2, 3]);
+    // A quality change's preparation asks the strict question every frame until every variant it waits on is ready.
+    const ask = () => withFirstDrawRound(engine, true, () => variants.map((variant) => variant.isReady()));
+    expect(ask()).toEqual([true, false, false]);
+    // Asked again in the same Engine frame, it admits nothing more: that frame's first draw is spent.
+    expect(ask()).toEqual([true, false, false]);
+    nextFrame();
+    expect(ask()).toEqual([true, true, false]);
+    nextFrame();
+    expect(ask()).toEqual([true, true, true]);
+  });
+
+  const linkedVariant = (engine: NullEngine, id: number): Effect => probeVariantSwaps(true, () => engine.createEffect(
+    { vertexSource: `void main() { gl_Position = vec4(${id}.0); }`, fragmentSource: `void main() { gl_FragColor = vec4(${id}.0); }` },
+    ["position"], [], [], `#define VARIANT_${id}`,
+  ));
+
+  it("gives a variant linked as it is requested the budget of the frame it is requested in", () => {
+    const { engine, nextFrame } = steadyView();
+    coldVariants(engine, [1]);
+    nextFrame();
+    admitSteadyFirstDraws(engine);
+    nextFrame();
+    admitSteadyFirstDraws(engine);
+    // The queue was empty this frame, so nothing else has asked for its budget yet.
+    expect(linkedVariant(engine, 2).isReady()).toBe(true);
+  });
+
+  it("does not spend an earlier frame's unspent budget on top of the frame's own", () => {
+    const { engine, nextFrame } = steadyView();
+    const [cold] = coldVariants(engine, [1]) as [Effect];
+    nextFrame();
+    const linked = linkedVariant(engine, 2);
+    admitSteadyFirstDraws(engine);
+    expect([linked.isReady(), cold.isReady()]).toEqual([true, false]);
+  });
+
+  it("spends no first draw on a cold variant disposed before its admission", () => {
+    const { engine, nextFrame } = steadyView();
+    const [stale, waiting] = coldVariants(engine, [1, 2]) as [Effect, Effect];
+    stale.dispose(true);
+    nextFrame();
+    admitSteadyFirstDraws(engine);
+    expect(waiting.isReady()).toBe(true);
+  });
 });

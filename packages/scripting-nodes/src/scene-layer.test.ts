@@ -8,7 +8,7 @@ import {
   type NodeRegistry,
 } from "@haptic/scripting";
 import { createDefaultNodeRegistry } from "./index";
-import { registerSceneLayerValidationRules } from "./scene-layer";
+import { registerMaterialPinDomainValidationRules } from "./material-pin-domains";
 
 function node(
   registry: NodeRegistry,
@@ -30,7 +30,7 @@ function node(
 describe("scene-layer nodes", () => {
   beforeEach(() => {
     clearValidationRules();
-    registerSceneLayerValidationRules();
+    registerMaterialPinDomainValidationRules();
   });
   afterEach(() => {
     clearValidationRules();
@@ -71,9 +71,16 @@ describe("scene-layer nodes", () => {
     expect(finished).toBe(true);
   });
 
-  it.each(["scene-layer.registerPostProcess", "scene-layer.unregisterPostProcess", "scene.registerPostProcess", "scene.unregisterPostProcess"])(
-    "errors when %s's Material pin is not a postProcess material",
-    (typeId) => {
+  it.each([
+    ["scene-layer.registerPostProcess", "material", "surface", "Needs a Post Process Material; this is a Surface Material."],
+    ["scene-layer.unregisterPostProcess", "material", "surface", "Needs a Post Process Material; this is a Surface Material."],
+    ["scene.registerPostProcess", "material", "surface", "Needs a Post Process Material; this is a Surface Material."],
+    ["scene.unregisterPostProcess", "material", "surface", "Needs a Post Process Material; this is a Surface Material."],
+    ["decals.spawn", "material", "surface", "Needs a Decal Material; this is a Surface Material."],
+    ["material.setMaterialInstance", "instance", "decal", "Needs a Surface Material; this is a Decal Material."],
+  ])(
+    "errors when %s's %s pin holds a %s Material",
+    (typeId, pinId, domain, message) => {
       const registry = createDefaultNodeRegistry();
       const graph: LogicGraph = {
         id: "g",
@@ -81,7 +88,7 @@ describe("scene-layer nodes", () => {
         nodes: [
           node(registry, "begin", "flow.event.beginPlay"),
           node(registry, "reg", typeId, {
-            "default:material": "bloom",
+            [`default:${pinId}`]: "held",
           }),
         ],
         edges: [
@@ -90,35 +97,55 @@ describe("scene-layer nodes", () => {
       };
       const diagnostics = validateGraphs([graph], {
         assetGuid: "a",
-        materialDomains: { bloom: "surface" },
+        materialDomains: { held: domain },
       });
-      expect(diagnostics.filter((entry) => entry.code === "scene-layer.postProcessDomain").map((entry) => entry.message))
-        .toEqual(["Post-processing requires a postProcess Material (got surface)"]);
+      expect(diagnostics.filter((entry) => entry.code === "material.pinDomain").map((entry) => [entry.pinId, entry.message]))
+        .toEqual([[pinId, message]]);
     },
   );
 
   it.each([
-    ["scene.registerPostProcess", "registerScenePostProcess"],
-    ["scene-layer.registerPostProcess", "registerSceneLayerPostProcess"],
-  ] as const)("hands %s's new pass to the next node as its Material Object", (typeId, method) => {
-    const layered = method === "registerSceneLayerPostProcess";
+    ["decals.spawn", "material", "decal"],
+    ["material.setMaterialInstance", "instance", "surface"],
+  ])("accepts a %s %s pin holding a %s Material", (typeId, pinId, domain) => {
     const registry = createDefaultNodeRegistry();
     const graph: LogicGraph = {
       id: "g",
       kind: "event",
       nodes: [
         node(registry, "begin", "flow.event.beginPlay"),
-        node(registry, "layer", "scene-layer.getOwningSceneLayer"),
+        node(registry, "reg", typeId, { [`default:${pinId}`]: "held" }),
+      ],
+      edges: [
+        { id: "e1", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "reg", targetPinId: "execIn" },
+      ],
+    };
+    const diagnostics = validateGraphs([graph], { assetGuid: "a", materialDomains: { held: domain } });
+    expect(diagnostics.filter((entry) => entry.code === "material.pinDomain")).toEqual([]);
+  });
+
+  it.each([
+    ["scene.registerPostProcess", "registerScenePostProcess", "scene.unregisterPostProcess", "unregisterScenePostProcess"],
+    // The Scene Layer nodes name no layer: every layer shares one stack.
+    ["scene-layer.registerPostProcess", "registerSceneLayerPostProcess", "scene-layer.unregisterPostProcess", "unregisterSceneLayerPostProcess"],
+  ] as const)("hands %s's new pass to the next node as its Material Object", (typeId, method, unregisterTypeId, unregisterMethod) => {
+    const registry = createDefaultNodeRegistry();
+    expect(registry.get(typeId)!.pins({}).map((entry) => entry.id)).toEqual(["execIn", "execOut", "material", "pass"]);
+    expect(registry.get(unregisterTypeId)!.pins({}).map((entry) => entry.id)).toEqual(["execIn", "execOut", "material"]);
+    const graph: LogicGraph = {
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
         node(registry, "reg", typeId, { "default:material": "night" }),
         node(registry, "set", "material.setFloatParameter", { "default:name": "Darkness", "default:value": 0.6 }),
-        node(registry, "unreg", "scene.unregisterPostProcess", { "default:material": "day" }),
+        node(registry, "unreg", unregisterTypeId, { "default:material": "day" }),
       ],
       edges: [
         { id: "e1", sourceNodeId: "begin", sourcePinId: "execOut", targetNodeId: "reg", targetPinId: "execIn" },
         { id: "e2", sourceNodeId: "reg", sourcePinId: "execOut", targetNodeId: "set", targetPinId: "execIn" },
         { id: "e3", sourceNodeId: "reg", sourcePinId: "pass", targetNodeId: "set", targetPinId: "material" },
         { id: "e4", sourceNodeId: "set", sourcePinId: "execOut", targetNodeId: "unreg", targetPinId: "execIn" },
-        ...(layered ? [{ id: "e5", sourceNodeId: "layer", sourcePinId: "out", targetNodeId: "reg", targetPinId: "layer" }] : []),
       ],
     };
     const compiled = compileGraph(graph, { assetGuid: "a", registry });
@@ -129,12 +156,11 @@ describe("scene-layer nodes", () => {
     void onBeginPlay({
       [method]: (...args: unknown[]) => { calls.push(["register", ...args]); return pass; },
       setMaterialFloatParameter: (...args: unknown[]) => calls.push(["set", ...args]),
-      unregisterScenePostProcess: (guid: string) => calls.push(["unregister", guid]),
+      [unregisterMethod]: (...args: unknown[]) => calls.push(["unregister", ...args]),
       self: { guid: "hero" },
-      getOwningSceneLayer: () => "hud",
     });
     expect(calls).toEqual([
-      ["register", ...(layered ? ["hud"] : []), "night"],
+      ["register", "night"],
       ["set", pass, "Darkness", 0.6],
       ["unregister", "day"],
     ]);
@@ -160,7 +186,7 @@ describe("scene-layer nodes", () => {
       materialDomains: { bloom: "postProcess" },
     });
     expect(
-      diagnostics.filter((entry) => entry.code === "scene-layer.postProcessDomain"),
+      diagnostics.filter((entry) => entry.code === "material.pinDomain"),
     ).toEqual([]);
   });
 
@@ -186,7 +212,7 @@ describe("scene-layer nodes", () => {
       materialDomains: { bloom: "surface" },
     });
     expect(
-      diagnostics.filter((entry) => entry.code === "scene-layer.postProcessDomain"),
+      diagnostics.filter((entry) => entry.code === "material.pinDomain"),
     ).toEqual([]);
   });
 });

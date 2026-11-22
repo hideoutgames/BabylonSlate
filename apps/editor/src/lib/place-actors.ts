@@ -42,6 +42,7 @@ export type PlaceActorKind =
   | { type: "render-target-capture" }
   | { type: "skybox" }
   | { type: "fog-volume" }
+  | { type: "decal" }
   | { type: "mirror" }
   | { type: "reflection-probe" }
   | { type: "text3d" }
@@ -74,6 +75,7 @@ export type PlaceActorKind =
         | "2DButtonComponent"
         | "2DFocusTargetComponent"
         | "2DPanelComponent"
+        | "2DPostProcessingPanelComponent"
         | "2DTextComponent"
         | "2DRichTextComponent";
     }
@@ -163,6 +165,12 @@ export const ENGINE_PLACE_ACTORS: PlaceActorItem[] = [
     title: "Fog Volume",
     category: "Environment",
     kind: { type: "fog-volume" },
+  },
+  {
+    id: "decal",
+    title: "Decal",
+    category: "Environment",
+    kind: { type: "decal" },
   },
   {
     id: "reflection-probe",
@@ -263,6 +271,12 @@ const OVERLAY_PLACE_ACTORS: PlaceActorItem[] = [
     kind: { type: "overlay-2d", classId: "2DPanelComponent" },
   },
   {
+    id: "post-processing-panel",
+    title: "Post Processing Panel",
+    category: "Overlay",
+    kind: { type: "overlay-2d", classId: "2DPostProcessingPanelComponent" },
+  },
+  {
     id: "2d-text",
     title: "2D Text",
     category: "Overlay",
@@ -289,6 +303,7 @@ export function placeActorsForHost(options: { overlay: boolean }): PlaceActorIte
         item.kind.type !== "cable" &&
         item.kind.type !== "scene-streaming" &&
         item.kind.type !== "fog-volume" &&
+        item.kind.type !== "decal" &&
         item.kind.type !== "reflection-probe" &&
         item.kind.type !== "render-target-capture",
     ),
@@ -307,6 +322,7 @@ const FEATURED_PLACE_ACTOR_IDS: readonly string[] = [
   "camera",
   "skybox",
   "fog-volume",
+  "decal",
   "reflection-probe",
   "water-lake",
   "audio",
@@ -519,6 +535,9 @@ export function visualForPlaceActor(item: PlaceActorItem): TypeVisual {
   if (kind.type === "fog-volume") {
     return resolveTypeVisual({ classId: "FogVolumeComponent", family: "class" });
   }
+  if (kind.type === "decal") {
+    return resolveTypeVisual({ classId: "DecalComponent", family: "class" });
+  }
   if (kind.type === "mirror") {
     return resolveTypeVisual({ classId: "MirrorComponent", family: "class" });
   }
@@ -683,6 +702,16 @@ export function spawnPlacedActor(
         id: `${id}-fog`,
         classId: "FogVolumeComponent",
         properties: defaultPropertiesFor("FogVolumeComponent"),
+      }],
+    }));
+  }
+  if (kind.type === "decal") {
+    return finish(createActor(id, "Decal", {
+      transform,
+      components: [{
+        id: `${id}-decal`,
+        classId: "DecalComponent",
+        properties: defaultPropertiesFor("DecalComponent"),
       }],
     }));
   }

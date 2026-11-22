@@ -94,7 +94,7 @@ export async function runSceneLayerBatchingProof(images: "filtered" | "nearest" 
   const compositor = new SceneLayerCompositor({ engine });
   try {
     // A 32 × 18 unit Custom canvas fitted to the output, as the proof's layout expects.
-    const layer = compositor.create({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud", zOrder: 0, ownerSceneGuid: null, postProcessStack: [],
+    const layer = compositor.create({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud", zOrder: 0, ownerSceneGuid: null,
       canvas: {
         design: { sizeMode: "custom", customSizePx: { width: 3200, height: 1800 }, rootAnchor: "center", scaling: "fitToScreen" },
         rect: { width: 32, height: 18, center: [0, 0] },

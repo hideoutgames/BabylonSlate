@@ -1947,6 +1947,10 @@ describe("editor grid", () => {
     const eyeZ = Math.round(camera.camera.position.z);
     expect(grid.mesh.position.x).toBe(eyeX);
     expect(grid.mesh.position.z).toBe(eyeZ);
+    // The world axes are drawn from the plane's snapped origin, so the uniform follows every move, not only the first.
+    const axisOrigin = () => material.serialize().vectors2.axisOrigin as number[];
+    expect(axisOrigin()[0]).toBeCloseTo(-eyeX);
+    expect(axisOrigin()[1]).toBeCloseTo(-eyeZ);
 
     // Zooming out raises the eye, and the plane grows with it.
     camera.camera.radius *= 4;
@@ -1956,6 +1960,8 @@ describe("editor grid", () => {
     expect(material.serialize().floats.gridExtent).toBeCloseTo(zoomed);
     camera.camera.getViewMatrix();
     const zoomedX = Math.round(camera.camera.position.x);
+    expect(axisOrigin()[0]).toBeCloseTo(-zoomedX);
+    expect(axisOrigin()[1]).toBeCloseTo(-Math.round(camera.camera.position.z));
 
     grid.mesh.position.x += 3;
     grid.mesh.scaling.setAll(1);

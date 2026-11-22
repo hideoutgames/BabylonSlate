@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { RenderDiagnostics } from "@haptic/render";
 import type { FeatureTestBenchmarkSample, FeatureTestCheckReport, FeatureTestCheckSceneResult, SampledGpuProbe } from "../services/feature-test-check";
 import { formatFeatureTestCheckReport, type FeatureTestCheckEnvironment } from "./feature-test-check-report";
+import type { LongFrameAttribution } from "../services/frame-attribution";
 
 const environment: FeatureTestCheckEnvironment = {
   appVersion: "1.2.3", userAgent: "Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X)", platform: "iPad",
@@ -19,6 +20,7 @@ describe("formatFeatureTestCheckReport", () => {
       layerBatches: { visuals: 181, draws: 60, batches: 9, batched: 130, alone: { single: 1, material: 30, transform: 4, vertexColor: 0, other: 2, unmatched: 14 } },
       programs: {
         programs: 120, neverDrawn: 35, passes: { objects: 50, layers: 15, shadows: 20 }, shaders: 70, mostVariants: 6,
+        materials: { builds: 48, programs: 30, adopted: 18, sameShaderRebuilds: 2 },
         splitBy: [
           { define: "PREPASS", with: ["PREPASS_DEPTH", "SCENE_MRT_COUNT"], shaders: 30 }, { define: "INSTANCES", with: [], shaders: 4 },
           ...["A", "B", "C", "D", "E", "F", "G", "H"].map((define) => ({ define, with: [], shaders: 1 })),
@@ -43,12 +45,17 @@ describe("formatFeatureTestCheckReport", () => {
             draws: { median: 400, min: 390, max: 410, samples: 10 }, cpuMs: { median: 40, min: 38, max: 44, samples: 10 }, gpuMs: null,
             drawPasses: { objects: 10, shadows: 0, post: 2, layers: 30 },
             drawPassMs: { objects: 6.26, mirrors: 8.24, shadows: 0, other: 0.04, post: 1 }, cpuMsWithoutDraws: { median: 12, min: 11, max: 13, samples: 4 },
+            cpuMsWithoutFrameFence: { median: 31.5, min: 30, max: 33, samples: 4 },
+            webGl: { windows: 3, frames: 41, cpuMs: 40.2, totalMs: 17.25, groups: {
+              fenceSync: { ms: 6.5, calls: 1 }, getError: { ms: 0, calls: 0 }, checkFramebufferStatus: { ms: 1.25, calls: 4.5 },
+              draws: { ms: 5, calls: 400 }, uniforms: { ms: 2.5, calls: 1800 }, other: { ms: 2, calls: 2600 },
+            } },
           },
           presentation: {
             frames: { drawn: 280, held: 4, skipped: 16, heldReasons: { "FrameGraph is not ready.": 1, "Scene is not ready to render.": 3 } },
             contextLosses: 0, imageBlack: [0, 0.031, null],
           },
-          firstDraws: { draws: 7, loadCompiled: 5, frames: 4, stalls: 2, mostInFrame: 3, worstFrameMs: 180.4, longFrames: 6,
+          firstDraws: { draws: 7, loadCompiled: 5, loadPrograms: 140, frames: 4, stalls: 2, mostInFrame: 3, worstFrameMs: 180.4, longFrames: 6,
             passes: { objects: 2, shadows: 4, outlines: 1 }, longest: [
               { ms: 240.2, engineMs: 31.5, firstDraws: 0, compiles: 0 },
               { ms: 180.4, engineMs: 170.1, firstDraws: 3, compiles: 1, passes: { objects: 1, shadows: 2 } },
@@ -85,14 +92,19 @@ describe("formatFeatureTestCheckReport", () => {
     expect(formatFeatureTestCheckReport(untimed, environment).split("\n").some((line) => line.startsWith("  CPU per pass"))).toBe(false);
     // The layers' visuals: 130 of the 181 drew in 9 batches; the 51 others took a draw each, by reason, the most first.
     expect(lines).toContain("  Scene Layers: 181 visuals in 60 draws · 130 in 9 batches · alone: 30 another Material, 14 nothing else drew the same, 4 mirrored, 2 other, 1 only draw of its pass");
-    expect(lines).toContain("  Programs: 120 on the Engine · 35 never drawn · 70 shaders, at most 6 programs of one · by first pass: objects 50, shadows 20, layers 15");
+    expect(lines).toContain("  Programs: 120 on the Engine · 35 never drawn · 70 shaders, at most 6 programs of one · by first pass: objects 50, shadows 20, layers 15 · Material builds 48 on 30 programs (18 adopted one, 2 rebuilt unchanged)");
     // What the further programs are for: the geometry pass's defines (two more with PREPASS) split 30 shaders, instancing 4.
     // 12 of a frame's 40 ms remain without its draws: 30%. Over 400 draw calls that is 30 µs each, and 70 µs for the draw.
     expect(lines).toContain("  CPU without draws: 12.0 ms of 40.0 ms a frame (30%); draws, clears and uniform uploads take the rest · per draw call 30 µs without and 70 µs for the draw");
+    // With the frame-end fence off, and where the frame's main-thread time went inside WebGL: a group without a call left out.
+    expect(lines).toContain("  CPU with no frame-end fence: 31.5 ms of 40.0 ms (framesinflight off for 4 reads, then restored)");
+    expect(lines).toContain("  WebGL calls: 17.3 ms a frame in WebGL of 40.2 ms cpu (3 windows, 41 frames each) · fenceSync 6.50 (1.0) · checkFramebufferStatus 1.25 (4.5) · draws 5.00 (400) · uniforms 2.50 (1800) · other 2.00 (2600)");
+    // The share of frames by display intervals.
+    expect(lines.find((line) => line.startsWith("  Play: loaded in 3.0 s"))).toContain(" · intervals 1/2/3/4+: 100/0/0/0% ");
     // The eight that split most shaders are named and the rest counted.
     expect(lines).toContain("  Shaders split by define: PREPASS (+2) 30 · INSTANCES 4 · A 1 · B 1 · C 1 · D 1 · E 1 · F 1 · 2 more");
     // The passes that made the first draws, the most first.
-    expect(lines).toContain("  First draws after load: 7 (5 compiled by the load) in 4 frames · 2 over 100 ms · worst 180 ms · most 3 in a frame · by pass: shadows 4, objects 2, outlines 1");
+    expect(lines).toContain("  First draws after load: 7 (5 compiled by the load, of 140 it compiled) in 4 frames · 2 over 100 ms · worst 180 ms · most 3 in a frame · by pass: shadows 4, objects 2, outlines 1");
     expect(lines).toContain("  Long frames after load: 6 over 100 ms · longest 240 ms (engine 32 ms, 0 first draws, 0 compiles), 180 ms (engine 170 ms, 3 first draws: shadows 2, objects 1, 1 compile), 150 ms (engine 140 ms, 1 first draw: outlines 1, 2 compiles), 130 ms (engine 20 ms, 0 first draws, 0 compiles)");
     // 4200 ms over 140 checks, and over the 280 frames drawn.
     expect(lines).toContain("  Readiness probes: 140 in 280 drawn frames · 30.0 ms each · 15.0 ms per drawn frame");
@@ -103,7 +115,7 @@ describe("formatFeatureTestCheckReport", () => {
 
   it("tells what Play first drew after its load apart from what a sweep's quality changes first drew", () => {
     const reading = (draws: number, passes: Record<string, number>) => ({
-      draws, loadCompiled: 0, frames: draws, stalls: 0, mostInFrame: 1, worstFrameMs: 40, longFrames: 0, passes, longest: [],
+      draws, loadCompiled: 0, loadPrograms: 90, frames: draws, stalls: 0, mostInFrame: 1, worstFrameMs: 40, longFrames: 0, passes, longest: [],
     });
     const report: FeatureTestCheckReport = {
       mode: "benchmark", startedAt: Date.UTC(2026, 9, 28, 12), durationMs: 60_000, cancelled: false, pageErrors: [],
@@ -121,8 +133,8 @@ describe("formatFeatureTestCheckReport", () => {
     };
     const lines = formatFeatureTestCheckReport(report, environment).split("\n");
     expect(lines).toContain("  Readiness probes: none in 300 drawn frames");
-    expect(lines).toContain("  First draws after load, before the sweep: 3 (0 compiled by the load) in 3 frames · 0 over 100 ms · worst 40 ms · most 1 in a frame · by pass: objects 3");
-    expect(lines).toContain("  First draws in the whole session, the sweep's quality changes included: 40 (0 compiled by the load) in 40 frames · 0 over 100 ms · worst 40 ms · most 1 in a frame · by pass: objects 20, shadows 12, post 8");
+    expect(lines).toContain("  First draws after load, before the sweep: 3 (0 compiled by the load, of 90 it compiled) in 3 frames · 0 over 100 ms · worst 40 ms · most 1 in a frame · by pass: objects 3");
+    expect(lines).toContain("  First draws in the whole session, the sweep's quality changes included: 40 (0 compiled by the load, of 90 it compiled) in 40 frames · 0 over 100 ms · worst 40 ms · most 1 in a frame · by pass: objects 20, shadows 12, post 8");
     expect(lines).toContain("  Long frames after load, before the sweep: 0 over 100 ms");
   });
 
@@ -171,7 +183,7 @@ describe("formatFeatureTestCheckReport", () => {
           ...entry, framesInFlight: { mode: 2 as const, skipped: [1, 0, 2, 9][index]! },
           drawPasses: { objects: 124, geometry: [0, 0, 81, 81][index]!, outlines: 101, layers: 98 },
           drawPassMs: { objects: [3.04, 3.1, 4.48, 4.5][index]!, geometry: [0, 0, 1.2, 1.2][index]!, outlines: 0.6, layers: 0.02, other: 0.3 },
-          programs: { programs: [280, 290, 310, 320][index]!, neverDrawn: [90, 92, 95, 96][index]!, passes: {}, shaders: 100, mostVariants: 9, splitBy: [] },
+          programs: { programs: [280, 290, 310, 320][index]!, neverDrawn: [90, 92, 95, 96][index]!, passes: {}, shaders: 100, mostVariants: 9, splitBy: [], materials: { builds: 40, programs: 20, adopted: 20, sameShaderRebuilds: 0 } },
         }))),
         scene("heavy", [sample("low", 59, 20), sample("medium", 35, 40), sample("high", 25, 60),
           sample("ultra", 20, 80)]),
@@ -278,7 +290,7 @@ describe("formatFeatureTestCheckReport", () => {
     };
     const lines = formatFeatureTestCheckReport(report, environment).split("\n");
     const row = (label: string) => lines.find((line) => line.startsWith(`    ${label} `))!;
-    expect(lines).toContain("  Timing: gpu busy polled every 4.2 ms (each frame up to one poll late)");
+    expect(lines).toContain("  Timing: gpu busy read as each Engine frame starts, every 4.2 ms (completion read at frame granularity: a frame whose GPU work ends before the next frame starts reads at least the time to that start)");
     expect(lines).toContain("  preserveDrawingBuffer: off (live)");
     // 14 against the mean of 20 and 22, though every frame lasted two display intervals.
     expect(row("shadows off")).toMatch(/0\/100\/0\/0 {7}14\.0 \(17\) {5}-7\.0ms -33% {7}8\.0ms/);
@@ -441,7 +453,7 @@ describe("formatFeatureTestCheckReport", () => {
         play: { status: "loaded", ms: 2000, phase: null, frames: null, runtimeFps: 22, ticksPerSecond: 60, snapshot: null, presentation: null, firstDraws: null, commands: [], logs: [],
           profile: {
             instancePool: { groups: 18, retained: 2, pooled: 410, rekeys: 0 }, endChanges: [], holdRate: { heldPerSecond: 2.36, share: 0.234 },
-            resolution: { scale: 0.75, floor: true, levelBefore: 1.25 },
+            resolution: { scale: 0.75, levelBefore: 1.25 },
           },
           benchmark: [
             { ...sample("heavy warm-up 1", 44, 11, { drawPasses: undefined, atMs: 0 }), label: "warm-up 1", baseline: false, warmup: true, view: "heavy" },
@@ -466,7 +478,7 @@ describe("formatFeatureTestCheckReport", () => {
     // The render loop's own count and the game's tick rate, which the loop does not set.
     expect(lines).toContain("  Play: loaded in 2.0 s · no frames sampled · render loop 22 fps (last second) · game 60 ticks/s");
     expect(lines).toContain("  Restored: every setting as before the first step");
-    expect(lines).toContain("  Resolution held: scale 0.75 (level 1.33) for every row, Dynamic Resolution's floor at this tier, where a GPU-bound device sits, with Dynamic Resolution off; Play was at scaling level 1.25 before");
+    expect(lines).toContain("  Resolution held: scale 0.75 (level 1.33) for every row, the session's own scale; Play was at scaling level 1.25 before");
     // The control view's visits, unchanged, at their times into the sweep, and its change over the run.
     expect(lines).toContain("  Drift (heavy view, revisited unchanged; at m:ss into the sweep, gpu busy / cpu ms): warm-up 1 0:00 44.0/11.0 · warm-up 2 0:10 42.0/10.0 · heavy baseline 1 1:00 40.0/10.0 · heavy baseline 2 1:20 42.0/11.0 · heavy baseline 3 1:40 40.0/10.0 · heavy drift 5:00 46.0/12.0");
     expect(lines).toContain("  Drift first to last visit: gpu busy +2.0ms +5% · cpu +1.0ms +9%; discount a step's change by the drift around it");
@@ -490,6 +502,43 @@ describe("formatFeatureTestCheckReport", () => {
       "      1. [FAST] heavy world drawn once: -7.0ms -17% (40.0 > 34.0 > 42.0) · cpu -1.5ms -14% · overlaps",
       "      2. [FAST] heavy shadow passes off: -5.0ms -12% (42.0 > 36.0 > 40.0) · cpu -1.5ms -14% · overlaps",
     ]);
+  });
+
+  it("says per second how many of Play's and each Profile row's frames were long, split by what ran in them, the samplers-off row among them", () => {
+    const long = (ms: number, three: LongFrameAttribution["three"], four: LongFrameAttribution["four"]): LongFrameAttribution =>
+      ({ ms, frames: 180, three, four });
+    const sample = (label: string, extra: Partial<FeatureTestBenchmarkSample>): FeatureTestBenchmarkSample => ({
+      label, baseline: / baseline /.test(` ${label}`), view: label.split(" ")[0],
+      frames: { frames: 180, durationMs: 3000, fps: 60, medianMs: 16.7, meanMs: 16.7, vsync: [0.9, 0, 0.02, 0.08], p95Ms: 67, maxMs: 90, stalls: 0 },
+      runtimeFps: null, cpuMs: 8, gpuMs: null, drawCalls: 300, resolution: null, failed: [], ...extra,
+    });
+    const report: FeatureTestCheckReport = {
+      mode: "profile", startedAt: 0, durationMs: 60_000, cancelled: false, pageErrors: [],
+      scenes: [{
+        name: "main", path: "assets/main.scene.hasset", passed: true, problems: [],
+        editor: { status: "ready", ms: 1000, phase: null, frames: null, error: null, gpu: null },
+        play: { status: "loaded", ms: 2000, phase: null, frames: null, runtimeFps: 60, snapshot: null, presentation: null, firstDraws: null, commands: [], logs: [],
+          longFrames: long(5000, { render: 2 }, { none: 25, timer250: 3 }),
+          benchmark: [
+            sample("light baseline 1", { longFrames: long(3000, {}, { none: 15, port: 3 }) }),
+            sample("light samplers off", { cpuMs: null, samplersOff: true, longFrames: long(3000, { commit: 3 }, { none: 18 }) }),
+            sample("light baseline 2", {}),
+          ] },
+        session: null,
+      }],
+    };
+    const lines = formatFeatureTestCheckReport(report, environment).split("\n");
+    // Per second over the window: 2 frames of three intervals in 5 s, 28 of four or more.
+    expect(lines).toContain("  Long frames: 3x 0.4/s (render 0.4) · 4+x 5.6/s (timer 250 0.6, none of ours 5.0)");
+    expect(lines.find((line) => line.startsWith("  (long frames = "))).toMatch(/Safari's clock steps in about 1 ms/);
+    const header = lines.findIndex((line) => line.startsWith("  Long frames per row ("));
+    expect(lines[header]).toMatch(/samplers off = the row sampled with the GPU busy probe not polling/);
+    // Only the rows that measured them.
+    expect(lines.slice(header + 1, header + 3)).toEqual([
+      "    light baseline 1            3x 0/s · 4+x 6.0/s (port 1.0, none of ours 5.0)",
+      "    light samplers off          3x 1.0/s (DOM commit 1.0) · 4+x 6.0/s (none of ours 6.0)",
+    ]);
+    expect(lines[header + 3]).not.toMatch(/light baseline 2/);
   });
 
   it("reports a Profile's GPU probes: each row's serial stages and window counters, the distinct frame structures, and steps ranked in serial frame time", () => {
@@ -519,9 +568,9 @@ describe("formatFeatureTestCheckReport", () => {
         ...(serial ? { serial: {
           id: 1, frames: 8, frameMs: serial.shadows + serial.main, coldMs: serial.shadows + serial.main + 9, cpuMs: 4,
           stages: [
-            { stage: "other" as const, ms: 0.4, censored: true },
-            { stage: "shadows" as const, ms: serial.shadows, censored: serial.censored === true },
-            { stage: "main" as const, ms: serial.main, censored: false },
+            { stage: "other" as const, ms: 0.4, censored: true, subMs: 0.5 },
+            { stage: "shadows" as const, ms: serial.shadows, censored: serial.censored === true, subMs: serial.shadows > 1 ? 2.5 : 0 },
+            { stage: "main" as const, ms: serial.main, censored: false, subMs: 1 },
           ],
           syntheticMs: serial.synthetic, syntheticColdMs: serial.synthetic + 1, hashes: [USUAL, USUAL], splits: 0, failed: null, ms: 400,
         } } : {}),
@@ -586,6 +635,13 @@ describe("formatFeatureTestCheckReport", () => {
       "      1. heavy world drawn once: -5.5ms -28% s (20.0 > 14.5 > 20.0) · norm -5.5ms -28% · cpu +0.0ms +0% · overlaps",
       "      2. heavy geometry effects off: -1.0ms -3% (33.0 > 32.0 > 33.0) · cpu +0.0ms +0% · overlaps",
     ]);
+    // Each row's intervals, and each serial-probed row's submission by stage, in stage order.
+    expect(line("    heavy baseline 1 ")).toContain(" 0/0/100/0% ");
+    const submission = lines.findIndex((entry) => entry.startsWith("  Serial submission by stage"));
+    expect(lines.slice(submission + 1, submission + 3)).toEqual([
+      `    ${"heavy baseline 1".padEnd(28)}other 0.5 · shadows 2.5 · main 1.0`,
+      `    ${"heavy world drawn once".padEnd(28)}other 0.5 · shadows 0.0 · main 1.0`,
+    ]);
 
   });
 
@@ -639,6 +695,33 @@ describe("formatFeatureTestCheckReport", () => {
     expect(layers({ visuals: 0, draws: 0, batches: 0, batched: 0, alone })).toEqual([]);
   });
 
+  it("splits a frame's Scene Layer work into batched passes and per-Scene work, with its clears, target switches and uploads, only where layers rendered", () => {
+    const work = (layerFrame: RenderDiagnostics["layerFrame"]) => {
+      const rendering = {
+        adapter: { vendor: null, renderer: null, version: null }, cpuMs: 1, gpuMs: null, gpuStatus: "unsupported",
+        width: 100, height: 100, scalingLevel: 1, qualityLimits: [], layerFrame,
+      } as unknown as RenderDiagnostics;
+      const report: FeatureTestCheckReport = {
+        mode: "quick", startedAt: 0, durationMs: 1000, cancelled: false, pageErrors: [],
+        scenes: [{
+          name: "main", path: "assets/main.scene.hasset", passed: true, problems: [],
+          editor: { status: "ready", ms: 1000, phase: null, frames: null, error: null, gpu: null },
+          play: { status: "loaded", ms: 2000, phase: null, frames: null, runtimeFps: null,
+            snapshot: { drawCalls: 5, meshes: 5, textures: 1, accountedBytes: 0, rendering }, presentation: null, firstDraws: null, commands: [], benchmark: [], logs: [] },
+          session: null,
+        }],
+      };
+      return formatFeatureTestCheckReport(report, environment).split("\n").filter((line) => line.startsWith("  Scene Layer work:"));
+    };
+    expect(work({ scenes: 3, ms: 3.25, batchMs: 1.25, clears: 3, depthClears: 3, targetSwitches: 0, uploads: 0, beforeWorld: { ms: 0.5, uploads: 2, targetSwitches: 2 } }))
+      .toEqual(["  Scene Layer work: 3 scenes in 3.25 ms (1.25 in batched passes, 2.00 per-Scene work) · 3 clears (3 of depth) · 0 target switches · 0 uploads · before the world: 0.50 ms, 2 uploads, 2 target switches"]);
+    expect(work({ scenes: 1, ms: 1, batchMs: 0.5, clears: 1, depthClears: 1, targetSwitches: 1, uploads: 1, beforeWorld: { ms: 0, uploads: 0, targetSwitches: 0 } }))
+      .toEqual(["  Scene Layer work: 1 scene in 1.00 ms (0.50 in batched passes, 0.50 per-Scene work) · 1 clear (1 of depth) · 1 target switch · 1 upload · before the world: 0.00 ms, 0 uploads, 0 target switches"]);
+    // A view that reports none, or whose layers rendered nothing, has no line.
+    expect(work(undefined)).toEqual([]);
+    expect(work({ scenes: 0, ms: 0, batchMs: 0, clears: 0, depthClears: 0, targetSwitches: 0, uploads: 0, beforeWorld: { ms: 0, uploads: 0, targetSwitches: 0 } })).toEqual([]);
+  });
+
   it("says how many shadow casters the maps draw from the shared buffer, and how, only where some are", () => {
     const casters = (shadowRetained: RenderDiagnostics["shadowRetained"]) => {
       const rendering = {
@@ -657,10 +740,10 @@ describe("formatFeatureTestCheckReport", () => {
       };
       return formatFeatureTestCheckReport(report, environment).split("\n").filter((line) => line.startsWith("  Shadow casters:"));
     };
-    const stats = { casters: 209, draws: 240, vertices: 90_000, indices: 300_000, multiDraw: true, calls: 40, drawn: 500 };
-    expect(casters(stats)).toEqual(["  Shadow casters: 209 drawn from the shared buffer, a map layer in one call · 12.5 caster draws a call"]);
-    // Without the extension each caster is a call, and before any map drew there is no ratio.
-    expect(casters({ ...stats, multiDraw: false, calls: 0, drawn: 0 })).toEqual(["  Shadow casters: 209 drawn from the shared buffer, one call each (no WEBGL_multi_draw)"]);
+    const stats = { casters: 209, draws: 240, parts: 31, vertices: 90_000, indices: 300_000, calls: 40, drawn: 500, lateUploads: 0 };
+    expect(casters(stats)).toEqual(["  Shadow casters: 209 drawn from the shared buffer in 31 parts · 12.5 caster draws a draw"]);
+    // Before any map drew there is no ratio; rows uploaded inside the stage are counted.
+    expect(casters({ ...stats, parts: 1, calls: 0, drawn: 0, lateUploads: 3 })).toEqual(["  Shadow casters: 209 drawn from the shared buffer in 1 part · 3 late row uploads"]);
     // A view that retains none and a Scene without such casters have no line.
     expect(casters(null)).toEqual([]);
     expect(casters({ ...stats, casters: 0 })).toEqual([]);

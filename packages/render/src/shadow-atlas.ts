@@ -93,8 +93,11 @@ const atlases = new WeakMap<Scene, Atlas>();
 const placeholders = new WeakMap<Scene, RenderTargetTexture>();
 const generations = new WeakMap<Scene, number>();
 
-/** What has been drawn into a Scene's atlas since it was first made: map passes, their tiles and the tiles' texels. */
-export interface ShadowAtlasDrawCounts { maps: number; tiles: number; texels: number }
+/**
+ * What has been drawn into a Scene's atlas since it was first made: map passes, their tiles and the tiles' texels, and
+ * the times a page was bound for them (`passes`: consecutive tiles of a render on one page share one).
+ */
+export interface ShadowAtlasDrawCounts { maps: number; tiles: number; texels: number; passes: number }
 const drawCounts = new WeakMap<Scene, ShadowAtlasDrawCounts>();
 
 /** How many atlases the Scene has made or taken over: it grows each time the Scene's atlas texture is created. */
@@ -105,7 +108,7 @@ export function shadowAtlasGeneration(scene: Scene): number {
 /** The Scene's cumulative atlas draws (`ShadowAtlasDrawCounts`); a reader takes the difference between two reads. */
 export function shadowAtlasDrawCounts(scene: Scene): Readonly<ShadowAtlasDrawCounts> {
   let counts = drawCounts.get(scene);
-  if (!counts) drawCounts.set(scene, counts = { maps: 0, tiles: 0, texels: 0 });
+  if (!counts) drawCounts.set(scene, counts = { maps: 0, tiles: 0, texels: 0, passes: 0 });
   return counts;
 }
 
@@ -312,6 +315,43 @@ export function shadowAtlasTexture(scene: Scene): RenderTargetTexture {
   return placeholder;
 }
 
+type BindingEngine = AbstractEngine & {
+  _currentFramebuffer: WebGLFramebuffer | null;
+  _integerMRTAttachmentsMask: number;
+  _bindUnboundFramebuffer(framebuffer: WebGLFramebuffer | null): void;
+};
+type AtlasWrapper = RenderTargetWrapper & { _framebuffer: WebGLFramebuffer | null };
+
+/**
+ * The page a tile pass left bound and attached when it ended (`AtlasTileTarget._unbindFrameBuffer`): Babylon is told
+ * the target was unbound, as its own unbind would, but the GL binding stays the atlas framebuffer (`_currentFramebuffer`
+ * says so, so any other bind through the Engine binds for real). The next tile pass on that page binds nothing.
+ */
+let heldPage: { wrapper: AtlasWrapper; page: number } | null = null;
+/** Engines whose shadow stage is drawing its maps (`holdShadowAtlasPages`): a map's last pass may hold its page too. */
+const openStages = new WeakSet<AbstractEngine>();
+
+/**
+ * Opens a shadow stage on the Scene's Engine: until `release`, the last pass of each atlas map leaves its page bound, so
+ * consecutive maps on one page (a sun's last cascades and a spot light's tile) draw in one render pass. Between two maps
+ * the stage runs no draw and binds nothing; anything that binds a framebuffer through the Engine ends the hold. `release`
+ * binds the default framebuffer where a page is still held, as the last map's unbind would have; a stage a failed draw
+ * left open is released by the next one.
+ */
+export function holdShadowAtlasPages(scene: Scene): { release(): void } {
+  const engine = scene.getEngine();
+  const release = () => {
+    openStages.delete(engine);
+    const held = heldPage;
+    heldPage = null;
+    const binding = engine as BindingEngine;
+    if (held && binding._currentFramebuffer === held.wrapper._framebuffer && binding._currentRenderTarget === null) binding._bindUnboundFramebuffer(null);
+  };
+  if (openStages.has(engine)) release();
+  openStages.add(engine);
+  return { release };
+}
+
 /**
  * A light's tiles as one render target: the atlas's framebuffer and depth texture, drawn one pass per tile (a sun's
  * cascades and a point light's faces are its layers), each bound to its tile's page of the atlas. It never owns the
@@ -343,9 +383,53 @@ class AtlasTileTarget extends RenderTargetTexture {
 
   override set is2DArray(_value: boolean) {}
 
-  // A pass draws into its tile's page: that layer of the atlas.
+  /** The tile whose pass is bound now (the render's pass index). */
+  private tile = 0;
+
+  /**
+   * A pass draws into its tile's page: that layer of the atlas. A pass on the page the last one held (`heldPage`), with
+   * nothing bound since, binds nothing: Babylon is told the target is bound, as its bind would, and the page's tiles are
+   * one render pass on a driver that ends one at every change of the bound framebuffer or its attachment (ANGLE's Metal
+   * backend), which loads and stores the whole page. Only its viewport and its tile's clear differ (`drawIntoTiles`); the
+   * GL state Babylon caches is as the last pass left it, so nothing is wiped. Only these passes bind the atlas
+   * framebuffer, so `heldPage` says what it has attached.
+   */
   override _bindFrameBuffer(faceIndex = 0, layer = 0): void {
-    super._bindFrameBuffer(faceIndex, this.tiles[layer]!.layer);
+    const held = heldPage;
+    heldPage = null;
+    this.tile = layer;
+    const page = this.tiles[layer]!.layer;
+    const wrapper = this._renderTarget as AtlasWrapper | null;
+    const engine = this.getScene()?.getEngine() as BindingEngine | undefined;
+    if (wrapper && engine && held?.wrapper === wrapper && held.page === page && engine._currentRenderTarget === null &&
+      engine._currentFramebuffer === wrapper._framebuffer) {
+      engine._currentRenderTarget = wrapper;
+      engine._integerMRTAttachmentsMask = 0;
+      return;
+    }
+    super._bindFrameBuffer(faceIndex, page);
+    const scene = this.getScene();
+    if (scene && atlases.get(scene)?.target === this.atlas) (shadowAtlasDrawCounts(scene) as ShadowAtlasDrawCounts).passes += 1;
+  }
+
+  /**
+   * A pass ends holding its page (`heldPage`) while the render has a tile to come, or, in a shadow stage
+   * (`holdShadowAtlasPages`), after its last: Babylon's unbind without its default framebuffer bind. A next tile on
+   * another page then only attaches that page.
+   */
+  protected override _unbindFrameBuffer(engine: AbstractEngine, faceIndex: number): void {
+    const wrapper = this._renderTarget as AtlasWrapper | null;
+    const page = this.tiles[this.tile]!.layer;
+    const more = this.is2DArray && this.tile + 1 < this.tiles.length;
+    const binding = engine as BindingEngine;
+    if (wrapper && binding._currentRenderTarget === wrapper && (more || openStages.has(engine))) {
+      binding._currentRenderTarget = null;
+      binding._integerMRTAttachmentsMask = 0;
+      heldPage = { wrapper, page };
+      this.onAfterRenderObservable.notifyObservers(faceIndex);
+      return;
+    }
+    super._unbindFrameBuffer(engine, faceIndex);
   }
 
   override getSize() {
@@ -399,6 +483,9 @@ function filterReach(shadow: ShadowGenerator, size: number, correction: Vector3 
   return 2 * texels / size;
 }
 
+/** Whether a render leaves a pass out: no, kept (its tile holds what a redraw would draw), or left for a later render. */
+type PassDeferral = false | "kept" | "later";
+
 /**
  * Draws `map`'s passes into its tiles of `placed`, an atlas: each pass binds its tile's page, its viewport is its tile,
  * set once the framebuffer is bound (the object renderer sets the camera's before the bind), and its tile clears only
@@ -411,7 +498,7 @@ function filterReach(shadow: ShadowGenerator, size: number, correction: Vector3 
  */
 function drawIntoTiles(
   map: AtlasTileTarget, shadow: ShadowGenerator & AtlasShadow, placed: Atlas, drawing: (pass: number) => void,
-  deferral?: { defers(pass: number): boolean; drawn(pass: number): void },
+  deferral?: { defers(pass: number): PassDeferral; began(pass: number, deferral: PassDeferral): void; drawn(pass: number): void },
 ): void {
   const scene = map.getScene()!;
   const atlas = placed.target;
@@ -419,14 +506,16 @@ function drawIntoTiles(
   const viewports = map.tiles.map((tile) => new Viewport(tile.x / page, tile.y / page, tile.size / page, tile.size / page));
   const whole = new Viewport(0, 0, 1, 1);
   const own = new Set(map.tiles);
-  // The pages this render clears whole, and those it has cleared.
-  const wholePages = new Set<number>();
-  const clearedPages = new Set<number>();
+  // Per page, whether this render clears it whole, and whether it has: flags written over each render, as clearing a
+  // Set makes it a new table.
+  const wholePages = new Array<boolean>(placed.tiles.pages).fill(false);
+  const clearedPages = new Array<boolean>(placed.tiles.pages).fill(false);
   const views: { view: Matrix; reach: number }[] = map.tiles.map(() => ({ view: Matrix.Identity(), reach: 0 }));
   let pass = 0;
   let cleared = false;
   let partial = false;
-  // A pass left out of this render (`deferral`): its tile keeps its depth and the view it was drawn with.
+  // A pass left out of this render (`deferral`): its tile keeps its depth and the view it was drawn with. One left for
+  // later (`"later"`) makes the render incomplete; a kept one (`"kept"`) holds what a redraw would draw.
   let deferring = false;
   let deferred = false;
   map.ignoreCameraViewport = false;
@@ -434,17 +523,21 @@ function drawIntoTiles(
     pass = layer;
     if (layer === 0) {
       // A render's first pass: the pages it clears whole hold only its tiles, each of which it draws.
-      wholePages.clear();
-      clearedPages.clear();
-      for (const tile of map.tiles) wholePages.add(tile.layer);
-      map.tiles.forEach((tile, index) => {
-        if (deferral?.defers(index) || !placed.tiles.holdsOnly(tile.layer, own)) wholePages.delete(tile.layer);
-      });
+      wholePages.fill(false);
+      clearedPages.fill(false);
+      const tiles = map.tiles;
+      for (let index = 0; index < tiles.length; index++) wholePages[tiles[index]!.layer] = true;
+      for (let index = 0; index < tiles.length; index++) {
+        const tile = tiles[index]!;
+        if (deferral?.defers(index) || !placed.tiles.holdsOnly(tile.layer, own)) wholePages[tile.layer] = false;
+      }
     }
     scene.getEngine().setViewport(viewports[layer]!);
-    deferring = deferral?.defers(layer) === true;
+    const left = deferral?.defers(layer) ?? false;
+    deferral?.began(layer, left);
+    deferring = left !== false;
     if (deferring) {
-      deferred = true;
+      if (left === "later") deferred = true;
       return;
     }
     drawing(layer);
@@ -466,10 +559,10 @@ function drawIntoTiles(
       counts.tiles += 1;
       counts.texels += tile.size * tile.size;
     }
-    if (wholePages.has(tile.layer)) {
+    if (wholePages[tile.layer]) {
       // The page's first pass clears it whole, under a viewport over the page (a probe counts the texels it covers).
-      if (clearedPages.has(tile.layer)) return;
-      clearedPages.add(tile.layer);
+      if (clearedPages[tile.layer]) return;
+      clearedPages[tile.layer] = true;
       engine.setViewport(whole);
       engine.clear(null, false, true, false);
       engine.setViewport(viewports[pass]!);
@@ -544,15 +637,16 @@ export function placeInPrivateAtlas<T>(atlas: PrivateShadowAtlas, build: () => T
 
 /**
  * The tile edge of each of a sun's `cascades` at map size `size` in an `edge`-texel atlas: the first takes `firstScale`
- * times the edge (`SHADOW_FIRST_CASCADE_SCALE`), the scale halved while that tile would be wider than half the atlas's
+ * times the edge (`ShadowSettings.firstCascadeScale`), the scale halved while that tile would be wider than half the atlas's
  * edge, down to the map size; the last `halved` take half the edge, never the first two, which hold the shadows near
  * the camera (the second starts a few metres out), down to the 256-texel floor admitted maps keep and never more than
  * `size` (a caster-variant stand-in's tiles are smaller still; `SHADOW_HALF_TILE_CASCADES`).
  *
  * The clamp keeps a Custom map size from asking for a first tile the atlas cannot hold beside the other cascades and
- * local maps (High's 2 at 8192 would be the whole 16384 atlas): it takes at most a quarter of the atlas, so at 8192 every
+ * local maps (a scale of 2 at 8192 would be the whole 16384 atlas): it takes at most a quarter of the atlas, so at 8192 every
  * level's cascades leave at least three 4096 quadrants, room for the level's own local lights as spot maps; point
- * lights past that halve the sun as the reserve in `planShadowAdmission` says. The levels' own sizes keep their scale.
+ * lights past that halve the sun as the reserve in `planShadowAdmission` says. A scale of 2 at High's own map size (an
+ * 8192 atlas) keeps it; at Low and Medium (a 4096 atlas) it does not.
  */
 export function cascadeTileSizes(size: number, cascades: number, halved: number, firstScale = 1, edge = Infinity): number[] {
   let scale = firstScale;
@@ -748,6 +842,8 @@ export function createAtlasShadowGenerator(light: SpotLight | PointLight, size: 
 
 /** The first cascade `shadowdebug farcascades off` draws on alternate frames: the first two hold the near shadows. */
 const FIRST_DEFERRED_CASCADE = 2;
+/** Every cascade's bit (`AtlasCascadedShadowGenerator.staleCascades`): Babylon's cascaded maps hold at most four. */
+const ALL_CASCADES = 0xf;
 
 /**
  * The sun's cascaded shadow generator drawing each cascade into its own tile of the Scene's atlas, built with its
@@ -765,6 +861,14 @@ export class AtlasCascadedShadowGenerator extends CascadedShadowGenerator implem
    * is initialised, which Babylon's constructor does before this class's own fields would be.
    */
   declare private cascadeDrawn: boolean[];
+  /**
+   * Per cascade (a bit each), whether its tile must be drawn at the map's next render: every cascade, until a refresh
+   * that knows which changed says otherwise (`refreshCascades`). A drawn pass clears its bit; any other reset of the
+   * map's refresh counter (a pass that skipped a caster not ready, a debug switch, a new refresh rate) sets them all.
+   */
+  declare private staleCascades: number;
+  /** A refresh with its own cascade mask is resetting the map's refresh counter (`refreshCascades`). */
+  declare private selectiveRefresh: boolean;
   /** The share of the shadow distance's far end over which the shadow fades out (`ShadowSettings.fadeFraction`). */
   fadeFraction = 0;
   /** Automatic bias (`ShadowSettings.autoBias`): receivers compare against their own plane (receiver-plane PCF). */
@@ -867,8 +971,54 @@ export class AtlasCascadedShadowGenerator extends CascadedShadowGenerator implem
           ratio(max[0]!.y - min[0]!.y, max[index]!.y - min[index]!.y),
           ratio(max[index]!.z - min[index]!.z, max[0]!.z - min[0]!.z)));
       }
-    }, { defers: (cascade) => this.defersCascade(cascade), drawn: (cascade) => { cascadeDrawn[cascade] = true; } });
+    }, {
+      defers: (cascade) => this.cascadeDeferral(cascade),
+      began: (cascade, deferral) => { this.keptPass = deferral === "kept" ? cascade : -1; },
+      drawn: (cascade) => {
+        cascadeDrawn[cascade] = true;
+        this.staleCascades &= ~(1 << cascade);
+      },
+    });
+    this.staleCascades = ALL_CASCADES;
+    this.selectiveRefresh = false;
+    // Every reset passes through the map's object renderer: the map's own, a new refresh rate, and a mesh found not
+    // ready in a pass.
+    const renderer = (this._shadowMap as unknown as { _objectRenderer: { resetRefreshCounter(): void } })._objectRenderer;
+    const reset = renderer.resetRefreshCounter.bind(renderer);
+    renderer.resetRefreshCounter = () => {
+      if (!this.selectiveRefresh) this.staleCascades = ALL_CASCADES;
+      reset();
+    };
   }
+
+  /**
+   * Marks the cascades of `mask` (a bit each) to be drawn at the map's next render, and runs `refresh` (which sets the
+   * map's refresh rate or resets its counter) without marking the others: `ShadowMapRefresh` knows which cascades'
+   * casters, fit, light and camera changed, and a cascade none of them did keeps its tile (`keepsCascade`).
+   */
+  refreshCascades(mask: number, refresh: () => void): void {
+    this.staleCascades |= mask;
+    this.refreshFrame = this._scene.getEngine().frameId;
+    this.selectiveRefresh = true;
+    try {
+      refresh();
+    } finally {
+      this.selectiveRefresh = false;
+    }
+  }
+
+  /**
+   * Whether a render leaves `cascade`'s tile as it is, holding exactly the depth a redraw would draw: it was drawn
+   * whole, and nothing that reaches it changed since, as a refresh in this Engine frame found (`refreshCascades`; any
+   * other reset marks every cascade). A render with no refresh in its frame draws every cascade.
+   */
+  keepsCascade(cascade: number): boolean {
+    return this.cascadeDrawn[cascade] === true && (this.staleCascades & (1 << cascade)) === 0 &&
+      this.refreshFrame === this._scene.getEngine().frameId;
+  }
+
+  /** The Engine frame of the last `refreshCascades`. */
+  private refreshFrame = -1;
 
   /**
    * Debug (`shadowdebug farcascades off`): whether `cascade` is left out of a render in this Engine frame. The
@@ -879,6 +1029,26 @@ export class AtlasCascadedShadowGenerator extends CascadedShadowGenerator implem
   defersCascade(cascade: number): boolean {
     return cascade >= FIRST_DEFERRED_CASCADE && this.cascadeDrawn[cascade] === true &&
       (this._scene.getEngine().frameId & 1) === 1 && shadowDebugOff(this._scene, "farcascades");
+  }
+
+  /**
+   * Whether the pass that just began (a render's, or a readiness probe's) is `cascade`'s and keeps its tile
+   * (`keepsCascade`): its caster list is then empty. Asked once per pass, by its caster list, which follows the pass's
+   * start.
+   */
+  takesKeptPass(cascade: number): boolean {
+    const kept = this.keptPass === cascade;
+    this.keptPass = -1;
+    return kept;
+  }
+
+  /** The pass that began keeping its tile, until its caster list asks (`takesKeptPass`); -1 for none. */
+  private keptPass = -1;
+
+  /** How a render treats `cascade`'s pass: left for later (`defersCascade`), kept (`keepsCascade`), or drawn. */
+  private cascadeDeferral(cascade: number): PassDeferral {
+    if (this.defersCascade(cascade)) return "later";
+    return this.keepsCascade(cascade) ? "kept" : false;
   }
 
   protected override _applyFilterValues(): void {}

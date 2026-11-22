@@ -24,6 +24,7 @@ import { HasStencilAspect } from "@babylonjs/core/Materials/Textures/textureHelp
 import "@babylonjs/core/Shaders/postprocess.vertex";
 import "@babylonjs/core/Shaders/ShadersInclude/helperFunctions";
 import { ManagedShadowObjectRendererTask } from "./framegraph-managed-shadows";
+import { fragmentDiscards } from "./full-target-clear";
 import { LightNeutralObjectRendererTask } from "./light-neutral-tasks";
 import {
   beginManagedRenderAllocation, releaseManagedRenderLeaseAfterDisposal, type ManagedRenderLease,
@@ -289,6 +290,9 @@ class WaterSceneCopyTask extends FrameGraphTask {
 
   override isReady(): boolean { return this.wrapper.isReady(); }
 
+  /** The copy writes every pixel and channel of its target once its effect is ready (`full-target-clear.ts`). */
+  coversOutput(): boolean { return this.wrapper.isReady() && !fragmentDiscards(this.wrapper.effect); }
+
   override record(): void {
     const graph = this._frameGraph;
     const size = graph.textureManager.getTextureAbsoluteDimensions(this.outputTexture);
@@ -371,7 +375,10 @@ export interface WaterSceneCopyGraphOptions {
   /** Full output size. */
   width: number;
   height: number;
-  /** The view's "Forward clear", "Forward cull" and main "Forward objects" tasks. */
+  /**
+   * The view's "Forward clear", "Forward cull" and main "Forward objects" tasks. The clear is a task of the graph only in
+   * the own-pair form (`splitsClear`); otherwise the objects pass clears with its settings as it starts.
+   */
   clear: FrameGraphClearTextureTask;
   cull: FrameGraphCullObjectsTask;
   objects: ManagedShadowObjectRendererTask;
@@ -384,14 +391,16 @@ export interface WaterSceneCopyGraphOptions {
   scene?: { color: FrameGraphTextureHandle; depth: FrameGraphTextureHandle };
   /** The view's output colour, written by the own pair's final copy. */
   output: { color: FrameGraphTextureHandle; texture: boolean };
+  /** Optional extra consumer (such as projected decals) that also requires splitting opaque and transparent draws. */
+  extraSplitDemand?: () => boolean;
 }
 
 /**
  * Opaque/transparent split with one packed scene copy between, owned by the
  * enclosing view graph:
  *
- *   Forward clear → Forward cull → Water split → Forward objects (opaque only
- *   while copy-sampling water is visible) → Water scene copy → Forward
+ *   Forward cull → Water split → Forward objects (clearing as it starts; opaque
+ *   only while copy-sampling water is visible) → Water scene copy → Forward
  *   transparent
  *
  * With no sampleable output the own-pair form keeps the direct path for
@@ -403,7 +412,7 @@ export interface WaterSceneCopyGraphOptions {
  * visible copy-sampling water runs only empty disabled passes.
  */
 export class WaterSceneCopyGraph {
-  /** Runs after "Forward cull": before "Forward clear" when `splitsClear`, else just before the object pass. */
+  /** Runs after "Forward cull": before the "Forward clear" task when `splitsClear`, else just before the object pass. */
   readonly split: FrameGraphTask;
   /** The split also switches "Forward clear", so it must run before it (the own-pair form). */
   readonly splitsClear: boolean;
@@ -432,6 +441,7 @@ export class WaterSceneCopyGraph {
   private readonly waterPasses: FrameGraphTask[] = [];
   private readonly refraction: boolean;
   private readonly screenSpace: boolean;
+  private readonly extraSplitDemand?: () => boolean;
   private lease: ManagedRenderLease;
   /** Leases of targets a resize replaced: released once the rebuilt targets are committed. */
   private readonly replacedLeases: ManagedRenderLease[] = [];
@@ -447,6 +457,7 @@ export class WaterSceneCopyGraph {
   private readonly probeList: FrameGraphObjectList = { meshes: null, particleSystems: null };
   private probing: FrameGraphObjectList | undefined;
   private visible: boolean | undefined;
+  private splitActive: boolean | undefined;
   private frames = 0;
   private visibleFrames = 0;
   private committed = false;
@@ -489,6 +500,7 @@ export class WaterSceneCopyGraph {
     const clamp = sceneWaterQualityDeviceClamp(scene);
     this.refraction = refractionDemand(clamp);
     this.screenSpace = screenSpaceDemand(clamp);
+    this.extraSplitDemand = options.extraSplitDemand;
     this.transparentList = { meshes: this.transparentMeshes, particleSystems: this.noParticles };
     const textures = graph.textureManager;
     const handles = specs.map((spec) => {
@@ -656,14 +668,16 @@ export class WaterSceneCopyGraph {
   private splitFrame(): void {
     const culled = this.cull.outputObjectList;
     const meshes = culled.meshes ?? this.scene.meshes;
-    let visible = false;
+    let waterVisible = false;
     for (let index = 0; index < meshes.length; index += 1) {
-      if (waterMeshSamplesSceneCopy(meshes[index]!, this.refraction, this.screenSpace)) { visible = true; break; }
+      if (waterMeshSamplesSceneCopy(meshes[index]!, this.refraction, this.screenSpace)) { waterVisible = true; break; }
     }
+    const extraVisible = this.extraSplitDemand?.() === true;
+    const splitActive = waterVisible || extraVisible;
     this.frames += 1;
     const list = this.transparentMeshes;
-    if (visible) {
-      this.visibleFrames += 1;
+    if (waterVisible) this.visibleFrames += 1;
+    if (splitActive) {
       let count = 0;
       for (let index = 0; index < meshes.length; index += 1) {
         const mesh = meshes[index]!;
@@ -686,21 +700,24 @@ export class WaterSceneCopyGraph {
       // Release references held for a pass that will not run.
       list.length = 0;
     }
-    this.apply(visible);
+    this.apply(waterVisible, splitActive);
   }
 
-  private apply(visible: boolean): void {
-    if (this.visible === visible) return;
-    this.visible = visible;
-    for (const task of this.waterPasses) task.disabled = !visible;
+  private apply(waterVisible: boolean, splitActive = waterVisible): void {
+    if (this.visible === waterVisible && this.splitActive === splitActive) return;
+    this.visible = waterVisible;
+    this.splitActive = splitActive;
+    for (const task of this.waterPasses) {
+      task.disabled = task === this.copy ? !waterVisible : !splitActive;
+    }
     // The opaque pass leaves transparents, particles and sprites to the transparent pass.
-    this.objects.renderTransparentMeshes = !visible;
-    this.objects.renderParticles = !visible;
-    this.objects.renderSprites = !visible;
+    this.objects.renderTransparentMeshes = !splitActive;
+    this.objects.renderParticles = !splitActive;
+    this.objects.renderSprites = !splitActive;
     if (this.ownTargets) {
       // The direct path draws the output exactly as before on frames without such water.
-      this.sceneClear.disabled = visible;
-      this.objects.disabled = visible;
+      this.sceneClear.disabled = splitActive;
+      this.objects.disabled = splitActive;
     }
   }
 

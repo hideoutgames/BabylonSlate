@@ -1,5 +1,5 @@
 import { normalizeCelShadingOverrides } from "./cel-shading";
-import { parseLandscapeProperties } from "./landscape";
+import { normalizeSerializedLandscapeProperties } from "./landscape";
 import { normalizeFoliageGroups, parseFoliageProperties, type FoliageGroup } from "./foliage";
 import { normalizeMaterialInstanceOverrides, normalizeMaterialParameterOverrides, type MaterialInstanceOverrides, type MaterialParameterValue } from "./material-parameter-value";
 import { normalizeShadowOverrides } from "./shadows";
@@ -453,10 +453,11 @@ function normalizeComponent(
       source.classId === "CableComponent" ? { ...parseCableProperties(source.properties) } :
       source.classId === SPLINE_COMPONENT_CLASS_ID ? { ...parseSplineProperties(source.properties) } :
       source.classId === "SceneStreamingComponent" ? { ...normalizeSceneStreamingProperties(source.properties) } :
-      source.classId === "LandscapeComponent" ? { ...parseLandscapeProperties(source.properties) } :
+      source.classId === "LandscapeComponent" ? { ...normalizeSerializedLandscapeProperties(source.properties) } :
       source.classId === "FoliageComponent" ? { ...parseFoliageProperties(source.properties) } :
       source.classId === MIRROR_CLASS_ID ? { ...parseMirrorProperties(source.properties) } :
       source.classId === "FogVolumeComponent" ? { ...parseFogVolumeProperties(source.properties) } :
+      source.classId === "DecalComponent" ? { ...parseDecalProperties(source.properties) } :
       source.classId === "ReflectionProbeComponent" ? { ...parseReflectionProbeProperties(source.properties) } :
       source.classId === "DeformerComponent" ? { ...parseDeformerProperties(source.properties) } :
       source.classId === "AreaRectLightComponent" ? { ...parseAreaRectLightProperties(source.properties) } :
@@ -977,6 +978,7 @@ export function wouldCreateComponentCycle(
 import { parseAreaRectLightProperties } from "./area-rect-light";
 import { LIGHT_2D_CLASS_ID, parseLight2DProperties } from "./light-2d";
 import { parseFogVolumeProperties } from "./fog-volume";
+import { parseDecalProperties } from "./decal";
 import { parseReflectionProbeProperties } from "./reflection-probe";
 import { parseOutlineProperties } from "./outline-component";
 import { parseDeformerProperties } from "./deformer-component";

@@ -7,7 +7,7 @@ import { PERFORMANCE_SCRIPT_COLUMNS, PERFORMANCE_TICK_COLUMNS, summarizePerforma
 
 const identity: PerformanceIdentity = { sessionId: "test", mode: "preview", sourceSha: null, buildId: "pack",
   sceneId: "world", runtimeHost: "worker", quality: "Low",
-  frameCap: 60, dynamicResolution: false, enabledDiagnostics: ["performance"], gpuTiming: "disabled" };
+  frameCap: 60, enabledDiagnostics: ["performance"], gpuTiming: "disabled" };
 
 /** One runtime tick row in `PERFORMANCE_TICK_COLUMNS` order; unnamed timings are 0. */
 const tickRow = (tickId: number, elapsedMs: number, timings: Partial<PerformanceTickSample> = {}) =>

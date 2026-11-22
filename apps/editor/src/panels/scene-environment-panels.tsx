@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import type { IDockviewPanelProps } from "dockview-react";
-import { createActor, identitySerializedTransform, parseFoliageProperties, parseLandscapeProperties, resizeLandscape, type SerializedScene, type FoliageGroup, type SerializedComponent } from "@haptic/core";
+import { createActor, DEFAULT_FOLIAGE_CULL_DISTANCE, DEFAULT_FOLIAGE_FADE_RANGE, DEFAULT_FOLIAGE_SHADOW_DISTANCE, applyFoliageModelEdit, identitySerializedTransform, normalizeSerializedLandscapeProperties, parseFoliageProperties, parseLandscapeProperties, resizeLandscape, serializeLandscapeProperties, type SerializedScene, type FoliageGroup, type SerializedComponent } from "@haptic/core";
 import { AssetPicker, PanelFrame, PropertyGrid, PropertySectionTitle, ToolbarStrip, TreeView, TypeVisualIcon, resolveTypeVisual, useTouchUi, type PropertyRow } from "@haptic/editor-kit";
 import { Alert, AlertDescription } from "@haptic/ui/components/alert";
 import { Badge } from "@haptic/ui/components/badge";
@@ -23,6 +23,7 @@ import { useDocumentWorkspace } from "../context/document-workspace-context";
 import { useSceneEditing } from "../context/scene-editing-context";
 import { useSceneTools } from "../context/scene-tools-context";
 import { isMaterialAssetType, materialDomainsFromAssets } from "../lib/content-browser-helpers";
+import { materialDomainMatches, materialSlotRowState } from "../lib/material-asset-filters";
 import { landscapeCellSizeDescription } from "../lib/landscape-property-rows";
 
 const NEW_LANDSCAPE_SIZE = 64;
@@ -85,7 +86,7 @@ function EnvironmentOutliner({ classId }: { classId: string }) {
   };
   const createLandscape = () => {
     if (!scene) return;
-    const actor = createActor(crypto.randomUUID(), `Landscape ${entries.length + 1}`, { components: [{ id: crypto.randomUUID(), classId: "LandscapeComponent", transform: identitySerializedTransform(), properties: { ...parseLandscapeProperties({ width: NEW_LANDSCAPE_SIZE, depth: NEW_LANDSCAPE_SIZE, subdivisions: NEW_LANDSCAPE_CELLS }) } }] });
+    const actor = createActor(crypto.randomUUID(), `Landscape ${entries.length + 1}`, { components: [{ id: crypto.randomUUID(), classId: "LandscapeComponent", transform: identitySerializedTransform(), properties: { ...normalizeSerializedLandscapeProperties({ width: NEW_LANDSCAPE_SIZE, depth: NEW_LANDSCAPE_SIZE, subdivisions: NEW_LANDSCAPE_CELLS }) } }] });
     void commit({ ...scene, actors: [...scene.actors, actor] }).then((ok) => { if (ok) { selectActor(actor.id); setLandscapeSelection(`${actor.id}/${actor.components[0]!.id}`); } });
   };
   const deleteSelection = () => {
@@ -133,7 +134,7 @@ export function LandscapeSettingsPanel(_props: IDockviewPanelProps) {
     if (!scene || !selected || selected.actor.locked) return;
     void commit({ ...scene, actors: scene.actors.map((actor) => actor.id === selected.actor.id ? { ...actor, components: actor.components.map((entry) => entry.id === component.id ? component : entry) } : actor) });
   };
-  const setData = (next: typeof data) => { if (selected && next) update({ ...selected.component, properties: { ...next } }); };
+  const setData = (next: typeof data) => { if (selected && next) update({ ...selected.component, properties: { ...serializeLandscapeProperties(next) } }); };
   const brush = tools.landscapeBrush;
   const tool = tools.landscapeTool;
   const brushRows: PropertyRow[] = [
@@ -153,7 +154,7 @@ export function LandscapeSettingsPanel(_props: IDockviewPanelProps) {
       { id: "size", label: "Size", kind: "vector3", axes: ["W", "D"], value: [data.width, data.depth, 0], onChange: ([width, depth]) => setData({ ...data, width: Math.min(4096, Math.max(1, width)), depth: Math.min(4096, Math.max(1, depth)) }) },
       { id: "cells", label: "Cells", kind: "number", value: data.subdivisions, min: 4, max: 256, sensitivity: 1, description: landscapeCellSizeDescription(data), onChange: (value) => setData(resizeLandscape(data, value)) },
       { id: "landscape-collisions", label: "Landscape Collisions", kind: "boolean", value: data.collisionsEnabled, onChange: (collisionsEnabled) => setData({ ...data, collisionsEnabled }) },
-      { id: "material", label: "Landscape Material", kind: "asset", value: data.materialGuid, displayLabel: materials.find((m) => m.guid === data.materialGuid)?.name, displayType: "Material", visual: { assetType: "Material" }, placeholder: "Default", onPick: () => setMaterialPicker(true), onChange: (materialGuid) => setData({ ...data, materialGuid }) },
+      { id: "material", label: "Landscape Material", kind: "asset", value: data.materialGuid, displayLabel: materials.find((m) => m.guid === data.materialGuid)?.name, displayType: "Material", visual: { assetType: "Material" }, placeholder: "Default", assetTypes: ["Material", "MaterialInstance"], ...materialSlotRowState("landscape", data.materialGuid, (guid) => domains[guid]), onPick: () => setMaterialPicker(true), onChange: (materialGuid) => setData({ ...data, materialGuid }) },
     ]} /> : <>
       <PropertySectionTitle>Landscape</PropertySectionTitle>
       <p className="px-2 py-3 text-xs text-muted-foreground" data-testid="landscape-settings-empty">Select a landscape in Landscape Outliner to edit its size, cells, and Material.</p>
@@ -174,10 +175,8 @@ export function FoliageGroupsPanel(_props: IDockviewPanelProps) {
   const update = (next: FoliageGroup) => setGroups(groups.map((entry) => entry.id === next.id ? next : entry));
   const assets = (assetRegistry?.list() ?? []).map((entry) => ({ guid: entry.header.guid, name: entry.header.name, path: entry.path, type: entry.header.type }));
   const domains = materialDomainsFromAssets(assetRegistry?.list() ?? [], materialDocuments);
-  const surfaceMaterials = new Set((assetRegistry?.list() ?? []).filter((entry) => isMaterialAssetType(entry.header.type)).filter((entry) => {
-    const domain = domains[entry.header.guid];
-    return domain === undefined || domain === "surface";
-  }).map((entry) => entry.header.guid));
+  const domainOf = (guid: string) => domains[guid];
+  const surfaceMaterials = new Set((assetRegistry?.list() ?? []).filter((entry) => isMaterialAssetType(entry.header.type) && materialDomainMatches(domains[entry.header.guid], "surface")).map((entry) => entry.header.guid));
   const pickerAssets = assets.filter((asset) => picker === "model" ? asset.type === "Model" : surfaceMaterials.has(asset.guid));
   const totalWeight = group?.models.reduce((sum, model) => sum + Math.max(0, model.weight), 0) ?? 0;
   const createGroup = () => {
@@ -185,7 +184,19 @@ export function FoliageGroupsPanel(_props: IDockviewPanelProps) {
     setGroups([...groups, next]); tools.setGroupId(next.id);
   };
   const updateModel = (index: number, patch: Partial<FoliageGroup["models"][number]>) => {
-    if (group) update({ ...group, models: group.models.map((m, i) => i === index ? { ...m, ...patch } : m) });
+    if (!group || !scene) return;
+    const previous = group.models[index];
+    const nextModel = previous ? { ...previous, ...patch } : null;
+    const nextGroup: FoliageGroup = { ...group, models: group.models.map((m, i) => i === index ? { ...m, ...patch } : m) };
+    const nextGroups = groups.map((entry) => entry.id === nextGroup.id ? nextGroup : entry);
+    // The Material Override and distances reach the strokes already painted with this Model, in the same command.
+    const reachesStrokes = patch.materialGuid !== undefined || patch.cullDistance !== undefined || patch.fadeRange !== undefined || patch.shadowDistance !== undefined;
+    if (!reachesStrokes || !previous || !nextModel) {
+      setGroups(nextGroups);
+      return;
+    }
+    const actors = applyFoliageModelEdit(scene.actors, group.id, previous, nextModel);
+    void commit({ ...scene, actors, settings: { ...scene.settings, foliageGroups: nextGroups } });
   };
   return <PanelFrame className="scene-environment-panel"><div className="flex min-h-0 flex-1 flex-col">
     <ToolbarStrip data-testid="foliage-groups-toolbar">
@@ -221,7 +232,10 @@ export function FoliageGroupsPanel(_props: IDockviewPanelProps) {
                 const minScale = Math.min(100, Math.max(0.01, min)); const maxScale = Math.min(100, Math.max(0.01, max));
                 updateModel(index, min !== model.minScale ? { minScale, maxScale: Math.max(minScale, maxScale) } : { maxScale, minScale: Math.min(minScale, maxScale) });
               } },
-              { id: "material", label: "Material Override", kind: "asset", value: model.materialGuid, displayLabel: assets.find((asset) => asset.guid === model.materialGuid)?.name, displayType: "Material", visual: { assetType: "Material" }, placeholder: "Model Materials", onPick: () => setPicker(index), onChange: (materialGuid) => updateModel(index, { materialGuid }) },
+              { id: "material", label: "Material Override", kind: "asset", value: model.materialGuid, displayLabel: assets.find((asset) => asset.guid === model.materialGuid)?.name, displayType: "Material", visual: { assetType: "Material" }, placeholder: "Model Materials", assetTypes: ["Material", "MaterialInstance"], ...materialSlotRowState("surface", model.materialGuid, domainOf), onPick: () => setPicker(index), onChange: (materialGuid) => updateModel(index, { materialGuid }) },
+              { id: "cullDistance", label: "Cull Distance", description: "0 never culls.", kind: "number", unit: "m", value: model.cullDistance, min: 0, max: 10000, onChange: (cullDistance) => updateModel(index, { cullDistance }) },
+              { id: "fadeRange", label: "Fade Range", kind: "number", unit: "m", value: model.fadeRange, min: 0, max: 1000, onChange: (fadeRange) => updateModel(index, { fadeRange }) },
+              { id: "shadowDistance", label: "Shadow Distance", description: "0 follows Cull Distance.", kind: "number", unit: "m", value: model.shadowDistance, min: 0, max: 10000, onChange: (shadowDistance) => updateModel(index, { shadowDistance }) },
             ]} />
           </li>;
         })}
@@ -231,8 +245,8 @@ export function FoliageGroupsPanel(_props: IDockviewPanelProps) {
     </EnvironmentEmpty>}
     <AssetPicker open={picker !== null} onOpenChange={(open) => { if (!open) setPicker(null); }} title={picker === "model" ? "Add Foliage Model" : "Foliage Material"} assets={pickerAssets} allowedTypes={picker === "model" ? ["Model"] : ["Material", "MaterialInstance"]} allowNone={picker !== "model"} onPick={(guid) => {
       if (!group) return;
-      if (picker === "model" && guid && assets.some((asset) => asset.guid === guid && asset.type === "Model")) update({ ...group, models: [...group.models, { modelGuid: guid, materialGuid: null, weight: 1, minScale: 0.8, maxScale: 1.2 }] });
-      else if (typeof picker === "number" && (!guid || surfaceMaterials.has(guid))) update({ ...group, models: group.models.map((model, i) => i === picker ? { ...model, materialGuid: guid } : model) });
+      if (picker === "model" && guid && assets.some((asset) => asset.guid === guid && asset.type === "Model")) update({ ...group, models: [...group.models, { modelGuid: guid, materialGuid: null, weight: 1, minScale: 0.8, maxScale: 1.2, cullDistance: DEFAULT_FOLIAGE_CULL_DISTANCE, fadeRange: DEFAULT_FOLIAGE_FADE_RANGE, shadowDistance: DEFAULT_FOLIAGE_SHADOW_DISTANCE }] });
+      else if (typeof picker === "number" && (!guid || surfaceMaterials.has(guid))) updateModel(picker, { materialGuid: guid });
       setPicker(null);
     }} />
   </div></PanelFrame>;

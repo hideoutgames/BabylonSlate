@@ -42,6 +42,8 @@ import {
 import { FEATURE_TEST_AB_DEPS } from "../lib/feature-test-ab-deps";
 import { FEATURE_TEST_CHECK_SCENES } from "../services/feature-test-check-scenes";
 import { FeatureTestCheckStatus } from "./feature-test-check-status";
+import { installFrameAttribution } from "../services/frame-attribution";
+import { liveGameWorkers } from "../services/game-worker-host";
 import { formatFeatureTestCheckReport } from "../lib/feature-test-check-report";
 import { collectDiagnosticEnvironment, copyText } from "../lib/diagnostic-info";
 import {
@@ -78,6 +80,16 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
+/** Whether an animation frame callback is an Engine's render loop (Babylon's bound render function). */
+function isRenderCallback(callback: unknown): boolean {
+  // Indexed: asked for every animation frame callback while a Check runs, so it makes no iterator.
+  const engines = EngineStore.Instances;
+  for (let index = 0; index < engines.length; index++) {
+    if ((engines[index] as unknown as { _boundRenderFunction?: unknown })._boundRenderFunction === callback) return true;
+  }
+  return false;
+}
+
 /** requestAnimationFrame intervals for `durationMs`; a hidden page samples nothing. */
 function sampleFrames(durationMs: number, signal: AbortSignal) {
   return new Promise<ReturnType<typeof frameStats>>((resolve) => {
@@ -102,7 +114,7 @@ const MODE_DESCRIPTIONS: Record<FeatureTestCheckMode, string> = {
   quick: "Checks the current scene in the editor and in Play on this device, then writes a report you can copy. About a minute.",
   full: "Checks every Feature Test scene in the editor and in Play and runs the ft_ console commands. A few minutes.",
   benchmark: "Plays every Feature Test scene and measures each quality tier with the frame cap lifted, to find the settings this device holds at 60 and 30 fps. About ten minutes; keep the device awake and plugged in.",
-  profile: "Plays the main scene at this device's quality settings and turns one feature off at a time between unchanged baselines (captures, shadows, screen-space shadows, ambient occlusion, reflections, volumetrics, post-processing, anti-aliasing, occlusion culling, frames in flight, resolution), then ranks what each saves in frame time and CPU cost and shows where the draw calls go. About 15 minutes; keep the device awake and plugged in.",
+  profile: "Plays the main scene at this device's quality settings and turns one feature off at a time between unchanged baselines (the world, captures, Mirrors, shadow map passes for all lights, the sun or local lights, smaller shadow maps, the geometry pass and the effects that read it), then ranks what each saves in frame time and CPU cost, shows where the draw calls go and where a frame's time goes inside WebGL. About 12 minutes; keep the device awake and plugged in.",
   breakdown: "Plays FT_World and FT_Occlusion and measures each feature at 60 fps between baselines (anti-aliasing, shadow filter, post-processing effects, water, captures, resolution; occlusion culling from two cameras). Add One starts from a light Low base and turns one feature on at a time, so each change is that feature's own cost; Remove One turns one feature off at a time from the Medium tier. Water plays FT_World at the Medium tier at half resolution, so the GPU is not saturated, and turns off all water, then one part of water at a time (its depth pre-pass, lighting, shadows, waves and foam) and lowers each water setting, so each change is what that part costs. With Compare Preserve Drawing Buffer, the editor then reloads once and repeats it with preserveDrawingBuffer switched, and writes one report of both. About 10 minutes (20 with the comparison); keep the device awake and plugged in.",
 };
 
@@ -131,12 +143,22 @@ function compilingEffects(): number {
   return compiling;
 }
 
+/** Textures every Engine holds now, and their estimated GPU bytes. */
+function engineTextureMemory(): { textures: number; bytes: number } {
+  let textures = 0;
+  let bytes = 0;
+  for (const engine of EngineStore.Instances) {
+    const memory = estimateTextureMemory(engine);
+    textures += memory.textures;
+    bytes += memory.bytes;
+  }
+  return { textures, bytes };
+}
+
 /** Shader programs, textures and memory every Engine holds now, and the Play view's drawn and held frames. */
 async function sampleCheckResources(atMs: number, step: string): Promise<FeatureTestCheckResources> {
   let effects = 0;
   let compiling = 0;
-  let textures = 0;
-  let textureBytes = 0;
   for (const engine of EngineStore.Instances) {
     // Babylon 9.29 keeps every compiled Effect in `_compiledEffects` until it is released.
     const compiled = (engine as AbstractEngine & { _compiledEffects?: Record<string, Effect> })._compiledEffects ?? {};
@@ -144,10 +166,8 @@ async function sampleCheckResources(atMs: number, step: string): Promise<Feature
       effects += 1;
       if (!effect.isReady()) compiling += 1;
     }
-    const memory = estimateTextureMemory(engine);
-    textures += memory.textures;
-    textureBytes += memory.bytes;
   }
+  const { textures, bytes: textureBytes } = engineTextureMemory();
   const presentation = playProbes.get(PLAY_PROBE_KEY)?.snapshot().rendering?.presentation;
   const host = await getHostMemoryStats().catch(() => null);
   return {
@@ -266,9 +286,12 @@ export function FeatureTestCheckDialog({ open, onOpenChange }: FeatureTestCheckD
       sampleFrames,
       compiling: compilingEffects,
       hostMemory: async () => hostMemoryOf(await getHostMemoryStats()),
+      textureBytes: () => engineTextureMemory().bytes,
+      markTrail: (stage) => markSessionTrail(`check: ${stage}`),
       now: () => performance.now(),
       sleep,
       onProgress: (message) => { markSessionTrail(`check: ${message}`); setPhase({ kind: "running", message }); },
+      attributeFrames: () => installFrameAttribution({ isRenderCallback, workers: liveGameWorkers }),
     };
     try {
       const report = await runFeatureTestCheck({

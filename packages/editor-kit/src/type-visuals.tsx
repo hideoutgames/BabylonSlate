@@ -2,6 +2,7 @@ import type { ComponentType } from "react";
 import { EqualizerIcon } from "@phosphor-icons/react/dist/csr/Equalizer";
 import { FloppyDiskIcon } from "@phosphor-icons/react/dist/csr/FloppyDisk";
 import { PuzzlePieceIcon } from "@phosphor-icons/react/dist/csr/PuzzlePiece";
+import { StickerIcon as PhosphorStickerIcon } from "@phosphor-icons/react/dist/csr/Sticker";
 import {
   IconAdjustmentsAlt,
   IconCube3dSphere,
@@ -74,6 +75,7 @@ import {
   PaintbrushIcon,
   PersonStandingIcon,
   PlugIcon,
+  ProjectorIcon,
   RectangleHorizontalIcon,
   Rows3Icon,
   SaveIcon,
@@ -86,6 +88,7 @@ import {
   TreesIcon,
   TypeIcon,
   VibrateIcon,
+  WandSparklesIcon,
   Volume2Icon,
   WavesIcon,
   WaypointsIcon,
@@ -186,6 +189,7 @@ const CURVE_GLYPH = tablerGlyph(IconEaseInOutControlPoints);
 const EQUALIZER_GLYPH = phosphorGlyph(EqualizerIcon);
 const PUZZLE_GLYPH = phosphorGlyph(PuzzlePieceIcon);
 const FLOPPY_GLYPH = phosphorGlyph(FloppyDiskIcon);
+const DECAL_GLYPH = phosphorGlyph(PhosphorStickerIcon);
 
 export type TypeVisualQuery = {
   assetType?: string;
@@ -263,6 +267,7 @@ const ENGINE_PARENT: Record<string, string | null> = {
   LightComponent: "ActorComponent",
   AreaRectLightComponent: "ActorComponent",
   FogVolumeComponent: "ActorComponent",
+  DecalComponent: "ActorComponent",
   MirrorComponent: "ActorComponent",
   ReflectionProbeComponent: "ActorComponent",
   OutlineComponent: "ActorComponent",
@@ -322,6 +327,7 @@ const ENGINE_PARENT: Record<string, string | null> = {
   "2DTextComponent": "ActorComponent",
   "2DRichTextComponent": "ActorComponent",
   "2DPanelComponent": "ActorComponent",
+  "2DPostProcessingPanelComponent": "ActorComponent",
 };
 
 const ICON_BY_ID: Record<string, TypeVisualGlyph> = {
@@ -384,6 +390,7 @@ const ICON_BY_ID: Record<string, TypeVisualGlyph> = {
   "2DTextComponent": TypeIcon,
   "2DRichTextComponent": SparklesIcon,
   "2DPanelComponent": LayoutGridIcon,
+  "2DPostProcessingPanelComponent": WandSparklesIcon,
   LandscapeComponent: MountainIcon,
   FoliageComponent: TreesIcon,
   MeshComponent: BoxIcon,
@@ -400,6 +407,7 @@ const ICON_BY_ID: Record<string, TypeVisualGlyph> = {
   LightComponent: LightbulbIcon,
   AreaRectLightComponent: RectangleHorizontalIcon,
   FogVolumeComponent: CloudIcon,
+  DecalComponent: DECAL_GLYPH,
   MirrorComponent: FlipHorizontal2Icon,
   ReflectionProbeComponent: ApertureIcon,
   OutlineComponent: SquareDashedIcon,
@@ -426,7 +434,7 @@ const ICON_BY_ID: Record<string, TypeVisualGlyph> = {
   Scene: LayersIcon,
   Graph: FileJsonIcon,
   Texture: PHOTO_GLYPH,
-  RenderTarget: CameraIcon,
+  RenderTarget: ProjectorIcon,
   RenderTargetTexture: ImageIcon,
   Material: SPHERE_GLYPH,
   MaterialInstance: SPHERE_2_GLYPH,

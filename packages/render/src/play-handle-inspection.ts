@@ -1,6 +1,7 @@
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { EngineHandle } from "./create-engine-types";
 import type { SnapshotSceneBinding } from "./snapshot-apply";
+import { batchedSpriteOf } from "./sprite-batch-handle";
 
 export type PlayHandleInspection = Pick<
   EngineHandle,
@@ -33,17 +34,18 @@ export function createPlayHandleInspection(binding: SnapshotSceneBinding): PlayH
         visual.computeWorldMatrix(true);
         const position = visual.getAbsolutePosition();
         const worldMatrixPosition = visual.getWorldMatrix().getTranslation();
+        const batched = batchedSpriteOf(visual);
         states.push({
           slotId,
           name: visual.name,
-          visible: visual.isVisible && visual.isEnabled(),
+          visible: (batched ? batched.visible : visual.isVisible) && visual.isEnabled(),
           position: [position.x, position.y, position.z],
           worldMatrixPosition: [
             worldMatrixPosition.x,
             worldMatrixPosition.y,
             worldMatrixPosition.z,
           ],
-          materialName: visual.material?.name ?? null,
+          materialName: (batched ? batched.primary.batch?.mesh.material?.name : visual.material?.name) ?? null,
         });
       }
     }
@@ -56,7 +58,8 @@ export function createPlayHandleInspection(binding: SnapshotSceneBinding): PlayH
     for (const root of binding.meshes.values()) {
       const meshes = [root, ...root.getChildMeshes()];
       for (const mesh of meshes) {
-        const name = mesh.material?.name;
+        const batched = batchedSpriteOf(mesh);
+        const name = batched ? batched.primary.batch?.mesh.material?.name : mesh.material?.name;
         if (name) names.add(name);
       }
     }
@@ -81,15 +84,17 @@ export function createPlayHandleInspection(binding: SnapshotSceneBinding): PlayH
     }> = [];
     for (const root of binding.meshes.values()) {
       for (const mesh of [root, ...root.getChildMeshes()]) {
+        const batched = batchedSpriteOf(mesh);
+        const drawn = batched ? batched.primary.batch?.mesh : mesh;
         const defines =
-          mesh.subMeshes
+          drawn?.subMeshes
             ?.map((sub) => String(sub.effect?.defines ?? ""))
             .filter((entry) => entry.length)
             .join("\n") ?? "";
-        if (mesh.material || defines)
+        if (drawn?.material || defines)
           rows.push({
             mesh: mesh.name,
-            material: mesh.material?.name ?? null,
+            material: drawn?.material?.name ?? null,
             defines,
           });
       }

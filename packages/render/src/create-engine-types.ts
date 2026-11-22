@@ -15,6 +15,7 @@ import type { NativePreparationPriority } from "./native-preparation";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import type { RenderDiagnostics } from "./render-diagnostics";
 import type { PresentedImageSample } from "./presented-image";
+import type { WebGlCallTotals } from "./webgl-call-timer";
 import type { RenderPerformanceSample } from "./render-performance";
 import type { Scene } from "@babylonjs/core/scene";
 import type {
@@ -167,6 +168,14 @@ export interface EngineHandle {
    * after a context loss or disposal, which end it.
    */
   stubWebGlDraws: (on: boolean) => boolean;
+  /**
+   * A Check's measurement (`webgl-call-timer.ts`): times every call on the Engine's context by what it does (`true`) or
+   * stops and puts the context back (`false`); whether it did. False while the draws are stubbed, after a context loss
+   * or disposal, which end it.
+   */
+  timeWebGlCalls: (on: boolean) => boolean;
+  /** The timed calls' totals since the timing started (`WebGlCallTotals`); null while not timed. */
+  webGlCallTotals: () => WebGlCallTotals | null;
   /**
    * Test builds: points in pick space over the Scene Layers' interactive controls (`SceneLayerCompositor.hitTargets`),
    * and what the overlay pick finds at each (layer, actor, component or control part, Hit Test), as a pointer would.
@@ -496,6 +505,8 @@ export interface CreateEngineOptions {
   audioBytes?: ReadonlyMap<string, Uint8Array>;
   /** Load clip bytes on first `playSound` (overlay Play / player lazy path). */
   loadAudioSourceBytes?: import("./audio-service").AudioSourceBytesLoader;
+  /** Resolve a direct streamable URL for a streamed Audio clip (exported stream sidecars). */
+  resolveAudioStreamUrl?: import("./audio-service").AudioStreamUrlResolver;
   prepareAudioAsset?: import("./audio-service").AudioAssetPreparer;
   /** Mixer / channel / attenuation / Audio payloads for gain routing. */
   audioLibrary?: AudioLibrary;

@@ -43,6 +43,7 @@ import {
   type ComponentPropertyUpdate,
 } from "../lib/component-property-rows";
 import { materialDomainsFromAssets } from "../lib/content-browser-helpers";
+import { materialSlotPickerAssets, materialSlotTakes } from "../lib/material-asset-filters";
 import { useClassGraphs } from "../lib/use-class-graphs";
 import {
   MATERIAL_DOCUMENT_KINDS,
@@ -114,6 +115,7 @@ function usePrefabRowContext(props: PrefabDetailsSharedProps): {
       collisionPresets,
       assetLabel,
       assetType,
+      materialDomain: (guid) => materialDomains[guid],
       modelMaterialSlots: (guid) => normalizeModelPayload(
         modelDocuments.find((doc) => doc.ref.path === assetRegistry?.getByGuid?.(guid)?.path)?.content
           ?? assetRegistry?.getByGuid?.(guid)?.header.payload ?? {},
@@ -172,9 +174,8 @@ function PrefabAssetPicker({
       onOpenChange={(open) => {
         if (!open) setAssetPick(null);
       }}
-      assets={assetPick?.materialDomain ? pickerAssets.filter((asset) => materialDomains[asset.guid] === assetPick.materialDomain) : assetPick?.property === "materialGuid" && modelMaterials
-        ? [MODEL_MATERIALS_PICKER_ENTRY, ...pickerAssets]
-        : pickerAssets}
+      assets={materialSlotPickerAssets(assetPick?.materialDomain, pickerAssets, (guid) => materialDomains[guid],
+        assetPick?.property === "materialGuid" && modelMaterials ? MODEL_MATERIALS_PICKER_ENTRY : undefined)}
       allowedTypes={assetPick?.allowedTypes}
       // A domain row's Create New makes a Material of that domain; a parentless Instance would be refused.
       createTypes={assetPick?.materialDomain ? ["Material"] : undefined}
@@ -183,7 +184,7 @@ function PrefabAssetPicker({
       allowNone
       onPick={(guid) => {
         if (!assetPick) return;
-        if (guid && assetPick.materialDomain && materialDomains[guid] !== assetPick.materialDomain) return;
+        if (!materialSlotTakes(assetPick.materialDomain, guid, (entry) => materialDomains[entry], [MODEL_MATERIALS_PICKER_ENTRY.guid])) return;
         onPick(assetPick, guid);
         setAssetPick(null);
       }}

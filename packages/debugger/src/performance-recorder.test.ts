@@ -13,7 +13,7 @@ import {
 const identity: PerformanceIdentity = {
   sessionId: "session-1", mode: "play", sourceSha: "source", buildId: "test",
   sceneId: "world",
-  runtimeHost: "worker", quality: "Low", frameCap: 60, dynamicResolution: false,
+  runtimeHost: "worker", quality: "Low", frameCap: 60,
   enabledDiagnostics: ["performance"], gpuTiming: "unavailable",
 };
 /** A tick whose unnamed timings are 0. */

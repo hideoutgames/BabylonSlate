@@ -40,7 +40,11 @@ import { createPlayerWorkerHost, playerHavokWasmUrl, type PlayerWorkerHost } fro
 import { createPlayerSourceInstalls } from "./source-installs";
 import { playerDecoderPaths } from "./decoder-paths";
 import { manifestConsoleCommands } from "./console-catalog";
-import { createGameAudioSourceLoader, type LoadedGame } from "./artifact";
+import {
+  createGameAudioSourceLoader,
+  createGameAudioStreamUrlResolver,
+  type LoadedGame,
+} from "./artifact";
 import {
   applyPlayerActiveScene,
   applyPlayerEngineCommand,
@@ -295,6 +299,7 @@ function initializePlayer(
     retargetAnimationLoads: content.retargetAnimationLoads,
     audioBytes: game.audioBytes,
     loadAudioSourceBytes: createGameAudioSourceLoader(game),
+    resolveAudioStreamUrl: createGameAudioStreamUrlResolver(game),
     audioLibrary: content.audioLibrary,
     particleLibrary: content.particleLibrary,
     audioReverbBytes: content.audioReverbBytes,
@@ -532,6 +537,7 @@ function initializePlayer(
     globalParameterCatalog: content.globalParameterCatalog,
     assetCatalog: runtimeAssetCatalogFromManifest(manifest.assets),
     focusNavigation: manifest.focusNavigation,
+    sceneLayerPostProcessStack: manifest.sceneLayerPostProcessStack,
     pixelsPerUnit: content.pixelsPerUnit,
     ...(content.pixelPerfect === true && content.nearestTextures === true ? { pixelMatchedCameras: true } : {}),
     texturePixelSizes: Object.fromEntries(content.texturePixelSizes),
@@ -550,6 +556,7 @@ function initializePlayer(
     ...(game.acquireScene ? { sceneCatalog: manifest.assets.filter(entry => entry.type === "Scene").map(entry => ({ guid: entry.guid, name: entry.name ?? entry.guid })) } : {}),
     sceneLayers,
     sceneNavmeshBytes: Object.fromEntries(content.navmeshByScene),
+    ...(content.landscapeBytes.size > 0 ? { sceneLandscapeBytes: Object.fromEntries(content.landscapeBytes) } : {}),
     ...loopGuardLoadFields(manifest),
     // Export compiles with stripDevelopmentOnly exactly when bundleDebugger is false: trace and cursor debug lines go with it.
     traceDebugDraw: manifest.bundleDebugger,
@@ -1286,7 +1293,6 @@ function initializePlayer(
             sourceSha: null, buildId: null, sceneId: hostSceneGuid ?? startup,
             runtimeHost: worker ? "worker" as const : "in-process" as const,
             quality: JSON.stringify(render), frameCap: Number.isFinite(frameCap) ? frameCap : null,
-            dynamicResolution: render.quality?.resolution?.dynamic === true,
             enabledDiagnostics: ["performance"], gpuTiming: "unavailable" as const };
         },
         observeFrames: (listener) => handle.observePerformance(listener),

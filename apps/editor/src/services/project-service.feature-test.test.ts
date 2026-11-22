@@ -18,6 +18,7 @@ import {
 import {
   decodeTileGid,
   normalizeAnimationPayload,
+  normalizeAudioPayload,
   normalizeModelPayload,
   normalizeTilemapPayload,
   normalizeTilesetPayload,
@@ -138,6 +139,15 @@ describe("FeatureTest starter", () => {
     const required = [...CREATABLE_ASSET_TYPES, ...IMPORTED_ASSET_TYPES, ...(audioSlot ? ["Audio"] : [])];
     const types = new Set(assets.map((asset) => asset.header.type));
     expect(required.filter((type) => !types.has(type))).toEqual([]);
+    if (audioSlot) {
+      const audioModes = new Map<string, string>();
+      for (const asset of assets.filter((entry) => entry.header.type === "Audio")) {
+        const payload = normalizeAudioPayload(await reopened.loadDocument("audio", asset.path));
+        audioModes.set(asset.header.name, payload.playbackMode);
+      }
+      expect(audioModes.get("FT_AudioLoop")).toBe("streamed");
+      expect(audioModes.get("FT_AudioOneShot")).toBe("decoded");
+    }
 
     const parents = new Set(
       assets.filter((asset) => asset.header.type === "Class").map((asset) => asset.header.parentClass ?? ""),
@@ -356,6 +366,13 @@ describe("FeatureTest starter", () => {
         : [{ path: registry.getByGuid(guid)?.path, errors: lowered.diagnostics.filter((row) => row.severity === "error") }];
     });
     expect(materialErrors).toEqual([]);
+    // Every Material domain is showcased, and the Decal domain in every Blend Mode, lit and unlit.
+    expect([...new Set([...materials.values()].map((material) => material.domain))].sort())
+      .toEqual(["decal", "landscape", "particle", "postProcess", "surface", "text"]);
+    const decalMaterials = [...materials.values()].filter((material) => material.domain === "decal");
+    expect([...new Set(decalMaterials.map((material) => material.blendMode))].sort())
+      .toEqual(["additive", "masked", "multiply", "opaque", "translucent"]);
+    expect([...new Set(decalMaterials.map((material) => material.shadingModel))].sort()).toEqual(["pbr", "unlit"]);
 
     for (const asset of ofType("ParticleGraph")) {
       const graph = normalizeParticleGraphDocument(await reopened.loadDocument("particle-graph", asset.path));

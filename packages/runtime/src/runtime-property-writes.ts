@@ -10,7 +10,7 @@ import {
 import {
   MaterialObject,
   PostProcessMaterialObject,
-  SceneLayer,
+  SceneLayerPostProcessing,
   type ActorComponent,
   type MaterialInstanceObject,
   type World,
@@ -25,7 +25,6 @@ import type { RuntimeMaterialParameters } from "./runtime-material-parameters";
 import type { RuntimeNavigation } from "./runtime-navigation";
 import type { RuntimePhysicsWorlds } from "./runtime-physics-worlds";
 import type { SceneLayerOverlay } from "./scene-layer-overlay";
-import type { SceneLayers } from "./scene-layers";
 import type { SceneRealizer } from "./scene-realizer";
 import type { SimulationSession } from "./simulation-session";
 import type { Text2DAppearRuntime } from "./text2d-appear-runtime";
@@ -44,7 +43,7 @@ interface RuntimePropertyWritesHost {
   renderSlots(): Pick<RenderSlots, "recordedSlot">;
   renderEmitter(): Pick<RenderCommandEmitter,
     "rendersComponent" | "queueDeformers" | "emitActorDeformers" | "emitMaterialAssignments" |
-    "emitRenderTargetCapture" | "emitActorOutlines" | "emitActorFogVolumes" | "emitActorReflectionProbes" | "queueComponentTransforms" | "emitComponentTransforms" |
+    "emitRenderTargetCapture" | "emitActorOutlines" | "emitActorFogVolumes" | "emitActorDecals" | "emitActorReflectionProbes" | "queueComponentTransforms" | "emitComponentTransforms" |
     "emitMeshAssignment">;
   uiControls(): Pick<UIControls2DRuntime, "refresh">;
   overlay(): Pick<SceneLayerOverlay, "applyLayouts" | "refreshComponent">;
@@ -55,7 +54,6 @@ interface RuntimePropertyWritesHost {
   navigation(): Pick<RuntimeNavigation, "updateAgentParams">;
   physics(): Pick<RuntimePhysicsWorlds, "forActor" | "collisionPreset">;
   ragdolls(): Pick<RagdollWorldSync, "sync">;
-  layers(): Pick<SceneLayers, "get">;
   sceneRealizer(): Pick<SceneRealizer, "loadId">;
   emit(command: CommandMessage): void;
 }
@@ -167,6 +165,7 @@ export class RuntimePropertyWrites {
       if (component.classId === "RenderTargetCaptureComponent") renderEmitter.emitRenderTargetCapture(owner, slotId);
       else if (component.classId === "OutlineComponent") renderEmitter.emitActorOutlines(owner, slotId);
       else if (component.classId === "FogVolumeComponent") renderEmitter.emitActorFogVolumes(owner, slotId);
+      else if (component.classId === "DecalComponent") renderEmitter.emitActorDecals(owner, slotId);
       else if (component.classId === "ReflectionProbeComponent") renderEmitter.emitActorReflectionProbes(owner, slotId);
       else if (propertyName === "transform") {
         if (this.host.ticks().processing) renderEmitter.queueComponentTransforms(owner);
@@ -204,8 +203,8 @@ export class RuntimePropertyWrites {
     if (material instanceof PostProcessMaterialObject) {
       if (!material.entry.id) return false;
       const owner = material.owner;
-      const target: Extract<CommandMessage, { type: "setPostProcessMaterialParameter" }>["owner"] = owner instanceof SceneLayer
-        ? { kind: "sceneLayer", layerId: owner.guid, layerLoadId: this.host.layers().get(owner.guid)!.loadId }
+      const target: Extract<CommandMessage, { type: "setPostProcessMaterialParameter" }>["owner"] = owner instanceof SceneLayerPostProcessing
+        ? { kind: "sceneLayers" }
         : { kind: "scene", sceneAssetGuid: owner.assetGuid, sceneLoadId: this.host.sceneRealizer().loadId };
       this.host.emit({ type: "setPostProcessMaterialParameter", owner: target, entryId: material.entry.id,
         materialAssetGuid: material.materialAssetGuid, parameterName, parameter });

@@ -11,6 +11,7 @@ import { restoreAlbedoMaterial } from "./mesh-assets";
 import { applyModelMaterialSlots } from "./model-preview";
 import { isTilemapChunkMesh } from "./tilemap-mesh";
 import { acceptsUserInterfaceMaterial } from "./user-interface-material";
+import { ejectPlaySprite } from "./anim-apply";
 import {
   componentIdForPlayMesh,
   isMesh,
@@ -292,6 +293,12 @@ export function applyMaterialToActorMeshes(
     );
     // A 2D component's surfaces draw only a User Interface Material; any other is not drawn, as a missing one is not.
     if (material && (!userInterface || acceptsUserInterfaceMaterial(material))) {
+      // A custom Material override promotes a batched sprite to a standalone quad mesh in place; its new crossfade
+      // overlay draws with the Material too, as an unbatched sprite's does.
+      if (ejectPlaySprite(binding, slotId, target)) {
+        const overlay = binding.spriteOverlays?.get(slotId);
+        if (overlay?.parent === target && !targets.includes(overlay)) targets.push(overlay);
+      }
       // A Material no pool group can draw (World Position Offset pads its bounds) gives the visual a mesh of its own.
       const drawn = setDrawnMaterial(target, material);
       if (!target.isDisposed()) applyMaterialBounds(target);

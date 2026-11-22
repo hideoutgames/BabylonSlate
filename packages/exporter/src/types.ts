@@ -117,6 +117,10 @@ export type GameAssetIndexEntry = {
   height?: number;
   /** A pixel Font's Pixel Size. */
   pixelSize?: number;
+  /** Standalone media file paths per clip chunkId for streamed Audio assets. */
+  streamClips?: Record<string, string>;
+  /** SHA-256 hex digests per clip chunkId for exported streamed Audio sidecars. */
+  streamRevisions?: Record<string, string>;
 };
 
 export type GameManifest = {
@@ -127,6 +131,8 @@ export type GameManifest = {
   project?: { name: string; version: string; buildNumber: number };
   inputAssets?: import("@haptic/core").InputAssetDefinition[];
   focusNavigation?: import("@haptic/core").FocusNavigationSettings;
+  /** Project Scene Layer post-processing: the passes the shared layer stack starts with. */
+  sceneLayerPostProcessStack: import("@haptic/core").SceneLayerPostProcessEntry[];
   startupSceneGuid: string;
   gameInstanceClass?: string;
   audioMixerGuid?: string;
@@ -173,6 +179,8 @@ export type ExportGameOptions = {
   project?: { name: string; version: string; buildNumber: number };
   inputAssets?: import("@haptic/core").InputAssetDefinition[];
   focusNavigation?: import("@haptic/core").FocusNavigationSettings;
+  /** Project Scene Layer post-processing passes; their assets load at startup. */
+  sceneLayerPostProcessStack?: import("@haptic/core").SceneLayerPostProcessEntry[];
   bundleDebugger: boolean;
   startupSceneGuid: string;
   gameInstanceClass?: string | null;

@@ -21,7 +21,6 @@ import { TimingTools } from "@babylonjs/core/Misc/timingTools";
 import {
   componentCastsShadows,
   effectiveShadowSettings,
-  SHADOW_FIRST_CASCADE_SCALE,
   SHADOW_HALF_TILE_CASCADES,
   type SerializedComponent,
   type ShadowDebugPart,
@@ -29,6 +28,7 @@ import {
 } from "@haptic/core";
 import { sceneRenderingSettings } from "./render-settings";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
+import { flushSceneLatticeDeformers } from "./lattice-deformer";
 import {
   exchangeShadowReceivers,
   invalidateShadowReceiverHandoffs,
@@ -36,9 +36,10 @@ import {
 import {
   authoredShadowParticipation,
   casterWithinShadowRange,
-  drawsNoShadow,
+  castsNoShadowDepth,
   neverCastsShadows,
   participatesInShadows,
+  spotShadowCone,
   type ShadowParticipation,
 } from "./shadow-mesh-policy";
 import { ShadowCasterList } from "./shadow-caster-list";
@@ -146,9 +147,9 @@ export class SceneShadowController {
   private readonly entries = new Map<Light, Entry>();
   private readonly meshes = new Set<AbstractMesh>();
   /**
-   * The casters that may draw into a map: every caster but those that draw nothing now (`drawsNoShadow`, an actor's
-   * root), which count only in the cascades' caster bounds. The walk and every map layer's list read only these;
-   * `classifyCasters` reads every caster again before each walk.
+   * The casters that may draw into a map: every caster but those that draw nothing now (`castsNoShadowDepth`: an
+   * actor's root, or a caster whose every part blends), which count only in the cascades' caster bounds. The walk and
+   * every map layer's list read only these; `classifyCasters` reads every caster again before each walk.
    */
   private readonly drawing = new Set<AbstractMesh>();
   private readonly pending = new Set<AbstractMesh>();
@@ -221,6 +222,7 @@ export class SceneShadowController {
     this.maps = {
       scene, spatial: this.spatial, casters: this.meshes, slots: this.slots, counters: this.counters,
       retained: RetainedShadowCasters.create(scene, (mesh) => this.refresh.casterState(mesh)),
+      blendedDraws: () => this.blendedDraws,
       listCheck: {
         due: () => this.refresh.stageCheck(),
         miss: (count) => {
@@ -483,6 +485,9 @@ export class SceneShadowController {
    */
   refreshShadowMaps(): void {
     if (!this.holdsGenerator()) return;
+    // A caged caster's bounds must hold its cage's deformation where the walk and the maps read them: a root moved by
+    // an observer after the cages' own before-render one would otherwise leave them a frame behind.
+    flushSceneLatticeDeformers(this.scene);
     this.classifyCasters();
     this.refresh.syncCasters(this.scene, this.drawing);
     this.maps.retained?.beginFrame();
@@ -513,15 +518,25 @@ export class SceneShadowController {
     });
   }
   /**
-   * Reads whether each caster may draw (`drawsNoShadow`), before a walk: geometry applied or released, or a level of
-   * detail added, moves it in or out of `drawing` in the frame it happens. It reads every caster, so it keeps nothing
-   * that can go stale.
+   * Reads whether each caster may draw (`castsNoShadowDepth`), before a walk: geometry applied or released, a level of
+   * detail added, or its parts coming to blend or to stop blending moves it in or out of `drawing` in the frame it
+   * happens. It reads every caster, so it keeps nothing that can go stale.
    */
   private classifyCasters(): void {
+    let blended = false;
+    this.forEachGenerator((generator) => {
+      if (generator.transparencyShadow) blended = true;
+    });
+    this.blendedDraws = blended;
     for (const mesh of this.meshes) this.classifyCaster(mesh);
   }
+  /**
+   * Whether some map draws blended parts (`transparencyShadow`, which no Haptic map sets): then a caster whose every
+   * part blends may draw. Read by `classifyCasters`, and by the maps' full list check (`ShadowMapContext.blendedDraws`).
+   */
+  private blendedDraws = false;
   private classifyCaster(mesh: AbstractMesh): void {
-    const draws = !drawsNoShadow(mesh);
+    const draws = !castsNoShadowDepth(mesh, this.blendedDraws);
     if (draws === this.drawing.has(mesh)) return;
     if (draws) this.drawing.add(mesh);
     else this.drawing.delete(mesh);
@@ -761,7 +776,7 @@ export class SceneShadowController {
     for (const entry of this.entries.values()) {
       if (entry.status === "active" && entry.generator &&
         matchesAllocationKey(entry.key, entry.mapSize, entry.light, settings.cascades, atlasEdge, SHADOW_HALF_TILE_CASCADES[settings.profile],
-          SHADOW_FIRST_CASCADE_SCALE[settings.profile])) {
+          settings.firstCascadeScale)) {
         if (entry.standby) {
           entry.standby = false;
           entry.admittedAt = selectionTime;
@@ -796,7 +811,7 @@ export class SceneShadowController {
         continue;
       const index = donors.findIndex((donor) =>
         matchesAllocationKey(donor.key, entry.mapSize, entry.light, settings.cascades, atlasEdge, SHADOW_HALF_TILE_CASCADES[settings.profile],
-          SHADOW_FIRST_CASCADE_SCALE[settings.profile]) &&
+          settings.firstCascadeScale) &&
         (donor.generator as AtlasShadowGenerator).canMoveTo(entry.light as LocalShadowLight));
       if (index < 0) continue;
       const [donor] = donors.splice(index, 1) as [Entry];
@@ -923,7 +938,7 @@ export class SceneShadowController {
           entry.admittedAt = selectionTime;
           entry.mapSize = mapSize;
           entry.key = allocationKey(mapSize, entry.light, settings.cascades, atlasEdge, SHADOW_HALF_TILE_CASCADES[settings.profile],
-          SHADOW_FIRST_CASCADE_SCALE[settings.profile]);
+          settings.firstCascadeScale);
           entry.failedKey = "";
           if (entry.recovery)
             entry.reason = "shadow map reduced after allocation failure";
@@ -1041,6 +1056,9 @@ export class SceneShadowController {
    */
   setDebug(part: ShadowDebugPart, enabled: boolean): boolean {
     if (!writeSceneShadowDebug(this.scene, part, enabled)) return false;
+    // `fulltiles`: the next admission builds every map again at its new size in the same atlas; a map kept at a size
+    // smaller than it asks for would otherwise stay at the half size once the full tiles are back.
+    if (part === "fulltiles") for (const entry of this.entries.values()) entry.resetAllocation = true;
     this.forEachGenerator((generator) => generator.getShadowMap()?.resetRefreshCounter());
     return true;
   }
@@ -1056,11 +1074,15 @@ export class SceneShadowController {
   }
 }
 
-/** Whether a caster at `mesh` can draw into `generator`'s map: a local light's within its range (its cone unchecked), a sun's always. */
+/**
+ * Whether a caster at `mesh` can draw into `generator`'s map: a local light's within its range (and a spot light's
+ * shadow cone, `spotShadowCone`), a sun's always.
+ */
 function reaches(generator: ShadowGenerator, mesh: AbstractMesh): boolean {
   const light = generator.getLight();
-  return light instanceof DirectionalLight || !("range" in light) || !Number.isFinite(light.range) ||
-    casterWithinShadowRange(mesh, (light as LocalShadowLight).getAbsolutePosition(), light.range as number);
+  if (light instanceof DirectionalLight || !("range" in light) || !Number.isFinite(light.range)) return true;
+  const cone = light instanceof SpotLight ? spotShadowCone(light.getShadowDirection(0), light.angle * (light.shadowAngleScale || 1)) : null;
+  return casterWithinShadowRange(mesh, (light as LocalShadowLight).getAbsolutePosition(), light.range as number, cone);
 }
 
 /** Internal renderer lookup; observing a scene never installs a second owner. */

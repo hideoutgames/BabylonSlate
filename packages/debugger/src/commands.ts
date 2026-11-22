@@ -243,7 +243,7 @@ export function builtinCommands(): RegisteredCommand[] {
       name: "worlddebug",
       tier: "debug",
       category: "engine",
-      description: "Switch one share of the world's drawing off or back on, to size it: every world mesh of the view's passes (world), lighting (lit surfaces draw their base colour), shadow lookups (shadowtaps; maps still drawn, every lookup lit), point, spot and rect lights (locallights), or all shading (every surface one constant colour)",
+      description: "Switch one share of the world's drawing off or back on, to size it: every world mesh of the view's passes (world), lighting (lit surfaces draw their base colour), shadow lookups (shadowtaps; maps still drawn, every lookup lit), point, spot and rect lights (locallights), all shading (every surface one constant colour); or, the picture unchanged, the geometry pass the screen-space effects read drawn once (geometryonce; off, it is drawn a second time first into targets nothing reads) or its second pass's fragments (geometryoncescissor; off, the second pass runs under a 1x1 scissor), or, off by default, the half-resolution marches in one pass (mergedmarches; on, ambient occlusion and volumetric lighting march in the Screen-Space Shadows pass instead of passes of their own), or, the picture unchanged, Play world sprites drawn in thin-instanced batches (spritebatching; off, every sprite draws as a quad of its own)",
       parameters: [{ name: "part", type: "enum", enumValues: [...WORLD_DEBUG_PARTS] }, FLAG],
       run(args, host) {
         const part = args.part as WorldDebugPart, enabled = Boolean(args.enabled);
@@ -256,7 +256,7 @@ export function builtinCommands(): RegisteredCommand[] {
       name: "shadowdebug",
       tier: "debug",
       category: "engine",
-      description: "Switch one part of shadow drawing off or back on, to measure what it costs: the casters drawn into every map layer (casters), the map passes themselves (passes), the atlas sized to its tiles (atlasfit; off, it is one size larger with the same tiles), the sun cascades' depth clamp in the fragment stage (depthclamp; off, casters are clamped in the vertex stage instead), or the sun's far cascades drawn every frame (farcascades; off, they draw in every second frame)",
+      description: "Switch one part of shadow drawing off or back on, to measure what it costs: the casters drawn into every map layer (casters), the map passes themselves (passes), the sun's map passes alone (sunpasses), the spot and point lights' alone (localpasses), the atlas sized to its tiles (atlasfit; off, it is one size larger with the same tiles), every tile at its full size (fulltiles; off, every map is drawn at half its edge in the same atlas), the sun cascades' depth clamp in the fragment stage (depthclamp; off, casters are clamped in the vertex stage instead), or the sun's far cascades drawn every frame (farcascades; off, they draw in every second frame)",
       parameters: [{ name: "part", type: "enum", enumValues: [...SHADOW_DEBUG_PARTS] }, FLAG],
       run(args, host) {
         const part = args.part as ShadowDebugPart, enabled = Boolean(args.enabled);

@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { writeFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 import type { runMainPassExactnessProof } from "../apps/editor/src/testing/main-pass-exactness-proof";
 import { SOFTWARE_GL_ARGS } from "./software-gl";
@@ -6,11 +8,13 @@ import { SOFTWARE_GL_ARGS } from "./software-gl";
 const SOFTWARE_GL = process.env.HAPTIC_RENDER_NATIVE_GPU !== "1" || Boolean(process.env.CI);
 if (SOFTWARE_GL) test.use({ launchOptions: { args: SOFTWARE_GL_ARGS } });
 // HAPTIC_LARGE_WORLD=1 builds the proof's Engine with Large World Rendering (Babylon's floating origin) on.
+// HAPTIC_MAIN_PASS_PROOF_OUT (an absolute path) also receives the digests of every image and atlas page, to compare two
+// builds byte for byte.
 const LARGE_WORLD = process.env.HAPTIC_LARGE_WORLD === "1";
 
 type Proof = typeof runMainPassExactnessProof;
 
-async function run(page: Page, reference: boolean) {
+async function run(page: Page, reference: boolean, chain = false) {
   const errors: string[] = [];
   const listener = (message: { type(): string; text(): string }) => {
     if (["warning", "error"].includes(message.type()) && /shader|VALIDATE_STATUS|ERROR: 0:|context lost|fatal error/i.test(message.text()))
@@ -21,7 +25,7 @@ async function run(page: Page, reference: boolean) {
   // A page of its own per run: nothing compiled in one is reused by the other.
   await page.goto("/?test=1&mainPassExactnessProof=1");
   await page.waitForFunction(() => typeof (window as unknown as { __mainPassExactnessProof?: unknown }).__mainPassExactnessProof === "function");
-  const result = await page.evaluate((value) => (window as unknown as { __mainPassExactnessProof: Proof }).__mainPassExactnessProof({ reference: value.reference, largeWorld: value.largeWorld }), { reference, largeWorld: LARGE_WORLD });
+  const result = await page.evaluate((value) => (window as unknown as { __mainPassExactnessProof: Proof }).__mainPassExactnessProof(value), { reference, largeWorld: LARGE_WORLD, chain });
   page.off("console", listener);
   expect(errors).toEqual([]);
   return result;
@@ -34,19 +38,15 @@ function differences(a: number[], b: number[]) {
   return { count: at.length, first: at.slice(0, 8) };
 }
 
-test("the main pass's and the captures' GPU savings change no pixel", async ({ page }, testInfo) => {
-  test.setTimeout(300_000);
-  const current = await run(page, false);
-  const reference = await run(page, true);
-  await testInfo.attach("main-pass-exactness", {
-    body: JSON.stringify({ renderer: current.renderer, stillTexelsPerFrame: { current: current.stillTexelsPerFrame, reference: reference.stillTexelsPerFrame } }),
-    contentType: "application/json",
-  });
-  console.log(`main pass exactness proof on ${current.renderer}: shadow texels per still frame ${current.stillTexelsPerFrame} (reference ${reference.stillTexelsPerFrame})`);
-  // The reference redraws the High Quality capture's own sun map in every still frame; the savings draw none.
-  expect(reference.stillTexelsPerFrame).toBeGreaterThan(0);
-  expect(current.stillTexelsPerFrame).toBe(0);
-  for (const stage of ["still", "moved"] as const) {
+type Run = Awaited<ReturnType<typeof run>>;
+
+/**
+ * Each run's frames, capture images and atlas pages are the same bytes: still, after the casters moved and a lattice
+ * cage bent and turned (the reference redraws every sun cascade, the savings only those the changes reach), and
+ * (`rewritten`) one frame after a sprite quad's and a tilemap chunk's notified geometry writes, which the maps follow.
+ */
+function expectSameImages(current: Run, reference: Run) {
+  for (const stage of ["still", "moved", "rewritten"] as const) {
     const images = current[stage];
     const before = reference[stage];
     // Not blank: the view and each capture show the lit scene.
@@ -56,5 +56,107 @@ test("the main pass's and the captures' GPU savings change no pixel", async ({ p
       expect(new Set(images.captures[quality]).size, `${stage} ${quality}`).toBeGreaterThan(16);
       expect(differences(images.captures[quality], before.captures[quality]), `${stage} ${quality}`).toEqual({ count: 0, first: [] });
     }
+    // The shadow maps themselves, every texel's depth bits: a frame can hide a difference in them. Some pages hold depth.
+    expect(images.atlas.some((page) => page.written > 0), `${stage} atlas`).toBe(true);
+    expect(images.atlas, `${stage} atlas`).toEqual(before.atlas);
   }
+}
+
+/**
+ * Every full-screen pass of the frame graphs starts from a clear of its colour target at its own viewport, where the
+ * reference loads it. One pass of one draw still loads: the Fast capture's display conversion, drawn outside the graphs.
+ */
+function expectFullScreenClears(current: Run, reference: Run) {
+  const loads = (run: Run) => run.glFrame.passes.filter((pass) => /^\S+ v\S+ x1$/.test(pass));
+  const cleared = current.glFrame.passes.filter((pass) => /^\S+ v(\S+) c@\1 x1$/.test(pass));
+  expect(cleared.length).toBeGreaterThan(0);
+  expect(loads(current), current.glFrame.passes.join("\n")).toHaveLength(1);
+  expect(cleared.length + loads(current).length, current.glFrame.passes.join("\n")).toBe(loads(reference).length);
+  // An instanced batch drawn again with the rows and colours its buffers hold uploads neither again.
+  expect(current.glFrame.calls.bufferSubData ?? 0).toBeLessThan(reference.glFrame.calls.bufferSubData ?? 0);
+}
+
+test("the main pass's and the captures' GPU savings change no pixel", async ({ page }, testInfo) => {
+  test.setTimeout(300_000);
+  const current = await run(page, false);
+  const reference = await run(page, true);
+  // GL calls per still frame by function, where the two runs differ.
+  const calls = Object.fromEntries([...new Set([...Object.keys(current.glFrame.calls), ...Object.keys(reference.glFrame.calls)])]
+    .map((name) => [name, { current: current.glFrame.calls[name] ?? 0, reference: reference.glFrame.calls[name] ?? 0 }] as const)
+    .filter(([, count]) => count.current !== count.reference));
+  const sha = (bytes: number[]) => createHash("sha256").update(Uint8Array.from(bytes)).digest("hex");
+  const digest = ({ view, captures, atlas }: typeof current.still) =>
+    ({ view: sha(view), fast: sha(captures.fast), highQuality: sha(captures.highQuality), atlas });
+  const summary = {
+    renderer: current.renderer, stillTexelsPerFrame: { current: current.stillTexelsPerFrame, reference: reference.stillTexelsPerFrame },
+    movedCounters: { current: current.movedCounters, reference: reference.movedCounters },
+    passes: { current: current.glFrame.passes, reference: reference.glFrame.passes }, calls,
+    current: { still: digest(current.still), moved: digest(current.moved), rewritten: digest(current.rewritten) },
+    reference: { still: digest(reference.still), moved: digest(reference.moved), rewritten: digest(reference.rewritten) },
+  };
+  await testInfo.attach("main-pass-exactness", { body: JSON.stringify(summary), contentType: "application/json" });
+  if (process.env.HAPTIC_MAIN_PASS_PROOF_OUT) writeFileSync(process.env.HAPTIC_MAIN_PASS_PROOF_OUT, JSON.stringify(summary));
+  console.log(`main pass exactness proof on ${current.renderer}: shadow texels per still frame ${current.stillTexelsPerFrame} (reference ${reference.stillTexelsPerFrame})`);
+  console.log(`still frame passes, reference:\n${reference.glFrame.passes.join("\n")}\ncurrent:\n${current.glFrame.passes.join("\n")}`);
+  console.log(`GL calls per still frame that differ (current vs reference): ${JSON.stringify(calls)}`);
+  console.log(`shadow tiles drawn, current vs reference: moved (4 frames) ${current.movedCounters.tiles} vs ${reference.movedCounters.tiles}, rewritten (1 frame) ${current.rewrittenTiles} vs ${reference.rewrittenTiles}`);
+  // The rewritten frame redraws only what the notified writes reach, each sun cascade on its own: fewer tiles than the
+  // reference, which redraws every cascade of every map that draws.
+  expect(current.rewrittenTiles).toBeGreaterThan(0);
+  expect(current.rewrittenTiles).toBeLessThan(reference.rewrittenTiles);
+  // The reference redraws the High Quality capture's own sun map in every still frame; the savings draw none, the
+  // translucent and the caged caster included.
+  expect(reference.stillTexelsPerFrame).toBeGreaterThan(0);
+  expect(current.stillTexelsPerFrame).toBe(0);
+  // The moved frames took the shadow stage's lean path: tiles of one page share a bind (the point light's faces), the
+  // retained casters drew, and every row they read was uploaded before the first map.
+  for (const counters of [current.movedCounters, reference.movedCounters]) {
+    expect(counters.passes).toBeGreaterThan(0);
+    expect(counters.passes).toBeLessThan(counters.tiles);
+    expect(counters.retainedDraws).toBeGreaterThan(0);
+    expect(counters.casterDraws).toBeGreaterThanOrEqual(counters.retainedDraws);
+    // Under Large World Rendering a capture's own camera moves the floating origin, whose rows its maps upload again.
+    if (!LARGE_WORLD) expect(counters.lateUploads).toBe(0);
+  }
+  expectSameImages(current, reference);
+  expectFullScreenClears(current, reference);
+  // The new paths ran (the runs' frames differ otherwise too: the reference's capture sun maps and Mirror redraw).
+  // Each view's clear pass is gone: no pass holds a clear alone, and every pass that clears the scene draws into it.
+  const clearOnly = (passes: string[]) => passes.filter((pass) => /^\S+ v\S+ cds@\S+$/.test(pass)).length;
+  expect(clearOnly(reference.glFrame.passes)).toBeGreaterThan(0);
+  expect(clearOnly(current.glFrame.passes)).toBe(0);
+  // Each geometry pass clears its other attachments, then its view depth at the far plane with its depth in one
+  // clear, never to zero first, and discards its depth after its draws; the reference's cleared four times.
+  const geometry = current.glFrame.passes.filter((pass) => / cd@\S+/.test(pass) && !/ cds@/.test(pass));
+  const referenceGeometry = reference.glFrame.passes.filter((pass) => / c@\S+ c@\S+ c@\S+ d@\S+/.test(pass));
+  expect(geometry.length).toBeGreaterThan(0);
+  expect(geometry.length).toBe(referenceGeometry.length);
+  expect(geometry.every((pass) => / c@\S+ cd@\S+ x\d+ inv1$/.test(pass)), geometry.join("\n")).toBe(true);
+  expect(current.glFrame.invalidates - reference.glFrame.invalidates).toBe(geometry.length);
+});
+
+test("the post chain's full-screen clears and the output copy's change no pixel", async ({ page }, testInfo) => {
+  test.setTimeout(300_000);
+  const current = await run(page, false, true);
+  const reference = await run(page, true, true);
+  const sha = (bytes: number[]) => createHash("sha256").update(Uint8Array.from(bytes)).digest("hex");
+  const digest = ({ view, captures, atlas }: typeof current.still) =>
+    ({ view: sha(view), fast: sha(captures.fast), highQuality: sha(captures.highQuality), atlas });
+  const summary = {
+    renderer: current.renderer, passes: { current: current.glFrame.passes, reference: reference.glFrame.passes },
+    current: { still: digest(current.still), moved: digest(current.moved) }, reference: { still: digest(reference.still), moved: digest(reference.moved) },
+  };
+  await testInfo.attach("main-pass-exactness-chain", { body: JSON.stringify(summary), contentType: "application/json" });
+  if (process.env.HAPTIC_MAIN_PASS_PROOF_OUT) {
+    writeFileSync(`${process.env.HAPTIC_MAIN_PASS_PROOF_OUT}.chain.json`, JSON.stringify(summary));
+    // The images themselves, to locate a difference.
+    writeFileSync(`${process.env.HAPTIC_MAIN_PASS_PROOF_OUT}.chain.images.json`,
+      JSON.stringify({ current: { still: current.still.captures, moved: current.moved.captures, view: current.moved.view },
+        reference: { still: reference.still.captures, moved: reference.moved.captures, view: reference.moved.view } }));
+  }
+  console.log(`chain still frame passes, reference:\n${reference.glFrame.passes.join("\n")}\ncurrent:\n${current.glFrame.passes.join("\n")}`);
+  expectSameImages(current, reference);
+  expectFullScreenClears(current, reference);
+  // The chain ends at the view's half size: an output copy fills the backbuffer, starting from its clear.
+  expect(current.glFrame.passes.filter((pass) => /^D v(0,0,128x128) c@\1 x1$/.test(pass)), current.glFrame.passes.join("\n")).toHaveLength(1);
 });

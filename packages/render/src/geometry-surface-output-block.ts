@@ -12,6 +12,7 @@ import type { Effect } from "@babylonjs/core/Materials/effect";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { NodeMaterialBuildState } from "@babylonjs/core/Materials/Node/nodeMaterialBuildState";
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
+import { foliageFadeForMesh, HAPTIC_BAYER_4X4_GLSL } from "./foliage-fade";
 import { meshCastsShadows } from "./instance-pool";
 import { WORLD_DEBUG_FLAT_DEFINE, worldDebugOff } from "./world-debug";
 import type { MaterialPlumbing } from "./material-block-registry";
@@ -23,6 +24,7 @@ import type { MaterialPlumbing } from "./material-block-registry";
  */
 export class GeometrySurfaceOutputBlock extends FragmentOutputBlock {
   private casterUniform = "";
+  private foliageFadeUniform = "";
   constructor(name: string) {
     super(name);
     this.registerInput("geometryPosition", Types.Vector4);
@@ -44,7 +46,13 @@ export class GeometrySurfaceOutputBlock extends FragmentOutputBlock {
   get geometryRoughness() { return this.getInputByName("geometryRoughness")!; }
   get geometrySpecular() { return this.getInputByName("geometrySpecular")!; }
   override getClassName(): string { return "GeometrySurfaceOutputBlock"; }
+  /**
+   * The colour is a Multiply blend's linear factor (`MultiplyBlendFactorBlock`): encoded for display alone, unless a
+   * Scene Linear display stage encodes the frame. Set before the build.
+   */
+  linearFactor = false;
   override prepareDefines(defines: NodeMaterialDefines, nodeMaterial: NodeMaterial, mesh?: AbstractMesh): void {
+    if (this.linearFactor) this.convertToGammaSpace = !nodeMaterial.imageProcessingConfiguration.applyByPostProcess;
     super.prepareDefines(defines, nodeMaterial);
     // `worlddebug shading off`: one constant colour, so the compiler drops the surface's shading and texture reads.
     if (mesh) defines.setValue(WORLD_DEBUG_FLAT_DEFINE, worldDebugOff(mesh.getScene(), "shading"), true);
@@ -52,6 +60,9 @@ export class GeometrySurfaceOutputBlock extends FragmentOutputBlock {
   override bind(effect: Effect, material: NodeMaterial, mesh?: Mesh): void {
     super.bind(effect, material, mesh);
     effect.setFloat(this.casterUniform, mesh && meshCastsShadows(mesh) ? 1 : 0);
+    const fade = foliageFadeForMesh(mesh);
+    if (fade) effect.setFloat2(this.foliageFadeUniform, fade[0], fade[1]);
+    else effect.setFloat2(this.foliageFadeUniform, 0, 0);
   }
 
   protected override _buildBlock(state: NodeMaterialBuildState): this {
@@ -70,9 +81,14 @@ export class GeometrySurfaceOutputBlock extends FragmentOutputBlock {
       : `${vec4}(0.0)`;
     this.casterUniform = state._getFreeVariableName("hapticGeometryCaster");
     state._emitUniformFromString(this.casterUniform, Types.Float);
+    this.foliageFadeUniform = state._getFreeVariableName("hapticFoliageFade");
+    state._emitUniformFromString(this.foliageFadeUniform, Types.Vector2);
+    state._emitFunction("hapticBayer4x4", HAPTIC_BAYER_4X4_GLSL, "");
     state.sharedData.forcedBindableBlocks.push(this);
     const caster = this.casterUniform;
+    const fade = this.foliageFadeUniform;
     const color = "gl_FragColor";
+    state.compilationString += `if (${fade}.y > 0.0) { float _hapticFadeDist = length((${view} * ${position}).xyz); float _hapticFadeT = clamp((_hapticFadeDist - ${fade}.x) / max(0.001, ${fade}.y - ${fade}.x), 0.0, 1.0); if (_hapticFadeT > 0.0 && _hapticFadeT >= hapticBayer4x4(gl_FragCoord.xy)) discard; }\n`;
     state.compilationString += `#ifdef ${WORLD_DEBUG_FLAT_DEFINE}\n${color} = ${vec4}(0.5, 0.5, 0.5, ${color}.a);\n#endif\n`;
     const savedColor = state._getFreeVariableName("geometrySurfaceColor");
     state.compilationString += `#ifdef PREPASS\n${state._declareLocalVar(savedColor, Types.Vector4)} = ${color};\n#endif\n`;
@@ -104,6 +120,13 @@ const GEOMETRY_DATA_OUTPUTS = ["PREPASS_DEPTH", "PREPASS_REFLECTIVITY", "PREPASS
  */
 export const GEOMETRY_PASS_WITHOUT_COLOR =
   `defined(PREPASS) && !defined(PREPASS_COLOR) && (${GEOMETRY_DATA_OUTPUTS.map((define) => `(defined(${define}) && ${define}_INDEX == 0)`).join(" || ")})`;
+
+/** Whether a program compiled with `defines` (an Effect's) meets `GEOMETRY_PASS_WITHOUT_COLOR`, as its preprocessor reads it. */
+export function isGeometryPassWithoutColor(defines: string): boolean {
+  const defined = (name: string) => new RegExp(`^#define ${name}(?: |$)`, "m").test(defines);
+  return defined("PREPASS") && !defined("PREPASS_COLOR") &&
+    GEOMETRY_DATA_OUTPUTS.some((define) => defined(define) && new RegExp(`^#define ${define}_INDEX 0$`, "m").test(defines));
+}
 
 /** Writes `value` to the geometry output `define` names (`PREPASS_WORLD_NORMAL` and so on), where the pass has one. */
 export function geometryOutputWrite(define: string, value: string): string {

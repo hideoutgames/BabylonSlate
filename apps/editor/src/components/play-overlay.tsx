@@ -155,6 +155,8 @@ export interface PlayOverlayProps {
   globalParameterCatalog?: import("@haptic/core").GlobalParameterCatalog;
   assetCatalog?: import("@haptic/core").RuntimeAssetCatalogEntry[];
   focusNavigation?: import("@haptic/core").FocusNavigationSettings;
+  /** Project Scene Layer post-processing; snapshotted when the session starts. */
+  sceneLayerPostProcessStack?: import("@haptic/core").SceneLayerPostProcessEntry[];
   /** Project Play Preview letterbox; snapshotted when the session starts. */
   playPreview?: PlayPreviewProjectSettings;
   /** Project render size; snapshotted when the session starts. */
@@ -211,6 +213,7 @@ export interface PlayOverlayProps {
   touchMinTargetPx?: number;
   navmeshBytes?: Uint8Array | null;
   sceneNavmeshBytes?: ReadonlyMap<string, Uint8Array>;
+  sceneLandscapeBytes?: ReadonlyMap<string, Uint8Array>;
   audioReverbByScene?: ReadonlyMap<string, Uint8Array>;
   audioReverbBytes?: Uint8Array | null;
   audioProjectSettings?: Partial<
@@ -306,6 +309,7 @@ function PlayOverlayView({
   globalParameterCatalog,
   assetCatalog,
   focusNavigation,
+  sceneLayerPostProcessStack,
   playPreview = DEFAULT_PLAY_PREVIEW_PROJECT_SETTINGS,
   render = DEFAULT_RENDER_PROJECT_SETTINGS,
   animGraphs,
@@ -352,6 +356,7 @@ function PlayOverlayView({
   touchMinTargetPx,
   navmeshBytes,
   sceneNavmeshBytes,
+  sceneLandscapeBytes,
   audioReverbByScene,
   audioReverbBytes,
   audioProjectSettings,
@@ -715,6 +720,8 @@ function PlayOverlayView({
   navmeshBytesRef.current = navmeshBytes;
   const sceneNavmeshBytesRef = useRef(sceneNavmeshBytes);
   sceneNavmeshBytesRef.current = sceneNavmeshBytes;
+  const sceneLandscapeBytesRef = useRef(sceneLandscapeBytes);
+  sceneLandscapeBytesRef.current = sceneLandscapeBytes;
   const audioReverbBySceneRef = useRef(audioReverbByScene);
   audioReverbBySceneRef.current = audioReverbByScene;
   const audioReverbBytesRef = useRef(audioReverbBytes);
@@ -786,6 +793,7 @@ function PlayOverlayView({
   const initialGlobalParameterCatalogRef = useRef(globalParameterCatalog);
   const initialAssetCatalogRef = useRef(assetCatalog);
   const initialFocusNavigationRef = useRef(focusNavigation);
+  const initialSceneLayerPostProcessRef = useRef(sceneLayerPostProcessStack);
   const initialPlayPreviewRef = useRef(playPreview);
   const { settings: localEngineSettings } = useAppSettings();
   const initialTraceByteBudgetRef = useRef(localEngineSettings.traceByteBudget);
@@ -912,6 +920,7 @@ function PlayOverlayView({
           globalParameterCatalog: initialGlobalParameterCatalogRef.current,
           assetCatalog: initialAssetCatalogRef.current,
           focusNavigation: initialFocusNavigationRef.current,
+          sceneLayerPostProcessStack: initialSceneLayerPostProcessRef.current,
           animGraphs: animGraphsRef.current,
           behaviourTrees: behaviourTreesRef.current,
           blackboards: blackboardsRef.current,
@@ -958,6 +967,7 @@ function PlayOverlayView({
           pixelMatchedCameras: pixelMatchedCamerasRef.current,
           navmeshBytes: navmeshBytesRef.current,
           sceneNavmeshBytes: sceneNavmeshBytesRef.current,
+          sceneLandscapeBytes: sceneLandscapeBytesRef.current,
           audioReverbByScene: audioReverbBySceneRef.current,
           audioReverbBytes: audioReverbBytesRef.current,
           audioProjectSettings: audioProjectSettingsRef.current,
@@ -1422,6 +1432,8 @@ function PlayOverlayView({
       .map(({ severity, message }) => ({ severity, message })),
     samplePresentedImage: () => sessionRef.current?.handle.samplePresentedImage() ?? Promise.resolve(null),
     stubWebGlDraws: (on) => sessionRef.current?.handle.stubWebGlDraws(on) ?? false,
+    timeWebGlCalls: (on) => sessionRef.current?.handle.timeWebGlCalls(on) ?? false,
+    webGlCallTotals: () => sessionRef.current?.handle.webGlCallTotals() ?? null,
     executeConsoleCommand: (line) => sessionRef.current?.executeConsoleCommand(line)
       ?? Promise.resolve({ success: false, output: "Play is not running." }),
     stop: () => finishSessionRef.current(),

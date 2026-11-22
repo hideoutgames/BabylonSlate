@@ -9,6 +9,7 @@ import { Scene } from "@babylonjs/core/scene";
 import { SpotLight } from "@babylonjs/core/Lights/spotLight";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { normalizeShadowSettings } from "@haptic/core";
 import { FrameGraphObjectRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/objectRendererTask";
 import { afterEach, expect, it, vi } from "vitest";
@@ -210,6 +211,38 @@ function cascadeBias(generator: CascadedShadowGenerator, authoredDepthBias: numb
   return { worldTexelSize, bias: Math.max(authoredDepthBias, Math.min(0.05, (0.25 * worldTexelSize) / depth / 1.5)) };
 }
 
+it("lists each of a map's layers, frame after frame, into that layer's own list", async () => {
+  // The break: one list shared by every face (or emptied before each query) gives up its storage and grows it again
+  // for every layer of every frame.
+  const { camera, mesh, map, graph, render } = await fixture("point");
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  expect(render()).toBe(6);
+  // Each face's list as the face's own render asked for it (a face's planes are set only while it renders).
+  const list = map.getCustomRenderList!;
+  type Listed = { layer: number; list: AbstractMesh[]; held: AbstractMesh[] };
+  const frames: Listed[][] = [];
+  map.getCustomRenderList = (layer, ...rest) => {
+    const listed = list(layer, ...rest)!;
+    frames.at(-1)!.push({ layer, list: listed, held: listed.slice() });
+    return listed;
+  };
+  for (const x of [0.4, 0.8]) {
+    frames.push([]);
+    mesh.position.x = x;
+    expect(render()).toBe(6);
+  }
+  const [first, second] = frames as [Listed[], Listed[]];
+  expect(first.map((entry) => entry.layer)).toEqual([0, 1, 2, 3, 4, 5]);
+  expect(second.map((entry) => entry.layer)).toEqual([0, 1, 2, 3, 4, 5]);
+  expect(new Set(first.map((entry) => entry.list)).size).toBe(6);
+  second.forEach((entry, face) => expect(entry.list).toBe(first[face]!.list));
+  // Each face lists what its own planes hold: the box, off to one side of the light, in some faces and not in others.
+  const holding = second.filter((entry) => entry.held.includes(mesh)).length;
+  expect(holding).toBeGreaterThan(0);
+  expect(holding).toBeLessThan(6);
+  graph.dispose();
+});
+
 it("draws no map layer with shadow passes off, and binds each without its casters with casters off", async () => {
   const { camera, mesh, controller, map, graph, render } = await fixture("spot");
   const listed = () => map.getCustomRenderList!(0, [], 0)!.slice();
@@ -232,6 +265,31 @@ it("draws no map layer with shadow passes off, and binds each without its caster
   expect(controller.setDebug("casters", true)).toBe(true);
   expect(render()).toBe(1);
   expect(listed()).toEqual([mesh]);
+  graph.dispose();
+});
+
+it.each([
+  ["spot", "localpasses", "sunpasses"],
+  ["point", "localpasses", "sunpasses"],
+  ["sun", "sunpasses", "localpasses"],
+] as const)("keeps a drawn %s map with %s off, and draws it with %s off", async (kind, own, other) => {
+  const { camera, mesh, controller, graph, render } = await fixture(kind);
+  const count = kind === "point" ? 6 : 1;
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  expect(render()).toBe(count);
+  // The other kind's passes off: this map is due again (every map is, on a switch) and draws.
+  expect(controller.setDebug(other, false)).toBe(true);
+  expect(render()).toBe(count);
+  expect(controller.setDebug(other, true)).toBe(true);
+  expect(render()).toBe(count);
+  // Its own kind's passes off: it keeps the depth it holds, even with a caster moved, and stays due.
+  expect(controller.setDebug(own, false)).toBe(true);
+  mesh.position.x += 0.4;
+  expect(render()).toBe(0);
+  expect(render()).toBe(0);
+  expect(controller.setDebug(own, true)).toBe(true);
+  expect(render()).toBe(count);
+  expect(render()).toBe(0);
   graph.dispose();
 });
 

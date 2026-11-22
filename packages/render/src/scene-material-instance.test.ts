@@ -13,6 +13,7 @@ import { applySceneToBabylonScene, editorMeshName } from "./scene-loader";
 import { authoredMaterialInstancePreparation } from "./authored-material-instance";
 import type { MeshAssetContext } from "./mesh-assets";
 import { isUnlitMaterial } from "./unlit-material";
+import { nodeBlockName } from "./test-support/material-node-blocks";
 
 const disposers: Array<() => void> = [];
 afterEach(() => { while (disposers.length) disposers.pop()?.(); vi.restoreAllMocks(); });
@@ -63,9 +64,9 @@ describe("saved component material instances", () => {
     const shared = f.library.materialFor(f.scene, "material")!;
     expect(firstMaterial).not.toBe(shared);
     expect(firstMaterial).not.toBe(otherMaterial);
-    expect((firstMaterial.getBlockByName("roughness") as InputBlock).value).toBe(0.2);
-    expect((otherMaterial.getBlockByName("roughness") as InputBlock).value).toBe(0.8);
-    expect((shared.getBlockByName("roughness") as InputBlock).value).toBe(0.5);
+    expect((firstMaterial.getBlockByName(nodeBlockName(parameterDocument(), "roughness")) as InputBlock).value).toBe(0.2);
+    expect((otherMaterial.getBlockByName(nodeBlockName(parameterDocument(), "roughness")) as InputBlock).value).toBe(0.8);
+    expect((shared.getBlockByName(nodeBlockName(parameterDocument(), "roughness")) as InputBlock).value).toBe(0.5);
     expect(JSON.stringify(authored)).toBe(before);
 
     const restored = structuredClone(authored);
@@ -138,7 +139,7 @@ describe("saved component material instances", () => {
     const visual = f.scene.getMeshByName(editorMeshName("actor"))!;
     await authoredMaterialInstancePreparation(visual as import("@babylonjs/core").Mesh);
     const material = visual.material as NodeMaterial;
-    expect((material.getBlockByName("roughness") as InputBlock).value).toBe(0.3);
+    expect((material.getBlockByName(nodeBlockName(parameterDocument(), "roughness")) as InputBlock).value).toBe(0.3);
     applySceneToBabylonScene(f.scene, { ...authored, actors: [] }, f.assets);
     expect(f.scene.materials).not.toContain(material);
 
@@ -146,7 +147,7 @@ describe("saved component material instances", () => {
     f.sync.apply(authored);
     await f.sync.whenEditorModelsReady();
     expect(f.sync.meshForActor("actor")!.material).toBe(f.library.materialFor(f.scene, "material"));
-    expect((f.library.materialFor(f.scene, "material")!.getBlockByName("roughness") as InputBlock).value).toBe(0.5);
+    expect((f.library.materialFor(f.scene, "material")!.getBlockByName(nodeBlockName(parameterDocument(), "roughness")) as InputBlock).value).toBe(0.5);
   });
 
   it("keeps the working private material on texture failure and cancels a superseded texture lease", async () => {
@@ -190,7 +191,7 @@ describe("saved component material instances", () => {
     reject(new Error("Texture admission failed"));
     await expect(readiness).rejects.toThrow("Texture admission failed");
     expect(f.sync.meshForActor("actor")!.material).toBe(previous);
-    expect((previous.getBlockByName("sample") as TextureBlock).texture).toBe(texture);
+    expect((previous.getBlockByName(nodeBlockName(document, "sample")) as TextureBlock).texture).toBe(texture);
     expect(leases.get("failed")).toBe(0);
 
     f.sync.apply(replacement("cancelled"));

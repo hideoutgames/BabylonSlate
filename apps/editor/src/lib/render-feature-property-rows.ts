@@ -1,5 +1,6 @@
 import {
   OUTLINE_WIDTH_LIMITS,
+  parseDecalProperties,
   parseFogVolumeProperties,
   parseMirrorProperties,
   parseOutlineProperties,
@@ -121,6 +122,46 @@ export function fogVolumePropertyRows(
   ];
 }
 
+export function decalPropertyRows(
+  actorId: string,
+  component: SerializedComponent,
+  update: ComponentPropertyUpdate,
+  context: ComponentPropertyContext,
+): PropertyRow[] {
+  const properties = parseDecalProperties(component.properties);
+  const defaults = parseDecalProperties({});
+  return [
+    { kind: "boolean", id: rowId(actorId, component.id, "enabled"), label: "Enabled",
+      value: properties.enabled, defaultValue: defaults.enabled,
+      onChange: (next) => update("enabled", next) },
+    assetRow(actorId, component, "materialGuid", "Material", ["Material", "MaterialInstance"], update, context, "Choose Decal Material", "None", "decal"),
+    { kind: "color", id: rowId(actorId, component.id, "tint"), label: "Tint",
+      value: properties.tint, defaultValue: defaults.tint,
+      description: "Multiplies the Material's Base Color and Emissive for this decal.",
+      onChange: (next) => update("tint", next) },
+    { kind: "slider", id: rowId(actorId, component.id, "opacity"), label: "Opacity",
+      value: properties.opacity, defaultValue: defaults.opacity, min: 0, max: 1, step: 0.01,
+      description: "Multiplies the Material's Opacity for this decal.",
+      onChange: (next) => update("opacity", Math.min(1, Math.max(0, next))) },
+    { kind: "vector3", id: rowId(actorId, component.id, "size"), label: "Size", unit: "scene units",
+      value: properties.size, defaultValue: defaults.size, sensitivity: 0.1,
+      description: "Y is the projection depth: the decal projects along local -Y.",
+      onChange: (next) => update("size", next.slice(0, 3).map((value) => Math.max(0.01, value))) },
+    { kind: "slider", id: rowId(actorId, component.id, "fadeAngle"), label: "Fade Angle",
+      value: properties.fadeAngle, defaultValue: defaults.fadeAngle, min: 1, max: 180, step: 1,
+      description: "Fades the decal where a surface turns further than this from local +Y.",
+      onChange: (next) => update("fadeAngle", Math.min(180, Math.max(1, next))) },
+    { kind: "number", id: rowId(actorId, component.id, "sortOrder"), label: "Sort Order",
+      value: properties.sortOrder, defaultValue: defaults.sortOrder, sensitivity: 1, precision: 0,
+      description: "Higher values draw on top of overlapping decals.",
+      onChange: (next) => update("sortOrder", Math.round(next)) },
+    { kind: "number", id: rowId(actorId, component.id, "cullDistance"), label: "Cull Distance", unit: "scene units",
+      value: properties.cullDistance, defaultValue: defaults.cullDistance, min: 0, sensitivity: 1,
+      description: "Scaled by Geometry quality. 0 never culls by distance.",
+      onChange: (next) => update("cullDistance", Math.max(0, next)) },
+  ];
+}
+
 export function mirrorPropertyRows(
   actorId: string,
   component: SerializedComponent,
@@ -155,7 +196,7 @@ export function mirrorPropertyRows(
     { kind: "color", id: rowId(actorId, component.id, "tint"), label: "Tint", value: properties.tint,
       description: "Multiplies the reflection on the built-in surface. A Material override decides its own look.",
       onChange: (next) => update("tint", next) },
-    { ...assetRow(actorId, component, "materialGuid", "Material", ["Material", "MaterialInstance"], update, context, "Choose Mirror Material", "Built-In Surface"),
+    { ...assetRow(actorId, component, "materialGuid", "Material", ["Material", "MaterialInstance"], update, context, "Choose Mirror Material", "Built-In Surface", "surface"),
       description: "Use a Mirror Reflection node to read the reflection." },
   ];
 }

@@ -2,6 +2,7 @@ import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import type { Scene } from "@babylonjs/core/scene";
 import { glyphCellIdentity, type BitmapGlyphCell } from "./text2d-bitmap";
+import { noteLayerUpload } from "./layer-frame-stats";
 
 /**
  * The bitmap glyphs of every 2D Text in a Scene, on shared atlas pages. A text of its own atlas texture could never
@@ -126,6 +127,7 @@ class Page implements GlyphAtlasPage {
     if (!this.dirty) return;
     this.dirty = false;
     this.texture.update(this.pixels);
+    noteLayerUpload();
   }
 }
 
@@ -235,11 +237,9 @@ export function sceneGlyphAtlas(scene: Scene, nearest: boolean): SceneGlyphAtlas
     const created: { nearest?: SceneGlyphAtlas; bilinear?: SceneGlyphAtlas } = owned = {};
     atlases.set(scene, created);
     // A frame draws what the texts built since the last one hold. First of the Scene's before-render work: a render
-    // target capture draws the Scene from there.
-    const upload = scene.onBeforeRenderObservable.add(() => {
-      created.nearest?.upload();
-      created.bilinear?.upload();
-    }, undefined, true);
+    // target capture draws the Scene from there. A Play layer's pages are uploaded before the world draws
+    // (`uploadSceneGlyphPages`); this one then finds nothing written since.
+    const upload = scene.onBeforeRenderObservable.add(() => uploadSceneGlyphPages(scene), undefined, true);
     scene.onDisposeObservable.addOnce(() => {
       scene.onBeforeRenderObservable.remove(upload);
       created.nearest?.dispose();
@@ -249,4 +249,15 @@ export function sceneGlyphAtlas(scene: Scene, nearest: boolean): SceneGlyphAtlas
   }
   const key = nearest ? "nearest" : "bilinear";
   return owned[key] ??= new SceneGlyphAtlas(scene, nearest);
+}
+
+/**
+ * Uploads the glyph pages of `scene` written since their last upload: what the Scene's before-render work does, called
+ * early by a Scene Layer's work before the world draws (`SceneLayerCompositor.beforeWorld`), so no upload falls inside
+ * the backbuffer's pass. A page holds the same pixels whenever it is uploaded before the Scene's draws.
+ */
+export function uploadSceneGlyphPages(scene: Scene): void {
+  const owned = atlases.get(scene);
+  owned?.nearest?.upload();
+  owned?.bilinear?.upload();
 }

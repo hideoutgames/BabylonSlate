@@ -3,7 +3,8 @@ export type EngineComponentPlacement = "world" | "overlay" | "any";
 /**
  * The authored surface a component draws: `"2d"` flat in the XY plane as the 2D view shows it (Sprite, Tilemap,
  * Painter and the `2D*` visuals), `"3d"` geometry, or null for none (helpers, lights, cameras, volumes, physics,
- * audio, layout, scripts, and particles, which draw no surface a still capture frames).
+ * audio, layout, scripts, a Post Processing Panel's invisible rectangle, decals, which only project onto other
+ * surfaces, and particles, which draw no surface a still capture frames).
  */
 export type ComponentSurface = "2d" | "3d";
 
@@ -28,6 +29,7 @@ export const ENGINE_COMPONENT_DESCRIPTORS = [
   { classId: "LightComponent", placement: "world", surface: null },
   { classId: "AreaRectLightComponent", placement: "world", surface: null },
   { classId: "FogVolumeComponent", placement: "world", surface: null },
+  { classId: "DecalComponent", placement: "world", surface: null },
   { classId: "MirrorComponent", placement: "world", surface: "3d" },
   { classId: "ReflectionProbeComponent", placement: "world", surface: null },
   { classId: "OutlineComponent", placement: "world", surface: null },
@@ -86,6 +88,7 @@ export const ENGINE_COMPONENT_DESCRIPTORS = [
   { classId: "2DTextComponent", placement: "overlay", surface: "2d" },
   { classId: "2DRichTextComponent", placement: "overlay", surface: "2d" },
   { classId: "2DPanelComponent", placement: "overlay", surface: "2d" },
+  { classId: "2DPostProcessingPanelComponent", placement: "overlay", surface: null },
 ] as const satisfies readonly {
   readonly classId: string;
   readonly placement: EngineComponentPlacement;

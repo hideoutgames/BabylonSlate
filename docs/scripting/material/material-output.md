@@ -17,7 +17,7 @@ Receives the final surface settings of a material, such as colour, roughness and
 | Environment Influence | Float | 1 | Scales lighting from the environment, from 0 to 1; direct lights and Emissive are unaffected. |
 | Normal | Vector3 |  | World-space normal used for lighting, such as the output of [**Normal Map**](normal-map.md). When unconnected, the material's Default Normals setting applies. |
 | Emissive | Vector3 | (0, 0, 0) | Colour the surface gives out, added on top of lighting; it does not light other objects. |
-| Opacity | Float | 1 | From 0 (invisible) to 1 (solid). Used by the Translucent and Additive blend modes, and by Masked when **Alpha Clip** is unconnected. |
+| Opacity | Float | 1 | From 0 (invisible) to 1 (solid). Used by the Translucent, Additive and Multiply blend modes, and by Masked when **Alpha Clip** is unconnected. |
 | Alpha Clip | Float |  | Used by the Masked blend mode: pixels where this value is below Alpha Cutoff are discarded. When unconnected, **Opacity** is used. |
 | World Position Offset | Vector3 | (0, 0, 0) | Offset in metres added to each vertex position in world space. Only vertex-stage nodes can feed it. |
 

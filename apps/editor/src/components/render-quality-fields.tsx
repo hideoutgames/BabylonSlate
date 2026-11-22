@@ -187,46 +187,9 @@ export function RenderQualityFields({
           {pixelatedUpscaling(settings) ? (
             <FieldDescription data-testid="quality-resolution-pixelated">
               Upscaling is Pixelated: Play and exported games draw at full
-              resolution, so Resolution Scale and Dynamic Resolution do not apply.
+              resolution, so Resolution Scale does not apply.
             </FieldDescription>
           ) : null}
-        </Field>
-        <Field className="settings-field">
-          <FieldLabel htmlFor="quality-resolution-dynamic">
-            Dynamic Resolution
-          </FieldLabel>
-          <Switch
-            id="quality-resolution-dynamic"
-            checked={effective.resolution.dynamic}
-            onCheckedChange={(dynamic) => edit("resolution", { dynamic })}
-          />
-        </Field>
-        <Field className="settings-field settings-field-dependent">
-          <FieldLabel htmlFor="quality-resolution-minimum">
-            Minimum Resolution Scale
-          </FieldLabel>
-          <NumberField
-            id="quality-resolution-minimum"
-            value={effective.resolution.minScale}
-            min={0.25}
-            max={effective.resolution.scale}
-            step={0.05}
-            disabled={!effective.resolution.dynamic}
-            onChange={(minScale) => edit("resolution", { minScale })}
-          />
-        </Field>
-        <Field className="settings-field settings-field-dependent">
-          <FieldLabel htmlFor="quality-resolution-target">
-            Dynamic Resolution Target FPS
-          </FieldLabel>
-          <NumberField
-            id="quality-resolution-target"
-            min={1}
-            max={240}
-            value={effective.resolution.targetFps}
-            disabled={!effective.resolution.dynamic}
-            onChange={(targetFps) => edit("resolution", { targetFps })}
-          />
         </Field>
         <h4 className="settings-group-heading">Textures</h4>
         <Field className="settings-field">

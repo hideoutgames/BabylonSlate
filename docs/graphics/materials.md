@@ -22,14 +22,15 @@ With no node selected, the **Inspector** shows the Material's settings.
 | **Post Process** | Full-screen scene passes | [Post Process Output](../scripting/material/post-process-output.md) |
 | **Particle** | The look of particle emitters | [Particle Output](../scripting/material/particle-output.md) |
 | **Text** | 2D text in Scene Layers | [Text Output](../scripting/material/text-output.md) |
+| **Decal** | [Decals](../components/decal.md) projected onto surfaces | [Decal Output](../scripting/material/decal-output.md) |
 | **User Interface** | 2D Materials, 2D Panels, 2D Joysticks and 2D controls in Scene Layers | [User Interface Output](../scripting/material/user-interface-output.md) |
 
 Changing the domain removes nodes the new domain does not support.
 
 | Setting | Description |
 | --- | --- |
-| **Shading Model** | **PBR** (lit) or **Unlit**. Surface and Landscape only. |
-| **Blend Mode** | **Opaque**, **Masked**, **Translucent** or **Additive**. User Interface Materials offer only **Translucent** and **Additive**. Particle emitters set their own blending. |
+| **Shading Model** | **PBR** (lit) or **Unlit**. Surface, Landscape and Decal only. |
+| **Blend Mode** | **Opaque**, **Masked**, **Translucent**, **Additive** or **Multiply** (darkens what is behind by the colour; Surface, Landscape and Decal). User Interface Materials offer only **Translucent** and **Additive**. Particle emitters set their own blending. |
 | **Alpha Cutoff** | Masked only. Pixels with lower opacity are cut out. |
 | **Two Sided** | Draws back faces too. Surface and Landscape only. |
 | **Default Normals** | **Model Normals** or **Flat Normals** when the Normal input is unconnected. Flat Normals shade each triangle as a flat face. Surface and Landscape only. |

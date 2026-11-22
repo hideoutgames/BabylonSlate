@@ -11,6 +11,8 @@ import { applyAssignMaterial, createSnapshotSceneBinding } from "./snapshot-appl
 import { RuntimeMaterialEditOwner, type RuntimeMaterialPreparationRequest } from "./runtime-material-edit";
 import { drainFinalAuthoringResources, waitForFinalAuthoringPreparation } from "./final-authoring-drain";
 import { applyUserInterfaceFallback } from "./overlay-texture-quad";
+import { MATERIAL_BLOCK_PREFIX } from "./material-compiler";
+import type { HapticLightingBlock } from "./haptic-lighting-block";
 
 const disposers: (() => void)[] = [];
 afterEach(() => { while (disposers.length) disposers.pop()?.(); });
@@ -64,7 +66,9 @@ async function fixture(textureOptions?: ConstructorParameters<typeof MaterialLib
     parameterName: "Roughness", parameter: { kind: "float", value: 0.9 }, preparedEditToken: request.editToken });
   return { scene, mesh, sibling, library, binding, owner, request, commit };
 }
-const roughness = (material: NodeMaterial) => (material.getBlockByName("roughness") as InputBlock).value;
+/** The Roughness parameter's value: the uniform the light block's roughness reads. */
+const roughness = (material: NodeMaterial) =>
+  ((material.getBlockByName(`${MATERIAL_BLOCK_PREFIX}_lighting`) as HapticLightingBlock).roughness.connectedPoint!.ownerBlock as InputBlock).value;
 
 it("prepares a private candidate without changing the visual, then adopts its exact native owner", async () => {
   const f = await fixture();

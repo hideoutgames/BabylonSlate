@@ -3,6 +3,7 @@ import {
   createDefaultMaterialDocument,
   createDefaultMaterialFunctionDocument,
   createImportedMaterialDocument,
+  materialBlendModesFor,
   materialDependencies,
   missingPackedMaterialTextureGuids,
   normalizeMaterialDocument,
@@ -217,6 +218,51 @@ describe("switching material domain", () => {
     const surface = setMaterialDomain(landscape, "surface");
     expect(surface.nodes).toEqual(doc.nodes);
     expect(surface.edges).toEqual(doc.edges);
+  });
+
+  it("creates a Decal Material, Translucent and lit, with its Base Color seed wired into a Decal Output", () => {
+    const doc = createDefaultMaterialDocument("Scorch", "decal");
+    expect(doc).toMatchObject({ domain: "decal", shadingModel: "pbr", blendMode: "translucent" });
+    expect(doc.nodes.map((node) => node.type).sort()).toEqual(["const.color", "output.decal"]);
+    expect(doc.edges).toEqual([expect.objectContaining({ sourceNodeId: "baseColor", targetNodeId: "output", targetPinId: "baseColor" })]);
+    expect(normalizeMaterialDocument(JSON.parse(JSON.stringify(doc)))).toEqual(doc);
+  });
+
+  it("retypes the output between Surface and Decal, keeping the wires and defaults of the pins both have", () => {
+    const doc = createDefaultMaterialDocument("Rock");
+    doc.nodes = doc.nodes.map((node) =>
+      node.id === "output" ? { ...node, position: { x: 640, y: 120 }, properties: { "default:metallic": [1], "default:specular": [0.2] } } : node);
+    doc.nodes.push({ id: "offset", type: "const.vec3", position: { x: 0, y: 200 }, properties: { value: [0, 1, 0] } });
+    doc.nodes.push({ id: "vertex", type: "input.vertexColor", position: { x: 0, y: 400 }, properties: {} });
+    doc.edges.push({ id: "offset-edge", sourceNodeId: "offset", sourcePinId: "out", targetNodeId: "output", targetPinId: "worldPositionOffset" });
+
+    const decal = setMaterialDomain(doc, "decal");
+    const output = decal.nodes.find((node) => node.id === "output")!;
+    expect(output).toEqual({ id: "output", type: "output.decal", position: { x: 640, y: 120 }, properties: { "default:metallic": [1] } });
+    // World Position Offset has no Decal pin, and Vertex Color no meaning on a projected surface.
+    expect(decal.edges.map((edge) => edge.id)).toEqual(["e-color-output"]);
+    expect(decal.nodes.some((node) => node.type === "input.vertexColor")).toBe(false);
+
+    const back = setMaterialDomain(decal, "surface");
+    expect(back.nodes.find((node) => node.id === "output")).toMatchObject({ type: "output.surface", properties: { "default:metallic": [1] } });
+    expect(back.edges.map((edge) => edge.id)).toEqual(["e-color-output"]);
+  });
+
+  it("keeps Multiply in every domain with blend modes but Text, which offers none of its own", () => {
+    for (const domain of ["surface", "landscape", "decal"] as const) {
+      expect(normalizeMaterialDocument({ ...createDefaultMaterialDocument("M", domain), blendMode: "multiply" }).blendMode, domain).toBe("multiply");
+      expect(materialBlendModesFor(domain), domain).toEqual(["opaque", "masked", "translucent", "additive", "multiply"]);
+    }
+    expect(normalizeMaterialDocument({ ...createDefaultMaterialDocument("T", "text"), blendMode: "multiply" }).blendMode).toBe("translucent");
+    expect(materialBlendModesFor("text")).toEqual(["translucent", "additive"]);
+    expect(materialBlendModesFor("particle")).toEqual([]);
+    expect(materialBlendModesFor("postProcess")).toEqual([]);
+  });
+
+  it("stores no Blend Mode of its own for a Post Process Material, loaded or switched to", () => {
+    expect(normalizeMaterialDocument({ ...createDefaultMaterialDocument("P", "postProcess"), blendMode: "masked" }).blendMode).toBe("opaque");
+    const translucent = { ...createDefaultMaterialDocument("S"), blendMode: "translucent" as const };
+    expect(setMaterialDomain(translucent, "postProcess").blendMode).toBe("opaque");
   });
 
   it("replaces the surface terminal with the post-process terminal", () => {

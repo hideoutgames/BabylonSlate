@@ -2,7 +2,7 @@ import {
   documentId, documentKindForAssetType, documentKindLabel, humanizePropertyLabel, renderEffectsAssetGuids,
   type ProjectDocument,
 } from "@haptic/core";
-import { AssetLoadError, type AssetRegistry } from "@haptic/assets";
+import { AssetLoadError, sceneLayerPostProcessAssetGuids, type AssetRegistry } from "@haptic/assets";
 import { diagnostic, type Diagnostic } from "@haptic/scripting";
 import { componentTypeLabel } from "../panels/add-component-catalog";
 
@@ -168,6 +168,8 @@ export function projectSettingNaming(project: ProjectDocument, guid: string): { 
   if (settings.audio.audioMixerGuid === guid) return { label: "Audio Mixer", what: "an asset" };
   if (settings.fonts.defaultFontGuid === guid) return { label: "Default Font", what: "an asset" };
   if (renderEffectsAssetGuids(settings.render.effects).includes(guid)) return { label: "LUT Texture", what: "an asset" };
+  if (sceneLayerPostProcessAssetGuids(settings.sceneLayerPostProcessStack).includes(guid))
+    return { label: "Scene Layer Post-Processing", what: "an asset" };
   return null;
 }
 

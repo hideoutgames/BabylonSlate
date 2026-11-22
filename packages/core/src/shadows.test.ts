@@ -101,6 +101,18 @@ describe("shadow settings", () => {
     // Neither the device nor CEL changes it.
     expect(effectiveShadowSettings(normalizeShadowSettings({ profile: "ultra" }), false, "cel").settings.reflections).toBe(true);
   });
+  it("gives First Cascade Detail the map size at every level, keeps an authored 2 as Custom and drops other values", () => {
+    expect((["low", "medium", "high", "ultra"] as const).map((profile) => normalizeShadowSettings({ profile, preset: profile })))
+      .toMatchObject([1, 1, 1, 1].map((firstCascadeScale) => ({ firstCascadeScale, preset: expect.not.stringMatching("custom") })));
+    for (const value of [2, 1])
+      expect(normalizeShadowOverrides({ firstCascadeScale: value })).toEqual({ firstCascadeScale: value });
+    for (const value of [0, 1.5, 3, 4, "2", NaN, null])
+      expect(normalizeShadowOverrides({ firstCascadeScale: value })).toEqual({});
+    expect(normalizeShadowSettings({ profile: "high", preset: "high", firstCascadeScale: 2 })).toMatchObject({ profile: "high", preset: "custom", firstCascadeScale: 2 });
+    // A scene can override the project's either way.
+    expect(resolveShadowSettings(normalizeShadowSettings({ profile: "high", firstCascadeScale: 2 }), { firstCascadeScale: 1 }).firstCascadeScale).toBe(1);
+    expect(resolveShadowSettings(normalizeShadowSettings({ profile: "high" }), { firstCascadeScale: 2 }).firstCascadeScale).toBe(2);
+  });
 
   it("selects Auto capacity by quality without overwriting a saved Manual limit", () => {
     for (const [profile, expected] of [

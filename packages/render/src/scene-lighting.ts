@@ -6,7 +6,7 @@ import type { Light } from "@babylonjs/core/Lights/light";
 import type { Observer } from "@babylonjs/core/Misc/observable";
 import type { Scene } from "@babylonjs/core/scene";
 import { HAPTIC_LIGHT_MAXIMUM, hapticLightLimits, selectHapticLights, writeHapticLights } from "./haptic-lights";
-import { installLightFreeMeshes } from "./light-free-meshes";
+import { installLightFreeMeshes, isLightFreeMesh } from "./light-free-meshes";
 
 type SceneLighting = { sync: () => void; invalidate: () => void; limits: () => string[]; settledLightless: () => boolean };
 
@@ -101,9 +101,10 @@ function installSceneLighting(scene: Scene): SceneLighting {
     // objects constructed immediately before prewarm or the first render.
     if (!dirty && lightCount === scene.lights.length && materialCount === scene.materials.length && !changed) return;
     dirty = false;
-    // Light membership changed; the cached strict readiness
-    // result no longer describes the effects these materials will build.
-    markSceneReadinessDirty(scene, "sceneLighting");
+    // Light membership changed; the cached strict readiness result no longer describes the effects the meshes whose
+    // Materials read Babylon's lights will build. A light-free mesh's variants hold no light define (lit graph Materials
+    // read the block as data), so its readiness stands.
+    markSceneReadinessDirty(scene, "sceneLighting", scene.meshes.filter((mesh) => !isLightFreeMesh(mesh)));
     lightCount = scene.lights.length;
     materialCount = scene.materials.length;
     sceneLightsEnabled = scene.lightsEnabled;

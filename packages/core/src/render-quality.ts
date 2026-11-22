@@ -37,9 +37,6 @@ export interface QualitySelection {
 }
 export interface ResolutionQuality extends QualitySelection {
   scale: number;
-  dynamic: boolean;
-  minScale: number;
-  targetFps: number;
 }
 export interface TextureQuality extends QualitySelection {
   lodBias: number;
@@ -217,7 +214,7 @@ export const QUALITY_TARGET_LABELS: Record<QualityLevel, string> = {
 export const RENDER_QUALITY_PROFILES: Record<QualityLevel, RenderingQuality> = {
   low: {
     lighting: { localLightMode: "auto", maxLocalLights: 6 },
-    resolution: { scale: 0.85, dynamic: true, minScale: 0.5, targetFps: 60 },
+    resolution: { scale: 0.75 },
     textures: { lodBias: 0, anisotropy: 4, byteBudget: 384 * MIB },
     geometry: { autoLod: true, lodDistanceScale: 0.75, occlusionCulling: true, mirrorReflections: "everything" },
     // A budget phone draws water as a blended surface reflecting the sky: no scene copy, no mirror pass, the cheapest
@@ -231,7 +228,7 @@ export const RENDER_QUALITY_PROFILES: Record<QualityLevel, RenderingQuality> = {
   },
   medium: {
     lighting: { localLightMode: "auto", maxLocalLights: 32 },
-    resolution: { scale: 1, dynamic: true, minScale: 0.75, targetFps: 60 },
+    resolution: { scale: 0.85 },
     textures: { lodBias: 0, anisotropy: 8, byteBudget: 768 * MIB },
     geometry: { autoLod: true, lodDistanceScale: 1.25, occlusionCulling: true, mirrorReflections: "everything" },
     // The A16 keeps refraction and screen-space object reflections, with no planar re-render of the scene for flat
@@ -247,7 +244,7 @@ export const RENDER_QUALITY_PROFILES: Record<QualityLevel, RenderingQuality> = {
   },
   high: {
     lighting: { localLightMode: "auto", maxLocalLights: 64 },
-    resolution: { scale: 1, dynamic: true, minScale: 0.75, targetFps: 60 },
+    resolution: { scale: 1 },
     textures: { lodBias: 0, anisotropy: 8, byteBudget: 1024 * MIB },
     geometry: { autoLod: true, lodDistanceScale: 1.5, occlusionCulling: true, mirrorReflections: "everything" },
     water: {
@@ -259,7 +256,7 @@ export const RENDER_QUALITY_PROFILES: Record<QualityLevel, RenderingQuality> = {
   },
   ultra: {
     lighting: { localLightMode: "auto", maxLocalLights: 256 },
-    resolution: { scale: 1, dynamic: false, minScale: 1, targetFps: 60 },
+    resolution: { scale: 1 },
     textures: { lodBias: 0, anisotropy: 16, byteBudget: 2048 * MIB },
     geometry: { autoLod: true, lodDistanceScale: 2, occlusionCulling: true, mirrorReflections: "everything" },
     water: {
@@ -300,30 +297,10 @@ export function normalizeRenderingQuality(value: unknown): RenderingQuality {
     typeof n === "number" && Number.isFinite(n)
       ? Math.min(max, Math.max(min, n))
       : fallback;
-  const scale = finite(
-    source.resolution?.scale,
-    defaults.resolution.scale,
-    0.25,
-    1,
-  );
   const normalized: RenderingQuality = {
     resolution: {
       ...selection(source.resolution),
-      scale,
-      dynamic:
-        typeof source.resolution?.dynamic === "boolean"
-          ? source.resolution.dynamic
-          : defaults.resolution.dynamic,
-      minScale: Math.min(
-        scale,
-        finite(
-          source.resolution?.minScale,
-          defaults.resolution.minScale,
-          0.25,
-          1,
-        ),
-      ),
-      targetFps: finite(source.resolution?.targetFps, 60, 1, 240),
+      scale: finite(source.resolution?.scale, defaults.resolution.scale, 0.25, 1),
     },
     textures: {
       ...selection(source.textures),
@@ -782,8 +759,6 @@ export class RenderingQualitySession {
           resolution: {
             ...this.overrides.resolution,
             scale: numeric,
-            minScale: numeric,
-            dynamic: false,
           },
         };
       else
@@ -840,8 +815,6 @@ export function qualitySettingsFingerprint(quality: EffectiveRenderingQuality): 
     "post.volumetricLighting": String(post.volumetricLighting),
     "post.antiAliasing": post.antiAliasing,
     "resolution.scale": String(quality.resolution.scale),
-    // Whether the view's resolution may drop below the scale, to its `minScale`, while frames miss the target.
-    "resolution.dynamic": quality.resolution.dynamic ? `on ${quality.resolution.minScale}` : "off",
     "geometry.occlusion": String(quality.geometry.occlusionCulling),
     "geometry.mirrors": quality.geometry.mirrorReflections,
   };

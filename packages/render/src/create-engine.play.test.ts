@@ -1,4 +1,6 @@
 import { mockCubeTextureIO } from "./texture-test-fixtures";
+import { isBatchedSpriteRoot } from "./sprite-batch-handle";
+import { isSpriteQuad } from "./sprite-quad";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -103,6 +105,7 @@ import { sceneDrawBatcher } from "./draw-batching";
 import { SceneLayerCompositor } from "./scene-layer-compositor";
 import { emptyDrawPasses, withDrawPass } from "./draw-passes";
 import { layerCanvas } from "./scene-layer-canvas-fixtures";
+import { nodeBlockName } from "./test-support/material-node-blocks";
 
 
 const createEffectForPostProcess = NodeMaterial.prototype.createEffectForPostProcess;
@@ -186,7 +189,6 @@ function spawnOverlayButton(
     assetGuid: "hud-asset",
     zOrder: 0,
     ownerSceneGuid: null,
-    postProcessStack: [],
     canvas,
   });
   handle.applyCommand({
@@ -655,6 +657,13 @@ describe("Play createEngine view", () => {
     });
   });
 
+  /** The Scene the Scene Layer post-processing passes run in: the one drawing the layers' shared target full screen. */
+  function sceneLayerPassScene(engine: NullEngine): Scene {
+    const scene = engine.scenes.find((candidate) => !candidate.isDisposed && candidate.getMeshByName("sceneLayerPostProcessInput"));
+    if (!scene) throw new Error("No Scene Layer post-processing Scene.");
+    return scene;
+  }
+
   function sharedEngine(): NullEngine {
     // Production FrameGraph ownership; only absent NullEngine driver calls are adapted.
     const engine = adaptNullEngineFrameGraph(new NullEngine());
@@ -685,7 +694,7 @@ describe("Play createEngine view", () => {
     Object.assign(engine.getCaps(), { maxAnisotropy: 16 });
     const { handle } = playHandle(engine);
     handle.setLocalQualityOverrides({ textures: { anisotropy: 2 } });
-    handle.applyCommand({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud-asset", zOrder: 0, ownerSceneGuid: null, postProcessStack: [], canvas: layerCanvas(32, 18) });
+    handle.applyCommand({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud-asset", zOrder: 0, ownerSceneGuid: null, canvas: layerCanvas(32, 18) });
     const layerScene = handle.sceneLayerScenes().find(layer => layer.layerId === "hud")!.scene;
     const world = RawTexture.CreateRGBATexture(new Uint8Array(4), 1, 1, handle.scene);
     const overlay = RawTexture.CreateRGBATexture(new Uint8Array(4), 1, 1, layerScene);
@@ -863,7 +872,7 @@ describe("Play createEngine view", () => {
     expect(holds).toEqual([true]);
     expect(isSceneGameTimePaused(handle.scene)).toBe(true);
     // A SceneLayer created mid-hold joins the pause instead of running its clock.
-    handle.applyCommand({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud-asset", zOrder: 0, ownerSceneGuid: null, postProcessStack: [], canvas: layerCanvas(32, 18) });
+    handle.applyCommand({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud-asset", zOrder: 0, ownerSceneGuid: null, canvas: layerCanvas(32, 18) });
     const layerScene = handle.sceneLayerScenes().find(layer => layer.layerId === "hud")!.scene;
     expect(isSceneGameTimePaused(layerScene)).toBe(true);
     // The frame that finds the effects ready must still draw.
@@ -1335,7 +1344,7 @@ describe("Play createEngine view", () => {
     const engine = sharedEngine();
     const { handle } = playHandle(engine);
     handle.applyCommand({ type: "sceneLayerLoading", layerId: "global", layerLoadId: 1, assetGuid: "overlay" });
-    handle.applyCommand({ type: "sceneLayerCreate", layerId: "global", assetGuid: "overlay", zOrder: 1, ownerSceneGuid: null, postProcessStack: [], canvas: layerCanvas(32, 18) });
+    handle.applyCommand({ type: "sceneLayerCreate", layerId: "global", assetGuid: "overlay", zOrder: 1, ownerSceneGuid: null, canvas: layerCanvas(32, 18) });
     const layer = engine.scenes.at(-1)!;
     await handle.prewarmSceneMaterials({ layerId: "global", layerLoadId: 1 });
     const layerFrames = vi.fn();
@@ -1387,7 +1396,7 @@ describe("Play createEngine view", () => {
       handle.applyCommand({ type: "spawn", slotId, actorGuid: `particle-${slotId}`, classId: "Actor", sceneLayerId: layer });
       handle.applyCommand({ type: "assignParticle", slotId, actorGuid: `particle-${slotId}`, componentId: "particle", particleSystemGuid: "system" });
     };
-    const createLayer = () => handle.applyCommand({ type: "sceneLayerCreate", layerId: "particles", assetGuid: "layer", zOrder: 0, ownerSceneGuid: null, postProcessStack: [], canvas: layerCanvas(32, 18) });
+    const createLayer = () => handle.applyCommand({ type: "sceneLayerCreate", layerId: "particles", assetGuid: "layer", zOrder: 0, ownerSceneGuid: null, canvas: layerCanvas(32, 18) });
     assign(1);
     assign(2, "particles");
     expect(handle.scene.particleSystems).toHaveLength(1);
@@ -1624,7 +1633,7 @@ describe("Play createEngine view", () => {
     });
     handle.setSize(480, 270);
     handle.setRenderSettings(normalizeRenderProjectSettings({
-      quality: { resolution: { scale: 0.8, minScale: 0.8, dynamic: false } },
+      quality: { resolution: { scale: 0.8 } },
     }));
     await handle.prewarmSceneMaterials();
     expect(resize).toHaveBeenCalledWith(384, 216);
@@ -1713,7 +1722,7 @@ describe("Play createEngine view", () => {
     });
     const { handle: editor } = editorHandle(engine);
     editor.setRenderSettings(normalizeRenderProjectSettings({
-      quality: { resolution: { scale: 0.8, minScale: 0.8, dynamic: false } },
+      quality: { resolution: { scale: 0.8 } },
     }));
     await editor.prewarmSceneMaterials();
     expect(hardwareScaling).toBe(1.25);
@@ -1721,7 +1730,7 @@ describe("Play createEngine view", () => {
     for (let cycle = 0; cycle < 2; cycle += 1) {
       const { handle: play } = playHandle(engine);
       play.setRenderSettings(normalizeRenderProjectSettings({
-        quality: { resolution: { scale: 0.5, minScale: 0.5, dynamic: false } },
+        quality: { resolution: { scale: 0.5 } },
       }));
       await play.prewarmSceneMaterials();
       expect(hardwareScaling).toBe(2);
@@ -2098,7 +2107,7 @@ describe("Play createEngine view", () => {
     const render = () => renderViews(engine);
     const addLayer = (layerId: string, layerLoadId: number) => {
       handle.applyCommand({ type: "sceneLayerLoading", layerId, layerLoadId, assetGuid: "overlay" });
-      handle.applyCommand({ type: "sceneLayerCreate", layerId, assetGuid: "overlay", zOrder: 1, ownerSceneGuid: null, postProcessStack: [], canvas: layerCanvas(32, 18) });
+      handle.applyCommand({ type: "sceneLayerCreate", layerId, assetGuid: "overlay", zOrder: 1, ownerSceneGuid: null, canvas: layerCanvas(32, 18) });
       return engine.scenes.at(-1)!;
     };
     const global = addLayer("global", 1);
@@ -2487,7 +2496,7 @@ describe("Play createEngine view", () => {
     const callback = runRenderLoop.mock.calls[0]![0]!;
     const none = { single: 0, material: 0, transform: 0, vertexColor: 0, other: 0, unmatched: 0 };
     expect(handle.renderDiagnostics().layerBatches).toEqual({ visuals: 0, draws: 0, batches: 0, batched: 0, alone: none });
-    handle.applyCommand({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud-asset", zOrder: 0, ownerSceneGuid: null, postProcessStack: [], canvas: layerCanvas(32, 18) });
+    handle.applyCommand({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud-asset", zOrder: 0, ownerSceneGuid: null, canvas: layerCanvas(32, 18) });
     const layer = handle.sceneLayerScenes().find((entry) => entry.layerId === "hud")!.scene;
     const visual = MeshBuilder.CreatePlane("visual", { size: 1 }, layer).subMeshes[0]!;
     // The layer's passes, as its batcher draws them: `passes` of one visual each.
@@ -2511,6 +2520,42 @@ describe("Play createEngine view", () => {
       callback();
       expect(handle.renderDiagnostics().layerBatches).toEqual({ visuals: 0, draws: 0, batches: 0, batched: 0, alone: none });
     } finally {
+      layers.mockRestore();
+    }
+  });
+
+  it("does its Scene Layers' uploads before the world draws, and reports its last drawn frame's layer work", async () => {
+    const engine = sharedEngine();
+    const runRenderLoop = vi.spyOn(engine, "runRenderLoop");
+    const { handle } = playHandle(engine);
+    await handle.prewarmSceneMaterials();
+    const callback = runRenderLoop.mock.calls[0]![0]!;
+    handle.applyCommand({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud-asset", zOrder: 0, ownerSceneGuid: null, canvas: layerCanvas(32, 18) });
+    const order: string[] = [];
+    const before = vi.spyOn(SceneLayerCompositor.prototype, "beforeWorld").mockImplementation(function (this: SceneLayerCompositor) {
+      order.push("layers before the world");
+      this.frameStats.beforeWorld.uploads = 2;
+    });
+    const layers = vi.spyOn(SceneLayerCompositor.prototype, "render").mockImplementation(function (this: SceneLayerCompositor) {
+      order.push("layers");
+      Object.assign(this.frameStats, { scenes: 1, clears: 1, depthClears: 1, targetSwitches: 0, uploads: 0 });
+    });
+    try {
+      vi.spyOn(handle.scene, "render").mockImplementation(() => { order.push("world"); });
+      callback();
+      expect(order).toEqual(["layers before the world", "world", "layers"]);
+      const first = handle.renderDiagnostics().layerFrame!;
+      expect(first).toMatchObject({ scenes: 1, clears: 1, depthClears: 1, targetSwitches: 0, uploads: 0, beforeWorld: { uploads: 2 } });
+      // Hidden layers do no work, before the world or after it, and report none.
+      handle.applyCommand({ type: "setSceneLayersDebug", enabled: false });
+      order.length = 0;
+      callback();
+      expect(order).toEqual(["world"]);
+      expect(handle.renderDiagnostics().layerFrame).toMatchObject({ scenes: 0, beforeWorld: { uploads: 0 } });
+      // What a reader holds stays as read.
+      expect(first.beforeWorld.uploads).toBe(2);
+    } finally {
+      before.mockRestore();
       layers.mockRestore();
     }
   });
@@ -2751,7 +2796,7 @@ describe("Play createEngine view", () => {
     await handle.prewarmSceneMaterials();
     frame();
     handle.applyCommand({ type: "sceneLayerLoading", layerId: "overlay", layerLoadId: 1, assetGuid: "overlay" });
-    handle.applyCommand({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay", zOrder: 1, ownerSceneGuid: null, postProcessStack: [], canvas: layerCanvas(32, 18) });
+    handle.applyCommand({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay", zOrder: 1, ownerSceneGuid: null, canvas: layerCanvas(32, 18) });
     const owner = { layerId: "overlay", layerLoadId: 1 };
     await handle.prewarmSceneMaterials(owner);
     let worldReady = false;
@@ -2980,7 +3025,7 @@ describe("Play createEngine view", () => {
 
     it("keeps a Scene Layer actor's visual when frames draw before the snapshots of the ticks that freed and reused its slot", () => {
       const { handle, frame } = play();
-      handle.applyCommand({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud-asset", zOrder: 0, ownerSceneGuid: null, postProcessStack: [], canvas: layerCanvas(32, 18) });
+      handle.applyCommand({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud-asset", zOrder: 0, ownerSceneGuid: null, canvas: layerCanvas(32, 18) });
       const layer = handle.sceneLayerScenes()[0]!.scene;
       const inLayer = SNAPSHOT_FLAG_VISIBLE | SNAPSHOT_FLAG_OVERLAY;
       const spawnCard = (actorGuid: string) => {
@@ -3242,56 +3287,9 @@ describe("Play createEngine view", () => {
     const pressure = handle.renderDiagnostics().pressure;
     expect(pressure?.cpuMs).toBeGreaterThanOrEqual(0);
     // Editor viewports are free-running: presented-frame intervals measure
-    // host event-loop contention, not frame cost, and must not feed the valve.
+    // host event-loop contention, not frame cost, and are not reported.
     expect(pressure?.presentationMs).toBeNull();
     expect(pressure?.gpuMs).toBeNull();
-  });
-
-  it("lets only the sole rendering view drive the Engine-wide scaling valve", async () => {
-    const engine = sharedEngine();
-    const { handle: scene } = editorHandle(engine);
-    const { handle: prefab } = editorHandle(engine);
-    await scene.prewarmSceneMaterials();
-    await prefab.prewarmSceneMaterials();
-    const sceneValve = vi.spyOn(scene.scaling, "noteFramePressure");
-    const prefabValve = vi.spyOn(prefab.scaling, "noteFramePressure");
-    const frame = () => {
-      engine.onBeginFrameObservable.notifyObservers(engine);
-      renderViews(engine);
-      engine.onEndFrameObservable.notifyObservers(engine);
-    };
-    frame();
-    frame();
-    // Both views presented, but neither owns the shared scale alone.
-    expect(scene.renderDiagnostics().pressure?.cpuMs).toBeGreaterThanOrEqual(0);
-    expect(sceneValve).not.toHaveBeenCalled();
-    expect(prefabValve).not.toHaveBeenCalled();
-    prefab.setRegisterViewEnabled(false);
-    scene.scheduler.invalidate("asset");
-    frame();
-    expect(sceneValve).toHaveBeenCalled();
-    expect(prefabValve).not.toHaveBeenCalled();
-    // RTT previews register no view, yet draw into the same Engine frame.
-    scene.setRegisterViewEnabled(false);
-    const previews = [0, 1].map(() => createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, editor: true, present: "rtt" }));
-    handles.push(...previews);
-    for (const preview of previews) await preview.prewarmSceneMaterials();
-    const previewValves = previews.map((preview) => vi.spyOn(preview.scaling, "noteFramePressure"));
-    const frames = async (until: () => boolean) => {
-      for (let attempt = 0; attempt < 20 && !until(); attempt += 1) {
-        engine.onBeginFrameObservable.notifyObservers(engine);
-        if (!renderViews(engine)) engine._renderFrame();
-        engine.onEndFrameObservable.notifyObservers(engine);
-        await new Promise<void>((resolve) => setTimeout(resolve, 20));
-      }
-    };
-    await frames(() => previews.every((preview) => preview.renderDiagnostics().pressure !== null));
-    expect(previews.map((preview) => preview.renderDiagnostics().pressure?.cpuMs)).toEqual([expect.any(Number), expect.any(Number)]);
-    expect(previewValves.map((valve) => valve.mock.calls.length)).toEqual([0, 0]);
-    // Hiding one preview leaves the other as the Engine's only rendering view.
-    previews[1]!.scheduler.setVisible(false);
-    await frames(() => previewValves[0]!.mock.calls.length > 0);
-    expect(previewValves[0]).toHaveBeenCalled();
   });
 
   it("rebinds editor MeshComponent materials after setMaterialDocuments", () => {
@@ -3395,7 +3393,7 @@ describe("Play createEngine view", () => {
     expect(handle.scene.clearColor.a).toBe(1);
   });
 
-  it("does not drop a hardware scaling tier on WebGL context restore", () => {
+  it("keeps the scaling level across a WebGL context restore", () => {
     const engine = sharedEngine();
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
     const handle = createEngine(canvas, {
@@ -3408,11 +3406,11 @@ describe("Play createEngine view", () => {
     const unsubscribe = engineCommandBus.subscribe((command) => {
       if (command.type === "log") logs.push(command.message);
     });
-    handle.scaling.setLevel(1.25);
+    handle.scaling.setSettingsLevel(1.25);
     expect(handle.scaling.getLevel()).toBe(1.25);
     engine.onContextLostObservable.notifyObservers(engine);
     engine.onContextRestoredObservable.notifyObservers(engine);
-    expect(handle.scaling.getLevel()).toBe(1);
+    expect(handle.scaling.getLevel()).toBe(1.25);
     expect(logs.some((message) => /context lost/i.test(message))).toBe(true);
     expect(logs.some((message) => /context restored/i.test(message))).toBe(
       true,
@@ -3430,23 +3428,6 @@ describe("Play createEngine view", () => {
     });
     handles.push(handle);
     expect(handle.scaling.getLevel()).toBe(1.5);
-  });
-
-  it("uses the view frame cap as the scaling valve target", () => {
-    const engine = sharedEngine();
-    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
-    const handle = createEngine(canvas, {
-      sharedEngine: engine,
-      playMode: true,
-      hardwareScalingLevel: 1,
-      frameCap: 30,
-    });
-    handles.push(handle);
-    // 20ms is slow vs 60fps (16.7ms) but cheap vs a 30fps cap (33ms).
-    for (let i = 0; i < 40; i++) {
-      handle.scaling.noteFramePressure({ presentationMs: null, cpuMs: 20, gpuMs: null });
-    }
-    expect(handle.scaling.getLevel()).toBe(1);
   });
 
   it.each([false, true])("keeps post-process materials and passes after asynchronous readiness (Play: %s)", async (playMode) => {
@@ -3485,7 +3466,7 @@ describe("Play createEngine view", () => {
     }
   });
 
-  it("routes editor, Play and layer post effects through their coordinators", async () => {
+  it("routes editor, Play and Scene Layer post effects through their coordinators", async () => {
     const attach = vi.spyOn(SceneRenderCoordinator.prototype, "attachPostProcess");
     const options = { sharedEngine: sharedEngine(), materialDocuments: new Map([["pp", createDefaultMaterialDocument("Scene Color", "postProcess")]]), postProcessStack: [{ id: "pass", materialGuid: "pp", enabled: true }] };
     const editor = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { ...options, editor: true });
@@ -3497,24 +3478,30 @@ describe("Play createEngine view", () => {
     const play = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { ...options, playMode: true });
     handles.push(play);
     expect(attach.mock.calls.some(([value]) => value.scene === play.scene && value.camera === play.scene.activeCamera)).toBe(true);
-    play.applyCommand({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay", zOrder: 0, ownerSceneGuid: null, canvas: layerCanvas(32, 18), postProcessStack: options.postProcessStack });
+    play.applyCommand({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay", zOrder: 0, ownerSceneGuid: null, canvas: layerCanvas(32, 18) });
+    play.applyCommand({ type: "sceneLayerPostProcess", postProcessStack: options.postProcessStack });
     const layer = play.sceneLayerScenes()[0]!.scene;
-    expect(attach.mock.calls.some(([value]) => value.scene === layer && value.camera === layer.activeCamera)).toBe(true);
+    // The passes run once over every layer, in a Scene of their own; no layer's renderer attaches them.
+    const passes = sceneLayerPassScene(options.sharedEngine);
+    expect(attach.mock.calls.some(([value]) => value.scene === passes && value.camera === passes.activeCamera)).toBe(true);
+    expect(attach.mock.calls.some(([value]) => value.scene === layer)).toBe(false);
   });
 
-  it("runs a SceneLayer's post effects at full resolution whatever the Post Processing tier", () => {
+  it("runs the Scene Layer post effects at full resolution whatever the Post Processing tier", () => {
     const attach = vi.spyOn(SceneRenderCoordinator.prototype, "attachPostProcess");
     const stack = [{ id: "pass", materialGuid: "pp", enabled: true }];
+    const engine = sharedEngine();
     const play = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
-      sharedEngine: sharedEngine(), playMode: true, postProcessStack: stack,
+      sharedEngine: engine, playMode: true, postProcessStack: stack,
       materialDocuments: new Map([["pp", createDefaultMaterialDocument("Scene Color", "postProcess")]]),
     });
     handles.push(play);
     // The first override only establishes the quality baseline.
     play.setLocalQualityOverrides({ postprocessing: { resolutionScale: 0.5 } });
     play.setLocalQualityOverrides({ postprocessing: { resolutionScale: 0.25 } });
-    play.applyCommand({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay", zOrder: 0, ownerSceneGuid: null, canvas: layerCanvas(32, 18), postProcessStack: stack });
-    const layer = play.sceneLayerScenes()[0]!.scene;
+    play.applyCommand({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay", zOrder: 0, ownerSceneGuid: null, canvas: layerCanvas(32, 18) });
+    play.applyCommand({ type: "sceneLayerPostProcess", postProcessStack: stack });
+    const layer = sceneLayerPassScene(engine);
     const scales = (scene: Scene) => attach.mock.calls.filter(([value]) => value.scene === scene).map(([value]) => value.resolutionScale);
     expect(scales(play.scene).at(-1)).toBe(0.25);
     expect(scales(layer)).toEqual([1]);
@@ -3922,7 +3909,7 @@ describe("Play createEngine view", () => {
     handles.push(handle);
     const draw = () => renderViews(engine);
     const values = (scene: Scene) => scene.materials.filter((material): material is NodeMaterial => material instanceof NodeMaterial && material.name === "material:gain")
-      .map((material) => (material.getBlockByName("gain") as InputBlock).value);
+      .map((material) => (material.getBlockByName(nodeBlockName(document, "gain")) as InputBlock).value);
     const worldOwner = { kind: "scene" as const, sceneAssetGuid: "world", sceneLoadId: 1 };
     const write = (owner: Extract<import("@haptic/bridge").CommandMessage, { type: "setPostProcessMaterialParameter" }>["owner"], entryId: string, value: number) =>
       handle.applyCommand({ type: "setPostProcessMaterialParameter", owner, entryId, materialAssetGuid: "gain", parameterName: "Gain", parameter: { kind: "float", value } });
@@ -3949,17 +3936,19 @@ describe("Play createEngine view", () => {
     handle.setPostProcessingEnabled(false); expect(values(handle.scene)).toEqual([]);
     handle.setPostProcessingEnabled(true); await handle.prewarmSceneMaterials(); expect(values(handle.scene)).toEqual([0.7, 0.5, 0.9]);
     handle.applyCommand({ type: "sceneLayerLoading", layerId: "overlay", layerLoadId: 1, assetGuid: "overlay-asset" });
-    handle.applyCommand({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay-asset", zOrder: 0, ownerSceneGuid: null, canvas: layerCanvas(32, 18), postProcessStack: authored });
-    const layer = handle.sceneLayerScenes()[0]!.scene;
-    const layerOwner = { kind: "sceneLayer" as const, layerId: "overlay", layerLoadId: 1 };
-    write(layerOwner, "first", 0.6); await handle.prewarmSceneMaterials({ layerId: "overlay", layerLoadId: 1 }); expect(values(layer)).toEqual([0.25, 0.5]);
+    handle.applyCommand({ type: "sceneLayerCreate", layerId: "overlay", assetGuid: "overlay-asset", zOrder: 0, ownerSceneGuid: null, canvas: layerCanvas(32, 18) });
+    handle.applyCommand({ type: "sceneLayerPostProcess", postProcessStack: authored });
+    const layer = sceneLayerPassScene(engine);
+    // The Scene Layer stack outlives layers and Scenes: a write names only its pass.
+    const layersOwner = { kind: "sceneLayers" as const };
+    write(layersOwner, "first", 0.6); await handle.prewarmSceneMaterials({ layerId: "overlay", layerLoadId: 1 }); expect(values(layer)).toEqual([0.6, 0.5]);
     await present({ layerId: "overlay", layerLoadId: 1 });
-    write(layerOwner, "first", 0.6); write(layerOwner, "disabled", 0.8);
-    handle.applyCommand({ type: "sceneLayerPostProcess", layerId: "overlay", postProcessStack: authored.map((entry) => ({ ...entry, enabled: true })) });
+    write(layersOwner, "disabled", 0.8);
+    handle.applyCommand({ type: "sceneLayerPostProcess", postProcessStack: authored.map((entry) => ({ ...entry, enabled: true })) });
     await handle.prewarmSceneMaterials({ layerId: "overlay", layerLoadId: 1 });
     expect(values(layer)).toEqual([0.6, 0.5, 0.8]); expect(values(handle.scene)).toEqual([0.7, 0.5, 0.9]);
     write({ ...worldOwner, sceneLoadId: 0 }, "first", 0.1);
-    write({ ...layerOwner, layerLoadId: 0 }, "first", 0.1);
+    write(layersOwner, "missing", 0.1);
     expect(values(layer)).toEqual([0.6, 0.5, 0.8]); expect(values(handle.scene)).toEqual([0.7, 0.5, 0.9]);
     handle.applyCommand({ type: "sceneLoading", sceneAssetGuid: "world", sceneLoadId: 2 });
     const reloaded = createDefaultScene(); reloaded.settings.postProcessStack = authored;
@@ -3973,8 +3962,9 @@ describe("Play createEngine view", () => {
     handle.loadScene(reloaded);
     await handle.prewarmSceneMaterials();
     expect(values(handle.scene)).toEqual([0.25, 0.5]);
-    handle.applyCommand({ type: "sceneLayerRemove", layerId: "overlay" }); write(layerOwner, "first", 0.1);
+    handle.applyCommand({ type: "sceneLayerRemove", layerId: "overlay" }); write(layersOwner, "first", 0.1);
     expect(handle.sceneLayerScenes()).toEqual([]);
+    expect(values(layer)).toEqual([0.1, 0.5, 0.8]);
     expect({ document, authored }).toEqual(before);
   });
 
@@ -4015,7 +4005,7 @@ describe("Play createEngine view", () => {
       assetGuid: "hud-asset",
       zOrder: 1,
       ownerSceneGuid: null,
-      postProcessStack: [], canvas: layerCanvas(32, 18),
+      canvas: layerCanvas(32, 18),
     });
     expect(handle.postProcessPassCount()).toBe(worldPasses);
     const overlay = handle.sceneLayerScenes()[0];
@@ -4040,7 +4030,7 @@ describe("Play createEngine view", () => {
       assetGuid: "hud",
       zOrder: 0,
       ownerSceneGuid: null,
-      postProcessStack: [], canvas: layerCanvas(32, 18),
+      canvas: layerCanvas(32, 18),
     });
     handle.applyCommand({
       type: "sceneLayerCreate",
@@ -4048,7 +4038,7 @@ describe("Play createEngine view", () => {
       assetGuid: "hud",
       zOrder: 3,
       ownerSceneGuid: null,
-      postProcessStack: [], canvas: layerCanvas(32, 18),
+      canvas: layerCanvas(32, 18),
     });
     handle.applyCommand({
       type: "spawn",
@@ -4099,7 +4089,7 @@ describe("Play createEngine view", () => {
     handle.applyCommand({ type: "setText2DAppear", slotId: 4, componentId: "wrong", progress: 1 });
     handle.applyCommand({ type: "setOverlayVisualStyle", slotId: 4, componentId: "rich", style: { opacity: 0.4, tint: [0.2, 0.5, 1, 0.5] } });
     handle.applyCommand({ type: "setOverlayVisualStyle", slotId: 4, componentId: "wrong", style: { opacity: 0, tint: [0, 0, 0, 0] } });
-    handle.applyCommand({ type: "sceneLayerCreate", layerId: "late", assetGuid: "hud", zOrder: 0, ownerSceneGuid: null, postProcessStack: [], canvas: layerCanvas(32, 18) });
+    handle.applyCommand({ type: "sceneLayerCreate", layerId: "late", assetGuid: "hud", zOrder: 0, ownerSceneGuid: null, canvas: layerCanvas(32, 18) });
     const layer = handle.sceneLayerScenes()[0]!.scene;
     const root = layer.getMeshByName("actor-4")!;
     expect(root.getChildMeshes().map((glyph) => glyph.visibility)).toEqual([0.5, 0.5]);
@@ -4112,7 +4102,7 @@ describe("Play createEngine view", () => {
 
   const overlaySpawn = { type: "spawn", slotId: 4, actorGuid: "banner", classId: "SceneLayerActor", sceneLayerId: "front" } as const;
   const overlayCreate = (ownerSceneGuid: string | null = null) =>
-    ({ type: "sceneLayerCreate", layerId: "front", assetGuid: "hud", zOrder: 3, ownerSceneGuid, postProcessStack: [], canvas: layerCanvas(32, 18) }) as const;
+    ({ type: "sceneLayerCreate", layerId: "front", assetGuid: "hud", zOrder: 3, ownerSceneGuid, canvas: layerCanvas(32, 18) }) as const;
   const overlayAssign = (meshKind: string) => ({ type: "assignMesh", slotId: 4, meshAssetGuid: null, meshKind }) as const;
 
   it.each([
@@ -4134,7 +4124,7 @@ describe("Play createEngine view", () => {
       expect(handle.scene.getMeshByName("actor-4")).toBeNull();
     }
     expect(handle.sceneLayerScenes()).toHaveLength(0);
-    handle.applyCommand({ ...overlayCreate(), postProcessStack: [] });
+    handle.applyCommand(overlayCreate());
     const front = handle.sceneLayerScenes().find((layer) => layer.layerId === "front");
     expect(front?.scene.getMeshByName("actor-4")).not.toBeNull();
     expect(handle.scene.getMeshByName("actor-4")).toBeNull();
@@ -4151,13 +4141,52 @@ describe("Play createEngine view", () => {
       playMode: true,
     });
     handles.push(handle);
-    handle.applyCommand({ ...overlayCreate(ownerSceneGuid), postProcessStack: [] });
+    handle.applyCommand(overlayCreate(ownerSceneGuid));
     if (spawn) handle.applyCommand(overlaySpawn);
     handle.applyCommand({ ...overlayAssign(meshKind), actorGuid: "banner", sceneLayerId: "front" });
     const overlay = handle.sceneLayerScenes().find((layer) => layer.layerId === "front");
     expect(overlay?.scene.getMeshByName("actor-4")).not.toBeNull();
     expect(handle.scene.getMeshByName("actor-4")).toBeNull();
   });
+  it("draws batched world sprites as quads of their own while Simulation Edit's tools or worlddebug spritebatching off want meshes", () => {
+    const engine = sharedEngine();
+    engine.getCaps().instancedArrays = true;
+    const handle = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, { sharedEngine: engine, playMode: true });
+    handles.push(handle);
+    const sprite = (slotId: number) => {
+      handle.applyCommand({ type: "spawn", slotId, actorGuid: `hero-${slotId}`, classId: "Actor" });
+      handle.applyCommand({ type: "assignMesh", slotId, meshAssetGuid: null, meshKind: "sprite", castShadows: false });
+      return handle.scene.getMeshByName(`actor-${slotId}`)!;
+    };
+    const first = sprite(1);
+    expect(isBatchedSpriteRoot(first)).toBe(true);
+    expect(first.isPickable).toBe(false);
+
+    handle.applyCommand({ type: "setWorldDebug", part: "spritebatching", enabled: false });
+    expect(isBatchedSpriteRoot(first)).toBe(false);
+    expect(isSpriteQuad(first)).toBe(true);
+    expect(first.isPickable).toBe(true);
+    expect(handle.renderDiagnostics().settings?.["world.debug"]).toBe("spritebatching");
+    expect(isBatchedSpriteRoot(sprite(2))).toBe(false);
+
+    handle.applyCommand({ type: "setWorldDebug", part: "spritebatching", enabled: true });
+    const third = sprite(3);
+    expect(isBatchedSpriteRoot(third)).toBe(true);
+    expect(handle.renderDiagnostics().worldSprites).not.toBeNull();
+
+    // The transform tools pick and outline meshes: in Simulation Edit every sprite draws as one.
+    const tools = handle.attachRuntimeTransformTools({ onPick: () => {}, onTransform: async () => {} });
+    tools.setEnabled(true);
+    expect(isBatchedSpriteRoot(third)).toBe(true);
+    handle.setSimulationEditMode(true);
+    expect(isBatchedSpriteRoot(third)).toBe(false);
+    expect(third.isPickable).toBe(true);
+    expect(isBatchedSpriteRoot(sprite(4))).toBe(false);
+    handle.setSimulationEditMode(false);
+    expect(isBatchedSpriteRoot(sprite(5))).toBe(true);
+    tools.dispose();
+  });
+
   it("plants sprite assignMesh on the world after a world spawn", () => {
     const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
     const handle = createEngine(canvas, {
@@ -4197,7 +4226,7 @@ describe("Play createEngine view", () => {
       assetGuid: "hud",
       zOrder: 0,
       ownerSceneGuid: "world-a",
-      postProcessStack: [], canvas: layerCanvas(32, 18),
+      canvas: layerCanvas(32, 18),
     });
     handle.applyCommand({
       type: "spawn",
@@ -4329,7 +4358,7 @@ describe("Play createEngine view", () => {
       assetGuid: "hud",
       zOrder: 0,
       ownerSceneGuid: null,
-      postProcessStack: [], canvas: layerCanvas(32, 18),
+      canvas: layerCanvas(32, 18),
     });
     handle.applyCommand({
       type: "spawn",
@@ -4784,7 +4813,7 @@ describe("Play createEngine view", () => {
     });
     handles.push(handle);
     handle.setSize(640, 360);
-    handle.applyCommand({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud", zOrder: 0, ownerSceneGuid: null, postProcessStack: [],
+    handle.applyCommand({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud", zOrder: 0, ownerSceneGuid: null,
       canvas: {
         design: { sizeMode: "fullscreen", customSizePx: { width: 400, height: 300 }, rootAnchor: "center", scaling: "fitToScreen" },
         rect: { width: 6.4, height: 3.6, center: [0, 0] },
@@ -5041,7 +5070,7 @@ describe("Play createEngine view", () => {
     const editorEngine = sharedEngine();
     const editorLoop = vi.spyOn(editorEngine, "runRenderLoop");
     const editor = editorHandle(editorEngine);
-    const command = scalabilityCommand({ quality: { resolution: { scale: 0.5, minScale: 0.5 } } });
+    const command = scalabilityCommand({ quality: { resolution: { scale: 0.5 } } });
     play.handle.applyCommand(command);
     editor.handle.applyCommand(command);
     // Transactions apply at the next frame boundary of the owning view.
@@ -6036,20 +6065,20 @@ describe("Play createEngine view", () => {
     const handle = createEngine(canvas, { sharedEngine: engine, playMode: true });
     handles.push(handle);
     const world = () => { const { width, height } = handle.renderDiagnostics(); return [width, height]; };
-    handle.setLocalQualityOverrides({ resolution: { scale: 0.5, minScale: 0.25, dynamic: true } });
+    handle.setLocalQualityOverrides({ resolution: { scale: 0.5 } });
     handle.resize();
     // No layer: the backbuffer is the world's size, as in the editor.
     expect(setSize).toHaveBeenLastCalledWith(200, 150);
     expect(hardwareScaling).toBe(2);
     expect(sceneOutputScale(handle.scene)).toBe(1);
     expect(world()).toEqual([200, 150]);
-    handle.applyCommand({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud-asset", zOrder: 0, ownerSceneGuid: null, postProcessStack: [], canvas: layerCanvas(32, 18) });
+    handle.applyCommand({ type: "sceneLayerCreate", layerId: "hud", assetGuid: "hud-asset", zOrder: 0, ownerSceneGuid: null, canvas: layerCanvas(32, 18) });
     handle.resize();
     expect(setSize).toHaveBeenLastCalledWith(800, 600);
     expect(hardwareScaling).toBe(0.5);
     expect(world()).toEqual([200, 150]);
-    // Dynamic resolution steps scale the world alone.
-    handle.scaling.setLevel(2.5);
+    // A level change scales the world alone.
+    handle.scaling.setSettingsLevel(2.5);
     expect(world()).toEqual([160, 120]);
     expect(hardwareScaling).toBe(0.5);
     handle.resize();
@@ -6074,7 +6103,7 @@ describe("Play createEngine view", () => {
     Object.assign(canvas, { clientWidth: 400, clientHeight: 300, ownerDocument: { defaultView: { devicePixelRatio: 2 } } });
     const handle = createEngine(canvas, { sharedEngine: engine, editor: true, fullQuality: true });
     handles.push(handle);
-    handle.setLocalQualityOverrides({ resolution: { scale: 0.5, minScale: 0.5, dynamic: false }, textures: { anisotropy: 2 }, geometry: { autoLod: true } });
+    handle.setLocalQualityOverrides({ resolution: { scale: 0.5 }, textures: { anisotropy: 2 }, geometry: { autoLod: true } });
     handle.resize();
     expect(setSize).toHaveBeenLastCalledWith(800, 600);
     expect(hardwareScaling).toBe(2);
@@ -6435,7 +6464,7 @@ describe("Play createEngine view", () => {
     expect(events).toContain("onPressEnd");
     expect(events).not.toContain("onClick");
     expect(scrolls.at(-1)?.deltaY).toBeCloseTo(0.4921875);
-    handle.applyCommand({ type: "sceneLayerCreate", layerId: "modal", assetGuid: "modal-asset", zOrder: 10, ownerSceneGuid: null, postProcessStack: [], canvas: layerCanvas(9, 9) });
+    handle.applyCommand({ type: "sceneLayerCreate", layerId: "modal", assetGuid: "modal-asset", zOrder: 10, ownerSceneGuid: null, canvas: layerCanvas(9, 9) });
     const modalScene = handle.sceneLayerScenes().find(layer => layer.layerId === "modal")!.scene;
     const blocker = MeshBuilder.CreatePlane("modal-blocker", { size: 4 }, modalScene);
     blocker.metadata = { overlayActorGuid: "modal", overlayHitTest: "block" };

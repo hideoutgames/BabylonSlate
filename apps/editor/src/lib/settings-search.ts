@@ -123,9 +123,6 @@ export const PROJECT_SETTING_FIELDS: SettingSearchField[] = [
       ["Post Processing Quality", "quality-postprocessing"],
       ["Lighting Quality", "quality-lighting"],
       ["Resolution Scale", "quality-resolution-scale"],
-      ["Dynamic Resolution", "quality-resolution-dynamic"],
-      ["Minimum Resolution Scale", "quality-resolution-minimum"],
-      ["Dynamic Resolution Target FPS", "quality-resolution-target"],
       ["Texture LOD Bias", "quality-textures-lod"],
       ["Texture Anisotropy", "quality-textures-anisotropy"],
       ["Texture Budget MiB", "quality-textures-budget"],
@@ -177,6 +174,9 @@ export const PROJECT_SETTING_FIELDS: SettingSearchField[] = [
       ["Vignette Color", "project-effects-vignette-color"],
       ["Color Grading LUT Lookup Table", "project-effects-color-grading"],
       ["FSR Upscaling Render Scale Sharpness Resolution", "project-effects-upscaling"],
+    ]],
+    ["sceneLayerPostProcessing", "Scene Layer Post-Processing", [
+      ["Scene Layer Post-Process Passes HUD Material"],
     ]],
     ["cel", "CEL Shading", [
       ["CEL Outlines", "project-cel-outlinesEnabled"],

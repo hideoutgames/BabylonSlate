@@ -7,6 +7,7 @@ import { AreaRectLightGroup } from "./area-rect-light";
 import { Light2DGroup, Occluder2DGroup } from "./light-2d-group";
 import type { CreateEngineOptions } from "./create-engine-types";
 import { removeFogVolumes, upsertFogVolumes } from "./fog-volumes";
+import { removeDecals, setDecalTimeScale, spawnDynamicDecal, upsertDecals } from "./decal-pass";
 import { markLatticeComponentRoot } from "./lattice-deformer";
 import { findSceneReflectionProbes, sceneReflectionProbes } from "./reflection-probes";
 import { setSceneStaticMeshes } from "./scene-static-meshes";
@@ -18,6 +19,7 @@ import { isSceneStreamSlotPending } from "./scene-stream-admission";
 import { meshForPlayComponent, type SnapshotSceneBinding } from "./snapshot-apply";
 import { ejectPooledLeaf, onPooledLeafEjected } from "./pooled-visuals";
 import { visualMeshes } from "./visual-meshes";
+import { ejectPlaySprite } from "./anim-apply";
 
 /** What Play's per-slot visual bindings read from the Engine handle being built. */
 export interface PlayVisualBindingsContext {
@@ -73,14 +75,18 @@ export function createPlayVisualBindings({
       if (target) markLatticeComponentRoot(target);
     }
     if (!authored) return;
-    // A deformer reads the mesh's own vertices, which a pool group's batch does not have: its targets leave the pool
-    // first (this refresh follows the new meshes, so the eject's own refresh is skipped).
+    // A deformer reads the mesh's own vertices, which a pool group's or sprite batch's mesh does not have:
+    // its targets leave the pool/batch first (this refresh follows the new meshes, so the eject's own refresh is skipped).
     ejectingForDeformers = true;
     try {
       ejectPooledLeaf(root);
+      ejectPlaySprite(binding, slotId, root);
       for (const part of binding.meshParts.get(slotId) ?? []) {
         const target = meshForPlayComponent(binding, slotId, part.componentId);
-        if (target) ejectPooledLeaf(target);
+        if (target) {
+          ejectPooledLeaf(target);
+          ejectPlaySprite(binding, slotId, target);
+        }
       }
     } finally { ejectingForDeformers = false; }
     deformerHost.setActor(authored.actorId, authored.bindings,
@@ -100,6 +106,20 @@ export function createPlayVisualBindings({
     if (!authored || !root) return;
     upsertFogVolumes(scene, authored.actorId, root, authored.bindings, !isSceneStreamSlotPending(scene, slotId));
     runtimeFogActorBySlot.set(slotId, authored.actorId);
+  };
+  const runtimeDecalActorBySlot = new Map<number, string>();
+  const refreshRuntimeDecals = (slotId: number) => {
+    if (options.editor) return;
+    const root = worldSlotRoot(slotId);
+    const authored = binding.decals.get(slotId);
+    const previous = runtimeDecalActorBySlot.get(slotId);
+    if (previous && (!root || !authored || authored.actorId !== previous)) {
+      removeDecals(scene, previous);
+      runtimeDecalActorBySlot.delete(slotId);
+    }
+    if (!authored || !root) return;
+    upsertDecals(scene, authored.actorId, root, authored.bindings, !isSceneStreamSlotPending(scene, slotId));
+    runtimeDecalActorBySlot.set(slotId, authored.actorId);
   };
   // Play reflection probes: authored per slot on the binding, static actors from the authored play scene.
   const runtimeProbeActorBySlot = new Map<number, string>();
@@ -145,6 +165,13 @@ export function createPlayVisualBindings({
       outlineHost.removeActor(previous); outlineActorBySlot.delete(slotId);
     }
     if (!actorId || !root) return;
+    if (authored?.bindings.length) {
+      ejectPlaySprite(binding, slotId, root);
+      for (const part of binding.meshParts.get(slotId) ?? []) {
+        const target = meshForPlayComponent(binding, slotId, part.componentId);
+        if (target) ejectPlaySprite(binding, slotId, target);
+      }
+    }
     // Runtime transforms are normally world-space. If a caller attaches actor
     // roots, descendants still belong to their own actor's outline identity.
     const otherRoots = { has: (mesh: AbstractMesh) => mesh !== root && binding.meshes.hasRoot(mesh) };
@@ -156,6 +183,7 @@ export function createPlayVisualBindings({
     refreshRuntimeDeformers(slotId);
     refreshRuntimeOutline(slotId);
     refreshRuntimeFogVolumes(slotId);
+    refreshRuntimeDecals(slotId);
     refreshRuntimeReflectionProbes(slotId);
   };
   // A visual whose pooled leaf left the pool (a Material no group draws) draws a new mesh: what keyed the leaf follows.
@@ -209,6 +237,20 @@ export function createPlayVisualBindings({
     refreshRuntimeFogVolumes(command.slotId);
     scheduler.invalidate("asset");
   }
+  if (command.type === "setDecals") {
+    markSnapshotStale();
+    binding.decals.set(command.slotId, { actorId: command.actorId, bindings: command.decals });
+    refreshRuntimeDecals(command.slotId);
+    scheduler.invalidate("asset");
+  }
+  if (command.type === "spawnDecal") {
+    if (!options.editor) {
+      spawnDynamicDecal(scene, command.decal);
+      scheduler.invalidate("asset");
+    }
+  }
+  // Dynamic decal lifetimes follow the simulation time scale, as particles do.
+  if (command.type === "setSimulationTimeScale") setDecalTimeScale(scene, command.scale);
   if (command.type === "setLights2D") {
     let group = binding.lights2D.get(command.slotId);
     if (command.lights.length) {

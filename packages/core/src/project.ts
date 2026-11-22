@@ -13,7 +13,7 @@ import { normalizeTagContainer, type TagContainer } from "./tags";
 import { normalizeTagRegistry, type TagRegistry } from "./tags";
 import { normalizeAlwaysPackageFolders } from "./asset-folders";
 import { normalizeFocusNavigationSettings, type FocusNavigationSettings } from "./scene-layer-focus";
-import type { SceneLayerActorDesign } from "./scene-layer";
+import { normalizeSceneLayerPostProcessStack, type SceneLayerActorDesign, type SceneLayerPostProcessEntry } from "./scene-layer";
 import {
   createActor,
   createDefaultSceneSettings,
@@ -230,6 +230,11 @@ export interface ProjectSettings {
   twoD: TwoDProjectSettings;
   physics: PhysicsProjectSettings;
   focusNavigation: FocusNavigationSettings;
+  /**
+   * Scene Layer post-processing: the passes Play starts with on the one stack every Scene Layer shares. All layers
+   * draw into one transparent target, the passes run over it, and the result is blended over the world.
+   */
+  sceneLayerPostProcessStack: SceneLayerPostProcessEntry[];
   fonts: FontProjectSettings;
   audio: AudioProjectSettings;
   render: RenderProjectSettings;
@@ -891,6 +896,7 @@ export function normalizeProjectSettings(
         DEFAULT_TEXTURE_PROJECT_SETTINGS.autoRequeueUncompressed,
     },
     focusNavigation: normalizeFocusNavigationSettings(settings?.focusNavigation),
+    sceneLayerPostProcessStack: normalizeSceneLayerPostProcessStack(settings?.sceneLayerPostProcessStack),
     fonts: {
       defaultFontGuid:
         typeof settings?.fonts?.defaultFontGuid === "string" &&
@@ -973,13 +979,13 @@ export const PIXEL_ART_DESIGN_SIZES = [
 /**
  * Create Project's Pixel Art Optimized: Pixel-Perfect Mode with Nearest Texture Filtering, Custom Resolution with
  * Upscaling Pixelated (Black Bars as chosen: off extends the view to fill the window), the world at full resolution
- * without Dynamic Resolution, and no Anti-Aliasing, so edges stay on the pixel grid. All stay ordinary settings.
+ * and no Anti-Aliasing, so edges stay on the pixel grid. All stay ordinary settings.
  */
 export function pixelArtProjectSettings(settings: ProjectSettings): ProjectSettings {
   const render = applyProjectQualityPatch(
     { ...settings.render, customResolution: true, upscaling: "pixelated" },
     {
-      resolution: { scale: 1, minScale: 1, dynamic: false, preset: "custom" },
+      resolution: { scale: 1, preset: "custom" },
       postprocessing: { antiAliasing: "off", preset: "custom" },
     },
   );

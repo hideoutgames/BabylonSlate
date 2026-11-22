@@ -53,17 +53,36 @@ With no node selected, the **Inspector** shows these settings. Some apply to onl
 
 | Setting | Description |
 | --- | --- |
-| Domain | **Surface** (meshes and models), **Landscape**, **Post Process** (full-screen passes), **Particle**, **Text** (2D text in Scene Layers) or **User Interface** (2D Materials, 2D Panels, 2D Joysticks and 2D controls in Scene Layers). Changing it removes nodes the new domain does not support. |
-| Shading Model | **PBR** (lit) or **Unlit**. Surface and Landscape. |
-| Blend Mode | **Opaque**, **Masked**, **Translucent** or **Additive**. User Interface offers only **Translucent** and **Additive**. Not shown for Particle or Text; particle emitters set their own blending. |
-| Alpha Cutoff | Masked only. Pixels with lower opacity are cut out. Under [MSAA](../graphics/post-processing.md#anti-aliasing) the cut-out edges are smoothed. |
+| Domain | **Surface** (meshes and models), **Landscape**, **Post Process** (full-screen passes), **Particle**, **Text** (2D text in Scene Layers), **Decal** (projected by a [Decal](../components/decal.md) or [Spawn Decal](../scripting/class/spawn-decal.md)) or **User Interface** (2D Materials, 2D Panels, 2D Joysticks and 2D controls in Scene Layers). Changing it removes nodes the new domain does not support; between Surface and Decal the output node keeps the wires both outputs have. |
+| Shading Model | **PBR** (lit) or **Unlit**. Surface, Landscape and Decal. |
+| Blend Mode | **Opaque**, **Masked**, **Translucent**, **Additive** or **Multiply** (Surface, Landscape and Decal): Multiply darkens what is behind by the colour, scaled by Opacity. A Multiply Material on a Scene Layer draws as Translucent. User Interface offers only **Translucent** and **Additive**. Not shown for Particle, Post Process or Text: particle emitters set their own blending, and a post-process pass replaces the picture. |
+| Alpha Cutoff | Masked only. Pixels with lower opacity are cut out. Under [MSAA](../graphics/post-processing.md#anti-aliasing) the cut-out edges are smoothed (not on decals). |
 | Two Sided | Draws back faces too. Surface and Landscape. |
 | Default Normals | **Model Normals** or **Flat Normals**, used when the Normal input is unconnected. Surface and Landscape. |
 | Bounds Padding (Local) | Enlarges culling bounds for Materials that move vertices, so displaced meshes do not vanish at screen edges. Surface and Landscape. |
 
-Each domain has its own output node: [Material Output](../scripting/material/material-output.md) for Surface and Landscape, [Post Process Output](../scripting/material/post-process-output.md), [Particle Output](../scripting/material/particle-output.md), [Text Output](../scripting/material/text-output.md) and [User Interface Output](../scripting/material/user-interface-output.md).
+Each domain has its own output node: [Material Output](../scripting/material/material-output.md) for Surface and Landscape, [Post Process Output](../scripting/material/post-process-output.md), [Particle Output](../scripting/material/particle-output.md), [Text Output](../scripting/material/text-output.md), [Decal Output](../scripting/material/decal-output.md) and [User Interface Output](../scripting/material/user-interface-output.md).
 
 Text and User Interface Materials are always unlit and two-sided, so a User Interface Material shows only **Domain** and **Blend Mode**.
+
+A Decal Material previews projected onto a floor and a ball. In its graph, [UV](../scripting/material/uv.md) gives the decal's projected coordinates and World Position and World Normal the surface under it. A Per Instance parameter is an ordinary parameter in a Decal Material: each decal's own Tint and Opacity are its per-decal values.
+
+## Where each domain goes
+
+Every Material field takes Materials of one domain, and its picker lists only those, with the Material Instances whose root Material has that domain.
+
+| Domain | Fields |
+| --- | --- |
+| Surface | **Material** on a Mesh, Dynamic Runtime Mesh, Cable or Mirror, including a 3D mesh in a Scene Layer; a Model's material slots; a Foliage Model's **Material Override**; a Water's **Custom Material**; the **Set Material Instance** node |
+| Landscape | **Landscape Material** |
+| Decal | **Material** on a Decal; the **Spawn Decal** node |
+| Text | **Text Material** on 2D Text and 2D Rich Text |
+| User Interface | Scene Layer **Material** fields: 2D Material, 2D Panel (Source set to Material), 2D Joystick and the 2D controls' part Materials |
+| Particle | an emitter's **Material** |
+| Post Process | **Post-Process Passes** (Scene and Scene Layers); the **Material** of a Scene Layer post-processing panel; the Register and Unregister Post-Processing nodes |
+
+- Paste refuses a Material of another domain, as the picker does.
+- A field that already holds a Material of another domain, for example after its Material's **Domain** changed, shows an error under it until you pick another. A node pin that does shows an error in **Compiler Results**.
 
 ## Notes
 

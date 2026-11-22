@@ -10,7 +10,7 @@ import { useBlendSpaceEditing } from "../context/blend-space-editing-context";
 import { blendSpaceNodeDataOf, blendSpacePreviewPoint, spriteBlendSpaceNodeDataOf } from "../lib/blend-space-editing";
 import { BlendSpacePreviewSession } from "../lib/blend-space-preview-session";
 import { useAnimPreviewModel } from "../lib/use-anim-preview-model";
-import { useDockPanelShown } from "../lib/use-dock-panel-shown";
+import { usePreviewLoopActive } from "../lib/preview-loop";
 import { AnimPreview3DView, AnimPreviewModelControls } from "./anim-preview-model-controls";
 import { AnimSpriteFrameView } from "./anim-sprite-frame-view";
 import { AnimEventFlashes } from "./anim-event-flashes";
@@ -48,11 +48,13 @@ function SpriteFrame({ session, spriteAnimationGuids }: { session: BlendSpacePre
   return <AnimSpriteFrameView state={snapshot.state} spriteAnimationGuids={spriteAnimationGuids} data-testid="blend-space-preview-2d" />;
 }
 
-/** Feeds the session the document's samples and the Grid's preview point, and real time while the window shows. */
-function usePreviewSession(dimension: AnimGraphDimension, payload: BlendSpaceEditorPayload, api: IDockviewPanelProps["api"]) {
+/**
+ * Feeds the session the document's samples and the Grid's preview point, and real time while the window shows
+ * (`usePreviewLoopActive`); a resumed clock starts from the frame it resumes on, so the pause adds no time.
+ */
+function usePreviewSession(dimension: AnimGraphDimension, payload: BlendSpaceEditorPayload, shown: boolean) {
   const { previewPoint } = useBlendSpaceEditing();
   const { assetRegistry, registryEpoch } = useRegistryState();
-  const shown = useDockPanelShown(api);
   const [session] = useState(() => new BlendSpacePreviewSession(dimension));
   const nodeData = useMemo(() => {
     void registryEpoch;
@@ -84,7 +86,8 @@ function usePreviewSession(dimension: AnimGraphDimension, payload: BlendSpaceEdi
 
 function BlendSpacePreview3D({ api }: { api: IDockviewPanelProps["api"] }) {
   const { payload, commit } = useBlendSpaceDocument();
-  const session = usePreviewSession("3d", payload, api);
+  const active = usePreviewLoopActive(api);
+  const session = usePreviewSession("3d", payload, active);
   const flashes = useFiredEventFlashes(session.subscribe, session.firedEvents);
   const [showBones, setShowBones] = useState(false);
   const animationGuids = useMemo(() => [...new Set(payload.samples.map((sample) => sample.animationGuid))], [payload.samples]);
@@ -111,6 +114,7 @@ function BlendSpacePreview3D({ api }: { api: IDockviewPanelProps["api"] }) {
           getState={session.getState}
           subscribe={session.subscribe}
           emptyText={payload.skeletonGuid ? "No Model is on the Blend Space's Skeleton." : "Set the Blend Space's Skeleton to preview it."}
+          active={active}
           data-testid="blend-space-preview-3d"
         />
         <AnimEventFlashes flashes={flashes} data-testid="blend-space-preview-events" />
@@ -121,7 +125,7 @@ function BlendSpacePreview3D({ api }: { api: IDockviewPanelProps["api"] }) {
 
 function BlendSpacePreview2D({ api }: { api: IDockviewPanelProps["api"] }) {
   const { payload } = useBlendSpaceDocument();
-  const session = usePreviewSession("2d", payload, api);
+  const session = usePreviewSession("2d", payload, usePreviewLoopActive(api));
   const spriteAnimationGuids = useMemo(() => payload.samples.map((sample) => sample.animationGuid), [payload.samples]);
   const flashes = useFiredEventFlashes(session.subscribe, session.firedEvents);
   return (

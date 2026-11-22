@@ -310,16 +310,19 @@ export function createEditorViewportTools({
   onRollback(() => gizmos.dispose());
   const waterHandles = createWaterHandles(gizmos.layer, scene, {
     scheduler,
+    viewportCssHeight: () => pointerCanvas().height,
     onCommit: (edit) => options.onComponentShapeEdit?.(edit),
   });
   onRollback(() => waterHandles.dispose());
   const splineHandles = createSplineHandles(gizmos.layer, scene, {
     scheduler,
+    viewportCssHeight: () => pointerCanvas().height,
     onCommit: (edit) => options.onComponentShapeEdit?.(edit),
     onSelectionChange: () => attachSelectionGizmo(),
   });
   const deformerHandles = createDeformerHandles(gizmos.layer, scene, {
     scheduler,
+    viewportCssHeight: () => pointerCanvas().height,
     onCommit: (edit) => options.onComponentShapeEdit?.(edit),
     onSelectionChange: () => attachSelectionGizmo(),
   });

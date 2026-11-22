@@ -5,75 +5,12 @@ import {
   INT,
   assetRef,
   objectRef,
-  diagnostic,
-  listValidationRules,
-  registerValidationRule,
-  readPinDefault,
-  type TypeContext,
-  type LogicGraph,
 } from "@haptic/scripting";
 import { selfActorPin, subject } from "./self-pin";
 
 const LAYER = objectRef("SceneLayer");
 const SCENE_LAYER_ASSET = assetRef("SceneLayer");
 const MATERIAL_ASSET = assetRef("Material");
-/** Nodes whose Material pin takes a post-process Material: the Scene's and a Scene Layer's Register and Unregister. */
-export const POST_PROCESS_MATERIAL_NODE_IDS: ReadonlySet<string> = new Set([
-  "scene.registerPostProcess",
-  "scene.unregisterPostProcess",
-  "scene-layer.registerPostProcess",
-  "scene-layer.unregisterPostProcess",
-]);
-
-function materialGuidFromNode(node: {
-  properties: Record<string, unknown>;
-}): string | undefined {
-  const raw = readPinDefault(node.properties, "material");
-  if (typeof raw !== "string") return undefined;
-  const guid = raw.trim();
-  return guid.length > 0 ? guid : undefined;
-}
-
-function validatePostProcessDomain(
-  graphs: readonly LogicGraph[],
-  ctx: TypeContext,
-) {
-  const domains = ctx.materialDomains;
-  if (!domains) return [];
-  const out = [];
-  for (const graph of graphs) {
-    const wired = new Set(graph.edges.map((edge) => `${edge.targetNodeId}\t${edge.targetPinId}`));
-    for (const node of graph.nodes) {
-      if (!POST_PROCESS_MATERIAL_NODE_IDS.has(node.typeId) || wired.has(`${node.id}\tmaterial`)) continue;
-      const guid = materialGuidFromNode(node);
-      if (!guid) continue;
-      const domain = domains[guid];
-      if (!domain || domain === "postProcess") continue;
-      out.push(
-        diagnostic({
-          code: "scene-layer.postProcessDomain",
-          message: `Post-processing requires a postProcess Material (got ${domain})`,
-          assetGuid: ctx.assetGuid,
-          graphId: graph.id,
-          nodeId: node.id,
-          pinId: "material",
-        }),
-      );
-    }
-  }
-  return out;
-}
-
-export function registerSceneLayerValidationRules(): void {
-  if (listValidationRules().some((rule) => rule.id === "scene-layer.postProcessDomain")) {
-    return;
-  }
-  registerValidationRule({
-    id: "scene-layer.postProcessDomain",
-    run: validatePostProcessDomain,
-  });
-}
-
 export const sceneLayerNodes: NodeDefinition[] = [
   {
     id: "scene-layer.create",
@@ -122,33 +59,33 @@ export const sceneLayerNodes: NodeDefinition[] = [
   {
     id: "scene-layer.registerPostProcess",
     title: "Register Scene Layer Post-Processing",
+    description: "Adds a post-process Material after the passes every Scene Layer shares and returns the new pass's Material Object.",
     category: "scene-layer",
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      subject(pin("layer", "Layer", "in", LAYER)),
       pin("material", "Material", "in", MATERIAL_ASSET),
       pin("pass", "Pass", "out", objectRef("MaterialObject")),
     ],
     codegen: (ctx) => {
       ctx.emit(
-        `${ctx.output("pass")} = ctx.registerSceneLayerPostProcess(${ctx.input("layer")}, ${ctx.input("material")});`,
+        `${ctx.output("pass")} = ctx.registerSceneLayerPostProcess(${ctx.input("material")});`,
       );
     },
   },
   {
     id: "scene-layer.unregisterPostProcess",
     title: "Unregister Scene Layer Post-Processing",
+    description: "Removes the first pass that uses a Material from the post-processing every Scene Layer shares.",
     category: "scene-layer",
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),
-      subject(pin("layer", "Layer", "in", LAYER)),
       pin("material", "Material", "in", MATERIAL_ASSET),
     ],
     codegen: (ctx) => {
       ctx.emit(
-        `ctx.unregisterSceneLayerPostProcess(${ctx.input("layer")}, ${ctx.input("material")});`,
+        `ctx.unregisterSceneLayerPostProcess(${ctx.input("material")});`,
       );
     },
   },

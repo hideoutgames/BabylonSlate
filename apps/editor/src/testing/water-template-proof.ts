@@ -81,7 +81,8 @@ export async function runWaterTemplateProof() {
         scene.incrementRenderId();
         // A still surface, so every scenario shades the same water.
         setSceneWaterTime(scene, 0);
-        updateSceneWater(scene);
+        // Contacts settle each frame, as a load's do, so no capture depends on when the contact worker answers.
+        updateSceneWater(scene, false, true);
         await graph.prepare(camera);
         engine.beginFrame();
         try { graph.render(camera, false); } finally { engine.endFrame(); }

@@ -82,6 +82,7 @@ export const ADDABLE_COMPONENT_CLASSES: readonly AddComponentItem[] = [
   engineComponent("LightComponent", "Light", "Scene light", "Rendering"),
   engineComponent("AreaRectLightComponent", "Rectangular Area Light", "Unshadowed rectangular emitter; illuminates through walls", "Rendering"),
   engineComponent("FogVolumeComponent", "Fog Volume", "Local box or sphere of volumetric fog with soft edges", "Rendering"),
+  engineComponent("DecalComponent", "Decal", "Projects a texture onto underlying world geometry inside a box volume", "Rendering"),
   engineComponent("MirrorComponent", "Mirror", "Flat surface showing the scene reflected from the current view", "Rendering"),
   engineComponent("ReflectionProbeComponent", "Reflection Probe", "Captures static surroundings so surfaces inside its box reflect them", "Rendering"),
   engineComponent("OutlineComponent", "Outline", "Actor silhouette with independent color, width and visibility", "Rendering"),
@@ -177,6 +178,12 @@ export const ADDABLE_COMPONENT_CLASSES: readonly AddComponentItem[] = [
     "2DPanelComponent",
     "2D Panel",
     "Scalable 9-slice plane from a Texture or Material",
+    "Overlay",
+  ),
+  engineComponent(
+    "2DPostProcessingPanelComponent",
+    "Post Processing Panel",
+    "Runs a post-process Material over the actors inside its rectangle",
     "Overlay",
   ),
   engineComponent(

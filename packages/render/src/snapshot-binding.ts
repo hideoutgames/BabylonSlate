@@ -35,6 +35,7 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
   outlines: Map<number, { actorId: string; bindings: import("@haptic/core").OutlineBinding[] }>;
   deformers: Map<number, { actorId: string; revision: number; bindings: import("@haptic/core").DeformerBinding[] }>;
   fogVolumes: Map<number, { actorId: string; bindings: import("@haptic/core").FogVolumeBinding[] }>;
+  decals: Map<number, { actorId: string; bindings: import("@haptic/core").DecalBinding[] }>;
   reflectionProbes: Map<number, { actorId: string; bindings: import("@haptic/core").ReflectionProbeBinding[] }>;
   onVisualChanged?: (slotId: number) => void;
   areaLights: Map<number, AreaRectLightGroup>;
@@ -71,6 +72,12 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
    */
   liveSlotPasses?: Map<number, number>;
   liveSlotPass?: number;
+  /**
+   * The overlay slots the last apply pass found, kept and pruned like `liveSlots` (stamped with the pass in
+   * `overlaySlotPasses`). Only that pass's leftover sweep reads it, which copies what it keeps.
+   */
+  overlaySlots?: Set<number>;
+  overlaySlotPasses?: Map<number, number>;
   /** Reused structural-pass results, indexed by the current snapshot actor. */
   snapshotMeshes: Array<Mesh | null>;
   /** Slot ids observed in an applied snapshot; gates absence-retire so
@@ -242,6 +249,7 @@ export function createSnapshotSceneBinding(): SnapshotSceneBinding {
     outlines: new Map(),
     deformers: new Map(),
     fogVolumes: new Map(),
+    decals: new Map(),
     reflectionProbes: new Map(),
     meshes: new SlotRootMap(),
     boneAttachments: new Map(),

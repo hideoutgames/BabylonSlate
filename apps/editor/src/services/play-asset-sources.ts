@@ -1,16 +1,17 @@
 import {
-  SourceRevisionChangedError, areaEmissionTextureGuids, collisionTriangleMeshBytes, nearestTextureFiltering, normalizeScene, normalizeSceneLayer,
+  SourceRevisionChangedError, areaEmissionTextureGuids, collisionTriangleMeshBytes, isLandscapeChunkId, nearestTextureFiltering, normalizeScene, normalizeSceneLayer,
   parseText2DProperties, readTimelineClipSummaries, renderEffectsAssetGuids, timelineClipSummaries,
   type CollisionTriangleMesh, type ProjectDocument, type SerializedScene,
 } from "@haptic/core";
 import {
   AssetFormatVersionError, AssetLoadError, isAssetSourceRevisionChanged, AUDIO_DEFAULT_SOURCE_CHUNK, FONT_FACETYPE_CHUNK_ID, FONT_MSDF_CHUNK_ID, FONT_MSDF_PNG_CHUNK_ID,
+  collectLandscapeChunksForPlay,
   compileText2DFontStacks, complexCollisionModelGuids, cookComplexCollisionMesh, createDefaultMigrationRegistry, createLimiter, createReadAhead, currentAreaEmissionChunk, decodeAreaEmission, DOCUMENT_CHUNK_ID,
   normalizeAudioPayload, normalizeFontPayload, normalizeModelPayload, normalizeSkeletonPayload, withSkeletonSockets,
   registryAssetRepresentation, selectTextureChunk, type AssetLoadPriority, type AssetLoadScope, type AssetRegistry, type AssetSourceLocator,
-  type IndexedAsset, type ModelPayload, type RegistryLoadedAsset,
+  type IndexedAsset, type ModelPayload, type RegistryLoadedAsset, sceneLayerPostProcessAssetGuids,
 } from "@haptic/assets";
-import { packedContentFromGame, packedPlayControls, packedSourceControls, type GameSourceContent, type PackedGameContent } from "@haptic/exporter";
+import { landscapeSidecarKey, packedContentFromGame, packedPlayControls, packedSourceControls, type GameSourceContent, type PackedGameContent } from "@haptic/exporter";
 import { editorBuildPlatform } from "@haptic/vfs";
 import type { SceneSourceAssets } from "@haptic/render";
 import { spawnableLightsOfLoad } from "@haptic/render/spawnable-lights";
@@ -268,7 +269,8 @@ function cancellableCatalogRead<T>(read: Promise<T>, signal: AbortSignal): Promi
  */
 export function requiredProjectAssets(registry: AssetRegistry, project: ProjectDocument): string[] {
   const settings = project.settings;
-  const roots = [settings.audio.audioMixerGuid, ...renderEffectsAssetGuids(settings.render.effects)];
+  const roots = [settings.audio.audioMixerGuid, ...renderEffectsAssetGuids(settings.render.effects),
+    ...sceneLayerPostProcessAssetGuids(settings.sceneLayerPostProcessStack)];
   const classes = registry.list().filter(asset => asset.header.type === "Class");
   // Game Instance and parentClass settings name compile class ids.
   const byId = new Map(classes.map(asset => [classIdFromClassAsset(asset), asset] as const));
@@ -313,7 +315,7 @@ function selectedChunks(asset: IndexedAsset, payload: Record<string, unknown>, f
     return normalizeAudioPayload(payload).clips.map((clip) => clip.chunkId);
   }
   if (header.type === "Font") return [...(fonts.get(header.guid) ?? [])];
-  if (header.type === "Scene") return header.chunks.filter((entry) => entry.id === "navmesh" || entry.id === "audioReverb").map((entry) => entry.id);
+  if (header.type === "Scene") return header.chunks.filter((entry) => entry.id === "navmesh" || entry.id === "audioReverb" || isLandscapeChunkId(entry.id)).map((entry) => entry.id);
   return [];
 }
 
@@ -388,12 +390,13 @@ async function acquirePlayAssetSourcesAttempt(
       platform: editorBuildPlatform(), collisionPresets: project.settings.physics.collisionPresets,
       audioMixerGuid: project.settings.audio.audioMixerGuid ?? undefined,
       globalFallback: project.settings.fonts.globalFallback,
+      sceneLayerPostProcessStack: project.settings.sceneLayerPostProcessStack,
       assets: [],
     },
     scripts: [], scenes: new Map(), sceneLayers: new Map(), textureBytes: new Map(), areaEmissions: new Map(),
     modelBytes: new Map(), modelPayloads: new Map(), fontBytes: new Map(), fontFacetypeBytes: new Map(),
     fontMsdfJson: new Map(), fontMsdfPng: new Map(), fontFamilies: new Map(), audioBytes: new Map(),
-    audioPayloads: new Map(), payloads: new Map(), decodedPayloads: new Map(), navmeshBytes: new Map(), audioReverbBytes: new Map(),
+    audioPayloads: new Map(), payloads: new Map(), decodedPayloads: new Map(), navmeshBytes: new Map(), audioReverbBytes: new Map(), landscapeBytes: new Map(),
     complexMeshes,
   };
   // One cache entry per Model revision: up-front and on-demand cooking share it,
@@ -551,8 +554,13 @@ async function acquirePlayAssetSourcesAttempt(
       revisions.push([guid, preparedDocument.revision]);
       const { type, payload } = document;
       (game.decodedPayloads as Map<string, unknown>).set(guid, payload);
-      if (type === "Scene") game.scenes.set(guid, normalizeScene(payload));
-      else if (type === "SceneLayer") game.sceneLayers.set(guid, normalizeSceneLayer(payload));
+      if (type === "Scene") {
+        const collected = collectLandscapeChunksForPlay(normalizeScene(payload), value.chunks);
+        game.scenes.set(guid, collected.payload);
+        for (const [chunkId, chunkBytes] of collected.chunks) {
+          game.landscapeBytes!.set(landscapeSidecarKey(guid, chunkId), chunkBytes);
+        }
+      } else if (type === "SceneLayer") game.sceneLayers.set(guid, normalizeSceneLayer(payload));
       else if (type === "Texture") game.textureBytes.set(guid, value.chunks.get(selectTextureChunk(asset.header).chunk.id)!);
       else if (type === "Model") {
         const source = value.chunks.get("source");
@@ -672,7 +680,7 @@ async function acquirePlayAssetSourcesAttempt(
         signal.throwIfAborted();
         // Baked bytes and collision arrays already belong to separate cache
         // entries. A metadata cache entry must never prolong their residency.
-        const value = packedContentFromGame({ ...game, navmeshBytes: new Map(), audioReverbBytes: new Map(), complexMeshes: new Map() });
+        const value = packedContentFromGame({ ...game, navmeshBytes: new Map(), audioReverbBytes: new Map(), landscapeBytes: new Map(), complexMeshes: new Map() });
         value.audioLibrary.sourceRevisions = new Map(audioRevisions);
         return { value, sourceBytes: 0, decodedBytes: cpuBytes, dispose: packedContentDisposer(value) };
       },
@@ -691,6 +699,7 @@ async function acquirePlayAssetSourcesAttempt(
     content.navmeshBytes = game.navmeshBytes.get(game.manifest.startupSceneGuid) ?? null;
     content.audioReverbByScene = game.audioReverbBytes;
     content.audioReverbBytes = game.audioReverbBytes.get(game.manifest.startupSceneGuid) ?? null;
+    content.landscapeBytes = game.landscapeBytes!;
     content.complexMeshes = complexMeshes;
     ownedContent = content;
     for (const [guid, bytes] of game.fontBytes) {

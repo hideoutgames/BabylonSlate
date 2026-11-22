@@ -132,6 +132,10 @@ export interface MaterialPlumbing {
   userInterfaceElement?: { uv: NodeMaterialConnectionPoint; size: NodeMaterialConnectionPoint; position: NodeMaterialConnectionPoint };
   /** Clip-space transform vector input; connected after World Position Offset. */
   clipPosition?: NodeMaterialConnectionPoint;
+  /** The Decal domain's projection (`createDecalPlumbing`). */
+  decal?: import("./decal-projection-block").DecalProjectionBlock;
+  /** The drawn object's origin, eye-relative, where no world matrix gives it (a decal's). */
+  objectPosition?: NodeMaterialConnectionPoint;
 }
 
 interface BlockAdapterContext {
@@ -1158,10 +1162,25 @@ const ADAPTERS: Record<string, BlockAdapter> = {
     const normal = new NormalizeBlock(`${name}_normal`);
     plumbing.worldNormal4?.connectTo(normal.input);
     normal.output.connectTo(block.worldNormal);
-    if (!operation.inputs.uv) plumbing.uv?.connectTo(block.uv);
     // Babylon emits a Vector4 normal; the graph pin is a Vector3.
     const split = new VectorSplitterBlock(`${name}_xyz`);
     block.output.connectTo(split.xyzw);
+    if (plumbing.decal) {
+      // A decal draws its box's back faces, where Babylon's frame negates the UV it differentiates (`gl_FrontFacing`
+      // false): negating it first keeps the map's X and Y along the decal's.
+      // The Vector2 constant on the left types the product, so it can feed the frame's UV before the right is wired.
+      const flip = new MultiplyBlock(`${name}_backFaceUv`);
+      const minusOne = createConstantBlock(`${name}_minusOne`, "vec2", [-1, -1]);
+      minusOne.output.connectTo(flip.left);
+      flip.output.connectTo(block.uv);
+      if (!operation.inputs.uv) plumbing.uv?.connectTo(flip.right);
+      return {
+        blocks: [normal, block, split, flip, minusOne],
+        inputs: { packed: block.normalMapColor, uv: flip.right, strength: block.strength },
+        outputs: { normal: split.xyzOut },
+      };
+    }
+    if (!operation.inputs.uv) plumbing.uv?.connectTo(block.uv);
     return {
       blocks: [normal, block, split],
       inputs: { packed: block.normalMapColor, uv: block.uv, strength: block.strength },
@@ -1332,6 +1351,13 @@ ADAPTERS["input.worldNormal"] = ({ name, plumbing }) => {
 
 /** The mesh's own origin in the scene: the world matrix applied to the local origin, the same for every pixel. */
 ADAPTERS["input.objectPosition"] = ({ name, plumbing }) => {
+  if (plumbing.objectPosition) {
+    if (!plumbing.worldOrigin) return { blocks: [], inputs: {}, outputs: { position: plumbing.objectPosition } };
+    const absolute = new AddBlock(`${name}_absolute`);
+    plumbing.objectPosition.connectTo(absolute.left);
+    plumbing.worldOrigin.connectTo(absolute.right);
+    return { blocks: [absolute], inputs: {}, outputs: { position: absolute.output } };
+  }
   if (!plumbing.world) throw new Error("Object Position is only available in a Surface material");
   const origin = createConstantBlock(`${name}_origin`, "vec3", [0, 0, 0]);
   const world = new TransformBlock(name);

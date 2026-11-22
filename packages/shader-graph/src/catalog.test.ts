@@ -135,6 +135,22 @@ describe("material node catalog", () => {
     expect(nodeIsLegalInDomain("output.postProcess", "surface")).toBe(false);
   });
 
+  it("gives the Decal domain its own output, projected-surface inputs and no mesh, vertex or scene-buffer inputs", () => {
+    expect(parseMaterialDomain("decal")).toBe("decal");
+    expect(materialNodeDefinition("output.decal")).toMatchObject({ title: "Decal Output", terminal: "decal" });
+    expect(materialNodeDefinition("output.decal")?.inputs.map((pin) => pin.name))
+      .toEqual(["Base Color", "Opacity", "Normal", "Roughness", "Metallic", "Emissive"]);
+    for (const type of ["input.uv", "input.worldPosition", "input.worldNormal", "input.worldTangent", "input.viewDirection",
+      "input.cameraPosition", "input.objectPosition", "shading.normalMap", "shading.fresnel", "texture.triplanar", "texture.sample",
+      "input.screenUv", "math.mix", "noise.voronoi"]) expect(nodeIsLegalInDomain(type, "decal"), type).toBe(true);
+    for (const type of ["input.vertexPosition", "input.vertexNormal", "input.vertexColor", "input.sceneColor", "input.sceneDepth",
+      "input.sceneNormal", "input.particleColor", "input.waterSurface", "input.mirrorReflection", "landscape.height", "output.surface"])
+      expect(nodeIsLegalInDomain(type, "decal"), type).toBe(false);
+    // Decal nodes are not Surface ones: the Decal Output never reaches another domain's palette.
+    expect(nodeIsLegalInDomain("output.decal", "surface")).toBe(false);
+    expect(materialPaletteEntries("decal").some((entry) => entry.type === "input.sceneColor")).toBe(false);
+  });
+
   it("scopes Particle Color to the particle domain", () => {
     expect(materialNodeDefinition("input.particleColor")?.title).toBe(
       "Particle Color",

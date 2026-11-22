@@ -58,7 +58,7 @@ export type AllocationKey = {
   /** A sun's last cascades with half-edge tiles (`SHADOW_HALF_TILE_CASCADES`); 0 for any other map. */
   readonly halfTiles: number;
   /**
-   * A sun's first cascade tile edge over its map size as the level sets it (`SHADOW_FIRST_CASCADE_SCALE`; the clamp
+   * A sun's first cascade tile edge over its map size as the settings ask (`ShadowSettings.firstCascadeScale`; the clamp
    * `cascadeTileSizes` applies follows from `mapSize` and `atlasEdge`); 1 for any other map.
    */
   readonly firstTileScale: number;
@@ -134,6 +134,7 @@ export function allocationRequestKey(light: ShadowLight, settings: ShadowSetting
       : settings.localMapSize,
     light.needCube(),
     light instanceof DirectionalLight ? settings.cascades : 1,
+    light instanceof DirectionalLight ? settings.firstCascadeScale : 1,
     settings.profile,
   ]);
 }

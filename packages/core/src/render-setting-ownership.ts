@@ -9,6 +9,7 @@ export const SCALABILITY_FIELD_OWNERS = {
     distance: "shadows",
     fadeFraction: "shadows",
     mapSize: "shadows",
+    firstCascadeScale: "shadows",
     cascades: "shadows",
     filter: "shadows",
     filterQuality: "shadows",
@@ -24,9 +25,6 @@ export const SCALABILITY_FIELD_OWNERS = {
   },
   resolution: {
     scale: "resolution",
-    dynamic: "resolution",
-    minScale: "resolution",
-    targetFps: "resolution",
   },
   textures: {
     lodBias: "textures",

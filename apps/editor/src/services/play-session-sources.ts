@@ -384,7 +384,7 @@ export function createPlaySourceTracker(ctx: PlaySourceTrackerContext): PlaySour
       "fontCssStackByGuid", "fontPixelSizeByGuid", "fontFaceEntries", "materialDocuments", "materialFunctions", "audioLibrary", "particleLibrary",
       "renderTargets", "renderTargetTextures", "areaEmissions", "texturePixelSizes", "modelClipAnimationGuids",
       "retargetAnimationLoads", "animGraphs", "behaviourTrees", "blackboards", "dataAssets", "sceneNavmeshBytes",
-      "audioReverbByScene", "navmeshBytes", "audioReverbBytes", "scenes", "scene", "sceneLayers"] as const) delete options[key];
+      "sceneLandscapeBytes", "audioReverbByScene", "navmeshBytes", "audioReverbBytes", "scenes", "scene", "sceneLayers"] as const) delete options[key];
     const loadControl = ctx.loadControl();
     loadControl.scene = undefined;
     loadControl.scenes = undefined;

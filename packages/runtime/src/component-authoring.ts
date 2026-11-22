@@ -15,6 +15,7 @@ import {
   parseJoystick2DProperties,
   parseAreaRectLightProperties,
   parseFogVolumeProperties,
+  parseDecalProperties,
   parseMirrorProperties,
   parseReflectionProbeProperties,
   parseOutlineProperties,
@@ -38,7 +39,7 @@ import {
   defaultNavMeshBlockerComponentProperties,
   defaultNavMeshComponentProperties,
 } from "@haptic/navigation/settings";
-import { normalizeSceneStreamingProperties, parseLandscapeProperties, parseFoliageProperties, parseLight2DProperties } from "@haptic/core";
+import { normalizeSceneStreamingProperties, normalizeSerializedLandscapeProperties, parseFoliageProperties, parseLight2DProperties } from "@haptic/core";
 
 /** Canonical authorable fields shared by scene editing and final-state capture. */
 export function defaultComponentAuthoringProperties(
@@ -56,7 +57,7 @@ export function defaultComponentAuthoringProperties(
     case "SceneStreamingComponent":
       return { ...normalizeSceneStreamingProperties({}) };
     case "LandscapeComponent":
-      return { ...parseLandscapeProperties({}) };
+      return { ...normalizeSerializedLandscapeProperties({}) };
     case "FoliageComponent":
       return { ...parseFoliageProperties({}) };
     case "SaveGameComponent":
@@ -117,6 +118,8 @@ export function defaultComponentAuthoringProperties(
       return { ...createDefaultRenderTargetCaptureProperties() };
     case "FogVolumeComponent":
       return { ...parseFogVolumeProperties({}) };
+    case "DecalComponent":
+      return { ...parseDecalProperties({}) };
     case "MirrorComponent":
       return { ...parseMirrorProperties({}) };
     case "ReflectionProbeComponent":
@@ -172,6 +175,8 @@ export function defaultComponentAuthoringProperties(
       return { materialGuid: null, hitTest: "ignore" };
     case "2DTextureComponent":
       return { textureGuid: null, hitTest: "ignore" };
+    case "2DPostProcessingPanelComponent":
+      return { enabled: true, materialGuid: null };
     case "2DPanelComponent":
       return {
         source: "texture",

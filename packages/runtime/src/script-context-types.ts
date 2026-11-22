@@ -668,6 +668,8 @@ export interface ScriptContext {
   spawnParticlesAtLocation(system: unknown, location: unknown, rotation: unknown, scale: unknown, autoDestroy?: unknown): Actor | null;
   spawnParticlesAttached(system: unknown, attachTo: unknown, bone: unknown, locationOffset: unknown, rotationOffset: unknown,
     autoDestroy?: unknown): Actor | null;
+  spawnDecal(material: unknown, location: unknown, rotation: unknown, size?: unknown, lifetime?: unknown, fadeOutDuration?: unknown,
+    tint?: unknown, opacity?: unknown): void;
   setChannelVolume(channelGuid: string, volume: number): void;
   setGlobalVolume(volume: number): void;
   changeScene(scene: string): void;
@@ -675,15 +677,10 @@ export interface ScriptContext {
   createSceneLayerAsync(assetGuid: string, zOrder?: number): Promise<SceneLayer | null>;
   removeSceneLayer(layer: EngineObject | string | null | undefined): void;
   clearSceneLayers(): void;
-  /** The new pass's Material Object, or null when nothing was registered. */
-  registerSceneLayerPostProcess(
-    layer: EngineObject | string | null | undefined,
-    materialGuid: string,
-  ): PostProcessMaterialObject | null;
-  unregisterSceneLayerPostProcess(
-    layer: EngineObject | string | null | undefined,
-    materialGuid: string,
-  ): void;
+  /** A new pass on the post-processing every Scene Layer shares: its Material Object, or null when nothing was registered. */
+  registerSceneLayerPostProcess(materialGuid: string): PostProcessMaterialObject | null;
+  /** Removes the first pass using the Material from the post-processing every Scene Layer shares. */
+  unregisterSceneLayerPostProcess(materialGuid: string): void;
   /** The new pass's Material Object, or null when nothing was registered. */
   registerScenePostProcess(materialGuid: string): PostProcessMaterialObject | null;
   unregisterScenePostProcess(materialGuid: string): void;

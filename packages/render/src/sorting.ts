@@ -5,6 +5,7 @@ import type { Scene } from "@babylonjs/core/scene";
 import { setMeshRenderingGroup } from "./instance-pool";
 import { sortPooledLeaf } from "./pooled-visuals";
 import { tilemapLayerMeshes } from "./tilemap-chunk-parent";
+import { batchedSpriteOf, compareMeshDrawIdentity, markSceneSortingChanged } from "./sprite-batch-handle";
 import { sortingLayerSortKey } from "@haptic/core";
 
 /**
@@ -87,33 +88,38 @@ export function applyComponentSorting(
   for (const mesh of [root, ...tilemapLayerMeshes(root), ...root.getChildMeshes(true).filter((child) =>
     !child.metadata?.tilemapLayer && child.name === `${root.name}-blend`,
   )]) {
+    const before = { alphaIndex: mesh.alphaIndex, group: mesh.renderingGroupId, id: mesh.metadata?.sortingGroupId, key: mesh.metadata?.sortingLayerKey };
     applySortingToMesh(mesh, primary);
     const internal = mesh.metadata?.tilemapLayer as
       { name: string; order: number; ordinal: number } | undefined;
+    const sortingLayerKey = internal ? resolveSortingLayer(layers, internal.name, internal.order).sortKey : 0;
     mesh.metadata = {
       ...(mesh.metadata ?? {}),
       sortingGroupId: groupId,
-      sortingLayerKey: internal ? resolveSortingLayer(layers, internal.name, internal.order).sortKey : 0,
+      sortingLayerKey,
     };
+    // World sprite batches keep the cutout order of the meshes drawn among them (`world-sprite-batcher.ts`).
+    if (before.alphaIndex !== mesh.alphaIndex || before.group !== mesh.renderingGroupId || before.id !== groupId || before.key !== sortingLayerKey) {
+      markSceneSortingChanged(mesh.getScene());
+    }
   }
   // A pooled visual's drawn leaf sorts as its root does.
   sortPooledLeaf(root);
+  batchedSpriteOf(root)?.setSorting({
+    renderingGroupId: primary.renderingGroupId,
+    alphaIndex: primary.sortKey,
+    sortingGroupId: groupId,
+  });
 }
 
-function compareIdentity(a: string, b: string): number {
-  return a < b ? -1 : a > b ? 1 : 0;
-}
-
-/** Alpha-test draws do not populate Babylon's transparent SubMesh alpha index. */
+/**
+ * Alpha-test draws do not populate Babylon's transparent SubMesh alpha index. A world sprite batch sorts as the first
+ * sprite it draws (`world-sprite-batcher.ts`), which keeps the order those sprites drawn one by one would have.
+ */
 export function compareAlphaTestDraws(a: SubMesh, b: SubMesh): number {
   const left = a.getMesh();
   const right = b.getMesh();
-  return left.alphaIndex - right.alphaIndex
-    || compareIdentity(left.metadata?.sortingGroupId ?? left.name, right.metadata?.sortingGroupId ?? right.name)
-    || (left.metadata?.sortingLayerKey ?? 0) - (right.metadata?.sortingLayerKey ?? 0)
-    || (left.metadata?.tilemapLayer?.ordinal ?? 0) - (right.metadata?.tilemapLayer?.ordinal ?? 0)
-    || compareIdentity(left.name, right.name)
-    || left.uniqueId - right.uniqueId;
+  return left.alphaIndex - right.alphaIndex || compareMeshDrawIdentity(left, right);
 }
 
 /** Preserve opaque/blended passes and depth policy while ordering cutout visuals. */

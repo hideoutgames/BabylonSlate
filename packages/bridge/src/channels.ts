@@ -9,6 +9,16 @@ export type CookedCollisionMeshEntry = { guid: string } & CollisionTriangleMesh;
 /** Serializable runtime override of one named Material Graph parameter. */
 export type { MaterialParameterValue } from "@haptic/core";
 
+/** One Post Processing Panel of a Scene Layer instance (`sceneLayerPostProcessPanels`). */
+export interface SceneLayerPostProcessPanelPayload {
+  slotId: number;
+  componentId: string;
+  materialGuid: string;
+  parameters: Record<string, MaterialParameterValue>;
+  contentSlotIds: number[];
+  parentSlotId: number | null;
+}
+
 export type GameSessionMode = "play" | "simulate" | "preview";
 /** `rendering`: the view holds its last image while shaders it needs compile. */
 export type SessionPauseReason = "user" | "lifecycle" | "loading" | "rendering";
@@ -180,6 +190,8 @@ export interface RuntimeSceneContent {
   assetGuids: string[];
   sceneLayers?: Array<{ guid: string; layer: SerializedSceneLayer }>;
   sceneNavmeshBytes?: Record<string, Uint8Array>;
+  /** Binary BSLD landscape chunks keyed by `<sceneGuid>:<chunkId>`, decoded once on component realization. */
+  sceneLandscapeBytes?: Record<string, Uint8Array>;
   dataAssets?: import("@haptic/core").DataAssetCatalogEntry[];
   /** Float, Vector and Color Curve assets of the current sources; `Get <Type> Curve Object` reads them. */
   curveAssets?: import("@haptic/core").CurveAssetCatalogEntry[];
@@ -244,6 +256,8 @@ export type ControlMessage =
       /** Authored Input Action / Input Axis assets; omitted loads use the starter controls. */
       inputAssets?: import("@haptic/core").InputAssetDefinition[];
       focusNavigation?: import("@haptic/core").FocusNavigationSettings;
+      /** Project Scene Layer post-processing: the passes the shared layer stack starts with. */
+      sceneLayerPostProcessStack?: import("@haptic/core").SceneLayerPostProcessEntry[];
       pixelsPerUnit?: number;
       /** Pixel-Perfect Mode with Nearest Texture Filtering: orthographic cameras are pixel-matched (`pixelMatchedView`). */
       pixelMatchedCameras?: boolean;
@@ -268,6 +282,8 @@ export type ControlMessage =
       consoleCommands?: Array<import("@haptic/core").ConsoleCommandMetadata & { classId: string; assetGuid: string }>;
       /** Baked navigation by canonical scene guid, selected before Begin Play. */
       sceneNavmeshBytes?: Record<string, Uint8Array>;
+      /** Binary BSLD landscape chunks keyed by `<sceneGuid>:<chunkId>`, decoded once on component realization. */
+      sceneLandscapeBytes?: Record<string, Uint8Array>;
       /** Overlay documents the session compositor can instantiate by guid or name. */
       sceneLayers?: Array<{ guid: string; layer: SerializedSceneLayer }>;
       /** Where the session runs: device platform, touch, editor and development build (the System nodes read it). */
@@ -647,6 +663,8 @@ export type CommandMessage =
   | { type: "setActorOutlines"; slotId: number; actorId: string; outlines: import("@haptic/core").OutlineBinding[] }
   | { type: "setActorDeformers"; slotId: number; actorId: string; revision: number; deformers: import("@haptic/core").DeformerBinding[] }
   | { type: "setFogVolumes"; slotId: number; actorId: string; volumes: import("@haptic/core").FogVolumeBinding[] }
+  | { type: "setDecals"; slotId: number; actorId: string; decals: import("@haptic/core").DecalBinding[] }
+  | { type: "spawnDecal"; decal: import("@haptic/core").DynamicDecalSpawnRequest }
   | { type: "setReflectionProbes"; slotId: number; actorId: string; probes: import("@haptic/core").ReflectionProbeBinding[] }
   /** Recapture every reflection probe of the play world once its scene settles. */
   | { type: "recaptureReflectionProbes" }
@@ -924,8 +942,9 @@ export type CommandMessage =
     }
   | {
       type: "setPostProcessMaterialParameter";
+      /** The main Scene's stack (for that load), or the Scene Layer stack every layer shares. */
       owner: { kind: "scene"; sceneAssetGuid: string; sceneLoadId: number }
-        | { kind: "sceneLayer"; layerId: string; layerLoadId: number };
+        | { kind: "sceneLayers" };
       entryId: string;
       materialAssetGuid: string;
       parameterName: string;
@@ -1303,7 +1322,6 @@ export type CommandMessage =
       assetGuid: string;
       zOrder: number;
       ownerSceneGuid: string | null;
-      postProcessStack: ScenePostProcessEntry[];
       /** The asset's canvas design and its rectangle in layer units (for Desired, the Fullscreen stand-in until measured). */
       canvas: {
         design: import("@haptic/core").SceneLayerCanvasDesign;
@@ -1315,11 +1333,18 @@ export type CommandMessage =
   | { type: "sceneLayerRemove"; layerId: string }
   | { type: "sceneLayerClear" }
   | { type: "sceneLayerLayout"; layerId: string; entries: Array<import("@haptic/core").OverlayLayoutEntry & { slotId: number; transform?: import("@haptic/core").SerializedTransform }> }
-  | {
-      type: "sceneLayerPostProcess";
-      layerId: string;
-      postProcessStack: ScenePostProcessEntry[];
-    }
+  /**
+   * The Scene Layer post-processing every layer shares: sent before the session's first `sceneLayerCreate` (the
+   * Project Setting's passes) and after Register or Unregister Scene Layer Post-Processing.
+   */
+  | { type: "sceneLayerPostProcess"; postProcessStack: ScenePostProcessEntry[] }
+  /**
+   * A Scene Layer instance's Post Processing Panels with a Material, enabled, inner panels before the panels holding
+   * them: each one's actor slot, component, Material, parameter values (the authored instance overrides and script
+   * writes so far), the slots whose actors draw into it (its own actor and the descendants no nearer panel holds) and
+   * the nearest panel holding it. Sent when the list changes; empty when the layer has none left.
+   */
+  | { type: "sceneLayerPostProcessPanels"; layerId: string; panels: SceneLayerPostProcessPanelPayload[] }
   /** The current Scene's post-process passes after Register or Unregister Scene Post-Processing. */
   | { type: "scenePostProcess"; postProcessStack: ScenePostProcessEntry[] }
   /** A Scene Layer instance's camera moved, turned or zoomed (scripts only; `sceneLayerCreate` carries its start pose). */

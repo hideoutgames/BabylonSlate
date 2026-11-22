@@ -1,7 +1,7 @@
 import type { CommandMessage } from "@haptic/bridge";
-import { newGuid, normalizeSceneLayer, remapSceneStreamingReferences, sameLayerCameraState, updateLayerCameraState, type SerializedActor, type SerializedSceneLayer } from "@haptic/core";
+import { newGuid, normalizeSceneLayer, normalizeSceneLayerPostProcessStack, remapSceneStreamingReferences, sameLayerCameraState, updateLayerCameraState, type SerializedActor, type SerializedSceneLayer } from "@haptic/core";
 import type { RegisteredPostProcess } from "./scene-post-process";
-import { hydrateScenePropertyReferences, sceneLayerAssetClassId, type Actor, type EngineObject, type LifecycleHooks, type SceneLayer, type World } from "@haptic/object-model";
+import { hydrateScenePropertyReferences, sceneLayerAssetClassId, type Actor, type EngineObject, type LifecycleHooks, type SceneLayer, type SceneLayerPostProcessing, type World } from "@haptic/object-model";
 import type { RuntimeAssetPreloads } from "./asset-preloads";
 import type { OwnerAdmission } from "./owner-admission";
 import { callerSceneLayerId } from "./runtime-host-physics";
@@ -43,6 +43,8 @@ interface IndependentLayerWork {
 
 interface SceneLayersHost {
   world(): World;
+  /** Project Settings Scene Layer post-processing: the passes the session's shared layer stack starts with. */
+  projectPostProcessStack(): readonly unknown[];
   stopped(): boolean;
   frameId(): number;
   /** Play boot loading holds a presented layer until it finishes. */
@@ -86,18 +88,27 @@ interface SceneLayersHost {
 /**
  * Scene Layer lifecycle: the load table keyed by layer guid, creation (immediate,
  * cooperative after the host's loading paint, or a script's latent create that
- * waits for readiness), host readiness, removal and clearing, and the layer
- * post-process stack. The overlay realizes a layer's created actors and owns
+ * waits for readiness), host readiness, removal and clearing, and the Scene
+ * Layer post-processing every layer shares. The overlay realizes a layer's created actors and owns
  * its layout, anchors, focus and pointer input.
  */
 export class SceneLayers implements RuntimeSubsystem {
   private loadId = 0;
+  private _readinessRevision = 0;
   private readonly loads = new Map<string, SceneLayerLoad>();
   private readonly independentWork = new Map<string, IndependentLayerWork>();
   private readonly readinessWaiters = new Map<string, { resolve: () => void; reject: (error: unknown) => void }>();
   private readonly admission: OwnerAdmission;
   private readonly overlay: Pick<SceneLayerOverlay, "realizeActors" | "forget" | "canvasRect">;
   private readonly host: SceneLayersHost;
+  /** The World's shared stack once it holds the Project Setting's passes, and once the host has been sent it. */
+  private stackStarted: SceneLayerPostProcessing | null = null;
+  private stackSent: SceneLayerPostProcessing | null = null;
+
+  /** Monotonic revision advancing whenever any Scene Layer's readiness changes. */
+  get readinessRevision(): number {
+    return this._readinessRevision;
+  }
 
   constructor(admission: OwnerAdmission, overlay: Pick<SceneLayerOverlay, "realizeActors" | "forget" | "canvasRect">, host: SceneLayersHost) {
     this.admission = admission;
@@ -125,6 +136,20 @@ export class SceneLayers implements RuntimeSubsystem {
   /** Stop ends: forget every load. */
   clear(): void {
     this.loads.clear();
+  }
+
+  /**
+   * The session's Scene Layer post-processing (`World.sceneLayerPostProcessing`), which starts with the Project
+   * Setting's passes. It belongs to the session, not to a layer or a Scene: registered passes stay through Scene
+   * changes and layer removal, as graph-created layers do, until Stop.
+   */
+  postProcessing(): SceneLayerPostProcessing {
+    const stack = this.host.world().sceneLayerPostProcessing;
+    if (this.stackStarted !== stack) {
+      this.stackStarted = stack;
+      stack.postProcessStack = normalizeSceneLayerPostProcessStack(this.host.projectPostProcessStack());
+    }
+    return stack;
   }
 
   get(layerGuid: string): SceneLayerLoadState | undefined {
@@ -282,6 +307,7 @@ export class SceneLayers implements RuntimeSubsystem {
     load.presented = true;
     if (this.host.bootLoading()) return;
     load.ready = true;
+    this._readinessRevision++;
     this.readinessWaiters.get(layerId)?.resolve();
     this.readinessWaiters.delete(layerId);
     this.host.syncOverlayPhysics();
@@ -298,6 +324,7 @@ export class SceneLayers implements RuntimeSubsystem {
     if (!layer) return;
     const load = this.loads.get(layerGuid);
     this.loads.delete(layerGuid);
+    this._readinessRevision++;
     this.host.removeLayerPhysics(layerGuid);
     this.overlay.forget(layerGuid);
     const work = this.independentWork.get(layerGuid);
@@ -329,22 +356,23 @@ export class SceneLayers implements RuntimeSubsystem {
     this.host.emit({ type: "sceneLayerClear" });
   }
 
-  /** A new pass after the layer's passes; its owner and Entry ID name its Material Object. */
-  registerPostProcess(layerGuid: string, materialGuid: string): RegisteredPostProcess<SceneLayer> | null {
-    const layer = this.host.world().findSceneLayer(layerGuid);
+  /** A new pass after the shared stack's passes, applied to every layer; its owner and Entry ID name its Material Object. */
+  registerPostProcess(materialGuid: string): RegisteredPostProcess<SceneLayerPostProcessing> | null {
     const guid = String(materialGuid ?? "").trim();
-    if (!layer || !guid) return null;
+    if (this.host.stopped() || !guid) return null;
+    const stack = this.postProcessing();
     const entryId = newGuid();
-    layer.postProcessStack.push({ id: entryId, materialGuid: guid, enabled: true });
-    this.emitPostProcess(layer);
-    return { owner: layer, entryId };
+    stack.postProcessStack.push({ id: entryId, materialGuid: guid, enabled: true });
+    this.emitPostProcess();
+    return { owner: stack, entryId };
   }
 
-  unregisterPostProcess(layerGuid: string, materialGuid: string): void {
-    const layer = this.host.world().findSceneLayer(layerGuid);
+  /** Removes the shared stack's first pass that uses `materialGuid`, a Project Setting pass included; a missing one is logged. */
+  unregisterPostProcess(materialGuid: string): void {
     const guid = String(materialGuid ?? "").trim();
-    if (!layer || !guid) return;
-    const index = layer.postProcessStack.findIndex(
+    if (this.host.stopped() || !guid) return;
+    const stack = this.postProcessing();
+    const index = stack.postProcessStack.findIndex(
       (entry) => entry.materialGuid === guid,
     );
     if (index < 0) {
@@ -352,13 +380,14 @@ export class SceneLayers implements RuntimeSubsystem {
         type: "log",
         severity: "error",
         category: "scene-layer",
-        message: `SceneLayer post-process ${guid} is not registered on layer ${layer.guid}`,
+        message: `Scene Layer post-process ${guid} is not registered`,
         frameId: this.host.frameId(),
       });
       return;
     }
-    layer.postProcessStack.splice(index, 1);
-    this.emitPostProcess(layer);
+    // Removing the entry invalidates its Get Post Process Entry reference.
+    stack.postProcessStack.splice(index, 1);
+    this.emitPostProcess();
   }
 
   /** The live layer instance whose actor (or actor's component) this is; null for world actors. */
@@ -377,11 +406,12 @@ export class SceneLayers implements RuntimeSubsystem {
     this.host.emit({ type: "sceneLayerCamera", layerId: layer.guid, camera: { ...camera } });
   }
 
-  private emitPostProcess(layer: SceneLayer): void {
+  private emitPostProcess(): void {
+    const stack = this.postProcessing();
+    this.stackSent = stack;
     this.host.emit({
       type: "sceneLayerPostProcess",
-      layerId: layer.guid,
-      postProcessStack: layer.postProcessStack.map((entry) => ({ ...entry })),
+      postProcessStack: stack.postProcessStack.map((entry) => ({ ...entry })),
     });
   }
 
@@ -422,9 +452,6 @@ export class SceneLayers implements RuntimeSubsystem {
       assetGuid: guid,
       zOrder: Math.trunc(Number(zOrder) || 0),
       ownerSceneGuid,
-      postProcessStack: document.settings.postProcessStack.map((entry) => ({
-        ...entry,
-      })),
       canvas: document.settings.canvas,
       cameraLocation: document.settings.cameraLocation,
       tickOnPause: document.settings.tickOnPause,
@@ -439,6 +466,8 @@ export class SceneLayers implements RuntimeSubsystem {
     let completed = false;
     try {
       independent?.created(layer, layerLoad.loadId);
+      // The host draws the session's first layer with the shared stack it starts with.
+      if (this.stackSent !== this.postProcessing()) this.emitPostProcess();
       this.host.emit({ type: "sceneLayerLoading", layerId: layer.guid, assetGuid: guid, layerLoadId: layerLoad.loadId });
       checkpoint();
       this.host.emit({
@@ -447,7 +476,6 @@ export class SceneLayers implements RuntimeSubsystem {
         assetGuid: guid,
         zOrder: layer.zOrder,
         ownerSceneGuid: layer.ownerSceneGuid,
-        postProcessStack: layer.postProcessStack.map((entry) => ({ ...entry })),
         canvas: (() => {
           const rect = this.overlay.canvasRect(layer);
           return {
@@ -538,18 +566,19 @@ interface SceneLayerHostDeps {
   layers: SceneLayers;
 }
 
-/** Script Scene Layer calls: create (immediate or latent), remove, clear, the layer post-process stack and an actor's owning layer. */
+/** Script Scene Layer calls: create (immediate or latent), remove, clear, the shared Scene Layer post-processing and an actor's owning layer. */
 export function createSceneLayerHostBindings(deps: SceneLayerHostDeps): Pick<ScriptHostServices,
   "createSceneLayer" | "createSceneLayerAsync" | "removeSceneLayer" | "clearSceneLayers" |
-  "registerSceneLayerPostProcess" | "unregisterSceneLayerPostProcess" | "getOwningSceneLayer"> {
+  "registerSceneLayerPostProcess" | "unregisterSceneLayerPostProcess" | "sceneLayerPostProcessing" | "getOwningSceneLayer"> {
   const { layers } = deps;
   return {
     createSceneLayer: (assetGuid, zOrder) => layers.create(assetGuid, zOrder),
     createSceneLayerAsync: (assetGuid, zOrder, owner) => layers.createAsync(assetGuid, zOrder, owner),
     removeSceneLayer: (layerGuid) => { layers.remove(layerGuid); },
     clearSceneLayers: () => { layers.clearAll(); },
-    registerSceneLayerPostProcess: (layerGuid, materialGuid) => layers.registerPostProcess(layerGuid, materialGuid),
-    unregisterSceneLayerPostProcess: (layerGuid, materialGuid) => { layers.unregisterPostProcess(layerGuid, materialGuid); },
+    registerSceneLayerPostProcess: (materialGuid) => layers.registerPostProcess(materialGuid),
+    unregisterSceneLayerPostProcess: (materialGuid) => { layers.unregisterPostProcess(materialGuid); },
+    sceneLayerPostProcessing: () => layers.postProcessing(),
     getOwningSceneLayer: (object) => layers.owning(object),
   };
 }

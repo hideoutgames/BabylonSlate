@@ -15,11 +15,15 @@ export const AUDIO_REVERB_ALLPASS_COUNT = 2;
 export const AUDIO_SPEED_OF_SOUND = 343;
 export const AUDIO_PRE_UNLOCK_QUEUE_CAP = 32;
 export const AUDIO_DECODED_PCM_LRU_BYTES = 256 * 1024 * 1024;
+export const AUDIO_STREAMED_VOICE_ESTIMATE_BYTES = 256 * 1024;
+export const AUDIO_AUTO_STREAM_MIN_BYTES = 512 * 1024;
 export const AUDIO_MAX_CONCURRENT_VOICES = 32;
 export const AUDIO_MAX_CLIPS = 8;
 export const AUDIO_PITCH_MIN = 0.25;
 export const AUDIO_PITCH_MAX = 4;
 export const AUDIO_DEFAULT_SOURCE_CHUNK = "source";
+
+export type AudioPlaybackMode = "decoded" | "streamed";
 
 export type AudioDiagnostic = {
   code: string;
@@ -43,6 +47,7 @@ export type AudioPayload = {
   pitchMin: number;
   pitchMax: number;
   loop: boolean;
+  playbackMode: AudioPlaybackMode;
 };
 
 export type AudioChannelEffect =
@@ -171,6 +176,7 @@ export function createDefaultAudioPayload(): AudioPayload {
     pitchMin: 1,
     pitchMax: 1,
     loop: false,
+    playbackMode: "decoded",
   };
 }
 
@@ -236,6 +242,7 @@ export function normalizeAudioPayload(value: unknown): AudioPayload {
     pitchMin,
     pitchMax,
     loop: source.loop === true,
+    playbackMode: source.playbackMode === "streamed" ? "streamed" : "decoded",
   };
 }
 
@@ -617,6 +624,7 @@ export type AudioPlaybackResolution = {
   channelGuids: string[];
   environmentReverb: boolean;
   muffleThroughWalls: boolean;
+  playbackMode: AudioPlaybackMode;
 };
 
 export function resolveAudioPlayback(options: {
@@ -686,6 +694,7 @@ export function resolveAudioPlayback(options: {
     channelGuids,
     environmentReverb,
     muffleThroughWalls,
+    playbackMode: audio.playbackMode,
   };
 }
 

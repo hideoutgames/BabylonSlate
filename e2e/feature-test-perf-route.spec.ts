@@ -432,6 +432,7 @@ async function samplePlay(page: Page, durationMs: number) {
       rendererWork: rendering.rendererWork ?? null,
       layerWork: rendering.layerWork ?? null,
       layerBatches: rendering.layerBatches ?? null,
+      layerFrame: rendering.layerFrame ?? null,
       shadowRetained: rendering.shadowRetained ?? null,
       shadowPasses: rendering.shadowPasses ?? null,
       occlusion: rendering.occlusion ?? null,
@@ -480,8 +481,6 @@ async function measurePlay(page: Page, cdp: CDPSession, scene: string) {
   if (MIRROR_UNSHARED) await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest!.unshareMirrorWork(true));
   if (QUALITY) {
     await runConsoleCommand(page, `quality ${QUALITY}`);
-    // Presets below ultra enable dynamic resolution; keep the project's fixed scale.
-    await runConsoleCommand(page, "quality resolution reset");
   }
   if (FRAMECAP) await runConsoleCommand(page, `framecap ${FRAMECAP}`);
   for (const command of COMMANDS) await runConsoleCommand(page, command);
@@ -716,14 +715,20 @@ async function measureHeld(page: Page) {
   const window = await samplePlay(page, HOLD_MS);
   await runConsoleCommand(page, "gpuprobe on");
   await page.waitForTimeout(1_000);
-  const signature = (await gpuProbeReading(page))?.signature ?? null;
+  const reading = (await gpuProbeReading(page)) as (GpuProbeReading & { shadows?: unknown }) | null;
+  const signature = reading?.signature ?? null;
+  // The shadow maps' work per frame over the probe's second: maps held, redrawn and redrawing every frame, tiles, texels.
+  const shadows = reading?.shadows ?? null;
   await runConsoleCommand(page, "gpuprobe off");
   const timers = GPU_PASSES ? [await probeRun(page, "timers"), await probeRun(page, "timers")] : null;
   const burst = GPU_PASSES ? await probeRun(page, "burst") : null;
+  // The session's first draws so far (cumulative): consecutive steps' difference is what a step's commands first drew.
+  const firstDraws = await page.evaluate(() => ((globalThis as unknown as PlayHost).__hapticPlayTest?.rendering()?.firstDraws ?? null) as unknown);
   return {
     averageFps: window.averageFps, drawnFps: window.drawnFps, view: window.view, frameCpu: window.frameCpu.medianMs, frameDraws: window.frameDraws, drawsPerPass: window.drawsPerPass,
     cpuMsPerPass: window.cpuMsPerPass,
-    width: window.rendering.width, height: window.rendering.height, settings: window.rendering.settings, signature, timers, burst,
+    width: window.rendering.width, height: window.rendering.height, settings: window.rendering.settings, signature, shadows,
+    occlusion: window.rendering.occlusion, firstDraws, timers, burst,
   };
 }
 

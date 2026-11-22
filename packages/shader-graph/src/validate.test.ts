@@ -34,6 +34,13 @@ describe("material validation", () => {
     );
   });
 
+  it("accepts the default Decal material and rejects a Scene Color node in it", () => {
+    const doc = createDefaultMaterialDocument("Scorch", "decal");
+    expect(validateMaterialDocument(doc)).toEqual([]);
+    doc.nodes.push({ id: "scene", type: "input.sceneColor", position: { x: 0, y: 0 }, properties: {} });
+    expect(validateMaterialDocument(doc).find((row) => row.nodeId === "scene")).toMatchObject({ severity: "error", message: expect.stringContaining("decal") });
+  });
+
   it("accepts the default post-process material", () => {
     const doc = createDefaultMaterialDocument("Blur", "postProcess");
     expect(validateMaterialDocument(doc)).toEqual([]);

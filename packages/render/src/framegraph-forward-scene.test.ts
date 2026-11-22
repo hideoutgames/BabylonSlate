@@ -28,8 +28,11 @@ import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { Viewport } from "@babylonjs/core/Maths/math.viewport";
 import { FloatingOriginCurrentScene } from "@babylonjs/core/Materials/floatingOriginMatrixOverrides";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
+import { FrameGraphRenderContext } from "@babylonjs/core/FrameGraph/frameGraphRenderContext";
+import { Color4 } from "@babylonjs/core/Maths/math.color";
 import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
 import type { FrameGraphTask } from "@babylonjs/core/FrameGraph/frameGraphTask";
+import type { FrameGraphRenderPass } from "@babylonjs/core/FrameGraph/Passes/renderPass";
 import { FrameGraphObjectRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/objectRendererTask";
 import { afterEach, expect, it, vi } from "vitest";
 import { normalizeParticleEmitterPayload } from "@haptic/assets";
@@ -58,11 +61,13 @@ import {
   updateSceneRenderingSettings,
 } from "./render-settings";
 import { managedRenderReservations } from "./managed-render-resources";
+import { setSceneWorldDebug, worldDebugFingerprint } from "./world-debug";
 import { setSceneRenderSettings } from "./scene-render-mode";
 import { sceneShadowController } from "./shadow-controller";
-import { AtlasCascadedShadowGenerator, shadowAtlasTexture } from "./shadow-atlas";
+import { AtlasCascadedShadowGenerator, shadowAtlasGeneration, shadowAtlasTexture } from "./shadow-atlas";
 import { HAPTIC_SHADOW_ATLAS } from "./haptic-lighting-shader";
 import { screenShadowsForPass } from "./screen-shadows";
+import { MERGED_MARCHES_NAME } from "./merged-marches";
 import { hapticLightBuffer, hapticShadowedSun } from "./haptic-lights";
 import { VOLUME_SHADOW_CODE } from "./volumetric-lights";
 import { configureCutoutSorting } from "./sorting";
@@ -164,9 +169,9 @@ it("draws a multisampled world view into its own scene targets, copies them to t
     expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
     const frame = captureRenderFrame(engine, () => graph.render(camera));
     expect(frame.value).toEqual({ path: "frameGraph" });
-    // The scene colour and depth the objects draw into: the targets of "Forward clear".
-    const clear = frame.report.tasks.find((task) => task.name === "Forward clear")!;
-    const targets = clear.passes.flatMap((pass) => [...pass.colorTargets ?? [], ...pass.depthTarget === undefined ? [] : [pass.depthTarget]]);
+    // The scene colour and depth the objects draw into.
+    const objects = frame.report.tasks.find((task) => task.name === "Forward objects")!;
+    const targets = objects.passes.flatMap((pass) => [...pass.colorTargets ?? [], ...pass.depthTarget === undefined ? [] : [pass.depthTarget]]);
     const samples = targets.map((handle) => frame.report.resources.find((resource) => resource.handle === handle)?.samples ?? 1);
     return { tasks: graph.taskNames(), samples, sceneBytes: managedRenderReservations(engine).categoryBytes };
   };
@@ -214,13 +219,48 @@ it.each(["legacyDisplay", "sceneLinear"] as const)(
     const frame = captureRenderFrame(engine, () => graph.render(camera));
     expect(frame.value).toEqual({ path: "frameGraph" });
     const resource = (handle: number | undefined) => frame.report.resources.find((entry) => entry.handle === handle);
-    const clear = frame.report.tasks.find((task) => task.name === "Forward clear")!;
-    const sceneColor = resource(clear.passes[0]?.colorTargets?.[0]);
+    const objects = frame.report.tasks.find((task) => task.name === "Forward objects")!;
+    const sceneColor = resource(objects.passes[0]?.colorTargets?.[0]);
     const bloom = frame.report.tasks.find((task) => task.name === "Scene Effects Bloom")!;
     const merge = resource(bloom.passes.find((pass) => pass.name.endsWith("Merge"))?.colorTargets?.[0]);
     const type = mode === "sceneLinear" ? Constants.TEXTURETYPE_HALF_FLOAT : Constants.TEXTURETYPE_UNSIGNED_BYTE;
     expect(sceneColor).toMatchObject({ samples: 4, types: [type] });
     expect(merge).toMatchObject({ samples: 1, types: [type], width: sceneColor!.width, height: sceneColor!.height });
+    graph.dispose();
+  },
+);
+
+it.each(["legacyDisplay", "sceneLinear"] as const)(
+  "clears the %s scene targets inside the objects pass, with the view's clear settings as each frame finds them",
+  async (mode) => {
+    const { engine, scene, camera } = host();
+    engine.getCaps().maxMSAASamples = 4;
+    allowSceneScreenShadows(scene, () => false);
+    sceneRenderingSettings(scene).qualityOverrides = qualitySettingPatch("postprocessing", { antiAliasing: "msaa4" });
+    updateSceneRenderingSettings(scene, {
+      mode: "pbr",
+      effects: { ...DEFAULT_RENDER_EFFECTS, colorPipeline: { mode }, bloom: { enabled: true, threshold: 0.8, weight: 0.2, kernel: 16, scale: 0.5 } },
+    });
+    const graph = new ForwardSceneFrameGraph(scene);
+    expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+    // No clear task of its own: no render pass stores the cleared targets for the objects pass to load.
+    expect(graph.taskNames()).not.toContain("Forward clear");
+    const clears: unknown[] = [];
+    vi.spyOn(FrameGraphRenderContext.prototype, "clearAttachments").mockImplementation(function (this: FrameGraphRenderContext, color, attachments, colour, depth, stencil, value) {
+      const pass = (this as unknown as { _currentRenderTarget?: { name: string } })._currentRenderTarget?.name;
+      const channels = color ? [color.r, color.g, color.b, color.a] : [];
+      clears.push({ pass, color: channels.map((channel) => Math.round(channel * 1e4) / 1e4), attachments, flags: [colour, depth, stencil, value] });
+    });
+    scene.clearColor = new Color4(0.25, 0.5, 0.75, 1);
+    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    scene.autoClear = false;
+    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    // A Scene Linear scene colour holds linear values: the display-space clear colour converted, as the clear task did.
+    const color = mode === "sceneLinear" ? [0.0474, 0.2176, 0.531, 1] : [0.25, 0.5, 0.75, 1];
+    expect(clears).toEqual([
+      { pass: "Forward objects", color, attachments: [0x8ce0], flags: [true, true, true, 0] },
+      { pass: "Forward objects", color, attachments: [0x8ce0], flags: [false, true, true, 0] },
+    ]);
     graph.dispose();
   },
 );
@@ -441,7 +481,7 @@ it("rejects unmanaged shadows, native passes, unsupported targets and frozen que
   camera.outputRenderTarget = target;
   // A target without depth draws through the view's own scene colour and depth, then copies colour into it.
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
-  expect(graph.taskNames()).toEqual(expect.arrayContaining(["Forward clear", "Forward objects", "Capture output"]));
+  expect(graph.taskNames()).toEqual(expect.arrayContaining(["Forward objects", "Capture output"]));
   const multisampled = new RenderTargetTexture("multisampled view", 32, scene);
   vi.spyOn(multisampled, "samples", "get").mockReturnValue(4);
   camera.outputRenderTarget = multisampled;
@@ -1406,7 +1446,6 @@ it("keeps the default graph free of effect tasks, copies and owned passes", asyn
   // extra render target so Play costs exactly what it always has.
   expect(graph.taskNames()).toEqual([
     "Forward admitted shadows",
-    "Forward clear",
     "Forward cull",
     "Forward objects",
   ]);
@@ -2004,6 +2043,23 @@ it("writes the light block once per readiness while shadow admission changes not
   graph.dispose();
 });
 
+it("asks each shadow map the shadow task binds once per readiness probe, and still waits for one that is not ready", async () => {
+  const { camera, graph, sun, controller } = await shadowedFogHost();
+  expect(graph.readiness(camera)).not.toMatchObject({ preparationRequired: true });
+  const map = controller.generator(sun)!.getShadowMap()!;
+  const asked = vi.spyOn(map, "isReadyForRendering");
+  graph.markReadinessDirty();
+  expect(graph.readiness(camera)).toMatchObject({ ready: true });
+  expect(asked).toHaveBeenCalledOnce();
+  // The one ask still decides: a map whose casters are not ready holds the strict probe.
+  asked.mockClear();
+  asked.mockReturnValue(false);
+  graph.markReadinessDirty();
+  expect(graph.readiness(camera)).toMatchObject({ ready: false });
+  expect(asked).toHaveBeenCalledOnce();
+  graph.dispose();
+});
+
 it("keeps the geometry pass and the compose running for another spatial effect while the fog march is skipped", async () => {
   const { camera, graph, skipped } = await fogHost({ ambientOcclusion: { ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true } });
   camera.rotation.y = Math.PI;
@@ -2046,14 +2102,66 @@ it.each([
   const cleared: boolean[] = [];
   spatialGeometry(graph).onBeforeTaskExecute.add(() => { inPass = true; });
   spatialGeometry(graph).onAfterTaskExecute.add(() => { inPass = false; });
-  const clear = vi.spyOn(engine, "clear").mockImplementation((_color, _backBuffer, depth) => { if (inPass) cleared.push(depth); });
+  // The host's attachment clears reach no GPU; record the depth clears within the pass.
+  const clear = vi.spyOn(engine, "clearAttachments").mockImplementation((_color, _attachments, _clearColor, depth) => { if (inPass && depth) cleared.push(depth); });
   depthRange.mockClear();
   expect(skipped()).toEqual([]);
-  clear.mockRestore();
+  clear.mockImplementation(() => {});
   expect(cleared).toEqual(depthClears);
   expect(spatialGeometry(graph).objectList.meshes.map((mesh) => mesh.name)).toEqual(meshes);
   // The depth copy runs once a frame: clip depth spans -1 to 1 here, and a pixel nothing drew lies at the camera's far plane.
   expect(depthRange.mock.calls.filter((call) => call[0] === "depthRange").map((call) => call.slice(1))).toEqual(seeds);
+  graph.dispose();
+});
+
+// `worlddebug geometrypass off`: the pass still runs and clears (a seeded one its depth, in place of the seed's draw), and
+// draws nothing; every other task runs as before, the graph is not rebuilt, and switching back draws the meshes again.
+// `worlddebug geometryonce off` (and its scissored variant): the graph builds again with one more geometry pass right
+// before the real one, drawing what it draws into targets nothing reads; back on, the graph is today's again. The
+// shadow atlas is never made again.
+it.each(["geometryonce", "geometryoncescissor"] as const)("draws the geometry pass a second time first with %s off, the shadow atlas untouched", async (part) => {
+  const { engine, scene, camera, graph, skipped } = await shadowedFogHost();
+  const generation = shadowAtlasGeneration(scene);
+  let drawing: string | null = null;
+  const draws = new Map<string, number>();
+  const scissors: number[][] = [];
+  const count = () => { if (drawing) draws.set(drawing, (draws.get(drawing) ?? 0) + 1); };
+  vi.spyOn(engine, "drawElementsType").mockImplementation(count);
+  vi.spyOn(engine, "drawArraysType").mockImplementation(count);
+  vi.spyOn(engine, "enableScissor").mockImplementation((...area) => { if (drawing) scissors.push(area); });
+  const observe = () => {
+    const spatial = (graph as unknown as { effectsGraph: { spatial: { geometry: SpatialGeometry; geometryProbe?: SpatialGeometry } } }).effectsGraph.spatial;
+    for (const [name, task] of [["geometry", spatial.geometry], ["probe", spatial.geometryProbe]] as const) {
+      task?.onBeforeTaskExecute.add(() => { drawing = name; });
+      task?.onAfterTaskExecute.add(() => { drawing = null; });
+    }
+  };
+  const frame = () => {
+    draws.clear();
+    scissors.length = 0;
+    expect(skipped()).toEqual([]);
+    return Object.fromEntries(draws);
+  };
+  observe();
+  const today = graph.taskNames();
+  const once = frame();
+  expect(once.geometry).toBeGreaterThan(0);
+  expect(once.probe).toBeUndefined();
+  expect(setSceneWorldDebug(scene, part, false)).toBe(true);
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  observe();
+  const repeated = [...today];
+  repeated.splice(today.indexOf("Spatial Geometry"), 0, "Spatial Geometry Probe");
+  expect(graph.taskNames()).toEqual(repeated);
+  // The same draws once more, the scissored one under a 1x1 scissor after its clears.
+  expect(frame()).toEqual({ geometry: once.geometry, probe: once.geometry });
+  expect(scissors).toEqual(part === "geometryoncescissor" ? [[0, 0, 1, 1]] : []);
+  expect(setSceneWorldDebug(scene, part, true)).toBe(true);
+  expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+  observe();
+  expect(graph.taskNames()).toEqual(today);
+  expect(frame()).toEqual(once);
+  expect(shadowAtlasGeneration(scene)).toBe(generation);
   graph.dispose();
 });
 
@@ -2122,8 +2230,10 @@ it.each([
 });
 
 /** A world view with Screen-Space Shadows at High and no Fog Volume: a sun (shadowed as `shadowed` says) over a plane. */
-async function screenShadowsHost(shadowed: boolean, effects: Partial<typeof DEFAULT_RENDER_EFFECTS> = {}, nullEngine?: NullEngine) {
+async function screenShadowsHost(shadowed: boolean, effects: Partial<typeof DEFAULT_RENDER_EFFECTS> = {}, nullEngine?: NullEngine,
+  quality?: ReturnType<typeof normalizeRenderingQuality>, mergedMarches = false) {
   const { engine, scene, camera } = host(nullEngine);
+  if (mergedMarches) setSceneWorldDebug(scene, "mergedmarches", true);
   Object.assign(engine.getCaps(), {
     maxDrawBuffers: 4, drawBuffersExtension: true, depthTextureExtension: true,
     textureHalfFloatRender: true, textureFloatRender: true, texelFetch: true,
@@ -2131,6 +2241,7 @@ async function screenShadowsHost(shadowed: boolean, effects: Partial<typeof DEFA
   engine._features.supportCSM = true;
   updateSceneRenderingSettings(scene, {
     mode: "pbr", effects: { ...DEFAULT_RENDER_EFFECTS, ...effects }, shadows: normalizeShadowSettings({ cascades: 1, mapSize: 256 }),
+    ...(quality ? { quality } : {}),
   });
   allowSceneScreenShadows(scene, () => true);
   updateSceneRenderingSettings(scene, undefined, undefined, { screenShadows: "high" });
@@ -2206,7 +2317,95 @@ it("idles Screen-Space Shadows and the geometry pass for an orthographic camera,
 
 it("keeps the geometry pass for ambient occlusion while Screen-Space Shadows idle", async () => {
   const { graph, frame } = await screenShadowsHost(false, { ambientOcclusion: { ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true } });
+  expect(graph.taskNames()).not.toContain(MERGED_MARCHES_NAME);
   expect(frame()).toEqual({ skipped: ["Screen shadows"], reads: false });
+  graph.dispose();
+});
+
+// The merged march pass (`merged-marches.ts`) is an opt-in, `worlddebug mergedmarches on`, until a native GPU proves it.
+it("keeps the geometry pass and the merged pass for ambient occlusion while Screen-Space Shadows idle, reading none", async () => {
+  const { graph, frame } = await screenShadowsHost(false, { ambientOcclusion: { ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true } },
+    undefined, undefined, true);
+  expect(graph.taskNames()).toContain(MERGED_MARCHES_NAME);
+  expect(frame()).toEqual({ skipped: [], reads: false });
+  graph.dispose();
+});
+
+it("keeps ambient occlusion in a pass of its own where its target's size is not the Screen-Space Shadows target's", async () => {
+  const { graph, frame } = await screenShadowsHost(false,
+    { ambientOcclusion: { ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true, resolutionScale: 1 } }, undefined, undefined, true);
+  expect(graph.taskNames()).toEqual(expect.arrayContaining(["Screen shadows", "Scene Ambient Occlusion"]));
+  expect(graph.taskNames()).not.toContain(MERGED_MARCHES_NAME);
+  expect(frame()).toEqual({ skipped: ["Screen shadows"], reads: false });
+  graph.dispose();
+});
+
+// High plans volumetric lighting; its march and occlusion's are at half the render size, as the screen shadows'.
+const HIGH = normalizeRenderingQuality(qualityPresetPatch("high"));
+const MARCHES = {
+  ambientOcclusion: { ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true },
+  volumetricLighting: { ...DEFAULT_RENDER_EFFECTS.volumetricLighting, enabled: true },
+};
+
+it("marches ambient occlusion and fog in the Screen-Space Shadows pass before the objects, each into its own target, once merged", async () => {
+  const { graph, frame } = await screenShadowsHost(true, MARCHES, undefined, HIGH, true);
+  const tasks = graph.taskNames();
+  expect(tasks.slice(tasks.indexOf("Spatial Geometry"), tasks.indexOf("Forward objects") + 1))
+    .toEqual(["Spatial Geometry", MERGED_MARCHES_NAME, "Forward objects"]);
+  for (const name of ["Screen shadows", "Scene Ambient Occlusion", "Scene Volumetric Lighting"]) expect(tasks).not.toContain(name);
+  // One pass with three colour attachments: the screen shadows' (which the objects read), the occlusion's and the fog's.
+  const { tasks: graphTasks, textureManager } = (graph as unknown as { graph: FrameGraph }).graph;
+  const pass = graphTasks.find((task) => task.name === MERGED_MARCHES_NAME)!.passes[0] as FrameGraphRenderPass;
+  const targets = (pass.renderTarget as number[]).map((handle) => textureManager.getTextureDescription(handle));
+  expect(targets.map(({ options }) => [options.types?.[0], options.formats?.[0]])).toEqual([
+    [Constants.TEXTURETYPE_HALF_FLOAT, Constants.TEXTUREFORMAT_RGBA],
+    [Constants.TEXTURETYPE_HALF_FLOAT, Constants.TEXTUREFORMAT_R],
+    [Constants.TEXTURETYPE_HALF_FLOAT, Constants.TEXTUREFORMAT_RGBA],
+  ]);
+  expect(new Set(targets.map(({ size }) => JSON.stringify(size))).size).toBe(1);
+  expect(frame()).toEqual({ skipped: [], reads: true });
+  graph.dispose();
+});
+
+it("draws each march in a pass of its own by default, merges them with worlddebug mergedmarches on, rebuilding the graph, and separates them again once off", async () => {
+  const { scene, camera, graph, frame } = await screenShadowsHost(true, MARCHES, undefined, HIGH);
+  expect(worldDebugFingerprint(scene)).toBe("none");
+  const separate = graph.taskNames();
+  expect(separate).not.toContain(MERGED_MARCHES_NAME);
+  expect(separate.slice(separate.indexOf("Spatial Geometry"), separate.indexOf("Forward objects") + 1))
+    .toEqual(["Spatial Geometry", "Screen shadows", "Forward objects"]);
+  expect(separate.indexOf("Scene Ambient Occlusion")).toBeGreaterThan(separate.indexOf("Forward objects"));
+  expect(separate.indexOf("Scene Volumetric Lighting")).toBeGreaterThan(separate.indexOf("Forward objects"));
+  expect(frame()).toEqual({ skipped: [], reads: true });
+  const builds = graph.diagnostics().graphBuilds;
+  setSceneWorldDebug(scene, "mergedmarches", true);
+  expect(worldDebugFingerprint(scene)).toBe("mergedmarches on");
+  await graph.prepare(camera);
+  expect(graph.taskNames()).toContain(MERGED_MARCHES_NAME);
+  expect(graph.diagnostics().graphBuilds).toBeGreaterThan(builds);
+  expect(frame()).toEqual({ skipped: [], reads: true });
+  setSceneWorldDebug(scene, "mergedmarches", false);
+  expect(worldDebugFingerprint(scene)).toBe("none");
+  await graph.prepare(camera);
+  expect(graph.taskNames()).toEqual(separate);
+  graph.dispose();
+});
+
+it("skips the merged pass and the geometry pass while neither its fog nor its screen shadows march, without rebuilding", async () => {
+  // No light casts shadows, so the screen shadows idle; the fog marches while its Fog Volume is in front of the camera.
+  const { camera, graph, skipped } = await fogHost({}, undefined, (scene) => {
+    allowSceneScreenShadows(scene, () => true);
+    updateSceneRenderingSettings(scene, undefined, undefined, { screenShadows: "high" });
+    setSceneWorldDebug(scene, "mergedmarches", true);
+  });
+  expect(graph.taskNames()).toContain(MERGED_MARCHES_NAME);
+  const builds = graph.diagnostics().graphBuilds;
+  expect(skipped()).toEqual([]);
+  camera.rotation.y = Math.PI;
+  expect(skipped().sort()).toEqual([MERGED_MARCHES_NAME, "Scene Effects Compose", "Spatial Geometry"].sort());
+  camera.rotation.y = 0;
+  expect(skipped()).toEqual([]);
+  expect(graph.diagnostics().graphBuilds).toBe(builds);
   graph.dispose();
 });
 
@@ -2365,3 +2564,67 @@ it("sizes every screen-space target of the world view from its render scale; onl
     graph.dispose();
   }
 });
+
+it("splits ForwardSceneFrameGraph for projected decals while the scene has authored decals or spawned any since its last clear", async () => {
+  const { DECAL_CLASS_ID, RENDER_QUALITY_PROFILES, decalBindings } = await import("@haptic/core");
+  const { clearDecals, sceneDecalHost, sceneDecalStats, spawnDynamicDecal, upsertDecals } = await import("./decal-pass");
+  const { scene, camera } = host();
+  camera.position.set(0, 2, -10);
+  camera.setTarget(new Vector3(0, 0, 0));
+  updateSceneRenderingSettings(scene, {
+    effects: { ...DEFAULT_RENDER_EFFECTS, toneMapping: "none" },
+    quality: {
+      ...RENDER_QUALITY_PROFILES.low,
+      postprocessing: { ...RENDER_QUALITY_PROFILES.low.postprocessing, antiAliasing: "off" },
+    },
+  });
+  const graph = new ForwardSceneFrameGraph(scene);
+  const taskNames = () => (graph as unknown as { graph: FrameGraph }).graph.tasks.map((task) => task.name);
+  try {
+    expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+    const baseTasks = taskNames();
+    expect(baseTasks).not.toContain("Decal split");
+    expect(baseTasks).not.toContain("Forward decals");
+    expect(baseTasks).not.toContain("Forward transparent");
+
+    const root = new TransformNode("decal-actor", scene);
+    upsertDecals(scene, "decal-actor", root, decalBindings([
+      { id: "d1", classId: DECAL_CLASS_ID, properties: { materialGuid: "scorch" } },
+    ]));
+    expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+    const decalTasks = taskNames();
+    expect(decalTasks).toContain("Decal split");
+    expect(decalTasks).toContain("Forward decals");
+    expect(decalTasks).toContain("Forward transparent");
+    expect(decalTasks.indexOf("Forward objects")).toBeLessThan(decalTasks.indexOf("Forward decals"));
+    expect(decalTasks.indexOf("Forward decals")).toBeLessThan(decalTasks.indexOf("Forward transparent"));
+
+    clearDecals(scene);
+    expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+    const clearedTasks = taskNames();
+    expect(clearedTasks).not.toContain("Decal split");
+    expect(clearedTasks).not.toContain("Forward decals");
+
+    // The first Spawn Decal adds the pass; expiry and later spawns reuse that graph until the decals are cleared.
+    const spawn = () => spawnDynamicDecal(scene, {
+      materialGuid: "impact", position: [0, 0, 0], rotation: [0, 0, 0, 1], size: [1, 1, 1], lifetime: 1,
+    });
+    spawn();
+    expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+    const spawnedGraph = (graph as unknown as { graph: FrameGraph }).graph;
+    expect(taskNames()).toContain("Forward decals");
+    sceneDecalHost(scene).advanceTimers(2);
+    expect(sceneDecalStats(scene).dynamic).toBe(0);
+    expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+    spawn();
+    expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+    expect((graph as unknown as { graph: FrameGraph }).graph).toBe(spawnedGraph);
+    expect(taskNames()).toContain("Forward decals");
+    clearDecals(scene);
+    expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+    expect(taskNames()).not.toContain("Forward decals");
+  } finally {
+    graph.dispose();
+  }
+});
+

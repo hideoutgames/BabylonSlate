@@ -12,11 +12,11 @@ import type { BoundingBox } from "@babylonjs/core/Culling/boundingBox";
 import { Plane } from "@babylonjs/core/Maths/math.plane";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { Scene } from "@babylonjs/core/scene";
-import { SHADOW_FAR_CASTER_MIN_TEXELS, SHADOW_FIRST_CASCADE_SCALE, SHADOW_HALF_TILE_CASCADES, type ShadowSettings } from "@haptic/core";
+import { SHADOW_FAR_CASTER_MIN_TEXELS, SHADOW_HALF_TILE_CASCADES, type ShadowSettings } from "@haptic/core";
 import { AtlasCascadedShadowGenerator, AtlasShadowGenerator, createAtlasCascadedShadowGenerator, createAtlasShadowGenerator, shadowAtlasRenderTarget, shadowTileSize } from "./shadow-atlas";
 import { readinessProbeListScope } from "./readiness-scope";
 import { shadowDebugOff } from "./shadow-debug";
-import { casterWithinShadowRange, deformsWithinBounds, drawsNoShadow, hasDeformingShadowBounds } from "./shadow-mesh-policy";
+import { casterWithinShadowRange, castsNoShadowDepth, deformsWithinBounds, hasDeformingShadowBounds } from "./shadow-mesh-policy";
 import { cascadeTexelScale, castsIntoCascade } from "./shadow-caster-size";
 import type { ShadowCasterList } from "./shadow-caster-list";
 import type { RetainedShadowCasters } from "./shadow-retained-casters";
@@ -36,6 +36,9 @@ import { CASCADE_LOG_ANCHOR, CASCADE_UNIFORM_LAMBDA, cascadeSplit } from "./casc
 // Every Babylon 9.29 shadow filter returns fully lit at darkness 1.
 export const NEUTRAL_DARKNESS = 1;
 
+/** The list of a map layer that draws no caster; Babylon only reads a custom render list. */
+const NO_CASTERS: AbstractMesh[] = Object.freeze([]) as unknown as AbstractMesh[];
+
 /** A map's current owner; a local map can move between lights. `view`: a view's own sun map. */
 export type ShadowMapSlot = { entry: Entry; view: boolean };
 /** Draws and triangles the maps rendered this frame. */
@@ -51,6 +54,11 @@ export interface ShadowMapContext {
   readonly counters: ShadowDrawCounters;
   /** The casters a map draws without Babylon's per-caster work; null where that cannot work (`RetainedShadowCasters`). */
   readonly retained: RetainedShadowCasters | null;
+  /**
+   * Whether some map draws blended parts (`transparencyShadow`): then a caster whose every part blends draws
+   * (`castsNoShadowDepth`). False when absent.
+   */
+  readonly blendedDraws?: () => boolean;
   /**
    * When a layer's list is also built the full way and compared (`due`: the frame's walk ran the full path too,
    * `ShadowMapRefresh.stageCheck`), and where disagreements are counted.
@@ -162,7 +170,7 @@ export function createShadowGenerator(
   const camera = view ?? undefined;
   // The controller registers directional, point and spot lights only.
   const generator = atlasShadowGenerator(entry.light as LocalShadowLight | DirectionalLight, mapSize, settings.cascades, atlasEdge, camera,
-    SHADOW_HALF_TILE_CASCADES[settings.profile], SHADOW_FIRST_CASCADE_SCALE[settings.profile]);
+    SHADOW_HALF_TILE_CASCADES[settings.profile], settings.firstCascadeScale);
   const slot = { entry, view: view !== null };
   context.slots.set(generator, slot);
   if (generator instanceof CascadedShadowGenerator) {
@@ -294,22 +302,22 @@ export function createShadowGenerator(
   // its planes and caster list; upstream views the same side/far planes.
   const planes = Array.from({ length: 6 }, () => new Plane(0, 0, 0, 0));
   const upstream = planes.slice(1);
-  const casters: AbstractMesh[] = [];
+  // Per layer, what its planes hold and what of that Babylon draws, each written over in place: a list shortened to
+  // less than half of what it held gives up its storage, which one list for every layer, or one list for both, would
+  // do every frame (a cube map's faces, a cascade's casters before and after the retained ones leave).
+  const queried: AbstractMesh[][] = [];
+  const listed: AbstractMesh[][] = [];
   const fullList: AbstractMesh[] = [];
   if (map)
     map.getCustomRenderList = (layer) => {
       // Until this pass lists again, the shared buffer draws nothing into it.
       context.retained?.discard(generator);
       // `shadowdebug casters off`: the layer is bound and cleared as ever, and draws no caster.
-      if (shadowDebugOff(context.scene, "casters")) {
-        casters.length = 0;
-        return casters;
-      }
-      // `shadowdebug farcascades off`: a far cascade left out of this frame's render draws no caster either.
-      if (generator instanceof AtlasCascadedShadowGenerator && generator.defersCascade(layer)) {
-        casters.length = 0;
-        return casters;
-      }
+      if (shadowDebugOff(context.scene, "casters")) return NO_CASTERS;
+      // `shadowdebug farcascades off`: a far cascade left out of this frame's render draws no caster either, nor does a
+      // cascade whose tile this pass keeps (`keepsCascade`).
+      if (generator instanceof AtlasCascadedShadowGenerator && (generator.takesKeptPass(layer) || generator.defersCascade(layer)))
+        return NO_CASTERS;
       const transform =
         generator instanceof CascadedShadowGenerator
           ? generator.getCascadeTransformMatrix(layer)
@@ -322,6 +330,7 @@ export function createShadowGenerator(
           : planes;
       // A readiness probe that asks only some meshes lists only those: the others answer without being asked.
       const asked = readinessProbeListScope();
+      const casters = (queried[layer] ??= []);
       if (asked) context.spatial.queryPlanesOf(asked, activePlanes, casters);
       else {
         context.spatial.queryPlanes(activePlanes, casters);
@@ -331,14 +340,15 @@ export function createShadowGenerator(
         if (context.listCheck?.due()) {
           const full = context.spatial.queryPlanes(activePlanes, fullList, true);
           let kept = 0;
-          for (const mesh of full) if (!drawsNoShadow(mesh)) full[kept++] = mesh;
+          const blended = context.blendedDraws?.() ?? false;
+          for (const mesh of full) if (!castsNoShadowDepth(mesh, blended)) full[kept++] = mesh;
           full.length = kept;
           let misses = Math.abs(full.length - casters.length);
           for (let index = 0; index < Math.min(full.length, casters.length); index++) if (full[index] !== casters[index]) misses++;
           if (misses) {
             context.listCheck.miss(misses);
-            casters.length = 0;
-            for (const mesh of full) casters.push(mesh);
+            for (let index = 0; index < full.length; index++) casters[index] = full[index]!;
+            casters.length = full.length;
           }
         }
       }
@@ -357,21 +367,25 @@ export function createShadowGenerator(
       let kept = 0;
       // A retained caster is drawn from the shared buffer (the observer below): Babylon's list leaves it out.
       const retained = context.retained?.begin(generator, activePlanes) ? context.retained : null;
-      for (const mesh of casters) {
+      const list = (listed[layer] ??= []);
+      for (let index = 0; index < casters.length; index++) {
+        const mesh = casters[index]!;
         const posed = deformsWithinBounds(mesh);
         if (!isRevealPending(mesh) &&
           (!position || casterWithinShadowRange(mesh, position, range!)) &&
           (!posed || !boxOutside(mesh.getBoundingInfo().boundingBox, activePlanes)) &&
           (!minTexels || castsIntoCascade(scale, mesh.getBoundingInfo().boundingSphere.radiusWorld, size, minTexels) ||
             (!posed && hasDeformingShadowBounds(mesh))) &&
-          !retained?.take(mesh)) casters[kept++] = mesh;
+          !retained?.take(mesh)) list[kept++] = mesh;
       }
-      casters.length = kept;
-      return casters;
+      list.length = kept;
+      return list;
     };
   // After the layer's clear (the map's own observer, added first) and before Babylon's casters: the layer listed last.
   if (map && context.retained) {
     const retained = context.retained;
+    // Before the frame's first map binds a page: every row its layers read, uploaded outside any render pass.
+    map.onBeforeBindObservable.add(() => retained.prepareFrame());
     (map as unknown as { _objectRenderer: ObjectRenderer })._objectRenderer.onBeforeRenderingManagerRenderObservable.add(() => {
       retained.draw(generator);
     });

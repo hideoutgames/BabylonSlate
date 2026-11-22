@@ -102,6 +102,7 @@ export * from "./component-attachment";
 export * from "./light-2d";
 export * from "./surface-shading";
 export * from "./fog-volume";
+export * from "./decal";
 export * from "./mirror";
 export * from "./update-rate";
 export * from "./reflection-probe";

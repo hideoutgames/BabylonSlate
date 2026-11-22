@@ -139,6 +139,9 @@ export function playSessionLoad(options: PlaySessionOptions, sceneSourcesAvailab
     gameInstanceClass: options.gameInstanceClass,
     scenes: options.scenes,
     sceneNavmeshBytes: Object.fromEntries(options.sceneNavmeshBytes ?? []),
+    ...(options.sceneLandscapeBytes && options.sceneLandscapeBytes.size > 0
+      ? { sceneLandscapeBytes: Object.fromEntries(options.sceneLandscapeBytes) }
+      : {}),
     sceneLayers: options.sceneLayers,
     infiniteLoopDetection: options.infiniteLoopDetection,
     loopCount: options.loopCount,
@@ -149,6 +152,7 @@ export function playSessionLoad(options: PlaySessionOptions, sceneSourcesAvailab
     globalParameterCatalog: options.globalParameterCatalog,
     assetCatalog: options.assetCatalog,
     focusNavigation: options.focusNavigation,
+    sceneLayerPostProcessStack: options.sceneLayerPostProcessStack,
     pixelsPerUnit: options.pixelsPerUnit,
     pixelMatchedCameras: options.pixelMatchedCameras,
     collisionPresets: options.collisionPresets,

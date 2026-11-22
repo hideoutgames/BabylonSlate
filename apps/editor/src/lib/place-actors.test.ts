@@ -192,6 +192,7 @@ describe("ENGINE_PLACE_ACTORS", () => {
       ["2d-button", "2DButtonComponent"],
       ["2d-focus-target", "2DFocusTargetComponent"],
       ["2d-panel", "2DPanelComponent"],
+      ["post-processing-panel", "2DPostProcessingPanelComponent"],
       ["2d-text", "2DTextComponent"],
       ["2d-rich-text", "2DRichTextComponent"],
     ];

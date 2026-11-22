@@ -3,7 +3,7 @@ import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
 import type { Light } from "@babylonjs/core/Lights/light";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { Scene } from "@babylonjs/core/scene";
-import { SHADOW_CAPACITY_PROFILES, SHADOW_FIRST_CASCADE_SCALE, SHADOW_HALF_TILE_CASCADES, type ShadowSettings } from "@haptic/core";
+import { SHADOW_CAPACITY_PROFILES, SHADOW_HALF_TILE_CASCADES, type ShadowSettings } from "@haptic/core";
 import { isDirectionalLightExcluded } from "./light-policy";
 import {
   ENGINE_SHADOW_BUDGET,
@@ -49,6 +49,11 @@ export type ShadowAdmissionBudget = {
    * with the same tiles, its growth exempt from the ledger as a sun's is; so a step measures the atlas's size alone.
    */
   readonly oversizedAtlas?: boolean;
+  /**
+   * `shadowdebug fulltiles off`: every map asks for half its map size's edge (at least 256), a quarter of its texels,
+   * with the same cascades and lights; the atlas is planned from the full sizes, so its edge and pages stay the level's.
+   */
+  readonly halfTiles?: boolean;
 };
 /** What a sync admits by (`planShadowAdmission`). */
 export type ShadowAdmissionInput = {
@@ -115,6 +120,7 @@ export function readShadowAdmissionBudget(
     atlasEdge: shadowAtlasEdge(scene.getEngine(), settings.profile),
     atlasEdgeLimit: shadowAtlasEdgeLimit(scene.getEngine()),
     ...(shadowDebugOff(scene, "atlasfit") ? { oversizedAtlas: true } : {}),
+    ...(shadowDebugOff(scene, "fulltiles") ? { halfTiles: true } : {}),
   };
 }
 
@@ -239,7 +245,7 @@ export function planShadowAdmission(input: ShadowAdmissionInput, reuse?: ShadowA
     return true;
   });
   const halved = SHADOW_HALF_TILE_CASCADES[settings.profile];
-  const firstScale = SHADOW_FIRST_CASCADE_SCALE[settings.profile];
+  const firstScale = settings.firstCascadeScale;
   // A planned sun grows the atlas for its tiles at the size it asks for, or the one a failed allocation left it.
   const sun = planned.find((decision) => decision.entry.light instanceof DirectionalLight);
   const sunRecovery = sun && !sun.dropRecovery ? sun.entry.recovery : null;
@@ -269,9 +275,10 @@ export function planShadowAdmission(input: ShadowAdmissionInput, reuse?: ShadowA
     const entry = decision.entry;
     const directional = entry.light instanceof DirectionalLight;
     const passes = admissionPasses(entry.light, settings);
-    const requestedSize = directional
+    const authoredSize = directional
       ? settings.mapSize
       : settings.localMapSize;
+    const requestedSize = budget.halfTiles ? Math.max(256, authoredSize / 2) : authoredSize;
     // A recovery keyed to other settings no longer limits the map.
     const recovery = decision.dropRecovery ? null : entry.recovery;
     let mapSize = Math.min(requestedSize, fitted);
@@ -280,8 +287,9 @@ export function planShadowAdmission(input: ShadowAdmissionInput, reuse?: ShadowA
       entry.generator &&
       !entry.resetAllocation &&
       entry.settings?.profile === settings.profile &&
+      (!directional || entry.settings.firstCascadeScale === settings.firstCascadeScale) &&
       (directional ? entry.settings.mapSize : entry.settings.localMapSize) ===
-        requestedSize
+        authoredSize
     )
       mapSize = Math.min(
         mapSize,

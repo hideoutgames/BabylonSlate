@@ -6,7 +6,9 @@ import {
   normalizeSceneLayerActorDesign,
   normalizeSceneLayerSpawnList,
   parseOverlayPanelProperties,
+  parsePostProcessingPanelProperties,
   parseSceneLayerAnchor,
+  postProcessingPanelActive,
   sceneLayerActorFrameBounds,
   sceneLayerCanvasToLayer,
   sceneLayerRelativeAnchorWorldPosition,
@@ -19,12 +21,11 @@ import { createActor, createDefaultSceneSettings, normalizeScene } from "./scene
 import { createDefaultScene } from "./project";
 
 describe("SceneLayer schema", () => {
-  it("creates an empty unlit 2D overlay document with 2D gravity and no post-process", () => {
+  it("creates an empty unlit 2D overlay document with 2D gravity", () => {
     const layer = createDefaultSceneLayer();
     expect(layer.name).toBe("Untitled");
     expect(layer.actors).toEqual([]);
     expect(layer.folders).toEqual([]);
-    expect(layer.settings.postProcessStack).toEqual([]);
     expect(layer.settings.gravity).toEqual(
       createDefaultSceneSettings("2d").gravity,
     );
@@ -77,9 +78,8 @@ describe("SceneLayer schema", () => {
     expect(layer.actors[0]?.components.map((c) => c.classId)).toEqual([
       "SpriteComponent",
     ]);
-    expect(layer.settings.postProcessStack).toEqual([
-      { id: "pass-1", materialGuid: "pp-1", enabled: true },
-    ]);
+    // Post-processing is the project's, shared by every layer: a layer document keeps no passes of its own.
+    expect(layer.settings).not.toHaveProperty("postProcessStack");
   });
 
   it("normalizes a world-scene spawn list by guid, integer z-order, and enabled", () => {
@@ -107,9 +107,7 @@ describe("SceneLayer schema", () => {
     expect(scene.viewportMode).toBe("2d");
     expect(scene.settings.physicsWorld).toBe("2d");
     expect(scene.settings.gravity).toEqual([0, -4, 0]);
-    expect(scene.settings.postProcessStack).toEqual([
-      { id: "pass", materialGuid: "pp", enabled: true },
-    ]);
+    expect(scene.settings.postProcessStack).toEqual([]);
     expect(scene.actors).toHaveLength(1);
     expect(scene.settings.environmentColor).toEqual([0, 0, 0]);
     expect(scene.overlayEditor).toBe(true);
@@ -192,9 +190,7 @@ describe("SceneLayer schema", () => {
     const restored = editorSceneToSceneLayer(sceneLayerToEditorScene(layer));
     expect(restored.name).toBe("HUD");
     expect(restored.settings.gravity).toEqual([0, -4, 0]);
-    expect(restored.settings.postProcessStack).toEqual([
-      { id: "pass", materialGuid: "pp", enabled: true },
-    ]);
+    expect(restored.settings).not.toHaveProperty("postProcessStack");
     expect(restored.actors).toHaveLength(1);
   });
 
@@ -295,6 +291,27 @@ describe("2DPanel properties", () => {
   it("keeps margins as 0-1 source fractions", () => {
     expect(parseOverlayPanelProperties({ marginLeft: 0.5 }).marginLeft).toBe(0.5);
     expect(parseOverlayPanelProperties({ marginRight: 10 }).marginRight).toBe(1);
+  });
+});
+
+describe("Post Processing Panel properties", () => {
+  it.each([
+    { label: "nothing authored", value: undefined, expected: { enabled: true, materialGuid: null }, active: false },
+    { label: "a Material", value: { materialGuid: " mat-1 " }, expected: { enabled: true, materialGuid: "mat-1" }, active: true },
+    { label: "a blank Material", value: { materialGuid: "  " }, expected: { enabled: true, materialGuid: null }, active: false },
+    { label: "a non-string Material", value: { materialGuid: 7 }, expected: { enabled: true, materialGuid: null }, active: false },
+    { label: "switched off with a Material", value: { enabled: false, materialGuid: "mat-1" }, expected: { enabled: false, materialGuid: "mat-1" }, active: false },
+    { label: "a non-boolean Enabled", value: { enabled: 0, materialGuid: "mat-1" }, expected: { enabled: true, materialGuid: "mat-1" }, active: true },
+  ])("reads $label", ({ value, expected, active }) => {
+    const parsed = parsePostProcessingPanelProperties(value);
+    expect(parsed).toEqual(expected);
+    expect(postProcessingPanelActive(parsed)).toBe(active);
+  });
+
+  it("is kept in a Scene Layer document", () => {
+    const actor = { ...createActor("a1", "Panel"), components: [{ id: "p", classId: "2DPostProcessingPanelComponent", properties: { materialGuid: "mat-1" } }] };
+    expect(normalizeSceneLayer({ actors: [actor] }).actors[0]!.components.map((component) => component.classId))
+      .toEqual(["2DPostProcessingPanelComponent"]);
   });
 });
 

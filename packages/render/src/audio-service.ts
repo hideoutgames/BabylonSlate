@@ -2,12 +2,14 @@ import {
   AUDIO_MAX_CONCURRENT_VOICES,
   AUDIO_PRE_UNLOCK_QUEUE_CAP,
   AUDIO_DEFAULT_SOURCE_CHUNK,
+  AUDIO_STREAMED_VOICE_ESTIMATE_BYTES,
   clampAudioGain,
   computeDopplerPlaybackRate,
   createDefaultAudioPayload,
   decodeAudioReverbChunk,
   interpolateAudioReverb,
   isDryAudioReverbFallback,
+  mimeForAudioBytes,
   normalizeAudioPayload,
   occlusionFactor,
   pickWeightedAudioClip,
@@ -34,6 +36,8 @@ import type {
   AudioSpatialPlayOptions,
 } from "./audio-playback-backend";
 
+const EMPTY_AUDIO_BYTES = new Uint8Array(0);
+
 export type AudioDiagnostic = {
   code: string;
   message: string;
@@ -45,6 +49,11 @@ export type AudioSourceBytesLoader = (request: {
   chunkId: string;
   revision?: string;
 }) => Promise<Uint8Array | null | undefined>;
+export type AudioStreamUrlResolver = (request: {
+  assetGuid: string;
+  chunkId: string;
+  revision?: string;
+}) => string | null | undefined;
 export type AudioAssetPreparer = (guid: string, request: { consumer: string; signal: AbortSignal }) => Promise<() => void>;
 
 export type AudioLibrary = {
@@ -61,6 +70,8 @@ type AudioStats = {
   unlocked: boolean;
   queued: number;
   voices: number;
+  streamedVoices: number;
+  streamedBytes: number;
   lastGain: number | null;
   lastDistance: number | null;
   wet: number;
@@ -73,6 +84,8 @@ export const audioStats: AudioStats = {
   unlocked: false,
   queued: 0,
   voices: 0,
+  streamedVoices: 0,
+  streamedBytes: 0,
   lastGain: null,
   lastDistance: null,
   wet: 0,
@@ -94,6 +107,8 @@ type LiveVoice = {
   voiceId: string;
   assetGuid: string;
   cacheKey: string;
+  streamed: boolean;
+  streamedUrlKey: string | null;
   playCallVolume: number;
   emitterActorGuid: string | null;
   spatial: AudioSpatialPlayOptions | null;
@@ -206,6 +221,7 @@ export class AudioService {
   private readonly onVoiceEnded?: (voiceId: string, dropped?: boolean) => void;
   private readonly onAssetReady?: (guid: string) => void;
   private readonly loadSourceBytes?: AudioSourceBytesLoader;
+  private readonly resolveStreamUrl?: AudioStreamUrlResolver;
   private readonly prepareAsset?: AudioAssetPreparer;
   private readonly preparation?: NativePreparationScheduler;
   private readonly decodeController = new AbortController();
@@ -215,6 +231,8 @@ export class AudioService {
   private maxVoices: number;
   private library: AudioLibrary = emptyLibrary();
   private readonly sourceBytes = new Map<string, Uint8Array>();
+  /** Ref-counted Blob URLs for streamed clips when no direct stream URL was provided. */
+  private readonly streamedUrls = new Map<string, { url: string; mimeType: string; refs: number; bytes: number }>();
   private readonly decodedLoads = new Map<string, Promise<Uint8Array>>();
   private readonly retiredClipKeys = new Set<string>();
   private readonly sourceLoads = new Map<string, Promise<Uint8Array | null>>();
@@ -266,6 +284,7 @@ export class AudioService {
     onVoiceEnded?: (voiceId: string, dropped?: boolean) => void;
     onAssetReady?: (guid: string) => void;
     loadSourceBytes?: AudioSourceBytesLoader;
+    resolveStreamUrl?: AudioStreamUrlResolver;
     prepareAsset?: AudioAssetPreparer;
     preparation?: NativePreparationScheduler;
     now?: () => number;
@@ -282,6 +301,7 @@ export class AudioService {
     this.onVoiceEnded = options.onVoiceEnded;
     this.onAssetReady = options.onAssetReady;
     this.loadSourceBytes = options.loadSourceBytes;
+    this.resolveStreamUrl = options.resolveStreamUrl;
     this.prepareAsset = options.prepareAsset;
     this.preparation = options.preparation;
     this.now = options.now ?? (() => performance.now());
@@ -339,7 +359,7 @@ export class AudioService {
     return revision ? JSON.stringify([key, revision]) : key;
   }
 
-  /** Decode all authored clip choices without starting voices; the preload pins their buffers. */
+  /** Decode all authored decoded clip choices without starting voices; streamed assets verify availability without PCM decode. */
   async preload(assetGuids: readonly string[], priority: NativePreparationPriority = "preload"): Promise<() => void> {
     const keys: string[] = [];
     const release = () => { for (const key of keys.splice(0)) this.unpinClip(key); };
@@ -347,8 +367,27 @@ export class AudioService {
       for (const guid of assetGuids) {
         const audio = this.library.audio.get(guid);
         if (!audio) throw new Error(`Audio ${guid} is unavailable.`);
-        for (const clip of normalizeAudioPayload(audio).clips) {
+        const payload = normalizeAudioPayload(audio);
+        const revision = this.library.sourceRevisions?.get(guid);
+        for (const clip of payload.clips) {
           const key = this.clipKey(guid, clip.chunkId);
+          if (payload.playbackMode === "streamed") {
+            const directUrl = this.resolveStreamUrl?.({
+              assetGuid: guid,
+              chunkId: clip.chunkId,
+              ...(revision ? { revision } : {}),
+            })?.trim();
+            if (!directUrl) {
+              const hadSource = this.sourceBytes.has(key);
+              const source = await this.resolveSourceBytes(guid, clip.chunkId, key);
+              if (!source?.byteLength) throw new Error(`Audio ${guid}, chunk ${clip.chunkId}: source bytes are missing.`);
+              if (this.loadSourceBytes && !hadSource) this.sourceBytes.delete(key);
+            }
+            if (key !== this.clipKey(guid, clip.chunkId) || !this.library.audio.has(guid))
+              throw new Error(`Audio ${guid} changed during preload; retry the request.`);
+            if (this.disposed) throw new Error("Audio preparation was disposed.");
+            continue;
+          }
           const source = await this.resolveSourceBytes(guid, clip.chunkId, key);
           if (!source?.byteLength) throw new Error(`Audio ${guid}, chunk ${clip.chunkId}: source bytes are missing.`);
           await this.ensureDecoded(key, source, priority);
@@ -656,6 +695,16 @@ export class AudioService {
     for (const voiceId of [...this.voices.keys()]) {
       this.stopVoice(voiceId);
     }
+    for (const entry of this.streamedUrls.values()) {
+      try {
+        if (typeof URL !== "undefined" && typeof URL.revokeObjectURL === "function") {
+          URL.revokeObjectURL(entry.url);
+        }
+      } catch {
+        /* keep tearing down */
+      }
+    }
+    this.streamedUrls.clear();
     this.queue = [];
     this.sourceBytes.clear();
     this.sourceLoads.clear();
@@ -866,37 +915,82 @@ export class AudioService {
     const pitch = assetPitch * clampPitchMultiplier(command.pitch ?? 1);
     const fixedPose = finitePose(command.location);
     const cacheKey = this.clipKey(assetGuid, clip.chunkId);
-    const source = await this.resolveSourceBytes(assetGuid, clip.chunkId, cacheKey);
-    if (!this.isCurrent(generation) || sourceOwner?.signal?.aborted || cacheKey !== this.clipKey(assetGuid, clip.chunkId) || this.retiredClipKeys.has(cacheKey)) return;
-    if (!source || source.byteLength === 0) {
-      this.onDiagnostic?.({
-        code: "audio.missing_source",
-        message: "Audio source bytes are missing; playback skipped.",
+    const streamed = resolved.playbackMode === "streamed";
+    let decoded: Uint8Array = EMPTY_AUDIO_BYTES;
+    let streamSourceUrl: string | undefined;
+    let streamMimeType: string | undefined;
+    let streamedUrlKey: string | null = null;
+
+    if (streamed) {
+      const revision = this.library.sourceRevisions?.get(assetGuid);
+      const directUrl = this.resolveStreamUrl?.({
         assetGuid,
-      });
-      return;
-    }
-    let decoded = this.cache.get(cacheKey);
-    if (!decoded) {
-      try {
-        decoded = await this.ensureDecoded(cacheKey, source);
-        if (this.disposed) return;
-        if (!this.isCurrent(generation)) {
-          return;
+        chunkId: clip.chunkId,
+        ...(revision ? { revision } : {}),
+      })?.trim();
+      if (directUrl) {
+        streamSourceUrl = directUrl;
+      } else {
+        const existingUrl = this.streamedUrls.get(cacheKey);
+        if (existingUrl) {
+          existingUrl.refs += 1;
+          streamSourceUrl = existingUrl.url;
+          streamMimeType = existingUrl.mimeType;
+          streamedUrlKey = cacheKey;
+        } else {
+          const source = await this.resolveSourceBytes(assetGuid, clip.chunkId, cacheKey);
+          if (!this.isCurrent(generation) || sourceOwner?.signal?.aborted || cacheKey !== this.clipKey(assetGuid, clip.chunkId) || this.retiredClipKeys.has(cacheKey)) return;
+          if (!source || source.byteLength === 0) {
+            this.onDiagnostic?.({
+              code: "audio.missing_source",
+              message: "Audio source bytes are missing; playback skipped.",
+              assetGuid,
+            });
+            return;
+          }
+          decoded = source;
+          streamMimeType = mimeForAudioBytes(source);
+          // Pin/acquire the Blob URL before stopping a replaced voice so replaying the same clip reuses it.
+          const acquired = this.acquireStreamedUrl(cacheKey, source, streamMimeType);
+          streamSourceUrl = acquired.url;
+          streamedUrlKey = acquired.urlKey;
         }
-      } catch (error) {
-        if (!this.isCurrent(generation)) return;
+      }
+    } else {
+      const source = await this.resolveSourceBytes(assetGuid, clip.chunkId, cacheKey);
+      if (!this.isCurrent(generation) || sourceOwner?.signal?.aborted || cacheKey !== this.clipKey(assetGuid, clip.chunkId) || this.retiredClipKeys.has(cacheKey)) return;
+      if (!source || source.byteLength === 0) {
         this.onDiagnostic?.({
-          code: /budget/i.test(String(error)) ? "audio.budget_exceeded" : "audio.decode_failed",
-          message: `Audio ${assetGuid} failed to prepare: ${error instanceof Error ? error.message : String(error)}`,
+          code: "audio.missing_source",
+          message: "Audio source bytes are missing; playback skipped.",
           assetGuid,
         });
         return;
       }
+      let cachedDecoded = this.cache.get(cacheKey);
+      if (!cachedDecoded) {
+        try {
+          cachedDecoded = await this.ensureDecoded(cacheKey, source);
+          if (this.disposed) return;
+          if (!this.isCurrent(generation)) {
+            return;
+          }
+        } catch (error) {
+          if (!this.isCurrent(generation)) return;
+          this.onDiagnostic?.({
+            code: /budget/i.test(String(error)) ? "audio.budget_exceeded" : "audio.decode_failed",
+            message: `Audio ${assetGuid} failed to prepare: ${error instanceof Error ? error.message : String(error)}`,
+            assetGuid,
+          });
+          return;
+        }
+      }
+      if (!this.isCurrent(generation) || sourceOwner?.signal?.aborted || cacheKey !== this.clipKey(assetGuid, clip.chunkId) || this.retiredClipKeys.has(cacheKey)) return;
+      decoded = cachedDecoded;
+      // Transfer the pin before stopping a replaced voice; unpin may evict now.
+      this.cache.pin(cacheKey);
     }
-    if (!this.isCurrent(generation) || sourceOwner?.signal?.aborted || cacheKey !== this.clipKey(assetGuid, clip.chunkId) || this.retiredClipKeys.has(cacheKey)) return;
-    // Transfer the pin before stopping a replaced voice; unpin may evict now.
-    this.cache.pin(cacheKey);
+
     const voiceId = command.voiceId?.trim() || `voice-${++this.voiceSeq}`;
     this.stopVoice(voiceId);
     if (this.voices.size >= this.maxVoices) {
@@ -931,6 +1025,9 @@ export class AudioService {
       voiceId,
       assetGuid,
       source: decoded,
+      playbackMode: resolved.playbackMode,
+      ...(streamSourceUrl ? { sourceUrl: streamSourceUrl } : {}),
+      ...(streamMimeType ? { mimeType: streamMimeType } : {}),
       cacheKey,
       gain: resolved.gain,
       loop: command.loop === true || payload.loop === true,
@@ -942,6 +1039,8 @@ export class AudioService {
       voiceId,
       assetGuid,
       cacheKey,
+      streamed,
+      streamedUrlKey,
       releaseSource: sourceOwner?.release,
       playCallVolume: command.volume,
       emitterActorGuid: emitter,
@@ -992,6 +1091,45 @@ export class AudioService {
     this.publishStats();
   }
 
+  private acquireStreamedUrl(
+    cacheKey: string,
+    source: Uint8Array,
+    mimeType: string,
+  ): { url?: string; urlKey: string | null } {
+    const existing = this.streamedUrls.get(cacheKey);
+    if (existing) {
+      existing.refs += 1;
+      return { url: existing.url, urlKey: cacheKey };
+    }
+    if (
+      typeof URL === "undefined" ||
+      typeof URL.createObjectURL !== "function" ||
+      typeof Blob === "undefined"
+    ) {
+      return { urlKey: null };
+    }
+    const url = URL.createObjectURL(new Blob([source.slice()], { type: mimeType }));
+    this.streamedUrls.set(cacheKey, { url, mimeType, refs: 1, bytes: source.byteLength });
+    if (this.loadSourceBytes) this.sourceBytes.delete(cacheKey);
+    return { url, urlKey: cacheKey };
+  }
+
+  private releaseStreamedUrl(cacheKey: string): void {
+    const entry = this.streamedUrls.get(cacheKey);
+    if (!entry) return;
+    entry.refs -= 1;
+    if (entry.refs > 0) return;
+    this.streamedUrls.delete(cacheKey);
+    try {
+      if (typeof URL !== "undefined" && typeof URL.revokeObjectURL === "function") {
+        URL.revokeObjectURL(entry.url);
+      }
+    } catch {
+      /* keep tearing down */
+    }
+    if (this.loadSourceBytes) this.sourceBytes.delete(cacheKey);
+  }
+
   /**
    * Snapshots pose only the emitters of voices already playing, so a voice that
    * starts on any other actor asks the host for that actor's current pose
@@ -1018,7 +1156,11 @@ export class AudioService {
     this.voices.delete(voiceId);
     try { this.backend.stop(voiceId); }
     finally {
-      this.unpinClip(voice.cacheKey);
+      if (voice.streamed) {
+        if (voice.streamedUrlKey) this.releaseStreamedUrl(voice.streamedUrlKey);
+      } else {
+        this.unpinClip(voice.cacheKey);
+      }
       voice.releaseSource?.();
     }
     this.refreshReverbWet();
@@ -1235,13 +1377,23 @@ export class AudioService {
   }
 
   private publishStats(): void {
+    let streamedVoices = 0;
+    for (const voice of this.voices.values()) {
+      if (voice.streamed) streamedVoices += 1;
+    }
+    let streamedBytes = streamedVoices * AUDIO_STREAMED_VOICE_ESTIMATE_BYTES;
+    for (const entry of this.streamedUrls.values()) {
+      streamedBytes += entry.bytes;
+    }
     audioStats.unlocked = this.unlocked;
     audioStats.queued = this.queue.length;
     audioStats.voices = this.voices.size;
+    audioStats.streamedVoices = streamedVoices;
+    audioStats.streamedBytes = streamedBytes;
     audioStats.lastGain = this.lastGain;
     audioStats.lastDistance = this.lastDistance;
     audioStats.wet = this.wet;
-    audioStats.accountedBytes = this.cache.accountedBytes();
+    audioStats.accountedBytes = this.cache.accountedBytes() + streamedBytes;
     audioStats.inFlightBytes = this.cache.reservedBytes();
     audioStats.debugVoices = this.showAudioDebug
       ? this.collectDebugVoices()

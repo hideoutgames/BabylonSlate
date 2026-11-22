@@ -24,7 +24,7 @@ describe("project schema", () => {
     const input = {
       mode: "cel",
       cel: { shadowBands: 5 },
-      quality: { resolution: { scale: 0.8, dynamic: false, minScale: 0.8 } },
+      quality: { resolution: { scale: 0.8 } },
       width: Infinity, height: -2, customResolution: true,
       localQualityOverrides: { shadows: { enabled: false } },
       qualityOverrides: { resolution: { scale: 0.25 } },
@@ -34,7 +34,7 @@ describe("project schema", () => {
     expect(normalized).toMatchObject({
       mode: "cel",
       cel: { shadowBands: 5 },
-      quality: { resolution: { scale: 0.8, dynamic: false, minScale: 0.8 } },
+      quality: { resolution: { scale: 0.8 } },
       width: 1920, height: 1080, customResolution: true,
       effects: { bloom: { enabled: true, weight: 0.4 } },
     });
@@ -156,7 +156,7 @@ describe("project schema", () => {
     const pixelArt = createEmptyProject("Pixels", { render: { width: 640, height: 360, blackBars: false }, pixelArt: true }).settings;
     expect(pixelArt.twoD).toMatchObject({ pixelPerfect: true, nearestTextures: true });
     expect(pixelArt.render).toMatchObject({ customResolution: true, width: 640, height: 360, blackBars: false, upscaling: "pixelated" });
-    expect(pixelArt.render.quality?.resolution).toMatchObject({ scale: 1, minScale: 1, dynamic: false, preset: "custom" });
+    expect(pixelArt.render.quality?.resolution).toEqual({ profile: "high", scale: 1, preset: "custom" });
     expect(pixelArt.render.quality?.postprocessing).toMatchObject({ antiAliasing: "off", preset: "custom" });
     const plain = createEmptyProject("Plain").settings;
     expect(plain.twoD).toMatchObject({ pixelPerfect: false, nearestTextures: false });

@@ -47,7 +47,7 @@ import { globalParameterSelection } from "@haptic/core";
 import { MATERIAL_GLOBAL_PARAMETER_NODE_TYPE, componentCount, isPerInstanceParameter, materialNodeDefinition } from "@haptic/shader-graph";
 import { globalParameterDefaults, type GlobalParameterValueSource } from "./global-parameter-values";
 import { createGlobalParameterBlock } from "./material-global-parameter";
-import { attachInstanceParameters, createInstanceParameterBlock, instanceParameterAttribute, type InstanceParameter } from "./instance-parameters";
+import { attachInstanceParameters, createInstanceParameterBlock, indexLetters, instanceParameterAttribute, type InstanceParameter } from "./instance-parameters";
 import { materialGlslDiagnostic, shaderLinkLog } from "./material-glsl-diagnostics";
 import {
   blockAdapterFor,
@@ -86,8 +86,11 @@ import { markCageShadowWrapper, registerLatticeShadowAdapter } from "./lattice-d
 import { markBoundedMaterial, markDrawBatchMaterial } from "./draw-batch-world-block";
 import { OverlayStyleBlock } from "./overlay-style-block";
 import { SceneFogBlock } from "./scene-fog-block";
+import { createDecalPlumbing } from "./decal-projection-block";
+import { MultiplyBlendFactorBlock, MultiplyFactorOutputBlock } from "./multiply-blend-block";
 import { createHeldThreadBound, SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
 import { DriverCompileWatch, renewOnCompileProgress } from "./driver-compile";
+import { noteAdoptedProgram, noteMaterialBuild, noteSameShaderRebuild } from "./material-program-census";
 
 /** Custom GLSL's hidden probe effect, from when the effect exists to its compile. */
 const CUSTOM_GLSL_COMPILE_TIMEOUT_MS = 15_000;
@@ -326,8 +329,22 @@ function anchorNodeId(operation: MaterialOperation): string {
   return operation.source.callPath[0] ?? operation.source.nodeId;
 }
 
+/**
+ * What the compiler names its plumbing blocks (the surface's transforms, lighting, fog, outputs) in every Material:
+ * never the Material's own name, which would make each Material's shader text, and so its program, its own.
+ */
+export const MATERIAL_BLOCK_PREFIX = "material";
+
+/**
+ * The name of the blocks realizing a plan's `index`th operation: letters only, since Babylon strips digits from the
+ * shader symbols it derives from block names, so each operation keeps a symbol of its own whatever its node id.
+ */
+export function materialOperationBlockName(index: number): string {
+  return `op${indexLetters(index)}`;
+}
+
 /** Babylon removes digits before allocating unique shader symbols. Collapse the
- * separators after that removal so generated node IDs cannot introduce GLSL's
+ * separators after that removal so generated names cannot introduce GLSL's
  * reserved double underscore, including when an adapter appends a suffix. */
 function operationBlockName(id: string): string {
   const name = id.replace(/[^A-Za-z0-9_]/g, "_").replace(/[0-9]/g, "").replace(/_+/g, "_").replace(/^_|_$/g, "");
@@ -385,7 +402,11 @@ export function compileMaterialPlan(
     } else {
       applyAuthoredSurfaceBlend(material, plan);
       if (plan.blendMode === "masked" && !options.water && !options.overlay && plan.domain !== "text" && plan.domain !== "ui") registerAlphaToCoverage(material);
-      if (options.overlay) { material.transparencyMode = Material.MATERIAL_ALPHABLEND; material.needDepthPrePass = false; }
+      if (options.overlay) {
+        material.transparencyMode = Material.MATERIAL_ALPHABLEND; material.needDepthPrePass = false;
+        // A Multiply surface on a Scene Layer draws as Translucent (`attachSurfaceShading`).
+        if (plan.blendMode === "multiply") material.alphaMode = Constants.ALPHA_COMBINE;
+      }
       syncSceneLighting(scene);
     }
   };
@@ -412,6 +433,10 @@ export function compileMaterialPlan(
   }
   const outputNodes: NodeMaterialBlock[] = [];
   let textGlyph: TextMaterialBlock | undefined;
+  // Blocks are named by the operation's place in the plan, never its node id, so Materials of one graph shape generate
+  // the same shader text and share a program (`shareCompiledProgram`).
+  const blockNames = new Map(plan.operations.map((operation, index) => [operation.id, materialOperationBlockName(index)]));
+  const blockNameOf = (operation: MaterialOperation): string => blockNames.get(operation.id)!;
 
   const fail = (): CompileMaterialResult => {
     for (const block of created) block.dispose();
@@ -430,32 +455,34 @@ export function compileMaterialPlan(
   try {
     if (material.mode === NodeMaterialModes.Particle) {
       prepareNodeMaterialParticleBindings(material);
-      const uv = new InputBlock(`${options.name}_particleUv`, undefined, NodeMaterialBlockConnectionPointTypes.Vector2);
+      const uv = new InputBlock(`${MATERIAL_BLOCK_PREFIX}_particleUv`, undefined, NodeMaterialBlockConnectionPointTypes.Vector2);
       uv.setAsAttribute("particle_uv");
       created.push(uv);
       plumbing.uv = uv.output;
     }
     if (plan.domain === "postProcess") {
       outputNodes.push(
-        ...createPostProcessPlumbing(options.name, created, plumbing),
+        ...createPostProcessPlumbing(MATERIAL_BLOCK_PREFIX, created, plumbing),
       );
+    } else if (plan.domain === "decal") {
+      outputNodes.push(...createDecalPlumbing(MATERIAL_BLOCK_PREFIX, created, plumbing));
     } else if (plan.domain !== "particle" || options.particlePreview) {
       outputNodes.push(
-        ...createSurfacePlumbing(options.name, created, plumbing),
+        ...createSurfacePlumbing(MATERIAL_BLOCK_PREFIX, created, plumbing),
       );
     }
     // One Water Waves block per graph, at the rest point, whichever surface variant this is: every variant compiles the
     // same plan, so the depth, shadow, outline and capture programs displace as the colour pass does.
     if (plumbing.restWorldPosition && plan.operations.some((operation) => operation.nodeType === "input.waterWaves")) {
-      const waves = new WaterWavesBlock(`${options.name}_waterWaves`);
+      const waves = new WaterWavesBlock(`${MATERIAL_BLOCK_PREFIX}_waterWaves`);
       plumbing.restWorldPosition.connectTo(waves.worldPosition);
       plumbing.worldNormal?.connectTo(waves.worldNormal);
       created.push(waves);
       plumbing.waterWaves = waves;
     }
     if (plan.domain === "text") {
-      textGlyph = new TextMaterialBlock(`${options.name}_textGlyph`);
-      const uv = new InputBlock(`${options.name}_glyphUV`, undefined, NodeMaterialBlockConnectionPointTypes.Vector2);
+      textGlyph = new TextMaterialBlock(`${MATERIAL_BLOCK_PREFIX}_textGlyph`);
+      const uv = new InputBlock(`${MATERIAL_BLOCK_PREFIX}_glyphUV`, undefined, NodeMaterialBlockConnectionPointTypes.Vector2);
       uv.setAsAttribute("uv");
       uv.output.connectTo(textGlyph.glyphUV);
       plumbing.uv = textGlyph.uv;
@@ -537,11 +564,11 @@ export function compileMaterialPlan(
       const blocks: NodeMaterialBlock[] = [];
       const outputs: Record<string, NodeMaterialConnectionPoint> = {};
       if (selection) {
-        const block = createGlobalParameterBlock(operationBlockName(operation.id), selection, options.globalParameters ?? globalParameterDefaults);
+        const block = createGlobalParameterBlock(blockNameOf(operation), selection, options.globalParameters ?? globalParameterDefaults);
         blocks.push(block);
         outputs.out = block.output;
         if (selection.valueType === "color") {
-          const split = new VectorSplitterBlock(`${operation.id}_rgb`);
+          const split = new VectorSplitterBlock(`${blockNameOf(operation)}_rgb`);
           block.output.connectTo(split.xyzw);
           blocks.push(split);
           outputs.rgb = split.xyzOut;
@@ -557,7 +584,7 @@ export function compileMaterialPlan(
       operation.nodeType.startsWith("param.");
     if (isConstant) {
       if (operation.nodeType === "param.texture") {
-        const block = new ImageSourceBlock(operation.id);
+        const block = new ImageSourceBlock(blockNameOf(operation));
         created.push(block);
         const realization = { blocks: [block], inputs: {}, outputs: { out: block.source } };
         realized.set(operation.id, realization);
@@ -575,13 +602,14 @@ export function compileMaterialPlan(
         pin && pin.type.kind !== "generic"
           ? (pin.type.kind as MaterialValueType)
           : "float";
-      // A root-level parameter marked Per Instance reads each mesh's value from an instanced attribute.
-      const perInstance = operation.source.callPath.length === 0 && isPerInstanceParameter(operation.nodeType, operation.properties);
+      // A root-level parameter marked Per Instance reads each mesh's value from an instanced attribute. A decal's box
+      // carries only the decal's own instance rows, so in the Decal domain it stays a uniform.
+      const perInstance = operation.source.callPath.length === 0 && plan.domain !== "decal" && isPerInstanceParameter(operation.nodeType, operation.properties);
       const kind = operation.nodeType === "param.color" ? "color" : "float";
       const block = perInstance
         ? createInstanceParameterBlock(instanceParameterAttribute(instanceParameters.length, kind), kind)
         // A parameter stays a uniform, which `setParameter` rewrites; a constant node is written into the shader.
-        : createConstantBlock(operationBlockName(operation.id), type, value, asColor, operation.nodeType.startsWith("param."));
+        : createConstantBlock(blockNameOf(operation), type, value, asColor, operation.nodeType.startsWith("param."));
       if (perInstance) instanceParameters.push({
         name: String(operation.properties.name ?? "").trim(), attribute: block.name, kind,
         value: kind === "color" ? { kind, value: [value[0] ?? 0, value[1] ?? 0, value[2] ?? 0, value[3] ?? 1] } : { kind, value: value[0] ?? 0 },
@@ -592,7 +620,7 @@ export function compileMaterialPlan(
         out: block.output,
       };
       if (operation.nodeType === "param.color") {
-        const split = new VectorSplitterBlock(`${operation.id}_rgb`);
+        const split = new VectorSplitterBlock(`${blockNameOf(operation)}_rgb`);
         block.output.connectTo(split.xyzw);
         created.push(split);
         blocks.push(split);
@@ -627,7 +655,7 @@ export function compileMaterialPlan(
       realization = track(
         adapter({
           operation,
-          name: operationBlockName(operation.id),
+          name: blockNameOf(operation),
           resolveTexture: options.resolveTexture,
           plumbing,
         }),
@@ -669,7 +697,7 @@ export function compileMaterialPlan(
       try {
         const point = pointForOperand(
           operand,
-          operationBlockName(`${operation.id}_${pinId}`),
+          operationBlockName(`${blockNameOf(operation)}_${pinId}`),
           false,
         );
         if (!point) continue;
@@ -729,14 +757,14 @@ export function compileMaterialPlan(
     if (!isIdentityWorldPositionOffset(offsetOperand) && offsetOperand) {
       const offset = pointForOperand(
         offsetOperand,
-        `${options.name}_worldPositionOffset`,
+        `${MATERIAL_BLOCK_PREFIX}_worldPositionOffset`,
         false,
       );
       if (offset) {
-        applyWorldPositionOffset(options.name, created, plumbing, offset);
+        applyWorldPositionOffset(MATERIAL_BLOCK_PREFIX, created, plumbing, offset);
       }
     }
-    applyLatticeDeformerPlumbing(options.name, created, plumbing, scene, plan.operations.some((operation) => operation.nodeType === "input.worldTangent"));
+    applyLatticeDeformerPlumbing(MATERIAL_BLOCK_PREFIX, created, plumbing, scene, plan.operations.some((operation) => operation.nodeType === "input.worldTangent"));
     if (!realizeOperations()) return fail();
     if (plumbing.clipPosition && plumbing.worldPosition) {
       plumbing.worldPosition.connectTo(plumbing.clipPosition);
@@ -758,7 +786,7 @@ export function compileMaterialPlan(
     const operand = plan.outputs[pinId];
     if (!operand && pinId === "normal" && plan.defaultNormals === "flat") {
       if (!flatNormal && plumbing.worldPosition && plumbing.worldNormal) {
-        flatNormal = new FlatNormalBlock(`${options.name}_flatNormal`);
+        flatNormal = new FlatNormalBlock(`${MATERIAL_BLOCK_PREFIX}_flatNormal`);
         created.push(flatNormal);
         plumbing.worldPosition.connectTo(flatNormal.worldPosition);
         plumbing.worldNormal.connectTo(flatNormal.modelNormal);
@@ -771,16 +799,16 @@ export function compileMaterialPlan(
 
   try {
     if (plan.domain === "text" && textGlyph) {
-      const fragment = new DisplayFragmentOutputBlock(`${options.name}_fragment`);
-      const multiply = new MultiplyBlock(`${options.name}_textFill`);
+      const fragment = new DisplayFragmentOutputBlock(`${MATERIAL_BLOCK_PREFIX}_fragment`);
+      const multiply = new MultiplyBlock(`${MATERIAL_BLOCK_PREFIX}_textFill`);
       // The graph's colour is linear (a Color, Parameter, Gradient or texture colour is the decoded pick); the glyph's
       // span colour and the overlay style are display colours. Encode the graph's once, then multiply.
-      const display = new ColorEncodingBlock(`${options.name}_textColor`, "display");
-      outputPoint("color", `${options.name}_color`, true)?.connectTo(display.input);
+      const display = new ColorEncodingBlock(`${MATERIAL_BLOCK_PREFIX}_textColor`, "display");
+      outputPoint("color", `${MATERIAL_BLOCK_PREFIX}_color`, true)?.connectTo(display.input);
       display.output.connectTo(multiply.left);
       textGlyph.color.connectTo(multiply.right);
-      const style = new OverlayStyleBlock(`${options.name}_overlayStyle`);
-      const styled = new MultiplyBlock(`${options.name}_overlayFill`);
+      const style = new OverlayStyleBlock(`${MATERIAL_BLOCK_PREFIX}_overlayStyle`);
+      const styled = new MultiplyBlock(`${MATERIAL_BLOCK_PREFIX}_overlayFill`);
       multiply.output.connectTo(styled.left);
       style.rgba.connectTo(styled.right);
       styled.output.connectTo(fragment.rgba);
@@ -788,47 +816,49 @@ export function compileMaterialPlan(
       outputNodes.push(fragment);
     } else if (plan.domain === "ui") {
       // (Color, Opacity) times the component's tint and opacity (`OverlayStyleBlock`, white by default).
-      const fragment = new UserInterfaceFragmentOutputBlock(`${options.name}_fragment`);
-      const style = new OverlayStyleBlock(`${options.name}_overlayStyle`);
+      const fragment = new UserInterfaceFragmentOutputBlock(`${MATERIAL_BLOCK_PREFIX}_fragment`);
+      const style = new OverlayStyleBlock(`${MATERIAL_BLOCK_PREFIX}_overlayStyle`);
       created.push(fragment, style);
       const styled = (value: NodeMaterialConnectionPoint | null, tint: NodeMaterialConnectionPoint, suffix: string) => {
         if (!value) return tint;
-        const multiply = new MultiplyBlock(`${options.name}_${suffix}`);
+        const multiply = new MultiplyBlock(`${MATERIAL_BLOCK_PREFIX}_${suffix}`);
         created.push(multiply);
         value.connectTo(multiply.left);
         tint.connectTo(multiply.right);
         return multiply.output;
       };
-      styled(outputPoint("color", `${options.name}_color`, true), style.rgb, "overlayColor").connectTo(fragment.rgb);
-      styled(outputPoint("opacity", `${options.name}_opacity`, false), style.alpha, "overlayAlpha").connectTo(fragment.a);
+      styled(outputPoint("color", `${MATERIAL_BLOCK_PREFIX}_color`, true), style.rgb, "overlayColor").connectTo(fragment.rgb);
+      styled(outputPoint("opacity", `${MATERIAL_BLOCK_PREFIX}_opacity`, false), style.alpha, "overlayAlpha").connectTo(fragment.a);
       outputNodes.push(fragment);
     } else if (plan.domain === "postProcess" || plan.domain === "particle") {
       const fragment = plan.domain === "particle"
-        ? new DisplayFragmentOutputBlock(`${options.name}_fragment`)
-        : new FragmentOutputBlock(`${options.name}_fragment`);
+        ? new DisplayFragmentOutputBlock(`${MATERIAL_BLOCK_PREFIX}_fragment`)
+        : new FragmentOutputBlock(`${MATERIAL_BLOCK_PREFIX}_fragment`);
       created.push(fragment);
-      let color = outputPoint("color", `${options.name}_color`, true);
+      let color = outputPoint("color", `${MATERIAL_BLOCK_PREFIX}_color`, true);
       if (color && plan.domain === "particle") {
         // The graph's colour is linear (Particle Color decodes where it enters, `input.particleColor`): encoded for
         // display once, where the multiply blend and the display output expect it.
-        const display = new ColorEncodingBlock(`${options.name}_particleDisplay`, "display");
+        const display = new ColorEncodingBlock(`${MATERIAL_BLOCK_PREFIX}_particleDisplay`, "display");
         created.push(display);
         color.connectTo(display.input);
         color = display.output;
       }
       if (color && material.mode === NodeMaterialModes.Particle) {
-        connectParticleBlend(options.name, created, color, fragment.rgba);
+        connectParticleBlend(MATERIAL_BLOCK_PREFIX, created, color, fragment.rgba);
       } else if (color) color.connectTo(fragment.rgba);
       outputNodes.push(fragment);
+    } else if (plan.domain === "decal") {
+      outputNodes.push(...attachDecalShading(plan, created, plumbing, outputPoint));
     } else {
       // A water variant keeps built-in water's cut (removal volumes, land above the water, a blending neighbour's water),
       // in each of its own variants (outline, capture). It reads the final displaced position, and the geometry's own
       // waterline: the Water Waves node's vertex height on the GPU path.
       if (plan.domain === "surface" && options.water && plumbing.worldPosition) {
-        const cut = new WaterCutBlock(`${options.name}_waterCut`);
+        const cut = new WaterCutBlock(`${MATERIAL_BLOCK_PREFIX}_waterCut`);
         plumbing.worldPosition.connectTo(cut.worldPosition);
         if (plumbing.waterWaves) {
-          const vertexHeight = new WaterSurfaceBlock(`${options.name}_waterCutHeight`);
+          const vertexHeight = new WaterSurfaceBlock(`${MATERIAL_BLOCK_PREFIX}_waterCutHeight`);
           plumbing.waterWaves.height.connectTo(vertexHeight.gpuWaveHeight);
           vertexHeight.waveHeight.connectTo(cut.waveHeight);
           created.push(vertexHeight);
@@ -837,31 +867,31 @@ export function compileMaterialPlan(
         outputNodes.push(cut);
       }
       if (outlineMask) {
-        const identity = new SharedOutlineIdentityBlock(`${options.name}_identity`);
-        const output = new SharedOutlineOutputBlock(`${options.name}_outline`);
+        const identity = new SharedOutlineIdentityBlock(`${MATERIAL_BLOCK_PREFIX}_identity`);
+        const output = new SharedOutlineOutputBlock(`${MATERIAL_BLOCK_PREFIX}_outline`);
         identity.identity.connectTo(output.rgb);
-        if (plan.blendMode === "translucent" || plan.blendMode === "additive")
-          outputPoint("opacity", `${options.name}_opacity`, false)?.connectTo(output.a);
+        if (blendsOverScene(plan.blendMode))
+          outputPoint("opacity", `${MATERIAL_BLOCK_PREFIX}_opacity`, false)?.connectTo(output.a);
         created.push(identity, output); outputNodes.push(output);
       } else if (shadowDepth) {
         // The shadow pass owns the final projection so native normal bias is
         // applied after WPO/runtime deformation and before clip conversion.
         for (let index = outputNodes.length - 1; index >= 0; index--)
           if (outputNodes[index] instanceof VertexOutputBlock) outputNodes.splice(index, 1);
-        outputNodes.push(createAuthoredShadowVertexOutput(options.name, created, plumbing));
-        const output = new AuthoredShadowFragmentOutput(`${options.name}_shadowFragment`);
-        if (plan.blendMode === "translucent" || plan.blendMode === "additive")
-          outputPoint("opacity", `${options.name}_opacity`, false)?.connectTo(output.opacity);
+        outputNodes.push(createAuthoredShadowVertexOutput(MATERIAL_BLOCK_PREFIX, created, plumbing));
+        const output = new AuthoredShadowFragmentOutput(`${MATERIAL_BLOCK_PREFIX}_shadowFragment`);
+        if (blendsOverScene(plan.blendMode))
+          outputPoint("opacity", `${MATERIAL_BLOCK_PREFIX}_opacity`, false)?.connectTo(output.opacity);
         created.push(output); outputNodes.push(output);
       } else if (options.surfaceVariant === "captureDepth" || options.surfaceVariant === "captureNormal") {
         outputNodes.push(createGeometryCaptureOutput(scene, options.surfaceVariant === "captureDepth", created, plumbing));
       } else outputNodes.push(attachSurfaceShading(plan, options, created, plumbing, outputPoint));
       if (plan.blendMode === "masked") {
         // The colour variant writes alpha-to-coverage under MSAA (`alpha-to-coverage.ts`); pass variants only discard.
-        const discard = new CoverageClipBlock(`${options.name}_alphaClip`);
+        const discard = new CoverageClipBlock(`${MATERIAL_BLOCK_PREFIX}_alphaClip`);
         discard.coverage = !auxiliary && !options.water && !options.overlay;
-        const cutoff = createConstantBlock(`${options.name}_alphaCutoff`, "float", [plan.alphaCutoff]);
-        const mask = outputPoint(plan.outputs.alphaClip ? "alphaClip" : "opacity", `${options.name}_clipMask`, false);
+        const cutoff = createConstantBlock(`${MATERIAL_BLOCK_PREFIX}_alphaCutoff`, "float", [plan.alphaCutoff]);
+        const mask = outputPoint(plan.outputs.alphaClip ? "alphaClip" : "opacity", `${MATERIAL_BLOCK_PREFIX}_clipMask`, false);
         mask?.connectTo(discard.value);
         cutoff.output.connectTo(discard.cutoff);
         created.push(discard, cutoff);
@@ -869,7 +899,7 @@ export function compileMaterialPlan(
       }
     }
     for (const node of outputNodes) material.addOutputNode(node);
-    if ((plan.domain === "surface" || plan.domain === "landscape") && !auxiliary && plan.shadingModel !== "unlit") {
+    if ((plan.domain === "surface" || plan.domain === "landscape" || plan.domain === "decal") && !auxiliary && plan.shadingModel !== "unlit") {
       // CEL and Screen-Space Shadows are HapticLightingBlock's scene-level defines, set from the Scene's settings.
       followLightingDefines(material);
     }
@@ -891,6 +921,8 @@ export function compileMaterialPlan(
   let checkingShader = false;
   // Builds `rebuildWhenReady` started whose build observer has not run yet: the same plan, rebuilt for a loaded texture.
   let ownRebuilds = 0;
+  /** Each pending own rebuild's shader text before it, oldest first. */
+  const rebuiltFrom: Array<string | null> = [];
   let shaderTimer: ReturnType<typeof setTimeout> | undefined;
   let shaderProbe: Mesh | null = null;
   let failedShaderEffect: Effect | null = null;
@@ -953,6 +985,7 @@ export function compileMaterialPlan(
     buildError = message;
     // A failed build emits no build notification: the next one is not ours unless `rebuildWhenReady` starts it.
     ownRebuilds = 0;
+    rebuiltFrom.length = 0;
     const diagnostic: MaterialDiagnostic = { code: "material.compile.buildFailed", message, severity: "error" };
     if (buildState === "pending") {
       buildState = "failed";
@@ -965,6 +998,8 @@ export function compileMaterialPlan(
     configureSurface();
     if (ownRebuilds > 0) {
       ownRebuilds--;
+      const before = rebuiltFrom.shift();
+      if (typeof before === "string" && before === material.compiledShaders) noteSameShaderRebuild(scene.getEngine());
       // The plan's vertex stage is unchanged, so a cacheable shape stays so at its new build id.
       if (buildState === "ready" && cacheableShadowShape) registerCacheableShadowMaterial(material);
     }
@@ -1097,10 +1132,11 @@ export function compileMaterialPlan(
       }
     });
   }
-  // Custom GLSL keeps its own readiness probe; everything else in Material
-  // mode may reuse a byte-identical program compiled for another material.
+  // Custom GLSL keeps its own readiness probe; everything else in Material mode may reuse a byte-identical program
+  // compiled for another material, whatever its name. Particle programs share only under one name: Babylon names a
+  // particle Effect after its material.
   if (material.mode === NodeMaterialModes.Material && plan.cost.customBlocks === 0) {
-    shareCompiledProgram(material, JSON.stringify([options.name, options.surfaceVariant ?? null, options.overlay === true, material.shaderLanguage]));
+    shareCompiledProgram(material, JSON.stringify([options.surfaceVariant ?? null, options.overlay === true, material.shaderLanguage]));
   } else if (material.mode === NodeMaterialModes.Particle && plan.cost.customBlocks === 0) {
     shareParticleProgram(material, JSON.stringify([options.name, material.shaderLanguage]));
   }
@@ -1128,6 +1164,7 @@ export function compileMaterialPlan(
   }
 
   configureSurface();
+  noteMaterialBuild(material);
 
   const loadObservers: Array<() => void> = [];
   let rebuildQueued = false;
@@ -1149,6 +1186,8 @@ export function compileMaterialPlan(
     }
     const wasFrozen = material.isFrozen;
     if (wasFrozen) material.unfreeze();
+    // The census asks whether the rebuild changed the program at all (`sameShaderRebuilds`).
+    rebuiltFrom.push(nodeMaterialBuilt(material) ? material.compiledShaders : null);
     ownRebuilds++;
     try {
       material.build();
@@ -1156,6 +1195,7 @@ export function compileMaterialPlan(
       markCompiledMaterialDirty(material);
     } catch (error) {
       ownRebuilds = 0;
+      rebuiltFrom.length = 0;
       // Must not throw into Texture.onLoadObservable / onErrorObservable.
       options.onTextureError?.({
         code: "material.compile.buildFailed",
@@ -1313,8 +1353,10 @@ export function compileMaterialPlan(
 }
 
 /** Live materials on each program keep its entry; the last one to dispose drops it. */
+/** `shaders` is the registry's key, which every user refers to rather than holding a copy of its own code. */
 type SharedProgram = { buildId: number; shaders: string; users: Set<NodeMaterial> };
-const sharedPrograms = new WeakMap<AbstractEngine, Map<string, SharedProgram>>();
+/** Per Engine, per key, the programs by their generated code. */
+const sharedPrograms = new WeakMap<AbstractEngine, Map<string, Map<string, SharedProgram>>>();
 const sharedProgramForgetters = new WeakMap<NodeMaterial, () => void>();
 
 /** Drop the program a material shares from the registry, so no later compile adopts its build id. */
@@ -1328,22 +1370,33 @@ function freshBuildId(): number {
 }
 
 /**
- * Babylon keys a NodeMaterial effect by build id, so each build compiles and
- * links its own GPU program even when the generated code is identical, as it
- * is for Material Instances and per-component parameter copies. After each
- * build, adopt the build id of an earlier build under the same key whose
- * generated vertex and fragment code is byte-identical: the engine's effect
- * cache then returns the already compiled program and only uniforms differ.
- * Source equality is checked on every build, so a changed graph or a
- * texture-dependent variant never reuses a mismatched program.
+ * Babylon keys a NodeMaterial effect by build id, so each build compiles and links its own GPU program even when the
+ * generated code is identical, as it is for every Material of one graph shape and values (the compiler names its blocks
+ * by plan position, never by Material), their Instances and per-component parameter copies. After its first build, a
+ * material adopts the build id of a live build under the same key whose generated vertex and fragment code is
+ * byte-identical: the engine's effect cache then returns the already compiled program and only uniforms and textures
+ * differ. Source equality is the test, so a changed graph or a texture-dependent variant never reuses a mismatched
+ * program.
  */
 export function shareCompiledProgram(material: NodeMaterial, key: string): void {
   const engine = material.getScene().getEngine();
-  let programs = sharedPrograms.get(engine);
-  if (!programs) sharedPrograms.set(engine, (programs = new Map()));
+  let byKey = sharedPrograms.get(engine);
+  if (!byKey) sharedPrograms.set(engine, (byKey = new Map()));
+  let programs = byKey.get(key);
+  if (!programs) byKey.set(key, (programs = new Map()));
   const registry = programs;
+  /** The code this material's program is registered under. */
+  let registered: string | undefined;
+  const leave = () => {
+    if (registered === undefined) return;
+    const known = registry.get(registered);
+    if (known?.users.delete(material) && known.users.size === 0) registry.delete(registered);
+    registered = undefined;
+  };
   // The program failed to link: the Engine hands a later requester that Effect without an error to report.
-  sharedProgramForgetters.set(material, () => { if (registry.get(key)?.users.has(material)) registry.delete(key); });
+  sharedProgramForgetters.set(material, () => {
+    if (registered !== undefined && registry.get(registered)?.users.has(material)) registry.delete(registered);
+  });
   let adopted: number | undefined;
   let firstBuild = true;
   // First observer: later observers (shadow/cluster policies) record the final id.
@@ -1351,23 +1404,24 @@ export function shareCompiledProgram(material: NodeMaterial, key: string): void 
     // A rebuild that kept an adopted id may no longer match that program.
     if (adopted !== undefined && material.buildId === adopted) material.buildId = freshBuildId();
     adopted = undefined;
+    leave();
     const shaders = material.compiledShaders;
-    const known = registry.get(key);
+    const known = registry.get(shaders);
     // Only the compiler's own first build adopts: any later rebuild keeps a
     // new id so policies that trust a compiled build id still see the change.
-    if (firstBuild && known?.shaders === shaders) {
+    if (firstBuild && known) {
       firstBuild = false;
       material.buildId = adopted = known.buildId;
       known.users.add(material);
+      registered = known.shaders;
+      noteAdoptedProgram(engine);
       return;
     }
     firstBuild = false;
-    registry.set(key, { buildId: material.buildId, shaders, users: new Set([material]) });
+    registry.set(shaders, { buildId: material.buildId, shaders, users: new Set([material]) });
+    registered = shaders;
   }, undefined, true);
-  material.onDisposeObservable.addOnce(() => {
-    const known = registry.get(key);
-    if (known?.users.delete(material) && known.users.size === 0) registry.delete(key);
-  });
+  material.onDisposeObservable.addOnce(leave);
 }
 
 /** Build ids of particle programs by key and generated code, for the Engine's life. */
@@ -1406,8 +1460,10 @@ function shareParticleProgram(material: NodeMaterial, key: string): void {
     firstBuild = false;
     shaders = material.compiledShaders;
     const known = registry.get(shaders);
-    if (known !== undefined) material.buildId = adopted = known;
-    else registry.set(shaders, material.buildId);
+    if (known !== undefined) {
+      material.buildId = adopted = known;
+      noteAdoptedProgram(engine);
+    } else registry.set(shaders, material.buildId);
   }, undefined, true);
 }
 
@@ -1453,6 +1509,11 @@ function textureErrorMessage(payload: unknown): string {
   return "Texture failed to load";
 }
 
+/** Whether a NodeMaterial's last build succeeded, so reading its `compiledShaders` does not build it again. */
+function nodeMaterialBuilt(material: NodeMaterial): boolean {
+  return (material as unknown as { _buildWasSuccessful?: boolean })._buildWasSuccessful === true;
+}
+
 /** Whether a NodeMaterial's build still waits for its blocks' shader code; Babylon ignores another build() until then. */
 function nodeMaterialBuildInProgress(material: NodeMaterial): boolean {
   return (material as unknown as { _buildIsInProgress?: boolean })._buildIsInProgress === true;
@@ -1471,6 +1532,21 @@ function constantScalar(plan: MaterialBuildPlan, operand: MaterialOperand | null
   return Array.isArray(value) && value.length === 1 && typeof value[0] === "number" ? value[0] : null;
 }
 
+/** Blend modes that draw over the scene by their opacity (the coverage passes read it as translucent ones do). */
+function blendsOverScene(mode: MaterialBuildPlan["blendMode"]): boolean {
+  return mode === "translucent" || mode === "additive" || mode === "multiply";
+}
+
+/** The alpha mode a Decal Material draws with; Opaque and Masked write their colour (Masked after its discard). */
+export function decalAlphaMode(mode: MaterialBuildPlan["blendMode"]): number {
+  switch (mode) {
+    case "translucent": return Constants.ALPHA_COMBINE;
+    case "additive": return Constants.ALPHA_ADD;
+    case "multiply": return Constants.ALPHA_MULTIPLY;
+    default: return Constants.ALPHA_DISABLE;
+  }
+}
+
 /** Map authored blend / two-sided onto Babylon after `material.build()`. */
 function applyAuthoredSurfaceBlend(
   material: NodeMaterial,
@@ -1486,8 +1562,18 @@ function applyAuthoredSurfaceBlend(
   if (plan.domain === "postProcess" || plan.domain === "particle") {
     return;
   }
+  if (plan.domain === "decal") {
+    // The decal pass draws every Decal Material after the opaque surfaces, culls the box's front faces itself and
+    // blends by the Material's alpha mode. Alpha blending (not the blend mode) keeps Screen-Space Shadows out of its
+    // lighting, so every blend mode compiles the same lighting defines.
+    material.backFaceCulling = true;
+    material.needDepthPrePass = false;
+    material.transparencyMode = Material.MATERIAL_ALPHABLEND;
+    material.alphaMode = decalAlphaMode(plan.blendMode);
+    return;
+  }
   material.backFaceCulling = plan.twoSided !== true;
-  material.alphaMode = plan.blendMode === "additive" ? Constants.ALPHA_ADD : Constants.ALPHA_COMBINE;
+  material.alphaMode = plan.blendMode === "additive" ? Constants.ALPHA_ADD : plan.blendMode === "multiply" ? Constants.ALPHA_MULTIPLY : Constants.ALPHA_COMBINE;
   material.needDepthPrePass = false;
   switch (plan.blendMode) {
     case "masked":
@@ -1495,6 +1581,7 @@ function applyAuthoredSurfaceBlend(
       return;
     case "translucent":
     case "additive":
+    case "multiply":
       material.transparencyMode = Material.MATERIAL_ALPHABLEND;
       material.needDepthPrePass = true;
       return;
@@ -1740,11 +1827,11 @@ function attachSurfaceShading(
     asColor: boolean,
   ) => NodeMaterialConnectionPoint | null,
 ): NodeMaterialBlock {
-  const fragment = new GeometrySurfaceOutputBlock(`${options.name}_fragment`);
-  connectGeometrySurfaceOutput(fragment, plumbing, outputPoint("normal", `${options.name}_geometryNormal`, false), created);
+  const fragment = new GeometrySurfaceOutputBlock(`${MATERIAL_BLOCK_PREFIX}_fragment`);
+  connectGeometrySurfaceOutput(fragment, plumbing, outputPoint("normal", `${MATERIAL_BLOCK_PREFIX}_geometryNormal`, false), created);
   created.push(fragment);
 
-  const baseColor = outputPoint("baseColor", `${options.name}_baseColor`, true);
+  const baseColor = outputPoint("baseColor", `${MATERIAL_BLOCK_PREFIX}_baseColor`, true);
   const emissionOperand = plan.outputs.emissive;
   const hasEmission =
     emissionOperand &&
@@ -1753,23 +1840,27 @@ function attachSurfaceShading(
       emissionOperand.value.every((value) => value === 0)
     );
   const emissive = hasEmission
-    ? outputPoint("emissive", `${options.name}_emissive`, true)
+    ? outputPoint("emissive", `${MATERIAL_BLOCK_PREFIX}_emissive`, true)
     : null;
   const addColor = (
     left: NodeMaterialConnectionPoint,
     right: NodeMaterialConnectionPoint,
     suffix: string,
   ) => {
-    const add = new AddBlock(`${options.name}_${suffix}`);
+    const add = new AddBlock(`${MATERIAL_BLOCK_PREFIX}_${suffix}`);
     created.push(add);
     left.connectTo(add.left);
     right.connectTo(add.right);
     return add.output;
   };
-  // The scene's fog, by the one rule every surface fogs by (`SceneFogBlock`).
+  // A world Multiply surface writes its factor (`writeMultiplyFactor`); on a Scene Layer it draws as Translucent: a layer
+  // with post-processing composites through a transparent target, where a product with the scene has nothing to multiply.
+  const multiply = plan.blendMode === "multiply" && !options.overlay;
+  // The scene's fog, by the one rule every surface fogs by (`SceneFogBlock`); a Multiply factor fades toward 1.
   const applyFog = (color: NodeMaterialConnectionPoint) => {
     if (options.overlay || !plumbing.worldPosition || !plumbing.view) return color;
-    const fog = new SceneFogBlock(`${options.name}_fog`);
+    const fog = new SceneFogBlock(`${MATERIAL_BLOCK_PREFIX}_fog`);
+    if (multiply) fog.toward = "white";
     color.connectTo(fog.input);
     plumbing.worldPosition.connectTo(fog.worldPosition);
     plumbing.view.connectTo(fog.view);
@@ -1780,11 +1871,21 @@ function attachSurfaceShading(
   // variants only.
   const covered = (color: NodeMaterialConnectionPoint, alpha: NodeMaterialConnectionPoint) => {
     if (options.overlay || !options.water || plan.domain !== "surface" || plan.blendMode !== "translucent") return { color, alpha };
-    const coverage = new WaterCoverageBlock(`${options.name}_waterCoverage`);
+    const coverage = new WaterCoverageBlock(`${MATERIAL_BLOCK_PREFIX}_waterCoverage`);
     created.push(coverage);
     color.connectTo(coverage.color);
     alpha.connectTo(coverage.alpha);
     return { color: coverage.rgb, alpha: coverage.a };
+  };
+
+  // A Multiply surface writes its factor, encoded for display alone, and alpha 1 (`MultiplyBlendFactorBlock`).
+  const writeShown = (color: NodeMaterialConnectionPoint, alpha: NodeMaterialConnectionPoint | null) => {
+    if (!multiply) {
+      writeLinearSurfaceColor(color, fragment, MATERIAL_BLOCK_PREFIX, created);
+      alpha?.connectTo(fragment.a);
+      return;
+    }
+    writeMultiplyFactor(color, alpha, fragment, MATERIAL_BLOCK_PREFIX, created);
   };
 
   if (plan.shadingModel === "unlit") {
@@ -1795,17 +1896,17 @@ function attachSurfaceShading(
       baseColor && emissive
         ? addColor(baseColor, emissive, "unlitEmission")
         : (baseColor ?? emissive);
-    const opacity = outputPoint("opacity", `${options.name}_opacity`, false);
+    const opacity = outputPoint("opacity", `${MATERIAL_BLOCK_PREFIX}_opacity`, false);
     if (options.overlay) {
-      const style = new OverlayStyleBlock(`${options.name}_overlayStyle`);
+      const style = new OverlayStyleBlock(`${MATERIAL_BLOCK_PREFIX}_overlayStyle`);
       created.push(style);
       if (color) {
-        const tint = new MultiplyBlock(`${options.name}_overlayColor`);
+        const tint = new MultiplyBlock(`${MATERIAL_BLOCK_PREFIX}_overlayColor`);
         color.connectTo(tint.left); style.rgb.connectTo(tint.right); tint.output.connectTo(fragment.rgb);
         created.push(tint);
       }
       if (opacity) {
-        const alpha = new MultiplyBlock(`${options.name}_overlayAlpha`);
+        const alpha = new MultiplyBlock(`${MATERIAL_BLOCK_PREFIX}_overlayAlpha`);
         opacity.connectTo(alpha.left); style.alpha.connectTo(alpha.right); alpha.output.connectTo(fragment.a);
         created.push(alpha);
       } else style.alpha.connectTo(fragment.a);
@@ -1813,37 +1914,37 @@ function attachSurfaceShading(
       // Like lit surfaces, world unlit color is linear: it stays linear for a
       // Scene Linear display stage and is encoded for display otherwise.
       const shown = color && opacity ? covered(color, opacity) : { color, alpha: opacity };
-      if (shown.color) writeLinearSurfaceColor(applyFog(shown.color), fragment, options.name, created);
-      shown.alpha?.connectTo(fragment.a);
+      if (shown.color) writeShown(applyFog(shown.color), shown.alpha);
+      else shown.alpha?.connectTo(fragment.a);
     }
     return fragment;
   }
 
   const surfaceColor = baseColor ?? (() => {
-    const fallback = createConstantBlock(`${options.name}_baseColorFallback`, "vec3", [0.8, 0.8, 0.8], true);
+    const fallback = createConstantBlock(`${MATERIAL_BLOCK_PREFIX}_baseColorFallback`, "vec3", [0.8, 0.8, 0.8], true);
     created.push(fallback);
     return fallback.output;
   })();
   surfaceColor.connectTo(fragment.geometryBaseColor);
-  const metallic = outputPoint("metallic", `${options.name}_metallic`, false);
+  const metallic = outputPoint("metallic", `${MATERIAL_BLOCK_PREFIX}_metallic`, false);
   if (metallic) metallic.connectTo(fragment.geometryMetallic);
-  const roughness = outputPoint("roughness", `${options.name}_roughness`, false);
+  const roughness = outputPoint("roughness", `${MATERIAL_BLOCK_PREFIX}_roughness`, false);
   if (roughness) roughness.connectTo(fragment.geometryRoughness);
-  const normal = outputPoint("normal", `${options.name}_normalInput`, false);
-  const opacity = outputPoint("opacity", `${options.name}_opacity`, false);
+  const normal = outputPoint("normal", `${MATERIAL_BLOCK_PREFIX}_normalInput`, false);
+  const opacity = outputPoint("opacity", `${MATERIAL_BLOCK_PREFIX}_opacity`, false);
   const environmentOperand = plan.outputs.environmentInfluence;
   const influence = environmentOperand && !(environmentOperand.kind === "constant" && environmentOperand.value[0] === 1)
-    ? outputPoint("environmentInfluence", `${options.name}_environmentInfluence`, false)
+    ? outputPoint("environmentInfluence", `${MATERIAL_BLOCK_PREFIX}_environmentInfluence`, false)
     : null;
   // A non-metal's reflectance, F0 = 0.08 x Specular; the blocks' own default is 0.5 (F0 0.04).
   const specularOperand = plan.outputs.specular;
   const specular = specularOperand && !(specularOperand.kind === "constant" && specularOperand.value[0] === 0.5)
-    ? outputPoint("specular", `${options.name}_specular`, false)
+    ? outputPoint("specular", `${MATERIAL_BLOCK_PREFIX}_specular`, false)
     : null;
   specular?.connectTo(fragment.geometrySpecular);
 
   // The surface's direct and environment light (scaled by Environment Influence), from the light block.
-  const lighting = new HapticLightingBlock(`${options.name}_lighting`);
+  const lighting = new HapticLightingBlock(`${MATERIAL_BLOCK_PREFIX}_lighting`);
   // A constant Environment Influence of 0 (built-in water's) compiles the environment's light out.
   lighting.noEnvironment = constantScalar(plan, environmentOperand) === 0;
   created.push(lighting);
@@ -1853,7 +1954,7 @@ function attachSurfaceShading(
   surfaceColor.connectTo(lighting.baseColor);
   // The Material Output's own defaults, for a plan that leaves a channel out.
   const constant = (value: number, suffix: string) => {
-    const block = createConstantBlock(`${options.name}_${suffix}`, "float", [value]);
+    const block = createConstantBlock(`${MATERIAL_BLOCK_PREFIX}_${suffix}`, "float", [value]);
     created.push(block);
     return block.output;
   };
@@ -1870,15 +1971,14 @@ function attachSurfaceShading(
   const total = addColor(lit, indirect, "totalLighting");
   const color = emissive ? addColor(total, emissive, "surfaceEmission") : total;
   const shown = alpha ? covered(color, alpha) : { color, alpha };
-  writeLinearSurfaceColor(applyFog(shown.color), fragment, options.name, created);
-  shown.alpha?.connectTo(fragment.a);
+  writeShown(applyFog(shown.color), shown.alpha);
   return fragment;
 }
 
 /** Route a linear surface color through the scene's image processing. */
 function writeLinearSurfaceColor(
   color: NodeMaterialConnectionPoint,
-  fragment: GeometrySurfaceOutputBlock,
+  fragment: FragmentOutputBlock,
   name: string,
   created: NodeMaterialBlock[],
 ): void {
@@ -1889,6 +1989,118 @@ function writeLinearSurfaceColor(
   created.push(imageProcessing);
   color.connectTo(imageProcessing.color);
   imageProcessing.rgb.connectTo(fragment.rgb);
+}
+
+/**
+ * A Multiply blend's output: `mix(1, color, alpha)` with alpha 1, gamma-encoded alone (never tone mapped or exposed,
+ * so a factor of 1 stays 1) unless a Scene Linear display stage encodes the frame.
+ */
+function writeMultiplyFactor(
+  color: NodeMaterialConnectionPoint,
+  alpha: NodeMaterialConnectionPoint | null,
+  fragment: GeometrySurfaceOutputBlock | MultiplyFactorOutputBlock,
+  name: string,
+  created: NodeMaterialBlock[],
+): void {
+  const factor = new MultiplyBlendFactorBlock(`${name}_multiplyFactor`);
+  const one = createConstantBlock(`${name}_multiplyAlpha`, "float", [1]);
+  created.push(factor, one);
+  color.connectTo(factor.color);
+  (alpha ?? one.output).connectTo(factor.alpha);
+  factor.factor.connectTo(fragment.rgb);
+  one.output.connectTo(fragment.a);
+  if (fragment instanceof GeometrySurfaceOutputBlock) fragment.linearFactor = true;
+}
+
+/**
+ * The Decal domain's shading, after its projection (`createDecalPlumbing`): Base Color and Emissive times the decal's
+ * Tint, lit by the shared light block unless the Material is Unlit; alpha is Opacity times the decal's Opacity and its
+ * fade. The fog fades the colour toward what leaves the scene as it is (the fog colour for Translucent, black for
+ * Additive, white for Multiply). Opaque discards where the fade is under half, Masked under Alpha Cutoff; both write
+ * alpha 1. The pass blends by the Material's alpha mode (`decalAlphaMode`).
+ */
+function attachDecalShading(
+  plan: MaterialBuildPlan,
+  created: NodeMaterialBlock[],
+  plumbing: MaterialPlumbing,
+  outputPoint: (pinId: string, name: string, asColor: boolean) => NodeMaterialConnectionPoint | null,
+): NodeMaterialBlock[] {
+  const projection = plumbing.decal;
+  if (!projection || !plumbing.worldPosition) throw new Error("A Decal Material needs its projection");
+  const name = MATERIAL_BLOCK_PREFIX;
+  const constant = (type: MaterialValueType, value: number[], suffix: string, asColor = false) => {
+    const block = createConstantBlock(`${name}_${suffix}`, type, value, asColor);
+    created.push(block);
+    return block.output;
+  };
+  const multiply = (left: NodeMaterialConnectionPoint, right: NodeMaterialConnectionPoint, suffix: string) => {
+    const block = new MultiplyBlock(`${name}_${suffix}`);
+    created.push(block);
+    left.connectTo(block.left);
+    right.connectTo(block.right);
+    return block.output;
+  };
+  const add = (left: NodeMaterialConnectionPoint, right: NodeMaterialConnectionPoint, suffix: string) => {
+    const block = new AddBlock(`${name}_${suffix}`);
+    created.push(block);
+    left.connectTo(block.left);
+    right.connectTo(block.right);
+    return block.output;
+  };
+  const baseColor = multiply(outputPoint("baseColor", `${name}_baseColor`, true) ?? constant("vec3", [0.8, 0.8, 0.8], "baseColorDefault", true),
+    projection.tint, "tintedBaseColor");
+  const emissiveOperand = plan.outputs.emissive;
+  const emissive = emissiveOperand && !(emissiveOperand.kind === "constant" && emissiveOperand.value.every((value) => value === 0))
+    ? outputPoint("emissive", `${name}_emissive`, true)
+    : null;
+
+  let color = baseColor;
+  if (plan.shadingModel !== "unlit") {
+    const lighting = new HapticLightingBlock(`${name}_lighting`);
+    created.push(lighting);
+    plumbing.worldPosition.connectTo(lighting.worldPosition);
+    projection.worldNormal.connectTo(lighting.worldNormal);
+    projection.cameraPosition.connectTo(lighting.cameraPosition);
+    baseColor.connectTo(lighting.baseColor);
+    (outputPoint("metallic", `${name}_metallic`, false) ?? constant("float", [0], "metallicDefault")).connectTo(lighting.metallic);
+    (outputPoint("roughness", `${name}_roughness`, false) ?? constant("float", [0.5], "roughnessDefault")).connectTo(lighting.roughness);
+    outputPoint("normal", `${name}_normalInput`, false)?.connectTo(lighting.normal);
+    color = add(add(lighting.diffuseDirect, lighting.specularDirect, "litColor"), add(lighting.diffuseIndirect, lighting.specularIndirect, "environmentColor"), "totalLighting");
+  }
+  if (emissive) color = add(color, multiply(emissive, projection.tint, "tintedEmissive"), "decalEmission");
+
+  const opacity = outputPoint("opacity", `${name}_opacity`, false) ?? constant("float", [1], "opacityDefault");
+  const alpha = multiply(multiply(opacity, projection.opacity, "decalOpacity"), projection.fade, "decalAlpha");
+
+  const fog = new SceneFogBlock(`${name}_fog`);
+  fog.toward = plan.blendMode === "additive" ? "black" : plan.blendMode === "multiply" ? "white" : "fog";
+  created.push(fog);
+  color.connectTo(fog.input);
+  plumbing.worldPosition.connectTo(fog.worldPosition);
+  projection.viewPosition.connectTo(fog.viewPosition);
+
+  const outputs: NodeMaterialBlock[] = [];
+  if (plan.blendMode === "opaque" || plan.blendMode === "masked") {
+    const clip = new CoverageClipBlock(`${name}_decalClip`);
+    clip.coverage = false;
+    (plan.blendMode === "masked" ? alpha : projection.fade).connectTo(clip.value);
+    constant("float", [plan.blendMode === "masked" ? plan.alphaCutoff : 0.5], "decalCutoff").connectTo(clip.cutoff);
+    created.push(clip);
+    outputs.push(clip);
+  }
+  if (plan.blendMode === "multiply") {
+    const fragment = new MultiplyFactorOutputBlock(`${name}_fragment`);
+    created.push(fragment);
+    writeMultiplyFactor(fog.output, alpha, fragment, name, created);
+    outputs.push(fragment);
+    return outputs;
+  }
+  const fragment = new FragmentOutputBlock(`${name}_fragment`);
+  created.push(fragment);
+  writeLinearSurfaceColor(fog.output, fragment, name, created);
+  (plan.blendMode === "translucent" || plan.blendMode === "additive" ? alpha : constant("float", [1], "decalOpaqueAlpha")).connectTo(fragment.a);
+  outputs.push(fragment);
+  return outputs;
 }
 
 /**

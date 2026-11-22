@@ -487,6 +487,7 @@ describe("loadExportDocuments", () => {
         pitchMin: 1,
         pitchMax: 1,
         loop: false,
+        playbackMode: "decoded",
       },
       source: new Uint8Array([1, 2, 3, 4]),
       sources: [new Uint8Array([1, 2, 3, 4])],

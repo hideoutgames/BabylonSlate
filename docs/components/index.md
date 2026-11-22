@@ -30,6 +30,7 @@ A component gives an actor one ability: drawing a mesh, simulating a body, casti
 | [Hemispheric Fill Light](hemispheric-fill-light.md) | Soft fill light with one colour from above and another from below. |
 | [2D Light](light-2d.md) | Lights Sprites and Tilemaps in 2D: a Point light with an optional cone, or a Global light. |
 | [Fog Volume](fog-volume.md) | A local box or sphere of fog with soft edges. |
+| [Decal](decal.md) | Projects a texture onto underlying opaque world surfaces inside a box volume. |
 | [Reflection Probe](reflection-probe.md) | Captures the static scene so surfaces inside its box reflect their surroundings. |
 | [Outline](outline.md) | Draws a coloured silhouette around an actor. |
 | [Deformer](deformer.md) | Bends and squashes a Mesh with a lattice of control points. |
@@ -92,6 +93,7 @@ These components work only in Scene Layers.
 | [2D Texture](2d-texture.md) | Draws a Texture as a flat image. |
 | [2D Material](2d-material.md) | Draws a Material as a flat square. |
 | [2D Panel](2d-panel.md) | A stretchable background that keeps its corners intact, from a Texture or a Material. |
+| [Post Processing Panel](post-processing-panel.md) | Runs a post-process Material over the elements inside its rectangle. |
 | [2D Text](2d-text.md) | Draws text from a Font. |
 | [2D Rich Text](2d-rich-text.md) | Draws text with inline formatting, images and animated letters. |
 | [2D Painter](2d-painter.md) | A drawing surface for lines, shapes and paths that you draw from a script. |

@@ -36,6 +36,8 @@ function measuredCommands(): { source: string; line: string }[] {
       for (const line of [...step.commands, ...(step.restore ?? [])]) lines.push({ source: `profile ${step.label}`, line });
   }
   lines.push({ source: "profile end", line: `possess "${FEATURE_TEST_MAIN_CAMERA.name}"` });
+  // Play's measurement, in every mode: the frame-end fence off for a sample, then the session's mode again.
+  for (const line of ["framesinflight off", "framesinflight 2", "framesinflight 3"]) lines.push({ source: "play frame-end fence", line });
   return lines;
 }
 
@@ -54,7 +56,9 @@ describe("Feature Test measurement commands", () => {
     const registry = createCommandRegistry({ includeDebug: true });
     const commands = measuredCommands();
     expect(commands.some(({ line }) => line.startsWith("quality postprocessing antialiasing"))).toBe(true);
-    expect(commands.some(({ source, line }) => source === "profile heavy ambient occlusion off" && line === "quality postprocessing ambientOcclusion off")).toBe(true);
+    expect(commands.some(({ source, line }) => source === "profile heavy geometry effects off" && line === "quality postprocessing ambientOcclusion off")).toBe(true);
+    for (const line of ["shadowdebug sunpasses off", "shadowdebug localpasses on", "shadowdebug fulltiles off", "worlddebug geometryonce off", "worlddebug geometryoncescissor on"])
+      expect(commands.some((command) => command.line === line), line).toBe(true);
     expect(commands.some(({ line }) => line === "worlddebug world off")).toBe(true);
     expect(commands.some(({ line }) => line === "shadowdebug passes off")).toBe(true);
     expect(commands.filter(({ line }) => line.startsWith("worlddebug ")).length).toBeGreaterThan(4);

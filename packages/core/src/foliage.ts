@@ -1,4 +1,8 @@
-import { normalizeTransform, type SerializedTransform } from "./scene";
+import { normalizeTransform, type SerializedActor, type SerializedTransform } from "./scene";
+
+export const DEFAULT_FOLIAGE_CULL_DISTANCE = 120;
+export const DEFAULT_FOLIAGE_FADE_RANGE = 15;
+export const DEFAULT_FOLIAGE_SHADOW_DISTANCE = 45;
 
 export interface FoliageModel {
   modelGuid: string;
@@ -6,6 +10,12 @@ export interface FoliageModel {
   weight: number;
   minScale: number;
   maxScale: number;
+  /** Distance from camera at which spatial cells stop drawing (0 = unlimited). */
+  cullDistance: number;
+  /** Width of the dithered fade-out band ending at cullDistance (meters). */
+  fadeRange: number;
+  /** Distance at which spatial cells stop casting shadows (0 = inherit cullDistance). */
+  shadowDistance: number;
 }
 export interface FoliageGroup {
   id: string;
@@ -16,6 +26,9 @@ export interface FoliageBatch {
   modelGuid: string;
   materialGuid: string | null;
   transforms: SerializedTransform[];
+  cullDistance: number;
+  fadeRange: number;
+  shadowDistance: number;
 }
 export interface FoliageProperties {
   groupId: string;
@@ -47,8 +60,16 @@ export function normalizeFoliageGroups(value: unknown): FoliageGroup[] {
       const modelGuid = guid(model.modelGuid);
       if (!modelGuid) return [];
       const minScale = number(model.minScale, 0.8, 0.01, 100);
-      return [{ modelGuid, materialGuid: guid(model.materialGuid), weight: number(model.weight, 1, 0, 100),
-        minScale, maxScale: number(model.maxScale, Math.max(1.2, minScale), minScale, 100) }];
+      return [{
+        modelGuid,
+        materialGuid: guid(model.materialGuid),
+        weight: number(model.weight, 1, 0, 100),
+        minScale,
+        maxScale: number(model.maxScale, Math.max(1.2, minScale), minScale, 100),
+        cullDistance: number(model.cullDistance, DEFAULT_FOLIAGE_CULL_DISTANCE, 0, 10_000),
+        fadeRange: number(model.fadeRange, DEFAULT_FOLIAGE_FADE_RANGE, 0, 1_000),
+        shadowDistance: number(model.shadowDistance, DEFAULT_FOLIAGE_SHADOW_DISTANCE, 0, 10_000),
+      }];
     }) }];
   });
 }
@@ -63,7 +84,14 @@ export function parseFoliageProperties(value: unknown): FoliageProperties {
     if (!modelGuid || !Array.isArray(batch.transforms) || remaining <= 0) return [];
     const transforms = batch.transforms.slice(0, remaining).map(normalizeTransform);
     remaining -= transforms.length;
-    return transforms.length ? [{ modelGuid, materialGuid: guid(batch.materialGuid), transforms }] : [];
+    return transforms.length ? [{
+      modelGuid,
+      materialGuid: guid(batch.materialGuid),
+      transforms,
+      cullDistance: number(batch.cullDistance, DEFAULT_FOLIAGE_CULL_DISTANCE, 0, 10_000),
+      fadeRange: number(batch.fadeRange, DEFAULT_FOLIAGE_FADE_RANGE, 0, 1_000),
+      shadowDistance: number(batch.shadowDistance, DEFAULT_FOLIAGE_SHADOW_DISTANCE, 0, 10_000),
+    }] : [];
   }) };
 }
 
@@ -79,7 +107,43 @@ export function chooseFoliageModel(group: FoliageGroup, random: number): Foliage
 export function appendFoliageInstance(properties: FoliageProperties, model: FoliageModel, transform: SerializedTransform): FoliageProperties {
   if (properties.batches.reduce((sum, batch) => sum + batch.transforms.length, 0) >= MAX_FOLIAGE_INSTANCES) return properties;
   const existing = properties.batches.findIndex((batch) => batch.modelGuid === model.modelGuid && batch.materialGuid === model.materialGuid);
+  const cullDistance = number(model.cullDistance, DEFAULT_FOLIAGE_CULL_DISTANCE, 0, 10_000);
+  const fadeRange = number(model.fadeRange, DEFAULT_FOLIAGE_FADE_RANGE, 0, 1_000);
+  const shadowDistance = number(model.shadowDistance, DEFAULT_FOLIAGE_SHADOW_DISTANCE, 0, 10_000);
   return { ...properties, batches: existing < 0
-    ? [...properties.batches, { modelGuid: model.modelGuid, materialGuid: model.materialGuid, transforms: [transform] }]
-    : properties.batches.map((batch, index) => index === existing ? { ...batch, transforms: [...batch.transforms, transform] } : batch) };
+    ? [...properties.batches, { modelGuid: model.modelGuid, materialGuid: model.materialGuid, transforms: [transform], cullDistance, fadeRange, shadowDistance }]
+    : properties.batches.map((batch, index) => index === existing ? { ...batch, transforms: [...batch.transforms, transform], cullDistance, fadeRange, shadowDistance } : batch) };
+}
+
+/**
+ * A Foliage Group Model's edit from `previous` to `next` reaches the strokes painted with it: every batch of group
+ * `groupId`'s Foliage components that holds `previous`'s Model and Material Override takes `next`'s Material Override and
+ * distances, so later edits still find it. Untouched actors, components and batches keep their identity; returns
+ * `actors` itself when no batch is the Model's.
+ */
+export function applyFoliageModelEdit(
+  actors: SerializedActor[], groupId: string, previous: FoliageModel, next: FoliageModel,
+): SerializedActor[] {
+  let changed = false;
+  const result = actors.map((actor) => {
+    let actorChanged = false;
+    const components = actor.components.map((component) => {
+      const properties = object(component.properties);
+      if (component.classId !== "FoliageComponent" || properties.groupId !== groupId || !Array.isArray(properties.batches)) return component;
+      let batchChanged = false;
+      const batches = properties.batches.map((batch: unknown) => {
+        const entry = object(batch);
+        if (entry.modelGuid !== previous.modelGuid || guid(entry.materialGuid) !== previous.materialGuid) return batch;
+        batchChanged = true;
+        return { ...entry, materialGuid: next.materialGuid, cullDistance: next.cullDistance, fadeRange: next.fadeRange, shadowDistance: next.shadowDistance };
+      });
+      if (!batchChanged) return component;
+      actorChanged = true;
+      return { ...component, properties: { ...properties, batches } };
+    });
+    if (!actorChanged) return actor;
+    changed = true;
+    return { ...actor, components };
+  });
+  return changed ? result : actors;
 }

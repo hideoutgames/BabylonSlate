@@ -27,6 +27,7 @@ export * from "./canvas-drawing-buffer";
 export * from "./draw-calls";
 export { DRAW_PASSES, type DrawPass, type DrawPassCounts } from "./draw-passes";
 export type { OverlayAloneReason, OverlayBatchStats, OverlayBatchWork } from "./overlay-draw-batcher";
+export type { LayerFrameStats } from "./layer-frame-stats";
 export { verifyRetainedOverlayBatches } from "./overlay-draw-batcher";
 export { drawLayersFullPath, verifyLayerDrawLists } from "./layer-draw-list";
 export type { InstancePoolDiagnostics, InstancingIneligibility } from "./instance-pool";
@@ -70,6 +71,7 @@ export { nearestTexturesEnabled, observeNearestTextures, setNearestTextures } fr
 export * from "./flip-read-pixels";
 export * from "./font-registry";
 export * from "./sprite-quad";
+export type { WorldSpriteBatchStats } from "./world-sprite-batcher";
 export * from "./overlay-texture-quad";
 export * from "./overlay-panel-mesh";
 export * from "./tilemap-mesh";
@@ -127,12 +129,13 @@ export * from "./particle-preview";
 export * from "./convert-obj-to-glb";
 export * from "./convert-stl-to-glb";
 export * from "./node-rig";
-export type { RenderDiagnostics } from "./render-diagnostics";
+export type { FramePressureSample, RenderDiagnostics } from "./render-diagnostics";
 export type { SceneReadinessDirtyReason } from "./scene-readiness-signal";
 export { verifyScopedReadinessProbes } from "./readiness-scope";
 export { verifyRenderChangeJournal } from "./render-change-journal";
 export { verifyLeanPreparation, type LeanPreparationWork } from "./lean-render-preparation";
 export type { PresentedImageSample } from "./presented-image";
+export type { WebGlCallGroup, WebGlCallTotals } from "./webgl-call-timer";
 export { activeRenderFrameCapture } from "./render-frame-report";
 export { parseRenderFrameReport, serializeRenderFrameReport } from "./render-frame-report-file";
 export type { RenderFrameReport, RenderFrameReportDraft, RenderFrameStage, RenderFrameTaskDescription, RenderFrameResource } from "./render-frame-report";
@@ -175,3 +178,28 @@ export { attachSceneBrushInput, type SceneBrushState } from "./scene-brush-input
 export type { RuntimeTransformTools, RuntimeTransformToolsOptions, RuntimeTransformChange } from "./runtime-transform-tools";
 
 export { observeEngineGpuTiming, type EngineGpuTimingSample, type EngineGpuTimingObservation } from "./engine-gpu-timing";
+export {
+  SceneDecalHost,
+  FrameGraphDecalTask,
+  sceneDecalHost,
+  sceneHasDecals,
+  sceneDecalStats,
+  sceneDecalsPending,
+  setDecalMaterialSource,
+  setDecalPendingListener,
+  refreshDecalMaterials,
+  warmDecalMaterials,
+  upsertDecals,
+  setDecalsVisible,
+  removeDecals,
+  clearDecals,
+  spawnDynamicDecal,
+  maxDynamicDecalsForScene,
+  type DecalMaterialInstance,
+  type DecalMaterialSource,
+  type SceneDecalStats,
+} from "./decal-pass";
+export { createDecalGuide } from "./decal-guide";
+export { updateFoliageDistances, attachFoliageLodSet } from "./foliage-mesh";
+export { updateLandscapeLods, LANDSCAPE_LOD_DISTANCES } from "./landscape-mesh";
+

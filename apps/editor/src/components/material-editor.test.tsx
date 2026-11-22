@@ -55,6 +55,8 @@ let assetRegistry: AssetRegistry;
 
 vi.mock("../context/document-workspace-context", () => ({
   useDocumentWorkspace: () => ({ documentId: "material:assets/Rock.material.hasset" }),
+  // The Preview window's visibility check: outside a workspace it counts as shown.
+  useOptionalDocumentWorkspace: () => null,
 }));
 
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => ({
@@ -85,6 +87,7 @@ vi.mock("../context/material-editing-context", () => ({
     focusNode: harness.focusNode,
     requestRender: harness.requestRender,
     attachPreviewCanvas: vi.fn(),
+    setPreviewShown: vi.fn(),
     previewZoomDrive: () => harness.zoomDrive,
     frameBudgetMs: 1000 / 60,
     previewNode: harness.previewNode,
@@ -341,10 +344,10 @@ describe("Material details panel", () => {
     expect(screen.queryByTestId("material-node-details")).toBeNull();
   });
 
-  it("leaves blending to particle emitters by hiding Blend Mode on particle materials", () => {
+  it.each(["particle", "postProcess"] as const)("hides Blend Mode on %s Materials, which nothing blends by", (domain) => {
     const { rerender } = render(<MaterialDetailsPanel {...panelProps} />);
     expect(screen.getByTestId("property-blendMode")).toBeTruthy();
-    harness.content = createDefaultMaterialDocument("Sparks", "particle") as unknown as Record<string, unknown>;
+    harness.content = createDefaultMaterialDocument("Pass", domain) as unknown as Record<string, unknown>;
     rerender(<MaterialDetailsPanel {...panelProps} />);
     expect(screen.getByTestId("property-domain")).toBeTruthy();
     expect(screen.queryByTestId("property-blendMode")).toBeNull();

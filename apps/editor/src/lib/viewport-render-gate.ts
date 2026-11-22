@@ -23,10 +23,7 @@ type ViewportRenderTarget = {
 };
 
 type LiveEngineSettingsTarget = {
-  scaling?: {
-    setLevel: (level: number) => void;
-    setSettingsLevel?: (level: number) => void;
-  };
+  scaling?: { setSettingsLevel: (level: number) => void };
   scheduler?: { setFrameCap: (fps: number) => void; setIdleHalfRate: (enabled: boolean) => void };
   setLocalQualityOverrides?: (overrides: QualityOverrides) => void;
   setPostProcessingEnabled?: (enabled: boolean) => void;
@@ -55,7 +52,7 @@ export function localRenderingQualityOverrides(settings: LiveEngineSettings): Qu
   if (settings.renderingOverridesEnabled !== true) return {};
   const scale = 1 / Math.max(1, settings.hardwareScalingLevel ?? 1);
   return {
-    resolution: { scale, minScale: scale, dynamic: false },
+    resolution: { scale },
     textures: { byteBudget: settings.textureBudgetEnabled === false ? Number.MAX_SAFE_INTEGER : settings.textureByteCeiling ?? 512 * 1024 * 1024 },
   };
 }
@@ -89,11 +86,7 @@ export function applyLiveEngineSettings(
     Number.isFinite(settings.hardwareScalingLevel) &&
     settings.hardwareScalingLevel > 0
   ) {
-    if (target.scaling?.setSettingsLevel) {
-      target.scaling.setSettingsLevel(settings.hardwareScalingLevel);
-    } else {
-      target.scaling?.setLevel(settings.hardwareScalingLevel);
-    }
+    target.scaling?.setSettingsLevel(settings.hardwareScalingLevel);
   }
   if (typeof settings.postProcessingEnabled === "boolean") {
     target.setPostProcessingEnabled?.(settings.renderingOverridesEnabled !== true || settings.postProcessingEnabled);
@@ -251,10 +244,7 @@ export function canvasIsEditorVisible(
 export function attachViewportRenderGate(options: {
   canvas: HTMLCanvasElement;
   scheduler: ViewportRenderTarget;
-  scaling?: {
-    setLevel: (level: number) => void;
-    setSettingsLevel?: (level: number) => void;
-  };
+  scaling?: { setSettingsLevel: (level: number) => void };
   setLocalQualityOverrides?: (overrides: QualityOverrides) => void;
   setPostProcessingEnabled?: (enabled: boolean) => void;
   setTextureBudget?: (bytes: number, enabled: boolean) => void;

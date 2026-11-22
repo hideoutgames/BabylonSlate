@@ -28,8 +28,7 @@ import { saveAllIfEnabled } from "./save-all";
  *
  * Env: HAPTIC_PERF_SCENES (comma list of main|world|lights|stress|2d; default main,world),
  *      HAPTIC_PERF_QUALITY (low|medium|high|ultra; default: the starter's High. Sets the project's Overall Quality in
- *        Project Settings, with Dynamic Resolution off so the workload stays fixed. High and Ultra allow the starter's
- *        scene-wide Volumetric Lighting, which Medium skips),
+ *        Project Settings. High and Ultra allow the starter's scene-wide Volumetric Lighting, which Medium skips),
  *      HAPTIC_RENDER_NATIVE_GPU=1 keeps the project's launch arguments (perf-gpu); otherwise the run launches
  *        with --enable-precise-memory-info alone,
  *      HAPTIC_FLY_SPEED (m/s, default 8, the editor's default fly speed), HAPTIC_FLY_PASSES (default 2),
@@ -108,7 +107,7 @@ type PlayHost = {
   };
 };
 
-/** Project Settings > Rendering: the Overall Quality (with a fixed resolution) the run asks for. */
+/** Project Settings > Rendering: the Overall Quality the run asks for. */
 async function applyProjectRendering(page: Page): Promise<void> {
   await page.getByTestId("settings-menu").click();
   await page.getByTestId("project-settings").click();
@@ -118,10 +117,6 @@ async function applyProjectRendering(page: Page): Promise<void> {
     if ((await scalability.getAttribute("aria-expanded")) !== "true") await scalability.click();
     await page.getByLabel("Overall Quality", { exact: true }).click();
     await page.getByRole("option", { name: QUALITY[0]!.toUpperCase() + QUALITY.slice(1), exact: true }).click();
-    // A preset turns dynamic resolution back on; the Feature Test starter keeps it off for fixed-workload runs.
-    const dynamic = page.getByRole("switch", { name: "Dynamic Resolution", exact: true });
-    if (await dynamic.isChecked()) await dynamic.click();
-    await expect(dynamic).not.toBeChecked();
   }
   await page.getByRole("button", { name: "Done", exact: true }).click();
 }

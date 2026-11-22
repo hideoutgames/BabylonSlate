@@ -43,7 +43,7 @@ Shipped systems beyond the core (do not rebuild): Save Games (typed definitions,
 
 Baseline: 11-inch A16 iPad, 6 GB RAM, WebGL2, WKWebView. Budgets target it; desktop and web inherit headroom.
 
-- Play/Preview renders at project `playFrameCap` (default 60). Dynamic resolution is the relief valve before frame drops.
+- Play/Preview renders at project `playFrameCap` (default 60). Resolution is a static per-tier Resolution Scale (Low 0.75, Medium 0.85, High and Ultra 1) plus the Engine Settings hardware scaling level; there is no runtime valve, since each scale step rebuilds the frame graph (a hitch), cannot relieve CPU-bound frames and WebKit reports no GPU time to drive it.
 - A **visible** editor viewport (Scene, Prefab Preview) renders continuously at Engine Settings `viewportFrameCap` (default 60), at half the cap while idle when `viewportIdleHalfRate` (**Half Rate When Idle**, default on) is set, so animated materials, water and particles keep moving while the editor gets main-thread headroom ([render.md](architecture/render.md)). Hidden, zero-size, obstructed, modal-covered, backgrounded or Play-paused viewports render **zero** frames. Never dirty-skip a visible viewport.
 - Game tick under 8 ms combined (~5 ms script, ~3 ms physics), timed separately even though one worker runs both. An overrun lags logic; the renderer keeps drawing the latest snapshot.
 - Draw calls in the low hundreds (HUD warns at 400). Prefer instancing and merged static geometry.
@@ -74,13 +74,13 @@ Baseline: 11-inch A16 iPad, 6 GB RAM, WebGL2, WKWebView. Budgets target it; desk
 
 - Pure packages (core, assets, edit, object-model, scripting, debugger, graph IRs, input, exporter, source-control, …) import neither React nor Babylon; they hold most engine logic and test fast.
 - `assets` owns texture **encoding** (Basis wasm, no Babylon); `render` owns **decoding** (`KhronosTextureContainer2`).
-- `physics` hosts Babylon Physics V2 on a worker-local `NullEngine` Scene so `runtime` stays Babylon-free. `navigation` may load Recast wasm but not Babylon.
+- `physics` talks directly to `@babylonjs/havok` WASM (3D) and Rapier2D WASM (2D) with zero `@babylonjs/core`, so the game worker stays completely Babylon-free. `navigation` may load Recast wasm but not Babylon.
 - Only `vfs` adapters touch Capacitor; platform detection is `getHostPlatform()`.
 
 ### Babylon integration constraints
 
 - Babylon is left-handed (X right, Y up, Z into the screen). `scene.useRightHandedSystem` stays `false`; 2D conventions derive from it.
-- 3D physics: `HavokPlugin` + `PhysicsAggregate` on a never-rendered worker-local `NullEngine` Scene, stepped through its physics engine, Havok wasm loaded with `locateFile`. `runtime` talks only to `PhysicsBackend`. Bodies never cross threads. 2D uses Rapier (Babylon has no Rapier plugin).
+- 3D physics: direct `@babylonjs/havok` WASM C-API (`HP_World_*`, `HP_Body_*`, `HP_Shape_*`, `HP_Constraint_*`, `HP_QueryCollector_*`), Havok wasm loaded with `locateFile`, zero `@babylonjs/core` in the worker. `runtime` talks only to `PhysicsBackend`. Bodies never cross threads. 2D uses Rapier.
 - Movement beside a dynamic Rigid Body steers that body's horizontal velocity and leaves gravity, collisions and impulses to physics (rotation locked); without a Rigid Body, or beside a kinematic one, a character controller moves a kinematic capsule. A static Rigid Body, Nav Agent, Ragdoll, Water Buoyancy or a second Movement stops it.
 - Gameplay owns animation time: evaluators run in the worker and send state, normalised time and weights; the main thread poses clips with its own pose evaluator and never lets Babylon play gameplay animation (replay would break).
 - The game HUD / UserInterface system is removed. Editor chrome and debug overlays (Print, Stats) are DOM. SceneLayers are 2D actor documents on a session compositor, not a HUD revival.
@@ -88,16 +88,16 @@ Baseline: 11-inch A16 iPad, 6 GB RAM, WebGL2, WKWebView. Budgets target it; desk
 - Particle Graphs are our own IR lowered onto Node Particle blocks; never the NPE UI, snippet server, CDN or Babylon JSON.
 - glTF import keeps the original bytes as a chunk plus extracted metadata; the runtime loads through Babylon's loader (the one non-pure importer, deliberately). FBX, OBJ and STL convert to GLB in the editor first.
 - The KTX2 transcoder is self-hosted via `KhronosTextureContainer2.URLConfig` and must ship in the editor, player and every export.
-- WebGL context loss is normal on iPad: restore resets hardware scaling to the Engine Settings floor, the resolution valve forgets hitch samples, Babylon rebuilds retained resources (the ResourceCache is not flushed), materials invalidate and the Output Log reports it.
+- WebGL context loss is normal on iPad: restore keeps the hardware scaling level, Babylon rebuilds retained resources (the ResourceCache is not flushed), materials invalidate and the Output Log reports it.
 - iOS blocks audio until a gesture: both hosts unlock on the first touch, never at load.
-- `NullEngine` is the `render` test seam and the production host for worker physics.
+- `NullEngine` is the `render` test seam (and headless model-import converter); worker physics no longer uses it.
 - Babylon is pinned to an exact version with a repository patch ([patches/](../../patches/), [pnpm-workspace.yaml](../../pnpm-workspace.yaml)); upgrades re-validate the patch.
 
 ### iPad memory and thermal architecture
 
 Memory is a cliff (WKWebView kills the tab, it does not swap); sustained power is a slope (throttling slows the rest of the session).
 
-- **Resolution is the cheapest lever.** The Engine uses `adaptToDeviceRatio: false`; `setHardwareScalingLevel` is the single knob for the editor default, Play quality tier, user preference, `quality resolution` and the dynamic valve (rolling median, hysteresis, cooldown). Anti-aliasing has no device-class cap: the iPad baseline takes the same tiers as every other device (Low FXAA, Medium and above MSAA 4x), limited only by the device's own sample count ([render.md](architecture/render.md#rendering-settings)).
+- **Resolution is the cheapest lever.** The Engine uses `adaptToDeviceRatio: false`; `setHardwareScalingLevel` is the single knob for the editor default, Play quality tier, user preference and `quality resolution`; the level is static, set by the last of the tier's Resolution Scale and Engine Settings. Anti-aliasing has no device-class cap: the iPad baseline takes the same tiers as every other device (Low FXAA, Medium and above MSAA 4x), limited only by the device's own sample count ([render.md](architecture/render.md#rendering-settings)).
 - **One GPU texture per asset across Scenes.** Babylon caches `InternalTexture` per Engine keyed by URL *and* sampling flags, so the ResourceCache owns a stable blob URL per asset guid plus one canonical sampling set. Constructing an asset `Texture` outside the cache is prohibited; renderer-owned `RenderTargetTexture` / `RawTexture` are exempt but account bytes through `beginManagedRenderAllocation`.
 - **The ResourceCache is a byte-ceilinged LRU, not only refcounts**: it evicts only unreferenced entries, logs evictions, exists once per Engine (`resourceCacheForEngine`), releases a handle's leases on dispose, and is disposed only at project Engine teardown ([resource-cache.ts](../../packages/render/src/resource-cache.ts)).
 - **Catalog reads are bounded at storage.** The registry reads only a validated header prefix; payload chunks load on demand with revision, bounds, length and hash checks.
@@ -145,14 +145,14 @@ Memory is a cliff (WKWebView kills the tab, it does not swap); sustained power i
 
 ### Audio
 
-- The imported `Audio` asset is the sound asset (MP3, WAV, OGG; import-only, no separate Sound type). Payload: `volume`, `loop`, nullable `audioChannelGuid` and `soundAttenuationGuid`.
+- The imported `Audio` asset is the sound asset (MP3, WAV, OGG; import-only, no separate Sound type). Payload: `volume`, `loop`, `playbackMode` (`"decoded"` | `"streamed"`), nullable `audioChannelGuid` and `soundAttenuationGuid`.
 - `AudioChannel` routes and holds effects but has no volume; parent cycles are rejected. `AudioMixer` is a user asset selected in Project Settings (default none). `SoundAttenuation` opts a sound into 3D playback.
 - The no-setup path is first-class: no mixer, channel or attenuation still plays at `assetVolume × callVolume`.
 - `outputGain = assetVolume × callVolume × channelGain × parentGains… × globalGain`, every factor clamped `0..1`. Set Channel/Global Volume replace session values, never edit assets, and reset on Stop or scene change.
-- One main-thread Babylon AudioV2 service in `render`, shared by overlay Play and the player; the worker only sends ordered commands. Decoded buffers are a guid-keyed, byte-accounted LRU separate from textures. A bounded pre-unlock queue starts after the first gesture. Decode or context failures report one diagnostic and the game continues.
+- One main-thread Babylon AudioV2 service in `render`, shared by overlay Play and the player; the worker only sends ordered commands. Decoded buffers are a guid-keyed, byte-accounted LRU separate from textures; streamed assets bypass the PCM LRU via AudioV2 `CreateStreamingSoundAsync` (ref-counted Blob URLs in Editor Play, standalone stream sidecar files in exports). A bounded pre-unlock queue starts after the first gesture. Decode or context failures report one diagnostic and the game continues.
 - `AudioComponent` is optional; Play Sound needs none. The listener is the active game camera.
 - Environmental reverb is a baked parametric bake (occupancy grid, sparse probes) feeding one shared bus, never runtime ray tracing or per-sound convolvers; a failed bake writes a marked dry fallback.
-- Out of scope: streaming music, microphone capture, waveform editing, DSP plugin code.
+- Out of scope: microphone capture, waveform editing, DSP plugin code.
 
 ### Particles
 
@@ -336,7 +336,7 @@ Header types come from [document.ts](../../packages/core/src/document.ts); New A
 - Same scene graph, actors, scripting and physics slot as 3D, viewed through an orthographic camera.
 - Convention: XY plane, +Y up, +X right, camera at negative Z looking +Z (forced by Babylon's left-handedness). Depth ordering is a sorting concern.
 - The viewport 2D/3D toggle switches camera, navigation (pan/zoom only), gizmos (XY translate, Z rotate, XY scale), grid and camera-bounds overlay. `viewportMode` is an authored, saved and undoable scene setting.
-- **Sprites are quad meshes, not Babylon Sprites**: a Babylon `Sprite` cannot parent, take custom materials, carry physics shapes or join normal picking. One quad per sprite with the frame baked into UVs; batching and thin instances are measured escape hatches only.
+- **Sprites are quad meshes, not Babylon Sprites**: a Babylon `Sprite` cannot parent, take custom materials, carry physics shapes or join normal picking. Editor viewports use pickable quads; Play world sprites batch into persistent thin-instanced unit quads (`WorldSpriteBatcher`, with `LayerImageAtlas` auto-atlasing and automatic promotion to standalone quads for custom Materials, Deformers, Outlines, shadow casting and picking), and Scene Layer sprites batch through `OverlayDrawBatcher`.
 - Sprites alpha-test by default (opaque pass, no sort); blending is opt-in. Pixel art uses nearest sampling, no mips, anisotropy 1, set at creation.
 - Sprite holds atlas frames, look, pivot and collision AABB; SpriteAnimation is the separate pickable clip for Animation Graph.
 - Tilemaps render as chunked `VertexData` from a pure golden-tested function (one draw per chunk per atlas, only affected chunks rebuilt), not `SpriteMap`. Painting is one undo entry per stroke. Autotile terrains live on the Tileset with a per-terrain style (4-side, 16 variants, or 8-neighbour blob, 47) and resolve at paint time into plain GIDs through a pure resolver with a deterministic closest match, so incomplete sheets still paint and nothing downstream reads terrain data ([tilemaps](architecture/tilemaps.md#terrains-autotile)).

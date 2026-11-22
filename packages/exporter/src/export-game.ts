@@ -1,6 +1,6 @@
 import { SAFE_ZIP_MTIME } from "./zip-time";
-import { err, ok, classIdForAssetPath, clampAudioScale, DEFAULT_LOOP_COUNT, normalizeSceneLayer, normalizeSortingLayers, normalizeGarbageCollectionIntervalTicks, normalizePlayFrameCap, normalizeRenderProjectSettings, normalizeFocusNavigationSettings, renderEffectsAssetGuids, consoleCommandMetadataFromGraph, normalizeCollisionPresets, isBuildPlatform, type Result } from "@haptic/core";
-import { collectAssetDependencyMetadata, decodePackedModelAsset, peekPackedAudioPayload, sha256Hex, PARTICLE_ASSET_TYPES, type AssetDependencyClass } from "@haptic/assets";
+import { err, ok, classIdForAssetPath, clampAudioScale, DEFAULT_LOOP_COUNT, normalizeSceneLayer, normalizeSortingLayers, normalizeGarbageCollectionIntervalTicks, normalizePlayFrameCap, normalizeRenderProjectSettings, normalizeFocusNavigationSettings, normalizeSceneLayerPostProcessStack, renderEffectsAssetGuids, consoleCommandMetadataFromGraph, normalizeCollisionPresets, isBuildPlatform, type Result } from "@haptic/core";
+import { collectAssetDependencyMetadata, sceneLayerPostProcessAssetGuids, decodePackedAudioAsset, decodePackedModelAsset, encodePackedAudioAsset, mimeForAudioBytes, peekPackedAudioPayload, sha256Hex, PARTICLE_ASSET_TYPES, type AssetDependencyClass } from "@haptic/assets";
 import { zipSync, unzipSync } from "fflate";
 import {
   DEFAULT_FILE_COUNT_FAIL,
@@ -144,28 +144,78 @@ function inlineCssIntoIndex(files: Map<string, Uint8Array>): void {
 /** Asset hashes in flight ahead of the asset being written. */
 const HASH_CONCURRENCY = 4;
 
+function extensionForAudioMime(mime: string): string {
+  if (mime === "audio/mpeg") return "mp3";
+  if (mime === "audio/ogg") return "ogg";
+  if (mime === "audio/wav") return "wav";
+  return "bin";
+}
+
+async function prepareExportedAsset(
+  files: Map<string, Uint8Array>,
+  asset: ExportAssetBytes,
+  indexInExport: number,
+): Promise<{
+  bytes: Uint8Array;
+  streamClips?: Record<string, string>;
+  streamRevisions?: Record<string, string>;
+}> {
+  if (asset.type !== "Audio") return { bytes: asset.bytes };
+  const packed = decodePackedAudioAsset(asset.bytes);
+  if (!packed || packed.payload.playbackMode !== "streamed") return { bytes: asset.bytes };
+  const streamClips: Record<string, string> = {};
+  const streamRevisions: Record<string, string> = {};
+  let extracted = 0;
+  for (const [clipIndex, clip] of packed.payload.clips.entries()) {
+    const clipBytes = packed.sources[clipIndex];
+    if (!clipBytes || clipBytes.byteLength === 0) continue;
+    const ext = extensionForAudioMime(mimeForAudioBytes(clipBytes));
+    const clipHash = await sha256Hex(clipBytes);
+    const suffix = packed.payload.clips.length > 1 ? `-${clipIndex}` : "";
+    const streamPath = `assets/stream-${indexInExport}${suffix}-${clipHash.slice(0, 12)}.${ext}`;
+    files.set(streamPath, clipBytes);
+    streamClips[clip.chunkId] = streamPath;
+    streamRevisions[clip.chunkId] = clipHash;
+    extracted += 1;
+  }
+  if (extracted === 0) return { bytes: asset.bytes };
+  return {
+    bytes: encodePackedAudioAsset(packed.payload, []),
+    streamClips,
+    streamRevisions,
+  };
+}
+
 async function writeAssetFiles(
   files: Map<string, Uint8Array>,
   assets: readonly ExportAssetBytes[],
 ): Promise<GameAssetIndexEntry[]> {
   const index: GameAssetIndexEntry[] = [];
+  const prepared = await Promise.all(
+    assets.map((asset, indexInExport) => prepareExportedAsset(files, asset, indexInExport)),
+  );
   // Hashes overlap, but each entry is still written and awaited in asset order,
   // so the first failing asset is the one that fails the export.
   const hashes: Promise<string>[] = [];
   for (const [indexInExport, asset] of assets.entries()) {
     while (hashes.length < Math.min(assets.length, indexInExport + HASH_CONCURRENCY)) {
-      const hash = sha256Hex(assets[hashes.length]!.bytes);
+      const hash = sha256Hex(prepared[hashes.length]!.bytes);
       // An abandoned hash must not surface as an unhandled rejection.
       hash.catch(() => {});
       hashes.push(hash);
     }
+    const entryBytes = prepared[indexInExport]!.bytes;
+    const streamClips = prepared[indexInExport]!.streamClips;
+    const streamRevisions = prepared[indexInExport]!.streamRevisions;
     // Asset IDs include namespaced sidecars (for example area-emission:guid).
     // Keep IDs in the manifest and use portable, collision-free file names.
     const path = `assets/data-${indexInExport}.bin`;
-    files.set(path, asset.bytes);
-    index.push({ ...indexEntry(asset, { path }), byteLength: asset.bytes.byteLength, revision: await hashes[indexInExport]!,
+    files.set(path, entryBytes);
+    index.push({ ...indexEntry(asset, { path }), byteLength: entryBytes.byteLength, revision: await hashes[indexInExport]!,
       dependencies: [...(asset.dependencies ?? [])], requiredDependencies: [...(asset.requiredDependencies ?? [])],
       ...(asset.startupRequired ? { startupRequired: true } : {}),
+      ...(streamClips ? { streamClips } : {}),
+      ...(streamRevisions ? { streamRevisions } : {}),
     });
   }
   return index;
@@ -300,7 +350,9 @@ export async function exportGame(
       sceneGuid: owner.sceneGuid, encoding: "json", bytes: encoder.encode(JSON.stringify(script)), requiredDependencies: [] });
   }
 
-  const projectAssetGuids = new Set(renderEffectsAssetGuids(options.renderSettings?.effects));
+  // Project-level assets Play reads from its first frame: the LUT and the Scene Layer post-processing passes.
+  const projectAssetGuids = new Set([...renderEffectsAssetGuids(options.renderSettings?.effects),
+    ...sceneLayerPostProcessAssetGuids(options.sceneLayerPostProcessStack)]);
   const prepared = dependencyCatalog(sourceAssets).map(asset => ({ ...asset,
     startupRequired: asset.startupRequired || projectAssetGuids.has(asset.guid) || asset.guid === options.audioMixerGuid ||
       (!!gameInstanceClass && classIdOf(asset) === gameInstanceClass) || asset.type === "InputAction" || asset.type === "InputAxis",
@@ -317,6 +369,7 @@ export async function exportGame(
     project: { name: options.project?.name ?? "", version: options.project?.version ?? "", buildNumber: options.project?.buildNumber ?? 1 },
     ...(options.inputAssets !== undefined ? { inputAssets: structuredClone(options.inputAssets) } : {}),
     focusNavigation: normalizeFocusNavigationSettings(options.focusNavigation),
+    sceneLayerPostProcessStack: normalizeSceneLayerPostProcessStack(options.sceneLayerPostProcessStack),
     startupSceneGuid: options.startupSceneGuid,
     ...(options.defaultFontGuid ? { defaultFontGuid: options.defaultFontGuid } : {}),
     globalFallback: normalizeGlobalFallback(options.globalFallback),
@@ -401,7 +454,7 @@ function normalizeGlobalFallback(value: unknown): string {
 
 /** Fields `exportGame` always writes; a manifest without one predates the current exporter. */
 const REQUIRED_MANIFEST_FIELDS = [
-  "project", "focusNavigation", "startupSceneGuid", "globalFallback", "occlusionEnabled", "reverbWetScale", "reverbDecayScale",
+  "project", "focusNavigation", "sceneLayerPostProcessStack", "startupSceneGuid", "globalFallback", "occlusionEnabled", "reverbWetScale", "reverbDecayScale",
   "reverbDampingScale", "bundleDebugger", "render", "playFrameCap", "garbageCollectionIntervalTicks", "touchMinTargetPx", "pixelsPerUnit",
   "pixelPerfect", "nearestTextures", "sortingLayers", "physicsWorld", "platform", "collisionPresets", "assets",
 ] as const satisfies readonly (keyof GameManifest)[];
@@ -440,6 +493,7 @@ export function parseGameManifest(source: string): GameManifest {
     ...parsed,
     render: normalizeRenderProjectSettings(parsed.render),
     focusNavigation: normalizeFocusNavigationSettings(parsed.focusNavigation),
+    sceneLayerPostProcessStack: normalizeSceneLayerPostProcessStack(parsed.sceneLayerPostProcessStack),
     playFrameCap: normalizePlayFrameCap(parsed.playFrameCap),
     garbageCollectionIntervalTicks: normalizeGarbageCollectionIntervalTicks(parsed.garbageCollectionIntervalTicks),
     project: { name: parsed.project!.name, version: parsed.project!.version, buildNumber: parsed.project!.buildNumber },

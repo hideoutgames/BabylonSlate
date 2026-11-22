@@ -49,8 +49,7 @@ import {
   visualForIndexedAsset,
   materialAssetDependencies,
   isMaterialSamplerTextureAsset,
-  isPostProcessMaterialForPicker,
-  isParticleMaterialForPicker,
+  materialPickerEntries,
   materialDomainsFromAssets,
   filterInspectorPinPickerAssets,
   classIdConflict,
@@ -68,7 +67,7 @@ import { ENGINE_BASE_CLASSES, registryClassParentLookup } from "./class-asset-lo
 import { contentBrowserMoveFromDrop, isValidMoveDestination } from "./content-browser-moves";
 import { exclusiveSelectAsset, exclusiveSelectFolder } from "./content-browser-selection";
 import { collectFolderGuids, flattenContentBrowserTree, listChildFolders } from "./content-browser-tree";
-import { isParticleMaterialAsset, isPostProcessMaterialAsset, materialHeaderMeta } from "./material-asset-filters";
+import { materialHeaderMeta } from "./material-asset-filters";
 import { materialInstanceNameFor } from "./new-asset-result";
 import { resolveTypeVisual } from "@haptic/editor-kit";
 
@@ -2200,23 +2199,7 @@ describe("content-browser-helpers", () => {
     expect(materialHeaderMeta("Class", { domain: "postProcess" })).toBeUndefined();
   });
 
-  it("recognizes post-process Materials from header payload", () => {
-    expect(
-      isPostProcessMaterialAsset(
-        asset({
-          type: "Material",
-          payload: { domain: "postProcess" },
-        }),
-      ),
-    ).toBe(true);
-    expect(
-      isPostProcessMaterialAsset(
-        asset({ type: "Material", payload: { domain: "surface" } }),
-      ),
-    ).toBe(false);
-  });
-
-  it("prefers an open Material document domain over a stale header", () => {
+  it("lists a domain's Materials for a picker, an open Material document's domain over a stale header", () => {
     const bloom = asset({
       type: "Material",
       path: "assets/Bloom.material.hasset",
@@ -2224,55 +2207,12 @@ describe("content-browser-helpers", () => {
       name: "Bloom",
       payload: { domain: "surface" },
     });
-    expect(
-      isPostProcessMaterialForPicker(bloom, [
-        {
-          ref: { kind: "material", path: "assets/Bloom.material.hasset" },
-          content: { domain: "postProcess" },
-        },
-      ]),
-    ).toBe(true);
-    expect(isPostProcessMaterialForPicker(bloom, [])).toBe(false);
-  });
-
-  it("recognizes particle-domain Materials from header payload", () => {
-    expect(
-      isParticleMaterialAsset(
-        asset({
-          type: "Material",
-          payload: { domain: "particle" },
-        }),
-      ),
-    ).toBe(true);
-    expect(
-      isParticleMaterialAsset(
-        asset({ type: "Material", payload: { domain: "surface" } }),
-      ),
-    ).toBe(false);
-    expect(
-      isParticleMaterialAsset(
-        asset({ type: "Material", payload: { domain: "postProcess" } }),
-      ),
-    ).toBe(false);
-  });
-
-  it("prefers an open particle Material document domain over a stale header", () => {
-    const sparks = asset({
-      type: "Material",
-      path: "assets/Sparks.material.hasset",
-      guid: "mat-sparks",
-      name: "Sparks",
-      payload: { domain: "surface" },
-    });
-    expect(
-      isParticleMaterialForPicker(sparks, [
-        {
-          ref: { kind: "material", path: "assets/Sparks.material.hasset" },
-          content: { domain: "particle" },
-        },
-      ]),
-    ).toBe(true);
-    expect(isParticleMaterialForPicker(sparks, [])).toBe(false);
+    const open = [{ ref: { kind: "material", path: "assets/Bloom.material.hasset" }, content: { domain: "postProcess" } }];
+    expect(materialPickerEntries([bloom], open, "postProcess").map((entry) => entry.guid)).toEqual(["pp-bloom"]);
+    expect(materialPickerEntries([bloom], [], "postProcess")).toEqual([]);
+    expect(materialPickerEntries([bloom], [], "surface")).toEqual([
+      { guid: "pp-bloom", name: "Bloom", type: "Material", path: "assets/Bloom.material.hasset" },
+    ]);
   });
 
   it("maps Material guids to domains from headers and open documents", () => {

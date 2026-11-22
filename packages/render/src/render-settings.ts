@@ -533,7 +533,12 @@ export function resolveSceneRenderingQuality(scene: Scene): EffectiveRenderingQu
   const cached = state.resolvedQuality;
   if (cached && cached.project === project && cached.shadowOverrides === shadowOverrides && cached.local === local &&
     cached.session === session) return cached.quality;
-  const quality = resolveRenderingQuality(project, shadowOverrides, mergeRenderingQualityOverrides(local, session));
+  const overrides = mergeRenderingQualityOverrides(local, session);
+  const resolved = resolveRenderingQuality(project, shadowOverrides, overrides);
+  // A Scene given no project quality (an editor view or asset preview without the project's settings) has no tier to
+  // take a Resolution Scale from: it draws at full resolution unless an override sets a scale.
+  const quality = project.quality || overrides.resolution?.scale !== undefined ? resolved
+    : { ...resolved, resolution: { ...resolved.resolution, scale: 1 } };
   state.resolvedQuality = { project, shadowOverrides, local, session, quality };
   return quality;
 }
