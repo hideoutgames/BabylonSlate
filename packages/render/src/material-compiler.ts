@@ -446,6 +446,11 @@ export function compileMaterialPlan(
   const recordPlan = material.mode === NodeMaterialModes.Material ? planMaterialRecord(plan, isPerInstance) : null;
   const record = recordPlan ? new MaterialRecord(scene.getEngine(), recordPlan.slots) : null;
   if (record) material.onDisposeObservable.addOnce(() => record.dispose());
+  /** A block reading `slot` of the record, which holds `value` (a parameter's default or a hoisted literal). */
+  const recordRead = (name: string, type: MaterialValueType, value: readonly number[], asColor: boolean, slot: number) =>
+    new MaterialRecordReadBlock(operationBlockName(name),
+      asColor ? (type === "vec3" ? NodeMaterialBlockConnectionPointTypes.Color3 : NodeMaterialBlockConnectionPointTypes.Color4) : babylonTypeFor(type),
+      slot, record!, babylonValueFor(type, value, asColor) as MaterialRecordValue, asColor, scene.getEngine().useExactSrgbConversions);
 
   const fail = (): CompileMaterialResult => {
     for (const block of created) block.dispose();
@@ -514,8 +519,9 @@ export function compileMaterialPlan(
     value: readonly number[],
     name: string,
     asColor: boolean,
+    slot?: number,
   ): NodeMaterialConnectionPoint => {
-    const block = createConstantBlock(name, type, value, asColor);
+    const block = record && slot !== undefined ? recordRead(name, type, value, asColor, slot) : createConstantBlock(name, type, value, asColor);
     created.push(block);
     return block.output;
   };
@@ -527,7 +533,7 @@ export function compileMaterialPlan(
     asColor: boolean,
   ): NodeMaterialConnectionPoint | null => {
     if (operand.kind === "constant") {
-      return constantPoint(operand.type, operand.value, name, asColor);
+      return constantPoint(operand.type, operand.value, name, asColor, recordPlan?.operandSlot.get(operand));
     }
     const producer = realized.get(operand.operationId);
     if (!producer) return null;
@@ -617,9 +623,7 @@ export function compileMaterialPlan(
         // A parameter reads the Material's record, or a uniform, which `setParameter` rewrites; a constant node is
         // written into the shader.
         : record && slot !== undefined
-          ? new MaterialRecordReadBlock(blockNameOf(operation),
-            asColor ? (type === "vec3" ? NodeMaterialBlockConnectionPointTypes.Color3 : NodeMaterialBlockConnectionPointTypes.Color4) : babylonTypeFor(type),
-            slot, record, babylonValueFor(type, value, asColor) as MaterialRecordValue, asColor, scene.getEngine().useExactSrgbConversions)
+          ? recordRead(blockNameOf(operation), type, value, asColor, slot)
           : createConstantBlock(blockNameOf(operation), type, value, asColor, operation.nodeType.startsWith("param."));
       if (perInstance) instanceParameters.push({
         name: String(operation.properties.name ?? "").trim(), attribute: block.name, kind,

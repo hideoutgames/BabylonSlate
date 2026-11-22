@@ -315,6 +315,66 @@ describe("material lowering", () => {
     expect(plan(surfaceWithMultiply()).programHash).not.toBe(plan(createDefaultMaterialDocument()).programHash);
   });
 
+  it("hoists the literals that meet a runtime value and keeps those that decide structure or compile-time choices", () => {
+    const plan = (doc: MaterialDocument) => {
+      const lowered = lowerMaterialDocument(doc);
+      if (!lowered.ok) throw new Error(lowered.diagnostics.map((row) => row.code).join(", "));
+      return lowered.plan;
+    };
+    /** Base Color = Time x Shade (a runtime value meets a Color literal); Roughness = sin(Angle) of literals only. */
+    const graph = (shade: number[], angle: number, condition = 1) => {
+      const doc = createDefaultMaterialDocument();
+      doc.nodes.push(
+        { id: "time", type: "input.time", position: { x: 0, y: 0 }, properties: {} },
+        { id: "shade", type: "const.vec3", position: { x: 0, y: 0 }, properties: { value: shade } },
+        { id: "mul", type: "math.multiply", position: { x: 0, y: 0 }, properties: { "default:b": [0.5] } },
+        { id: "sin", type: "math.sin", position: { x: 0, y: 0 }, properties: { "default:value": [angle] } },
+        { id: "pick", type: "logic.select", position: { x: 0, y: 0 }, properties: { "default:condition": [condition], "default:whenTrue": [0.25] } },
+        { id: "glow", type: "const.vec3", position: { x: 0, y: 0 }, properties: { value: [0.1, 0.2, 0.3] } },
+      );
+      doc.edges = doc.edges.filter((edge) => !["baseColor", "roughness", "emissive", "metallic"].includes(edge.targetPinId));
+      doc.edges.push(
+        { id: "e1", sourceNodeId: "time", sourcePinId: "time", targetNodeId: "mul", targetPinId: "a" },
+        { id: "e2", sourceNodeId: "shade", sourcePinId: "out", targetNodeId: "mul", targetPinId: "b" },
+        { id: "e3", sourceNodeId: "mul", sourcePinId: "out", targetNodeId: "output", targetPinId: "baseColor" },
+        { id: "e4", sourceNodeId: "sin", sourcePinId: "out", targetNodeId: "output", targetPinId: "roughness" },
+        { id: "e5", sourceNodeId: "time", sourcePinId: "time", targetNodeId: "pick", targetPinId: "whenFalse" },
+        { id: "e6", sourceNodeId: "pick", sourcePinId: "out", targetNodeId: "output", targetPinId: "metallic" },
+        { id: "e7", sourceNodeId: "glow", sourcePinId: "out", targetNodeId: "output", targetPinId: "emissive" },
+      );
+      return plan(doc);
+    };
+    const base = graph([1, 0.5, 0.25], 0.5);
+    const op = (id: string) => base.operations.find((operation) => operation.id === id)!;
+    // Shade meets Time: hoisted. Glow feeds the Material Output directly: kept.
+    expect(base.hoistedConstants).toEqual(["shade"]);
+    // sin(Angle) reads only a literal: kept. The Select's When True meets Time: hoisted; its Condition decides structure: kept.
+    expect(op("sin").inputs.value).not.toHaveProperty("hoisted");
+    expect(op("pick").inputs.whenTrue).toMatchObject({ kind: "constant", hoisted: true });
+    expect(op("pick").inputs.condition).not.toHaveProperty("hoisted");
+    // A hoisted literal is a bound value: another Shade or When True shares the program.
+    const shaded = graph([0.2, 0.9, 0.4], 0.5);
+    expect([shaded.programHash, shaded.valueHash === base.valueHash]).toEqual([base.programHash, false]);
+    // A kept literal is code.
+    expect(graph([1, 0.5, 0.25], 0.75).programHash).not.toBe(base.programHash);
+    expect(graph([1, 0.5, 0.25], 0.5, 0).programHash).not.toBe(base.programHash);
+  });
+
+  it("hoists no literal of a Particle or Post Process plan, whose programs have no record", () => {
+    const doc = createDefaultMaterialDocument("Post", "postProcess");
+    doc.nodes.push({ id: "gain", type: "const.float", position: { x: 0, y: 0 }, properties: { value: [0.5] } },
+      { id: "mul", type: "math.multiply", position: { x: 0, y: 0 }, properties: {} });
+    doc.edges = doc.edges.filter((edge) => edge.id !== "e-scene-output");
+    doc.edges.push(
+      { id: "e1", sourceNodeId: "sceneColor", sourcePinId: "color", targetNodeId: "mul", targetPinId: "a" },
+      { id: "e2", sourceNodeId: "gain", sourcePinId: "out", targetNodeId: "mul", targetPinId: "b" },
+      { id: "e3", sourceNodeId: "mul", sourcePinId: "out", targetNodeId: "output", targetPinId: "color" },
+    );
+    const lowered = lowerMaterialDocument(doc);
+    if (!lowered.ok) throw new Error(lowered.diagnostics.map((row) => row.code).join(", "));
+    expect(lowered.plan.hoistedConstants).toEqual([]);
+  });
+
   it("compiles a parameter marked Per Instance apart from the same parameter unmarked", () => {
     const tinted = (perInstance: boolean) => {
       const doc = createDefaultMaterialDocument();

@@ -46,6 +46,11 @@ export type MaterialOperand =
       kind: "constant";
       type: MaterialValueType;
       value: number[];
+      /**
+       * The literal is hoisted (`hoistMaterialLiterals`): the program reads it from the Material's record, so it is a
+       * bound value (`valueHash`), not code.
+       */
+      hoisted?: true;
     };
 
 export interface MaterialOperation {
@@ -93,6 +98,11 @@ export interface MaterialBuildPlan {
   textures: MaterialTextureBinding[];
   cost: MaterialCostFeatures;
   dependencies: { textures: string[] };
+  /**
+   * `const.*` operations whose value is hoisted into the Material's record (`hoistMaterialLiterals`), in plan order;
+   * their constant operands that are hoisted carry `hoisted`.
+   */
+  hoistedConstants: string[];
   /** Scene buffers a post-process plan samples. Surface plans are all false. */
   bufferRequirements: MaterialBufferRequirements;
   /** Stable content hash. Node positions and names are deliberately excluded. */
@@ -232,8 +242,9 @@ const PARAMETER_PROPERTIES: ReadonlySet<string> = new Set(["name", "value"]);
 const GLOBAL_PARAMETER_PROPERTIES: ReadonlySet<string> = new Set(["collectionGuid", "parameterId"]);
 
 /** Whether `key` of `operation` is a bound value (`valueHash`) rather than part of its code (`programHash`). */
-function isBoundProperty(operation: MaterialOperation, key: string): boolean {
+function isBoundProperty(operation: MaterialOperation, key: string, hoisted: ReadonlySet<string>): boolean {
   if (BOUND_PROPERTIES.has(key)) return true;
+  if (hoisted.has(operation.id)) return key === "value";
   if (operation.nodeType.startsWith("param.")) return PARAMETER_PROPERTIES.has(key);
   return operation.nodeType === MATERIAL_GLOBAL_PARAMETER_NODE_TYPE && GLOBAL_PARAMETER_PROPERTIES.has(key);
 }
@@ -243,13 +254,15 @@ function hashPlanParts(
   operations: readonly MaterialOperation[],
   outputs: Record<string, MaterialOperand | null>,
   textures: readonly MaterialTextureBinding[],
+  hoistedConstants: readonly string[],
   programHeader: string,
   valueHeader: string,
 ): { programHash: string; valueHash: string } {
   const positions = new Map(operations.map((operation, index) => [operation.id, index]));
+  const hoisted = new Set(hoistedConstants);
   const operand = (value: MaterialOperand | null | undefined): string => {
     if (!value) return "none";
-    if (value.kind === "constant") return `c:${value.type}:${value.value.join("/")}`;
+    if (value.kind === "constant") return value.hoisted ? `h:${value.type}` : `c:${value.type}:${value.value.join("/")}`;
     return `o:${positions.get(value.operationId) ?? "?"}:${value.pinId}${
       value.conversions?.map(({ from, to }) => `:${from}>${to}`).join("") ?? ""
     }`;
@@ -260,10 +273,15 @@ function hashPlanParts(
   const values: string[] = [valueHeader];
   operations.forEach((operation, index) => {
     const inputs = Object.keys(operation.inputs).sort().map((pinId) => `${pinId}=${operand(operation.inputs[pinId])}`).join(",");
-    const keys = Object.keys(operation.properties).sort().filter((key) => key !== "__pins");
-    const code = keys.filter((key) => !isBoundProperty(operation, key)).map((key) => property(operation, key)).join(",");
+    // A pin default (`default:<pin>`) is the operand that carries it, described with the inputs.
+    const keys = Object.keys(operation.properties).sort().filter((key) => key !== "__pins" && !key.startsWith("default:"));
+    const code = keys.filter((key) => !isBoundProperty(operation, key, hoisted)).map((key) => property(operation, key)).join(",");
     program.push(`${operation.nodeType}|${operation.resolvedType}|${inputs}|${code}|${bound.has(operation.id) ? "texture" : ""}`);
-    const value = keys.filter((key) => isBoundProperty(operation, key)).map((key) => property(operation, key));
+    const value = keys.filter((key) => isBoundProperty(operation, key, hoisted)).map((key) => property(operation, key));
+    for (const pinId of Object.keys(operation.inputs).sort()) {
+      const input = operation.inputs[pinId]!;
+      if (input.kind === "constant" && input.hoisted) value.push(`${pinId}=${input.value.join("/")}`);
+    }
     const binding = bound.get(operation.id);
     if (binding) value.push(`binding:${binding.textureGuid}:${binding.filter ?? "linear"}`);
     if (value.length) values.push(`${index}|${value.join(",")}`);
@@ -585,6 +603,7 @@ function lowerWithinBudget(
   }
 
   const cost = costOf(operations);
+  const hoistedConstants = hoistMaterialLiterals(doc.domain, operations, outputs, cost.customBlocks);
   const header = [
     doc.domain,
     doc.shadingModel,
@@ -615,11 +634,58 @@ function lowerWithinBudget(
       },
       bufferRequirements: bufferRequirementsOf(operations),
       hash: hashPlan(operations, outputs, header),
-      ...hashPlanParts(operations, outputs, textures, [
+      hoistedConstants,
+      ...hashPlanParts(operations, outputs, textures, hoistedConstants, [
         doc.domain, doc.shadingModel, doc.blendMode, doc.twoSided ? "two-sided" : "one-sided", doc.defaultNormals, String(doc.alphaCutoff),
       ].join("|"), String(doc.boundsPadding ?? 0)),
     },
   };
+}
+
+/** Domains whose programs read a Material record (Material-mode programs): only they hoist literals. */
+const RECORD_DOMAINS: ReadonlySet<MaterialDomain> = new Set(["surface", "landscape", "text", "decal"]);
+
+/** Inputs whose constant value decides a program's structure (`material-block-registry.ts`), by node type. */
+const STRUCTURAL_INPUTS: Readonly<Record<string, readonly string[]>> = { "logic.select": ["condition"] };
+
+/**
+ * Hoist the literals that meet a runtime value into the Material's record, so Materials that differ only in them share
+ * one program; returns the hoisted `const.*` operations and marks hoisted constant operands. A literal is hoisted when
+ * the operation it feeds also reads a value that is not a literal (an operation other than a `const.*` node). It stays
+ * in the code when:
+ * - every input of what it feeds is a literal (a constant-only subtree: the driver folds it, and folding need not agree
+ *   with evaluating it at run time);
+ * - it decides structure (`STRUCTURAL_INPUTS`: a Select's condition picks one conditional or one per component);
+ * - a `const.*` node feeds a Material Output channel directly (the compiler decides from those values: an emissive of
+ *   zero, an Environment Influence of 1 or 0, the default Specular, a World Position Offset of zero);
+ * - the plan is not a Material-mode program's (Particle, Post Process) or holds Custom GLSL, which never shares.
+ */
+function hoistMaterialLiterals(
+  domain: MaterialDomain,
+  operations: readonly MaterialOperation[],
+  outputs: Record<string, MaterialOperand | null>,
+  customBlocks: number,
+): string[] {
+  if (!RECORD_DOMAINS.has(domain) || customBlocks > 0) return [];
+  const constants = new Map(operations.filter((operation) => operation.nodeType.startsWith("const.")).map((operation) => [operation.id, operation]));
+  const literal = (operand: MaterialOperand) => operand.kind === "constant" || constants.has(operand.operationId);
+  const kept = new Set<string>();
+  for (const operand of Object.values(outputs)) if (operand?.kind === "operation" && constants.has(operand.operationId)) kept.add(operand.operationId);
+  const hoisted = new Set<string>();
+  for (const operation of operations) {
+    const structural = STRUCTURAL_INPUTS[operation.nodeType] ?? [];
+    const inputs = Object.entries(operation.inputs);
+    if (!inputs.some(([, operand]) => !literal(operand))) continue;
+    for (const [pinId, operand] of inputs) {
+      if (structural.includes(pinId)) {
+        if (operand.kind === "operation") kept.add(operand.operationId);
+        continue;
+      }
+      if (operand.kind === "constant") operand.hoisted = true;
+      else if (constants.has(operand.operationId)) hoisted.add(operand.operationId);
+    }
+  }
+  return operations.filter((operation) => hoisted.has(operation.id) && !kept.has(operation.id)).map((operation) => operation.id);
 }
 
 const NO_FUNCTIONS: Record<string, MaterialFunctionDocument> = {};

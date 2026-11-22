@@ -36,7 +36,7 @@ import { acquireAuthoredMaterialVariant, compileMaterialPlan, isGpuTextureSample
 import { nodeBlockName } from "./test-support/material-node-blocks";
 import { materialProgramCensus } from "./material-program-census";
 import { MATERIAL_RECORD_MAX_SLOTS, MaterialRecordReadBlock } from "./material-record";
-import { Color4 } from "@babylonjs/core/Maths/math.color";
+import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
 import { blockAdapterFor } from "./material-block-registry";
 import { TransformBlock } from "@babylonjs/core/Materials/Node/Blocks/transformBlock";
 import { HapticLightingBlock } from "./haptic-lighting-block";
@@ -339,6 +339,71 @@ describe("material compiler", () => {
     });
     const [a, b, c, d] = perDraw;
     expect([a === d, b === c, a === b]).toEqual([true, true, false]);
+  });
+
+  it("shares one program between Materials that differ only in hoisted literals, each reading its own values", async () => {
+    const scene = host();
+    scene.setTransformMatrix(Matrix.Identity(), Matrix.Identity());
+    /** Base Color = World Normal x a Color literal, Roughness = Time x a Float literal: both literals meet runtime values. */
+    const compile = (shade: number[], scale: number, name: string) => {
+      const doc = createDefaultMaterialDocument();
+      doc.nodes.push(
+        { id: "normal", type: "input.worldNormal", position: { x: 0, y: 0 }, properties: {} },
+        { id: "shade", type: "const.color", position: { x: 0, y: 0 }, properties: { value: shade } },
+        { id: "tinted", type: "math.multiply", position: { x: 0, y: 0 }, properties: {} },
+        { id: "time", type: "input.time", position: { x: 0, y: 0 }, properties: {} },
+        { id: "scaled", type: "math.multiply", position: { x: 0, y: 0 }, properties: { "default:b": [scale] } },
+      );
+      doc.edges = doc.edges.filter((edge) => !["baseColor", "roughness"].includes(edge.targetPinId));
+      doc.edges.push(
+        { id: "e1", sourceNodeId: "normal", sourcePinId: "normal", targetNodeId: "tinted", targetPinId: "a" },
+        { id: "e2", sourceNodeId: "shade", sourcePinId: "out", targetNodeId: "tinted", targetPinId: "b" },
+        { id: "e3", sourceNodeId: "tinted", sourcePinId: "out", targetNodeId: "output", targetPinId: "baseColor" },
+        { id: "e4", sourceNodeId: "time", sourcePinId: "time", targetNodeId: "scaled", targetPinId: "a" },
+        { id: "e5", sourceNodeId: "scaled", sourcePinId: "out", targetNodeId: "output", targetPinId: "roughness" },
+      );
+      const plan = planFor(doc);
+      const result = compileMaterialPlan(plan, { scene, name });
+      if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+      disposers.push(() => result.dispose());
+      const shadeBlock = result.material.getBlockByName(nodeBlockName(doc, "shade")) as MaterialRecordReadBlock;
+      return { result, plan, record: shadeBlock.record, shadeBlock };
+    };
+    const warm = compile([1, 0.5, 0.25], 0.3, "material:warm");
+    const cool = compile([0.25, 0.5, 1], 0.8, "material:cool");
+    await Promise.all([warm.result.ready, cool.result.ready]);
+    expect(warm.plan.programHash).toBe(cool.plan.programHash);
+    expect(cool.result.material.compiledShaders).toBe(warm.result.material.compiledShaders);
+    expect(cool.result.material.buildId).toBe(warm.result.material.buildId);
+    // Neither literal is in the code; each Material's record holds its own, the Color in linear space as a Color
+    // literal was written, and the observable value stays the authored one.
+    expect(warm.result.material.compiledShaders).not.toMatch(/0\.3\b|0\.8\b/);
+    expect(warm.shadeBlock).toBeInstanceOf(MaterialRecordReadBlock);
+    expect(warm.shadeBlock.value).toEqual(new Color3(1, 0.5, 0.25));
+    const linear = (color: number[]) => new Color3(color[0]!, color[1]!, color[2]!).toLinearSpace(scene.getEngine().useExactSrgbConversions).asArray();
+    expect(Array.from(warm.record.data)).toEqual([...linear([1, 0.5, 0.25]), 0, 0.3, 0, 0, 0].map(Math.fround));
+    expect(Array.from(cool.record.data)).toEqual([...linear([0.25, 0.5, 1]), 0, 0.8, 0, 0, 0].map(Math.fround));
+    // Each draws with the one program and binds its own record.
+    const meshes = [warm, cool].map(({ result }, index) => {
+      const mesh = MeshBuilder.CreateBox(`literal-${index}`, {}, scene);
+      mesh.material = result.material;
+      return mesh;
+    });
+    for (const [index, { result }] of [warm, cool].entries()) {
+      await result.material.forceCompilationAsync(meshes[index]!);
+      expect(result.material.isReadyForSubMesh(meshes[index]!, meshes[index]!.subMeshes[0]!)).toBe(true);
+    }
+    const effect = meshes[0]!.subMeshes[0]!.effect!;
+    expect(meshes[1]!.subMeshes[0]!.effect).toBe(effect);
+    const bound = vi.spyOn(effect, "bindUniformBuffer");
+    const records = [0, 1].map((index) => {
+      bound.mockClear();
+      const mesh = meshes[index]!;
+      [warm, cool][index]!.result.material.bindForSubMesh(mesh.computeWorldMatrix(true), mesh, mesh.subMeshes[0]!);
+      return bound.mock.calls.filter(([, name]) => name === "HapticMaterial").map(([buffer]) => buffer);
+    });
+    expect(records.map((calls) => calls.length > 0)).toEqual([true, true]);
+    expect(records[0]![0]).not.toBe(records[1]![0]);
   });
 
   it("keeps plain uniforms for a plan whose record would pass the safe block size", async () => {

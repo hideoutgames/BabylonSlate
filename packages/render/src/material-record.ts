@@ -10,7 +10,7 @@ import type { Effect } from "@babylonjs/core/Materials/effect";
 import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
 import { Vector2, Vector3, Vector4 } from "@babylonjs/core/Maths/math.vector";
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
-import type { MaterialBuildPlan, MaterialOperation } from "@haptic/shader-graph";
+import type { MaterialBuildPlan, MaterialOperand, MaterialOperation } from "@haptic/shader-graph";
 
 /** The per-Material `std140` uniform block every Material-mode program of the compiler reads its record from. */
 export const MATERIAL_RECORD_BLOCK = "HapticMaterial";
@@ -26,18 +26,26 @@ export const MATERIAL_RECORD_MAX_SLOTS = 256;
 const RECORD_PARAMETERS: ReadonlySet<string> = new Set(["param.float", "param.vec2", "param.vec3", "param.vec4", "param.color"]);
 
 /**
- * A plan's record layout: one slot per parameter read as a value, in plan order (so the layout is the program's), Per
- * Instance parameters left out (they are attributes). Null when the plan reads none, or more than
- * `MATERIAL_RECORD_MAX_SLOTS`: those keep plain uniforms.
+ * A plan's record layout, in plan order (so the layout is the program's): one slot per parameter read as a value (Per
+ * Instance parameters are attributes) and per hoisted literal (`MaterialBuildPlan.hoistedConstants` and constant
+ * operands marked `hoisted`), each operation's own slot first, then its inputs' by pin id. Null when the plan reads
+ * none, or more than `MATERIAL_RECORD_MAX_SLOTS`: its parameters then stay plain uniforms and its literals code.
  */
 export function planMaterialRecord(
   plan: MaterialBuildPlan, perInstance: (operation: MaterialOperation) => boolean,
-): { slots: number; slotOf: ReadonlyMap<string, number> } | null {
+): { slots: number; slotOf: ReadonlyMap<string, number>; operandSlot: ReadonlyMap<MaterialOperand, number> } | null {
   const slotOf = new Map<string, number>();
+  const operandSlot = new Map<MaterialOperand, number>();
+  const hoisted = new Set(plan.hoistedConstants);
+  let slots = 0;
   for (const operation of plan.operations) {
-    if (RECORD_PARAMETERS.has(operation.nodeType) && !perInstance(operation)) slotOf.set(operation.id, slotOf.size);
+    if ((RECORD_PARAMETERS.has(operation.nodeType) && !perInstance(operation)) || hoisted.has(operation.id)) slotOf.set(operation.id, slots++);
+    for (const pinId of Object.keys(operation.inputs).sort()) {
+      const operand = operation.inputs[pinId]!;
+      if (operand.kind === "constant" && operand.hoisted && !operandSlot.has(operand)) operandSlot.set(operand, slots++);
+    }
   }
-  return slotOf.size === 0 || slotOf.size > MATERIAL_RECORD_MAX_SLOTS ? null : { slots: slotOf.size, slotOf };
+  return slots === 0 || slots > MATERIAL_RECORD_MAX_SLOTS ? null : { slots, slotOf, operandSlot };
 }
 
 /** A value a record slot holds, as the Babylon block it replaces held it. */
