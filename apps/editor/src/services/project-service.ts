@@ -1742,12 +1742,12 @@ export class ProjectService {
         : existing?.parentClass ?? (type === "Class" ? "Actor" : null);
     // Imported assets keep their settings in the header beside their binary
     // chunks; a Font's MSDF attach merges into that header payload.
-    // A Model keeps its payload in the document chunk and a summary in the header (`modelHeaderSummary`).
+    // A Model and an Animation keep their payload in the document chunk and a summary in the header
+    // (`modelHeaderSummary`, `animationHeaderSummary`).
     const storeInHeader =
       (kind === "texture" ||
         kind === "font" ||
-        kind === "skeleton" ||
-        kind === "animation") &&
+        kind === "skeleton") &&
       existing !== null &&
       !existing.hasDocumentChunk;
     if (storeInHeader && existing && type === "Texture") {

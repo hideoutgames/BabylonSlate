@@ -1,11 +1,11 @@
 import type { IndexedAsset } from "@haptic/assets";
-import { animClipCatalogFromAssets } from "./anim-clip-catalog";
 import { classIdFromClassAsset } from "./class-asset-lookup";
 
 /**
  * What a running game reads from the asset registry: the Scenes it may load, each Class's asset by
- * class id (spawning by class), the console command Classes, the Audio it may play and the
- * animation clips. Editor Play and the Feature Test gate build their sessions from the same lists.
+ * class id (spawning by class), the console command Classes and the Audio it may play. Editor Play
+ * and the Feature Test gate build their sessions from the same lists. Animation clips come from the
+ * prepared content (`PackedGameContent.animClipCatalog`), which carries root motion tracks.
  */
 export function playRegistryViews(assets: readonly IndexedAsset[]) {
   return {
@@ -30,6 +30,5 @@ export function playRegistryViews(assets: readonly IndexedAsset[]) {
     audioAssetGuids: assets
       .filter((asset) => asset.header.type === "Audio")
       .map((asset) => asset.header.guid),
-    animClipCatalog: animClipCatalogFromAssets(assets),
   };
 }

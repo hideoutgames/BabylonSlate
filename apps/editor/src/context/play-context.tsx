@@ -1229,7 +1229,6 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             sessionSources={sessionSources}
             cookComplexCollision={cookPlayComplexCollision}
             loadAudioSourceBytes={playAudioSourceLoader}
-            animClipCatalog={registryViews?.animClipCatalog}
             postProcessingEnabled={postProcessingEnabled}
             hardwareScalingLevel={hardwareScalingLevel}
             pauseOnPlay={pauseOnPlay}

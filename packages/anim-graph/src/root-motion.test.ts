@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { SerializedGraph } from "@haptic/core";
 import {
   ANIM_POSE_APPLY_ADDITIVE_TYPE,
+  ANIM_POSE_BLEND_SPACE_PLAYER_TYPE,
   ANIM_POSE_OUTPUT_NODE_ID,
   ANIM_POSE_SEQUENCE_PLAYER_TYPE,
   animRootMotionDelta,
@@ -80,10 +81,36 @@ describe("root motion", () => {
     expect(run(additive, 3)[2]!.rootMotion).toBeUndefined();
   });
 
+  it("holds the bone but moves nothing for a clip whose catalog names only its bone, as a header catalog does", () => {
+    const boneOnly: AnimClipCatalogEntry[] = [
+      { guid: "walk", type: "Animation", name: "walk", clipName: "walk", durationMs: 1000, rootMotion: { bone: "hips" } },
+      {
+        guid: "loco", type: "BlendSpace", name: "loco",
+        blendSpace: { axes: [{ min: 0, max: 1, wrap: false, smoothingSeconds: 0 }], samples: [{ animationGuid: "walk", x: 0, y: 0, rateScale: 1 }] },
+      },
+    ];
+    const graph = (nodes: Node[]) => resolveAnimGraphClips({
+      ...createDefaultAnimGraph("Root"),
+      stateMachine: {
+        entryStateId: "main",
+        states: [{
+          id: "main", name: "Main", position: { x: 0, y: 0 },
+          stateGraph: { nodes: [...nodes, node(ANIM_POSE_OUTPUT_NODE_ID, "anim.pose.output", { __protected: true })], edges: [wire(nodes[0]!.id, ANIM_POSE_OUTPUT_NODE_ID, "pose")] },
+        }],
+        transitions: [],
+      },
+    }, boneOnly);
+    for (const doc of [graph([player("walk")]), graph([node("bs", ANIM_POSE_BLEND_SPACE_PLAYER_TYPE, { assetGuid: "loco" })])]) {
+      const states = run(doc, 3);
+      expect(states.map((state) => state.layers[0]?.rootMotionBone)).toEqual(["hips", "hips", "hips"]);
+      expect(states.map((state) => state.rootMotion)).toEqual([undefined, undefined, undefined]);
+    }
+  });
+
   it("turns a pass's travel by the turn the clip made before it", () => {
     const turning: AnimClipRootMotion = { bone: "hips", track: { durationMs: 1000, stepMs: 1000, x: [0, 0], z: [0, 1], yaw: [0, 90] } };
     // From halfway (turned 45°) to the end: half a unit of travel along the clip's Z, seen from 45° round.
-    const delta = animRootMotionDelta(turning, { from: 0.5, to: 1, inclusive: false, loop: false });
+    const delta = animRootMotionDelta(turning.track!, { from: 0.5, to: 1, inclusive: false, loop: false });
     expect(delta.yaw).toBeCloseTo(45, 9);
     expect(delta.z).toBeCloseTo(0.5 * Math.SQRT1_2, 9);
     expect(delta.x).toBeCloseTo(-0.5 * Math.SQRT1_2, 9);

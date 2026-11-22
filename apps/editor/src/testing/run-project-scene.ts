@@ -105,7 +105,8 @@ export async function runProjectScene(options: {
       texturePixelSizes: Object.fromEntries(content.texturePixelSizes ?? []),
       audioAssetGuids: views.audioAssetGuids,
       particleParameterCatalog: buildParticleParameterCatalog(content.particleLibrary),
-      animClipCatalog: views.animClipCatalog,
+      // As editor Play: the prepared documents' clips, with root motion tracks.
+      animClipCatalog: content.animClipCatalog,
     });
     load.havokWasmUrl = undefined;
     load.sceneCatalog = views.sceneCatalog;

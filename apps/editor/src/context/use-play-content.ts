@@ -1,4 +1,5 @@
 import { useMemo, useReducer } from "react";
+import type { AnimClipCatalogEntry } from "@haptic/anim-graph";
 import type {
   CollisionTriangleMesh,
   DataAssetCatalogEntry,
@@ -39,6 +40,11 @@ export interface PlayContent {
   scenes: Array<{ guid: string; scene: SerializedScene }>;
   sceneLayers: Array<{ guid: string; layer: SerializedSceneLayer }>;
   animGraphs: PlayAnimGraphEntry[];
+  /**
+   * The prepared Animations, Sprite Animations and Blend Spaces, read from their documents (an Animation's root motion
+   * with its track), as an exported game has them.
+   */
+  animClipCatalog: AnimClipCatalogEntry[];
   behaviourTrees: PlayBehaviourTreeEntry[];
   blackboards: PlayBlackboardEntry[];
   dataAssets: DataAssetCatalogEntry[];
@@ -108,6 +114,7 @@ function emptyPlayContent(fontCssStack = "sans-serif"): PlayContent {
     scenes: [],
     sceneLayers: [],
     animGraphs: [],
+    animClipCatalog: [],
     behaviourTrees: [],
     blackboards: [],
     dataAssets: [],
@@ -173,6 +180,7 @@ export function preparedPlayContent(
     globalParameterCatalog: content.globalParameterCatalog,
     assetCatalog: playAssetCatalog(catalog),
     animGraphs: content.animGraphs,
+    animClipCatalog: content.animClipCatalog,
     behaviourTrees: content.behaviourTrees,
     blackboards: content.blackboards,
     spritePayloads: content.spritePayloads,
