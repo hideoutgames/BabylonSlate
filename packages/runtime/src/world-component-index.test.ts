@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ClassRegistry, World, type Actor } from "@haptic/object-model";
+import { overlayButtonChildren } from "./render-command-emitter";
 import { findComponentByIdFromTarget } from "./script-host-helpers";
 import { componentOwners, walkComponentOwners } from "./world-component-index";
 
@@ -157,5 +158,19 @@ describe("component owner index", () => {
       world.createScene({ assetGuid: "other", sceneName: "Other" });
       expect(find(world, stale, "mesh")).toBeNull();
     });
+  });
+
+  it("lists an actor's direct children in world order whatever order they were parented in", () => {
+    const world = newWorld();
+    const parent = spawn(world, "parent");
+    const early = spawn(world, "early");
+    const late = world.spawnActorNow(world.createActor({ classId: "Actor", guid: "late", variables: { parentId: "parent" } }));
+    spawn(world, "unrelated");
+    early.setVariable("parentId", "parent");
+    expect(guids(overlayButtonChildren(world, parent))).toEqual(["early", "late"]);
+    world.destroyActorInstance(early);
+    world.flushPending();
+    expect(guids(overlayButtonChildren(world, parent))).toEqual([late.guid]);
+    expect(overlayButtonChildren(world, late)).toEqual([]);
   });
 });
