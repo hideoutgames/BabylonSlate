@@ -55,6 +55,8 @@ import {
  *      view skipped it, and count each render that would have decided otherwise: `rendererWork.mirrorPolls.mismatches`),
  *      HAPTIC_PERF_VERIFY_CAPTURES=1 (Play's Capture Only Actors captures also list by the walk of every mesh, which
  *      must agree with the list from their actors' meshes: `rendererWork.captureActorLists.mismatches`),
+ *      HAPTIC_PERF_VERIFY_SNAPSHOTS=1 (Play's runtime checks every snapshot publish against a whole-World pass from the
+ *      session's start: `snapshotMismatches` of each Play, which must be 0, else the step fails),
  *      HAPTIC_PERF_VERIFY_MIRROR_CROP=1 (each Mirror cull cropped to its surface's footprint also culls with the whole
  *      mirrored frustum and counts the meshes the crop left out within the widened footprint: `rendererWork.mirrorCrop.misses`),
  *      HAPTIC_PERF_VERIFY_OUTLINES=1 (each strict outline cull also culls the full way, splitting its candidates afresh and
@@ -152,6 +154,8 @@ const VERIFY_JOURNAL = process.env.HAPTIC_PERF_VERIFY_JOURNAL === "1";
 const VERIFY_MIRRORS = process.env.HAPTIC_PERF_VERIFY_MIRRORS === "1";
 /** Capture Only Actors captures in Play also list by the walk of every mesh (the measured frames carry its cost). */
 const VERIFY_CAPTURES = process.env.HAPTIC_PERF_VERIFY_CAPTURES === "1";
+/** Play's runtime checks every snapshot publish against a whole-World pass (the measured ticks carry its cost). */
+const VERIFY_SNAPSHOTS = process.env.HAPTIC_PERF_VERIFY_SNAPSHOTS === "1";
 /** Each cropped Mirror cull in Play also culls uncropped (the measured frames carry its cost). */
 const VERIFY_MIRROR_CROP = process.env.HAPTIC_PERF_VERIFY_MIRROR_CROP === "1";
 const VERIFY_OUTLINES = process.env.HAPTIC_PERF_VERIFY_OUTLINES === "1";
@@ -193,6 +197,7 @@ const SCENES = (process.env.HAPTIC_PERF_SCENES ?? "main,stress")
 type PlayHost = {
   __hapticPlayTest?: {
     tickIndex: () => number | null;
+    snapshotMismatches: () => number | null;
     rendering: () => (Record<string, unknown> & {
       presentation?: { attempted: number; drawn: number; held: number; heldReasons: Record<string, number> };
     }) | null;
@@ -236,6 +241,17 @@ async function startWithMaterialRecords(page: Page): Promise<void> {
       localStorage.setItem("haptic:debug:materialRecords", "on");
     } catch {
       /* No storage: the Play check below fails the route. */
+    }
+  });
+}
+
+/** Snapshot verification stored before the editor boots (`snapshot-verification-setting.ts`), so every Play session starts with it. */
+async function startWithSnapshotVerification(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem("haptic:test:verifySnapshotPublishes", "on");
+    } catch {
+      /* No storage: each Play's check below fails the route. */
     }
   });
 }
@@ -575,6 +591,11 @@ async function measurePlay(page: Page, cdp: CDPSession, scene: string) {
   const liveObjects = await page.evaluate(
     () => (globalThis as unknown as PlayHost).__hapticPlayTest?.liveObjectCounts() ?? null,
   );
+  // Null unless the session started verifying, so a switch that never reached the runtime fails too.
+  const snapshotMismatches = await page.evaluate(
+    () => (globalThis as unknown as PlayHost).__hapticPlayTest?.snapshotMismatches() ?? null,
+  );
+  if (VERIFY_SNAPSHOTS) expect(snapshotMismatches, "snapshot publishes that differed from a whole-World pass").toBe(0);
   const programs = await programLinks(page, linksSince, loadedAt, await pageNow(page));
   // The tour's GL calls per frame, after its windows (held views count their own).
   const glCalls = views ? null : await glCallsPerFrame(page, 1_000);
@@ -585,7 +606,7 @@ async function measurePlay(page: Page, cdp: CDPSession, scene: string) {
   await mark(page, "play: closed", true);
   await expect(page.getByTestId("preview-session-report")).toHaveCount(0);
   return {
-    playBootMs, settingsHoldMs, spawnableWarm, programs, windows, views, liveObjects, worldDebug, glCalls,
+    playBootMs, settingsHoldMs, spawnableWarm, programs, windows, views, liveObjects, worldDebug, glCalls, snapshotMismatches,
     ...(parity ? { layerParity: parity } : {}), ...(mirror ? { mirrorParity: mirror } : {}), ...(recordsPaused ? { recordsPaused } : {}),
   };
 }
@@ -997,6 +1018,7 @@ test("FeatureTest performance route", async ({ page }, testInfo) => {
   await recordLongTasks(page);
   await recordProgramLinks(page);
   if (MATERIAL_RECORDS) await startWithMaterialRecords(page);
+  if (VERIFY_SNAPSHOTS) await startWithSnapshotVerification(page);
   if (MEMORY) await installGlMemoryLedger(page, 250);
   await seedEngineSettings(page, (settings) => {
     settings.debuggerDefaults.overlayConsole = true;
@@ -1072,7 +1094,7 @@ test("FeatureTest performance route", async ({ page }, testInfo) => {
     adapter,
     env: {
       SCENES, SAMPLE_MS, SAMPLES, EDITOR_SAMPLES, WARMUP_MS, SETTLE_MS, QUALITY, FRAMECAP, LARGE_WORLD, PLAYS, COMMANDS, GPU_BUSY, VERIFY_SCOPED, VERIFY_DRAW_LISTS,
-      DEVICE: DEVICE?.[0] ?? null, VIEWS, GPU_PASSES, VARIANTS, MATERIAL_RECORDS, RECORDS_PAUSED,
+      DEVICE: DEVICE?.[0] ?? null, VIEWS, GPU_PASSES, VARIANTS, MATERIAL_RECORDS, RECORDS_PAUSED, VERIFY_SNAPSHOTS,
     },
     phases: { createToInteractiveMs, bootAndCreateLongTasks, encodeWaitMs, reopenToInteractiveMs },
     scenes,

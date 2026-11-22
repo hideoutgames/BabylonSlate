@@ -25,6 +25,7 @@ import { encodeHasset } from "@haptic/assets/hasset";
 import { meshoptBoxGlb } from "@haptic/assets/test-support/meshopt-gltf";
 import { acquirePlayAssetSources, acquirePlayStartupSources, createMergedPlaySourceControls, emptyPlaySourceControls, mergePreparedPlaySources, playDocumentOverrides, playRootMotionTracks, requiredProjectAssets, type PlayAssetSourceHost } from "./play-asset-sources";
 import type { TrustGateFinding } from "./trust-gate";
+import type { AnimClipCatalogEntry } from "@haptic/anim-graph";
 import { playAnimClipCatalog } from "../lib/anim-clip-catalog";
 import type { OpenDocument } from "./document-service";
 import { PlayRequiredAssetError } from "./play-asset-problems";
@@ -859,6 +860,72 @@ describe("Play source ownership", () => {
     expect(catalog.has("wave")).toBe(true);
     expect(catalog.get("wave")).toBeUndefined();
     prepared.release();
+    loading.dispose();
+  });
+
+  it("loads an Animation a slot plays on demand after a streamed Scene, with its clip bound and its root motion track", async () => {
+    const storage = new MemoryStorageAdapter();
+    await storage.pickProjectFolder();
+    await storage.mkdir("assets");
+    await storage.writeBinary("assets/model.hasset", await encodeHasset({
+      header: {
+        guid: "model", name: "model", type: "Model", version: currentFormat("Model"), engineVersion: "0.0.0", mode: "thin",
+        payload: { importScale: 2 }, dependencies: [], requiredDependencies: [], dependencyMetadataVersion: 1, requiredVariableNames: [],
+      },
+      chunks: [{ id: "source", kind: "model", mime: "model/gltf-binary", data: buildBoxGlbFixture() }],
+    }));
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const rootMotion = { bone: "hips", track: { durationMs: 50, stepMs: 50, x: [0, 0.5], z: [0, -1], yaw: [0, 0] } };
+    await registry.createAsset("project", "throw.hasset", {
+      type: "Animation", name: "Throw", guid: "throw", version: currentFormat("Animation"), dependencies: [], chunks: [],
+      payload: { ...normalizeAnimationPayload({ clipName: "Throw", modelGuid: "model", durationMs: 50, rootMotion }) },
+    });
+    // The Scene's script names the Animation only on Play Slot Animation's pin, as the Feature Test's Knight plays Throw.
+    await registry.createAsset("project", "room.hasset", {
+      type: "Scene", name: "Room", guid: "room", version: currentFormat("Scene"), dependencies: [], chunks: [], payload: { name: "Room", actors: [] },
+    });
+    await registry.createAsset("project", "scene.hasset", {
+      type: "Scene", name: "Scene", guid: "scene", version: currentFormat("Scene"), dependencies: [], chunks: [],
+      payload: { name: "Scene", actors: [], script: { nodes: [
+        { id: "play", type: "anim.actor.playSlotAnimation", data: { "default:animation": "throw", "default:slotName": "UpperBody" } },
+      ], edges: [], members: [] } },
+    });
+    const documentReads = new Map<string, number>();
+    const throwDocument = await (async () => {
+      const { header, locator } = await readAssetCatalog(storage, "assets/throw.hasset");
+      const entry = header.chunks.find((chunk) => chunk.id === "document")!;
+      return `${locator.path}@${locator.payloadOffset + (entry.locator as { inline: { offset: number } }).inline.offset}`;
+    })();
+    const read = storage.readBinaryRange.bind(storage);
+    vi.spyOn(storage, "readBinaryRange").mockImplementation((path, offset, ...rest) => {
+      if (`${path}@${offset}` === throwDocument) documentReads.set("throw", (documentReads.get("throw") ?? 0) + 1);
+      return read(path, offset, ...rest);
+    });
+    const loading = createRegistryAssetLoadingService(registry, { projectId: "slot-clip" });
+    const host = {
+      registry, project: createEmptyProject("Slot Clip"), createScope: (owner: string) => loading.createScope(owner),
+      compile: async () => ({ bundles: [], diagnostics: [] }),
+    };
+    const signal = new AbortController().signal;
+    // Play's startup: the Scene's closure (the Soft clip stays out) and the session catalog's root motion tracks.
+    const startup = await acquirePlayAssetSources(host, ["scene"], { consumer: "Play", signal });
+    expect(startup.required.has("throw")).toBe(false);
+    await playRootMotionTracks(host, startup.content.animClipCatalog, signal);
+    // A streamed Scene joins, then Play Slot Animation loads its clip on demand (the runtime's `prepareAssets`).
+    const room = await acquirePlayAssetSources(host, ["room"], { consumer: "Stream", signal });
+    const clip = await acquirePlayAssetSources(host, ["throw"], { consumer: "Play Slot Animation", signal });
+    const content = mergePreparedPlaySources([startup, room, clip])!.controls.find((control) => control.type === "loadSceneContent");
+
+    // The source union the runtime then takes holds the clip with its track, in the Model's units (import scale 2).
+    expect(content?.type === "loadSceneContent" ? (content.animClipCatalog as readonly AnimClipCatalogEntry[] | undefined)?.find((entry) => entry.guid === "throw")?.rootMotion : null).toEqual(
+      { bone: "hips", track: { durationMs: 50, stepMs: 50, x: [0, 1], z: [0, -2], yaw: [0, 0] } });
+    // The renderer binds the Model's Throw group to the Animation a slot names.
+    expect(clip.sources.assets?.modelClipAnimationGuids?.get("model")?.get("Throw")).toBe("throw");
+    expect(clip.game.modelBytes.has("model")).toBe(true);
+    // Once for the session catalog's track at Play start, once for the on-demand load.
+    expect(Object.fromEntries(documentReads)).toEqual({ throw: 2 });
+    for (const set of [startup, room, clip]) set.release();
     loading.dispose();
   });
 

@@ -167,6 +167,23 @@ export async function buildTestArtifact(options = {}) {
   }
 }
 
+/**
+ * The browser suite's bundles (the editor, and the player its build copies into `player/`) as `chunk-cycles.mjs`
+ * checks the production build: a chunk that reads a binding across an import cycle while it evaluates stops the app
+ * booting, and every browser test would wait out its timeout. Such a build fails here and is never published, so a
+ * cached artifact has passed it.
+ */
+async function checkChunkGraph(directory) {
+  const { findChunkCycles, formatReport } = await import("./chunk-cycles.mjs");
+  const report = findChunkCycles([directory]);
+  if (report.faults.length > 0)
+    throw new Error(
+      `The test build cannot boot: a chunk reads a binding across a chunk import cycle while it evaluates ` +
+        `(scripts/chunk-cycles.mjs).\n${formatReport(report)}`,
+    );
+  if (report.cycles.length > 0) process.stdout.write(`${formatReport(report)}\n`);
+}
+
 export async function buildOwnedArtifact(options = {}) {
   const directory = process.env.HAPTIC_TEST_BUILD_DESTINATION;
   const expected = JSON.parse(process.env.HAPTIC_TEST_BUILD_IDENTITY ?? "null");
@@ -226,8 +243,11 @@ export async function buildOwnedArtifact(options = {}) {
     );
   };
   await unchanged();
+  const dist = join(repoRoot, "apps", "editor", "dist");
+  await checkChunkGraph(dist);
+  options.signal?.throwIfAborted();
   const published = await publishLocalArtifact(
-    join(repoRoot, "apps", "editor", "dist"),
+    dist,
     root,
     expected,
     validArtifact,

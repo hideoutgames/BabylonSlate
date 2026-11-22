@@ -102,7 +102,7 @@ describe.each(["worker", "in-process"] as const)(
         onAudioReverbField?: (field: Uint8Array | null) => void;
       } = {},
     ): Promise<RuntimeDriver> {
-      vi.stubGlobal("window", new EventTarget());
+      vi.stubGlobal("window", Object.assign(new EventTarget(), { location: new URL("http://localhost/") }));
       vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
         options.frames?.push(callback);
         return 1;

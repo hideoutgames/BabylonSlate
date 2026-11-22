@@ -96,7 +96,8 @@ jobs:
       - run: pnpm lint:promises
       - run: pnpm --filter docs-site build
       # The editor bundle as Pages ships it: no chunk may read a binding from another chunk of the same import cycle
-      # while it evaluates (scripts/chunk-cycles.mjs). The e2e shards load test-mode bundles, which chunk differently.
+      # while it evaluates (scripts/chunk-cycles.mjs). The e2e shards load test-mode bundles, which chunk differently;
+      # pnpm test:e2e checks each of those as it builds it.
       - name: Check the production editor's chunk graph
         run: |
           pnpm --filter editor exec vite build --logLevel warn
@@ -183,7 +184,8 @@ jobs:
       # when several shards hit the Ubuntu archive together. The suite has no
       # screenshot baselines that need those fonts.
       # Bundle on this runner; static remains independently required for merge.
-      # The immutable build is verified before this shard executes its tests.
+      # The immutable build is verified before this shard executes its tests: its chunk graph as it is built, and one
+      # boot of the editor in the browser before the first test.
       # Shard 1 builds first, the same artifact pnpm test:e2e builds, and checks the bundles against their gzip
       # budgets, so a size regression fails in minutes, before any browser test. They are test-mode builds, budgeted
       # apart from the production Pages build (scripts/bundle-budgets-test-build.json). pnpm test:e2e then reuses the
