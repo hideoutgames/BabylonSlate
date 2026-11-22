@@ -1,4 +1,4 @@
-const RELOADED_KEY = "slate:preload-error-reloaded";
+const RELOADED_KEY = "haptic:preload-error-reloaded";
 
 type PreloadErrorTarget = Pick<
   Window,

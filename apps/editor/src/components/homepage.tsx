@@ -224,7 +224,7 @@ export function Homepage({
   const [view, setView] = useState("projects");
   const [layout, setLayout] = useState<"large" | "small" | "list">(() => {
     try {
-      const saved = localStorage.getItem("slate:project-layout");
+      const saved = localStorage.getItem("haptic:project-layout");
       return saved === "small" || saved === "list" ? saved : "large";
     } catch {
       return "large";
@@ -233,7 +233,7 @@ export function Homepage({
   const changeLayout = (value: "large" | "small" | "list") => {
     setLayout(value);
     try {
-      localStorage.setItem("slate:project-layout", value);
+      localStorage.setItem("haptic:project-layout", value);
     } catch {
       /* Optional preference. */
     }
