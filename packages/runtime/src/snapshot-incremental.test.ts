@@ -12,6 +12,8 @@ import { ClassRegistry, World, type Actor } from "@haptic/object-model";
 import { RenderSlots } from "./render-slots";
 import { RuntimeSubsystems } from "./runtime-subsystems";
 import { SnapshotPublisher } from "./snapshot-publisher";
+import { resetSnapshotPublishVerification, snapshotPublishVerification } from "./snapshot-verification";
+import { countPublishWork } from "./testing/count-publish-work";
 
 vi.mock("@haptic/bridge", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@haptic/bridge")>();
@@ -30,15 +32,15 @@ class Session {
   private frame = 0;
   private components = 0;
 
-  constructor(capacity: number) {
+  constructor(capacity: number, verify?: boolean) {
     this.slots = new RenderSlots(new RuntimeSubsystems(), {
       ensureCapacity: (required) => this.publisher.ensureCapacity(required),
       findActor: (guid) => this.world.findActor(guid),
     });
-    this.publisher = this.createPublisher(capacity);
+    this.publisher = this.createPublisher(capacity, verify);
   }
 
-  createPublisher(capacity: number): SnapshotPublisher {
+  createPublisher(capacity: number, verify?: boolean): SnapshotPublisher {
     return new SnapshotPublisher(capacity, this.world, this.slots, {
       stopped: () => false,
       frameId: () => ++this.frame,
@@ -56,7 +58,7 @@ class Session {
       reportLog: () => {},
       reportError: (error) => { throw error; },
       emit: (command: CommandMessage) => { if (command.type === "despawn") this.despawns.push(`${command.slotId}:${command.actorGuid}`); },
-    }, () => 0);
+    }, () => 0, { verify });
   }
 
   create(guid: string, parentId: string | null, x: number): Actor {
@@ -340,6 +342,7 @@ describe("incremental snapshot publishing cost", () => {
   }
 
   it("spends work on a spawn, destroy, reparent or component attach, not on the World", () => {
+    countPublishWork();
     const { session, spawn, subtree, target, measure } = bigWorld();
     // One row write per buffer for each changed actor.
     expect(measure(() => spawn("fresh"))).toEqual({ compositions: 1, visits: 1, rowsWritten: 2, lookups: 1 });
@@ -369,5 +372,36 @@ describe("incremental snapshot publishing cost", () => {
       moved.mockRestore();
       session.publisher.dispose();
     }
+  });
+});
+
+describe("snapshot publish verification", () => {
+  it("counts a frame a missed notification left stale, without changing what is published", () => {
+    const sessions = [new Session(8, true), new Session(8, false)];
+    for (const session of sessions) {
+      for (const guid of ["a", "b", "c"]) {
+        const actor = session.create(guid, null, 1);
+        session.slots.allocate(actor);
+        session.world.spawnActorNow(actor);
+      }
+      session.publisher.publish();
+      session.publisher.publish();
+    }
+    expect(sessions[0]!.publisher.verification).toEqual({ checks: 2, mismatches: 0, samples: [] });
+    expect(sessions[1]!.publisher.verification).toBeNull();
+
+    // A write that bypasses the variable map's change notification.
+    for (const session of sessions) {
+      Map.prototype.set.call(session.world.findActor("b")!.variables, "visible", false);
+      session.publisher.publish();
+    }
+    expect(sessions[0]!.publisher.verification).toEqual({
+      checks: 3, mismatches: 1, samples: ["row 1: expected b (slot 1), published row of b"],
+    });
+    expect(sessions[0]!.published()).toEqual(sessions[1]!.published());
+    expect(snapshotPublishVerification().mismatches).toBe(1);
+    // The mismatch is deliberate; the suite-wide check must not see it.
+    resetSnapshotPublishVerification();
+    for (const session of sessions) session.publisher.dispose();
   });
 });

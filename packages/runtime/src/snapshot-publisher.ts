@@ -11,10 +11,21 @@ import {
 } from "@haptic/bridge";
 import { isSceneLayerAnchorActor, type Transform } from "@haptic/core";
 import type { Actor, World, WorldChangeObserver } from "@haptic/object-model";
-import { actorLabel, WorldTransformComposer, type ActorTransformMap } from "./actor-world-transform";
+import {
+  actorLabel,
+  composeActorWorldTransforms,
+  WorldTransformComposer,
+  type ActorTransformMap,
+} from "./actor-world-transform";
 import type { LogSeverity } from "./log-ring";
 import type { RenderSlotObserver, RenderSlots } from "./render-slots";
 import type { RuntimeDiagnosticRecorder } from "./runtime-diagnostic-recorder";
+import {
+  noteSnapshotPublishCheck,
+  SNAPSHOT_VERIFICATION_SAMPLES,
+  verifyingSnapshotPublishes,
+  type SnapshotPublishVerification,
+} from "./snapshot-verification";
 
 interface SnapshotPublisherHost {
   stopped(): boolean;
@@ -133,6 +144,11 @@ export class SnapshotPublisher {
   private readonly slots: RenderSlots;
   private readonly host: SnapshotPublisherHost;
   private readonly now: () => number;
+  /** Check every publish against a whole-World pass (`snapshot-verification.ts`); off in production. */
+  private readonly verifying: boolean;
+  private readonly _verification: SnapshotPublishVerification = { checks: 0, mismatches: 0, samples: [] };
+  /** The removal pass ran since the last write, so every slot's owner is live or spawn-queued. */
+  private slotsRetired = false;
 
   /** Until the first full pass every pose and row is rebuilt, so nothing is collected. */
   private readonly worldObserver: WorldChangeObserver = {
@@ -195,7 +211,15 @@ export class SnapshotPublisher {
     },
   };
 
-  constructor(maxActors: number, world: World, slots: RenderSlots, host: SnapshotPublisherHost, now: () => number) {
+  constructor(
+    maxActors: number,
+    world: World,
+    slots: RenderSlots,
+    host: SnapshotPublisherHost,
+    now: () => number,
+    options: { verify?: boolean } = {},
+  ) {
+    this.verifying = options.verify ?? verifyingSnapshotPublishes();
     this.snapshots = SeqLockSnapshotPair.create(maxActors);
     this.world = world;
     this.slots = slots;
@@ -237,6 +261,8 @@ export class SnapshotPublisher {
     return mean;
   }
   get writes(): number { return this._writes; }
+  /** Whole-World checks of this publisher's frames; null unless verification is on. */
+  get verification(): Readonly<SnapshotPublishVerification> | null { return this.verifying ? this._verification : null; }
 
   /** Grow the buffers to hold `required` slots and announce the new layout, or report and throw. */
   ensureCapacity(required: number): void {
@@ -304,6 +330,7 @@ export class SnapshotPublisher {
     this.pendingPublishMs = 0;
     if (this.host.stopped()) return;
     const start = this.now();
+    this.slotsRetired = false;
     // A later tick stopped before its publish point (blocking load, scene change)
     // leaves its removals to the next publish, as per-tick writes did; the write
     // below already omits actors that left the World. Its scripts may have moved
@@ -361,6 +388,7 @@ export class SnapshotPublisher {
    */
   private retireRemovedActors(): void {
     this.host.retireDetachedStreams();
+    this.slotsRetired = true;
     const checks = this.slotChecks;
     if (this.fullSlotPass) {
       this.fullSlotPass = false;
@@ -513,6 +541,8 @@ export class SnapshotPublisher {
       origin: this.origin,
       originGeneration: this.originGeneration,
     });
+    if (this.verifying) this.verifyFrame(buf, actors);
+    this.slotsRetired = false;
     this.snapshots.publish();
     this._writes += 1;
   }
@@ -659,6 +689,59 @@ export class SnapshotPublisher {
       else high = middle;
     }
     return low;
+  }
+
+  /**
+   * Compare the frame about to be published with what a whole-World pass writes: poses composed afresh in World
+   * order, every row, the origin cell and, after a removal pass, the slot table. Reads only; publishes nothing.
+   */
+  private verifyFrame(buf: Float32Array, actors: readonly Actor[]): void {
+    const differences: string[] = [];
+    const differ = (difference: string) => {
+      if (differences.length < SNAPSHOT_VERIFICATION_SAMPLES) differences.push(difference);
+    };
+    const poses = composeActorWorldTransforms(this.findActor, actors);
+    const cameraActor = this.host.cameraActor();
+    const layerCentre = cameraActor ? null : this.host.layerCameraCentre();
+    const camera = cameraActor ? poses.get(cameraActor.guid)?.position
+      : layerCentre ? { x: layerCentre.x, y: layerCentre.y, z: 0 } : undefined;
+    if (camera && (Math.floor(camera.x / 1024) * 1024 !== this.origin.x ||
+      Math.floor(camera.y / 1024) * 1024 !== this.origin.y || Math.floor(camera.z / 1024) * 1024 !== this.origin.z)) {
+      differ("origin cell");
+    }
+    const expected = new Float32Array(SNAPSHOT_HEADER_FLOATS + SNAPSHOT_ACTOR_STRIDE);
+    const expectedBits = new Uint32Array(expected.buffer);
+    const publishedBits = new Uint32Array(buf.buffer, buf.byteOffset, buf.length);
+    const rows = this.rowActors;
+    let count = 0;
+    for (const actor of actors) {
+      if (isSceneLayerAnchorActor(actor)) continue;
+      const slotId = this.slots.recordedSlot(actor);
+      const pose = poses.get(actor.guid);
+      if (slotId === undefined || !pose) continue;
+      const row = count++;
+      if (row >= rows.length) {
+        differ(`missing row ${row}: ${actor.guid} (slot ${slotId})`);
+        continue;
+      }
+      this.writeRow(expected, 0, actor, slotId, pose);
+      const offset = SNAPSHOT_HEADER_FLOATS + row * SNAPSHOT_ACTOR_STRIDE;
+      for (let index = 0; index < SNAPSHOT_ACTOR_STRIDE; index++) {
+        if (expectedBits[SNAPSHOT_HEADER_FLOATS + index] !== publishedBits[offset + index]) {
+          differ(`row ${row}: expected ${actor.guid} (slot ${slotId}), published row of ${rows[row]!.guid}`);
+          break;
+        }
+      }
+    }
+    for (let row = count; row < rows.length; row++) differ(`extra row ${row}: ${rows[row]!.guid}`);
+    if (this.slotsRetired) {
+      for (const [slotId, owner] of this.slots.entries()) {
+        if (this.world.findActor(owner.guid) !== owner && !this.world.isSpawnQueued(owner)) {
+          differ(`slot ${slotId}: ${owner.guid} left the World`);
+        }
+      }
+    }
+    noteSnapshotPublishCheck(this._verification, differences);
   }
 
   private writeRow(buf: Float32Array, row: number, actor: Actor, slotId: number, pose: Transform): void {
