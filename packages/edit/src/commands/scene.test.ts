@@ -126,6 +126,18 @@ describe("scene commands", () => {
     expect(setting.history).toBe("cleared");
   });
 
+  it("counts a many-actor transform edit toward the Undo byte budget", () => {
+    const transform = (x: number): SerializedTransform => ({ position: [x, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] });
+    const actors = Array.from({ length: 200 }, (_, index) => createActor(`actor-${index}`, `Actor ${index}`));
+    const scene = { ...baseScene(), actors };
+    const session = new EditSession({ maxBytes: 1000 });
+    const moved = session.apply("scene", scene, new SetActorsTransformsCommand(
+      actors.map((actor, index) => ({ actorId: actor.id, from: transform(0), to: transform(index + 1) })),
+    ));
+    expect(moved.history).toBe("cleared");
+    expect(session.canUndo("scene")).toBe(false);
+  });
+
   it("records no Undo step for an add whose component id already exists", () => {
     const session = new EditSession();
     const scene = baseScene();

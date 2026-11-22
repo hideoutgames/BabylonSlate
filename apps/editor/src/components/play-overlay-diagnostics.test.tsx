@@ -2,15 +2,20 @@ import { Profiler } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { Engine } from "@babylonjs/core";
-import type { RenderDiagnostics } from "@haptic/render";
+import { audioStats, type RenderDiagnostics } from "@haptic/render";
 import { startPlaySession, type PlaySession } from "../services/play-session";
 import { PLAY_PROBE_KEY, playProbes } from "../services/runtime-probes";
 import { PlayOverlay } from "./play-overlay";
 
 vi.mock("../services/play-session", () => ({ startPlaySession: vi.fn() }));
 vi.mock("../context/play-context", () => ({
-  usePlay: () => ({ overlayStats: true }),
+  usePlay: () => {
+    // The overlay root is the only caller in its tree, so this counts its renders.
+    overlayRenders.count += 1;
+    return { overlayStats: true };
+  },
 }));
+const { overlayRenders } = vi.hoisted(() => ({ overlayRenders: { count: 0 } }));
 vi.mock("../context/app-settings-context", () => ({
   useAppSettings: () => ({ settings: {} }),
 }));
@@ -22,13 +27,22 @@ vi.mock("@haptic/vfs", async (importOriginal) => ({
 vi.mock("@haptic/render/lifecycle-pause", () => ({ attachLifecyclePause: () => () => {} }));
 
 const polls: Array<() => void> = [];
+/** Pending animation frames by id; the test steps them. */
+const frames = new Map<number, FrameRequestCallback>();
+let frameRequests = 0;
 
 beforeEach(() => {
   polls.length = 0;
+  frames.clear();
+  frameRequests = 0;
   vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
   // A real animation frame between steps could re-render the overlay on a slow runner.
-  vi.stubGlobal("requestAnimationFrame", () => 0);
-  vi.stubGlobal("cancelAnimationFrame", () => {});
+  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+    frameRequests += 1;
+    frames.set(frameRequests, callback);
+    return frameRequests;
+  });
+  vi.stubGlobal("cancelAnimationFrame", (id: number) => { frames.delete(id); });
   // The 200 ms HUD poll runs only when the test steps it.
   const setInterval = window.setInterval.bind(window);
   vi.spyOn(window, "setInterval").mockImplementation((handler, delay, ...args) => {
@@ -37,11 +51,17 @@ beforeEach(() => {
     return 0 as unknown as ReturnType<typeof globalThis.setInterval>;
   });
 });
-afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); window.history.replaceState(null, "", "/"); });
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+  window.history.replaceState(null, "", "/");
+  audioStats.debugVoices = undefined;
+});
 
-function diagnostics(lights: boolean): RenderDiagnostics {
+function diagnostics(lights: boolean, cpuMs = 1.25): RenderDiagnostics {
   return {
-    cpuMs: 1.25, gpuMs: null, gpuStatus: "pending", width: 640, height: 360, shadowDrawCalls: 0,
+    cpuMs, gpuMs: null, gpuStatus: "pending", width: 640, height: 360, shadowDrawCalls: 0,
     readbackMs: null, autoLod: { meshes: 0, reduced: 0 }, qualityLimits: [],
     shadowLights: lights ? [{ name: "Sun", illumination: "included", status: "active", mapSize: 1024, passes: 1, cascades: [] }] : [],
   } as unknown as RenderDiagnostics;
@@ -50,8 +70,8 @@ function diagnostics(lights: boolean): RenderDiagnostics {
 /** `testMode` mirrors a test build: the e2e data attributes only exist and update there. */
 async function openPlay(onRender?: () => void, testMode = true) {
   window.history.replaceState(null, "", testMode ? "/?test=1" : "/");
-  const state = { lights: false, occlusion: false, guids: ["actor-a"], ys: [1], passes: 0, materials: [] as string[] };
-  const renderDiagnostics = vi.fn(() => diagnostics(state.lights));
+  const state = { lights: false, occlusion: false, guids: ["actor-a"], ys: [1], passes: 0, materials: [] as string[], cpuMs: 1.25, moveX: null as number | null };
+  const renderDiagnostics = vi.fn(() => diagnostics(state.lights, state.cpuMs));
   const testHooks = {
     postProcessPassCount: vi.fn(() => state.passes),
     assignedMaterialGuids: vi.fn(() => [...state.materials]),
@@ -69,7 +89,7 @@ async function openPlay(onRender?: () => void, testMode = true) {
       isFreeCamEnabled: () => false,
       accountedGeometryBytes: () => 0,
     },
-    lastMoveX: () => null,
+    lastMoveX: () => state.moveX,
     spawnedActorGuids: testHooks.spawnedActorGuids,
     lastActorPositions: testHooks.lastActorPositions,
     accountedBytes: () => 0,
@@ -86,6 +106,11 @@ async function openPlay(onRender?: () => void, testMode = true) {
 }
 
 const poll = () => act(() => { polls[0]!(); });
+const stepFrames = () => act(() => {
+  const pending = [...frames.values()];
+  frames.clear();
+  for (const callback of pending) callback(performance.now());
+});
 
 it("reads rendering diagnostics only for the Stats HUD, while keeping the other poll outputs live", async () => {
   const { state, renderDiagnostics, callbacks } = await openPlay();
@@ -176,4 +201,54 @@ it("does not re-render the overlay when a poll finds nothing new", async () => {
   await poll();
   await poll();
   expect(onRender).not.toHaveBeenCalled();
+});
+
+it("keeps the open Stats HUD and the e2e move readout current without re-rendering the Play overlay", async () => {
+  const { state, callbacks } = await openPlay();
+  act(() => callbacks.onStatHighlight?.("draws", true));
+  await poll();
+  const rendersWithHudOpen = overlayRenders.count;
+  for (let index = 0; index < 5; index += 1) {
+    state.cpuMs = 2 + index;
+    state.moveX = index;
+    act(() => callbacks.onStats?.({ fps: 50 + index, scriptMs: 1, physicsMs: 2, publishMs: 3, frameId: index }));
+    await poll();
+  }
+  expect(overlayRenders.count).toBe(rendersWithHudOpen);
+  expect(screen.getByTestId("play-fps").dataset.fps).toBe("54");
+  expect(screen.getByTestId("stats-hud").textContent).toContain("6.00 ms");
+  expect(screen.getByTestId("play-move-x").dataset.moveX).toBe("4");
+});
+
+it("runs the audio debug readout's per-frame loop only while audio debug is on, without re-rendering the overlay", async () => {
+  await openPlay();
+  await poll();
+  // One-shot layout frames run out; nothing on screen keeps a frame loop going.
+  await stepFrames();
+  await stepFrames();
+  expect(frames.size).toBe(0);
+  expect(screen.queryByTestId("audio-debug-overlay")).toBeNull();
+
+  const voice = { assetGuid: "sfx", clipName: null, gain: 0.5, pitch: 1, loop: false, spatial: false,
+    distance: null, innerRadius: null, maxRadius: null, insideRadius: null };
+  audioStats.debugVoices = [voice];
+  await poll();
+  await stepFrames();
+  expect(screen.getByTestId("audio-debug-overlay").textContent).toBe("sfx gain 0.50 pitch 1.00 inside n/a");
+  const rendersWithReadout = overlayRenders.count;
+  for (let frame = 1; frame <= 5; frame += 1) {
+    audioStats.debugVoices = [{ ...voice, gain: frame / 10 }];
+    await stepFrames();
+  }
+  expect(screen.getByTestId("audio-debug-overlay").textContent).toBe("sfx gain 0.50 pitch 1.00 inside n/a");
+  audioStats.debugVoices = [{ ...voice, gain: 0.75 }];
+  await stepFrames();
+  expect(screen.getByTestId("audio-debug-overlay").textContent).toBe("sfx gain 0.75 pitch 1.00 inside n/a");
+  expect(overlayRenders.count).toBe(rendersWithReadout);
+
+  audioStats.debugVoices = undefined;
+  await poll();
+  await stepFrames();
+  expect(screen.queryByTestId("audio-debug-overlay")).toBeNull();
+  expect(frames.size).toBe(0);
 });

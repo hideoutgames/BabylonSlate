@@ -58,7 +58,7 @@ import { SceneDeformerHost, isDeformerOnlySceneEdit } from "./scene-deformer-hos
 import { markLatticeComponentRoot } from "./lattice-deformer";
 import { isTransformOnlySceneEdit } from "./scene-transform-edit";
 import { isLightValueOnlySceneEdit } from "./light-edit";
-import type { SceneLayerLoadIdentity } from "./scene-load-readiness";
+import type { SceneLayerLoadIdentity, SceneLoadCount } from "./scene-load-readiness";
 import { prepareSceneStream } from "./scene-stream-preparation";
 import { captureMeshSourceAssets, mergeSceneSourceAssets, type SceneSourceAssets } from "./scene-source-assets";
 import { releaseInitialSourceOptions } from "./initial-source-options";
@@ -1876,6 +1876,7 @@ function initializeEngine(
     }
     if (options.playMode) {
       disablePlayFreeCam(playFreeCam);
+      refreshPositions();
       snapshots.clear();
       appliedSnapshotIdentity = null;
       lastRenderedSnapshotFrame = null;
@@ -2029,13 +2030,15 @@ function initializeEngine(
   let admittedSnapshot: ReturnType<typeof prepareSnapshot> = null;
   let snapshotAdmitted = false;
   const lastPositions: PlayActorPosition[] = [];
-  // pushSnapshot publishes positions as soon as a snapshot lands; preparing the
-  // same buffered snapshot later finds them already current.
+  // Debug readout (`lastActorPositions`): decoded on read, once per buffered snapshot, never per push or frame.
+  // A snapshot that leaves nothing to sample (cleared) keeps the positions of the last one that did; the clears
+  // read them first, so a read after a clear sees the snapshot buffered before it, as one after each push would.
   let positionsRevision = -1;
-  const publishPositions = (sampled: Parameters<typeof positionsFromSample>[0]) => {
+  const refreshPositions = () => {
     if (positionsRevision === snapshots.revision) return;
     positionsRevision = snapshots.revision;
-    positionsFromSample(sampled, lastPositions);
+    const sampled = snapshots.sample();
+    if (sampled) positionsFromSample(sampled, lastPositions);
   };
   const audioPoses: SampledAudioPose[] = [];
   const audioEmitterSlots = new Set<number>();
@@ -2165,7 +2168,33 @@ function initializeEngine(
    * lighting: every Material document and model its sources hold, the Classes, Prefabs and spawnable actors of its
    * required closure included. A model that cannot load here fails when it spawns, as before.
    */
-  const warmPlaySpawnables = async (assertCurrent: () => void) => {
+  /**
+   * Starts loading the model containers Play's spawn warm-up stages (`warmPlaySpawnables`), so their decoding runs while
+   * the Scene's own warm-up compiles. `ready` starts any model source installed since and resolves with every container
+   * that loaded (a model that cannot load here fails when it spawns, as before); `release` lets go of every lease,
+   * whether or not the warm-up ran.
+   */
+  const loadSpawnableContainers = () => {
+    const leases: { release(): void }[] = [];
+    const loads = new Map<string, { source: Blob; load: Promise<AssetContainer | null> }>();
+    const start = () => {
+      for (const [guid, source] of binding.modelSources ?? []) {
+        if (loads.get(guid)?.source === source) continue;
+        const lease = acquireGlbContainer(scene, guid, source);
+        leases.push(lease);
+        loads.set(guid, { source, load: lease.load.then((container) => container, () => null) });
+      }
+    };
+    start();
+    return {
+      ready: async () => {
+        start();
+        return (await Promise.all([...loads.values()].map(({ load }) => load))).filter((container): container is AssetContainer => container !== null);
+      },
+      release: () => { for (const lease of leases.splice(0)) lease.release(); },
+    };
+  };
+  const warmPlaySpawnables = async (assertCurrent: () => void, spawnableContainers: () => Promise<AssetContainer[]>) => {
     const started = performance.now();
     const materials: Material[] = [];
     // Surface Materials only: post-process, particle, text and landscape graphs never draw on a spawned mesh. Decal
@@ -2176,21 +2205,76 @@ function initializeEngine(
       const material = binding.resolveMaterial?.(guid);
       if (material) (document.domain === "decal" ? decalMaterials : materials).push(material);
     }
-    const leases: { release(): void }[] = [];
-    const containers: AssetContainer[] = [];
+    const containers = await spawnableContainers();
+    assertCurrent();
+    releaseStaged();
+    releaseStagedSpawnables = await warmSpawnables(scene, { materials, containers }, assertCurrent, { keepForFirstDraw: true });
+    await warmDecalMaterials(scene, decalMaterials, assertCurrent);
+    spawnableWarm = { materials: materials.length + decalMaterials.length, models: containers.length, ms: performance.now() - started };
+  };
+  /** `prewarmSceneMaterials` for a load: `spawnableContainers` for Play's world load (`loadSpawnableContainers`). */
+  const prewarmLoadedScene = async (
+    scope: ReturnType<typeof loadingScope>, owner: SceneLayerLoadIdentity | undefined,
+    onProgress: ((count: SceneLoadCount) => void) | undefined, spawnableContainers: (() => Promise<AssetContainer[]>) | null,
+  ) => {
+    // Every instance the load published is in the Scene now; later ones compile as they publish.
+    if (!owner) instanceCompileHold = null;
+    // A previous load's starting-state draw stops first (its Effects go after the warm-ups below, which may share them).
+    if (!owner) startingDraw?.cancel();
+    applyRenderingQuality();
+    // Water's blend and placement (flat) are otherwise first settled by the first frame's update, after the shader
+    // warm-up and the graph's probes compiled every variant without them: each then compiles twice. Copy intent is
+    // counted at creation and changes later only for water disabled through an ancestor or `setEnabled`.
+    settleSceneWater(scope.target, true);
+    // Built-in water compiles the variant its pass draws when the graph below prepares: which one that is depends on
+    // the view's plan, so a warm-up here would compile one nothing draws, and wait for its link.
+    let warmed = { done: 0, total: 0 };
+    await warmSceneMaterials(scope.target, scope.assert, isBuiltInWaterMesh,
+      onProgress && ((count) => { warmed = count; onProgress(count); }));
+    scope.assert();
+    // The graph's own passes (shadow depth, geometry, reflection probes, outlines, screen effects) compile programs
+    // no warm-up unit counted, and on software GL they take longer than the warm-up: the count goes on through them.
+    const stopCounting = onProgress
+      ? countEffectCompiles(engine, ({ compiled, requested }) =>
+        onProgress({ done: warmed.done + compiled, total: warmed.total + requested }))
+      : null;
     try {
-      await Promise.all([...binding.modelSources ?? []].map(async ([guid, source]) => {
-        const lease = acquireGlbContainer(scene, guid, source);
-        leases.push(lease);
-        try { containers.push(await lease.load); } catch { /* it fails when it spawns */ }
-      }));
-      assertCurrent();
-      releaseStaged();
-      releaseStagedSpawnables = await warmSpawnables(scene, { materials, containers }, assertCurrent, { keepForFirstDraw: true });
-      await warmDecalMaterials(scene, decalMaterials, assertCurrent);
-      spawnableWarm = { materials: materials.length + decalMaterials.length, models: containers.length, ms: performance.now() - started };
+      if (spawnableContainers) await warmPlaySpawnables(scope.assert, spawnableContainers);
+      freezeLibraryMaterials();
+      outlineHost.refreshSettings();
+      if (!owner) findWorldSpriteBatcher(scene)?.flush();
+      if (owner) await sceneLayerCompositor?.prepare(owner.layerId, scope.assert);
+      else await worldRenderer.prepare(scope.assert);
     } finally {
-      for (const lease of leases) lease.release();
+      stopCounting?.();
+    }
+    scope.assert();
+    // Play draws its starting state without view culling in the world presentation's loading frames, before the
+    // first presented one, when the Scene holds a light, Play may spawn one, the spawn warm-up staged meshes, or a
+    // particle component is to play (its systems draw their programs there, before gameplay starts them).
+    if (!owner && options.playMode) {
+      endStartingDraw();
+      // The systems a spawn may play draw their programs in it too, and are retired once it is done.
+      particleService?.prepareSpawnableSystems();
+      const draws = releaseStagedSpawnables !== null || spawnableLights.size > 0 ||
+        scene.lights.some((light) => light.name.startsWith(AUTHORED_LIGHT_PREFIX)) ||
+        (particleService?.holdsPlayingComponents() ?? false);
+      // High and Full Quality captures prepare their views in the starting state, so their variants share its Effects; manual
+      // captures not yet requested are rehearsed in its frames, which draw again until they have drawn (a rehearsal
+      // only draws inside the view's frame, so waiting for it without drawing would never end), as they do for a
+      // spawnable system that became ready after the first.
+      const draw = createStartingStateDraw(scene,
+        () => !renderTargetCaptures.preparing() && !(particleService?.spawnableSystemsPending() ?? false),
+        { draws, onDrawn: releaseStaged, drawAgain: () =>
+          renderTargetCaptures.rehearsalPending() || (particleService?.spawnableSystemsUndrawn() ?? false) });
+      startingDraw = draw;
+      renderTargetCaptures.rehearseManualCaptures(() => !draw.done);
+    } else if (!owner && options.editor) {
+      // The editor's world view culls by view too, and its load compiled every mesh's programs without drawing
+      // those outside the starting view: each would first draw when the camera first turns to it, a hold per
+      // program on iPad WebKit WebGL2. It draws the loaded Scene once the same way, behind its loading dialog.
+      endStartingDraw();
+      startingDraw = createStartingStateDraw(scene, () => true, { draws: true });
     }
   };
   const presentationReady = (pending: PendingPresentation) => {
@@ -2260,7 +2344,6 @@ function initializeEngine(
     findWorldSpriteBatcher(scene)?.flush();
     playViz?.refresh();
     rebuildIfActiveCameraChanged(previousCamera);
-    publishPositions(sampled);
     // Pose/listener sync owns the applied snapshot, not render admission: a
     // capped or held frame must not leave spatial audio stale.
     if (audioService) {
@@ -2472,11 +2555,26 @@ function initializeEngine(
           // Drawn is enough: variants its post-draw probe requests draw in a later starting-state frame. Particle
           // systems that have not started draw in it too.
           const drawWorld = () => worldRenderer.render(true).rendered;
-          startingDraw.frame(() => particleService ? particleService.drawingUnstartedSystems(drawWorld) : drawWorld());
-          // Never presented: the loading frame shows the clear colour, as the loading frames before it did.
-          engine.clear(scene.clearColor, true, true, true);
-          pending.restart?.();
-          return;
+          let drew = false;
+          startingDraw.frame(() => {
+            drew = true;
+            return particleService ? particleService.drawingUnstartedSystems(drawWorld) : drawWorld();
+          });
+          if (drew || !startingDraw.done) {
+            // Never presented: the loading frame shows the clear colour, as the loading frames before it did.
+            engine.clear(scene.clearColor, true, true, true);
+            pending.restart?.();
+            return;
+          }
+          // It ended without drawing in this frame (its last draw left nothing undrawn, or a budget ended it), so this
+          // frame presents rather than show one more cleared loading frame. Readiness is asked again now that it is done:
+          // its staged meshes and spawnable particle systems leave, which the presented frame must not draw.
+          if (!presentationReady(pending)) {
+            pending.rendered = false;
+            pending.copied = false;
+            fallback?.();
+            return;
+          }
         }
         // Staged meshes are shown only for the starting-state frames, which are never presented.
         if (key === "world") releaseStaged();
@@ -3029,9 +3127,9 @@ function initializeEngine(
       if (disposed) return;
       if (snapshots.push(buffer)) notePlaySnapshotReceived(binding);
       appliedSnapshotIdentity = null;
-      const sampled = snapshots.sample();
-      if (sampled) publishPositions(sampled);
-      if (sampled && sampled.frameId !== lastRenderedSnapshotFrame) scheduler.requestPausedFrame();
+      // The header's frame id alone: the frame that draws it samples the rows, so a snapshot superseded before then is never decoded.
+      const frameId = snapshots.latestFrameId();
+      if (frameId !== null && frameId !== lastRenderedSnapshotFrame) scheduler.requestPausedFrame();
       if (isPublishedSnapshot(buffer)) {
         playDebugDraw?.noteSimTick(readSnapshotHeader(buffer).tickIndex);
       }
@@ -3051,6 +3149,7 @@ function initializeEngine(
       })) return;
       streamAdmission?.receive(command);
       if (command.type === "snapshotLayout") {
+        refreshPositions();
         snapshots.installLayout(command.capacity, command.generation);
         appliedSnapshotIdentity = null;
         scheduler.invalidate("snapshot");
@@ -3677,7 +3776,7 @@ function initializeEngine(
     },
     scalabilityStatus: () => lastScalabilityStatus,
     accountedGeometryBytes: () => accountedGeometryBytesForScene(scene),
-    lastActorPositions: () => lastPositions,
+    lastActorPositions: () => { refreshPositions(); return lastPositions; },
     ...createPlayHandleInspection(binding),
     registerFonts: async (entries) => {
       await fontRegistry.registerAll(entries);
@@ -3890,64 +3989,12 @@ function initializeEngine(
     },
     prewarmSceneMaterials: async (owner, onProgress) => {
       const scope = loadingScope(owner);
-      // Every instance the load published is in the Scene now; later ones compile as they publish.
-      if (!owner) instanceCompileHold = null;
-      // A previous load's starting-state draw stops first (its Effects go after the warm-ups below, which may share them).
-      if (!owner) startingDraw?.cancel();
-      applyRenderingQuality();
-      // Water's blend and placement (flat) are otherwise first settled by the first frame's update, after the shader
-      // warm-up and the graph's probes compiled every variant without them: each then compiles twice. Copy intent is
-      // counted at creation and changes later only for water disabled through an ancestor or `setEnabled`.
-      settleSceneWater(scope.target, true);
-      // Built-in water compiles the variant its pass draws when the graph below prepares: which one that is depends on
-      // the view's plan, so a warm-up here would compile one nothing draws, and wait for its link.
-      let warmed = { done: 0, total: 0 };
-      await warmSceneMaterials(scope.target, scope.assert, isBuiltInWaterMesh,
-        onProgress && ((count) => { warmed = count; onProgress(count); }));
-      scope.assert();
-      // The graph's own passes (shadow depth, geometry, reflection probes, outlines, screen effects) compile programs
-      // no warm-up unit counted, and on software GL they take longer than the warm-up: the count goes on through them.
-      const stopCounting = onProgress
-        ? countEffectCompiles(engine, ({ compiled, requested }) =>
-          onProgress({ done: warmed.done + compiled, total: warmed.total + requested }))
-        : null;
+      // Play's spawn warm-up stages its models after the Scene's warm-up; their containers load meanwhile.
+      const spawnableContainers = !owner && options.playMode ? loadSpawnableContainers() : null;
       try {
-        if (!owner && options.playMode) await warmPlaySpawnables(scope.assert);
-        freezeLibraryMaterials();
-        outlineHost.refreshSettings();
-        if (!owner) findWorldSpriteBatcher(scene)?.flush();
-        if (owner) await sceneLayerCompositor?.prepare(owner.layerId, scope.assert);
-        else await worldRenderer.prepare(scope.assert);
+        await prewarmLoadedScene(scope, owner, onProgress, spawnableContainers?.ready ?? null);
       } finally {
-        stopCounting?.();
-      }
-      scope.assert();
-      // Play draws its starting state without view culling in the world presentation's loading frames, before the
-      // first presented one, when the Scene holds a light, Play may spawn one, the spawn warm-up staged meshes, or a
-      // particle component is to play (its systems draw their programs there, before gameplay starts them).
-      if (!owner && options.playMode) {
-        endStartingDraw();
-        // The systems a spawn may play draw their programs in it too, and are retired once it is done.
-        particleService?.prepareSpawnableSystems();
-        const draws = releaseStagedSpawnables !== null || spawnableLights.size > 0 ||
-          scene.lights.some((light) => light.name.startsWith(AUTHORED_LIGHT_PREFIX)) ||
-          (particleService?.holdsPlayingComponents() ?? false);
-        // High and Full Quality captures prepare their views in the starting state, so their variants share its Effects; manual
-        // captures not yet requested are rehearsed in its frames, which draw again until they have drawn (a rehearsal
-        // only draws inside the view's frame, so waiting for it without drawing would never end), as they do for a
-        // spawnable system that became ready after the first.
-        const draw = createStartingStateDraw(scene,
-          () => !renderTargetCaptures.preparing() && !(particleService?.spawnableSystemsPending() ?? false),
-          { draws, onDrawn: releaseStaged, drawAgain: () =>
-            renderTargetCaptures.rehearsalPending() || (particleService?.spawnableSystemsUndrawn() ?? false) });
-        startingDraw = draw;
-        renderTargetCaptures.rehearseManualCaptures(() => !draw.done);
-      } else if (!owner && options.editor) {
-        // The editor's world view culls by view too, and its load compiled every mesh's programs without drawing
-        // those outside the starting view: each would first draw when the camera first turns to it, a hold per
-        // program on iPad WebKit WebGL2. It draws the loaded Scene once the same way, behind its loading dialog.
-        endStartingDraw();
-        startingDraw = createStartingStateDraw(scene, () => true, { draws: true });
+        spawnableContainers?.release();
       }
     },
     whenMaterialTexturesReady: async (owner) => {

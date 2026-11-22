@@ -3,6 +3,7 @@ import {
   readActorSlotInto,
   readSnapshotHeader,
   snapshotActiveFloatCount,
+  snapshotFrameId,
   snapshotFloatCount,
   type ActorSlot,
 } from "@haptic/bridge";
@@ -96,6 +97,14 @@ export class SnapshotSampler {
   clear(): void {
     this.latest = null;
     this.buffered++;
+  }
+
+  /**
+   * The buffered snapshot's frame id, or null when {@link sample} would return
+   * null; reads the header field without decoding any row.
+   */
+  latestFrameId(): number | null {
+    return this.latest ? snapshotFrameId(this.latest) : null;
   }
 
   /**

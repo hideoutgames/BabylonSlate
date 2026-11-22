@@ -300,6 +300,13 @@ export {
   type AssetThumbnailApi,
 } from "./asset-thumbnail";
 export {
+  createThumbnailVersionStore,
+  useThumbnailVersion,
+  useThumbnailVersionsKey,
+  type ThumbnailVersions,
+  type ThumbnailVersionStore,
+} from "./thumbnail-versions";
+export {
   AssetCreateProvider,
   useAssetCreate,
   type AssetCreateApi,

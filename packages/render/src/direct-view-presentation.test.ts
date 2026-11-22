@@ -166,6 +166,26 @@ describe("direct view presentation", () => {
     } finally { a.release(); engine.dispose(); }
   });
 
+  it("writes no style and takes no 2D context on a steady covered frame, yet follows a view canvas that moves without resizing", () => {
+    useFakeHeldImages();
+    const { engine, source, draw, view } = host();
+    let writes = 0;
+    source.style = new Proxy(source.style, { set: (target, key, value) => { writes++; return Reflect.set(target, key, value); } });
+    const a = view();
+    try {
+      draw(0xff8040);
+      const context = vi.spyOn(a.target, "getContext");
+      writes = 0;
+      draw(0x40a0ff);
+      draw(0x10ff10);
+      expect([writes, context.mock.calls.length, source.style.visibility]).toEqual([0, 0, "visible"]);
+      // A sibling above the view canvas grew: it moved down, keeping its size, which no resize event reports.
+      a.target.rect = { ...a.target.rect, top: 50 };
+      draw(0xff8040);
+      expect([source.style.top, source.style.height]).toEqual(["50px", "32px"]);
+    } finally { a.release(); engine.dispose(); }
+  });
+
   it("keeps the last coherent image after an incoherent frame or a resize between steps", () => {
     useFakeHeldImages();
     const { engine, source, draw, view } = host();

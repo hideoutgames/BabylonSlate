@@ -64,7 +64,7 @@ import { sceneLightingSettledWithoutLights, syncSceneLighting } from "./scene-li
 import { compileAheadBudget, DriverCompileWatch } from "./driver-compile";
 import { collectEffectRequests } from "./effect-requests";
 import { probeVariantSwaps, variantSwapCount, variantSwapsTolerated } from "./variant-swaps";
-import { isRevealPending, revealRound } from "./reveal-pending";
+import { hasRevealPending, isRevealPending, revealRound } from "./reveal-pending";
 import { withFirstDrawRound } from "./variant-first-draws";
 import { LogicalGeometryTask } from "./framegraph-logical-buffers";
 import { attachLeanPreparation, leanPreparationDiagnostics } from "./lean-render-preparation";
@@ -369,7 +369,8 @@ class CameraOutputCullTask extends FrameGraphCullObjectsTask {
    */
   private leaveOutHidden(): void {
     const output = this.outputObjectList.meshes;
-    if (!output?.some(isRevealPending)) return;
+    // O(1) while the Scene hides nothing, as in almost every frame.
+    if (!output || !hasRevealPending(this.camera.getScene()) || !output.some(isRevealPending)) return;
     if (output === this.objectList.meshes) {
       // The object passes observe the list they drew last frame, which this one is while a reveal lasts.
       this.outputObjectList.meshes = rewriteRenderList(this.shown, output, isShown);

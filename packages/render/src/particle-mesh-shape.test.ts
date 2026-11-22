@@ -1,8 +1,9 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { Color4 } from "@babylonjs/core/Maths/math.color";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { createTestEngine } from "./test-support/test-engine";
-import { PREVIEW_OWNER_MESH, meshGeometryRelativeTo } from "./particle-mesh-shape";
+import { PREVIEW_OWNER_MESH, SlateMeshShapeBlock, meshGeometryRelativeTo } from "./particle-mesh-shape";
 
 const cleanups: Array<() => void> = [];
 afterEach(() => { while (cleanups.length) cleanups.pop()?.(); });
@@ -27,6 +28,33 @@ describe("Mesh Shape geometry", () => {
     expect(Math.max(...xs)).toBeCloseTo(1, 5);
     const normal = new Vector3(geometry.normals![0], geometry.normals![1], geometry.normals![2]);
     expect(normal.length()).toBeCloseTo(1, 5);
+  });
+
+  it("spawns on the drawn triangle at the drawn barycentric point, along its face normal, in its blended colour", () => {
+    const block = new SlateMeshShapeBlock("shape");
+    block.useMeshColor = true;
+    // Two triangles; the second, (0,0,0) (2,0,0) (0,4,0), has red, half-transparent green and blue corners.
+    block.source = { geometry: () => ({
+      positions: [9, 9, 9, 9, 9, 8, 9, 8, 9, 0, 0, 0, 2, 0, 0, 0, 4, 0],
+      indices: [0, 1, 2, 3, 4, 5],
+      colors: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0.5, 0, 0, 1, 1],
+    }) };
+    const creation = (): { process: (particle: unknown) => void } => ({ process: () => {} });
+    const system = { isLocal: true, _positionCreation: creation(), _directionCreation: creation(), _colorCreation: creation() };
+    vi.spyOn(block.particle, "getConnectedValue").mockReturnValue(system);
+    block._build({} as never);
+    // Face 0.75 of two picks the second; u 0.25, then v 0.5 of what u leaves (0.375), w the rest (0.375).
+    const draws = [0.75, 0.25, 0.5];
+    const random = vi.spyOn(Math, "random").mockImplementation(() => draws.shift()!);
+    const particle = { _properties: {} as Record<string, unknown>, position: new Vector3(), direction: new Vector3(), color: new Color4() };
+    system._positionCreation.process(particle as never);
+    system._directionCreation.process(particle as never);
+    expect(random).toHaveBeenCalledTimes(3);
+    random.mockRestore();
+    expect(particle.position.asArray()).toEqual([0.75, 1.5, 0]);
+    expect(particle.direction.asArray()).toEqual([0, 0, 1]);
+    expect(particle.color.asArray()).toEqual([0.25, 0.375, 0.375, 0.8125]);
+    expect((particle._properties.initialDirection as Vector3).asArray()).toEqual([0, 0, 1]);
   });
 
   it("shows Owner Mesh on a unit sphere in previews", () => {

@@ -84,6 +84,8 @@ import type { AssignMeshCommand, AssignMeshPart } from "./snapshot-apply";
 import { spawnableLightsOfLoad, type SpawnableLightLoad } from "./spawnable-lights";
 import { setSceneBindsPreviousEffects } from "./variant-swaps";
 import { setUnlitMaterial, type UnlitBinding, type UnlitMaterialKey } from "./unlit-material";
+import { createStartingStateDraw, type StartingStateDraw } from "./starting-state-draw";
+import { glbContainerLoadCount } from "./glb-anim";
 
 // The load draws its starting state without view culling behind the loading screen; a case leaves it out unless it
 // sets `drawStartingState`, so its cause meets the scene as a load without it would.
@@ -692,6 +694,42 @@ describe("compile holds after the first frame", () => {
       kept: true, spawned: true, effects: 0, heldFrames: 0, holdRaised: false,
       paused: false, recovered: true,
     });
+  });
+
+  it("a Play load presents in the frame that finds its starting-state draw has drawn everything", async () => {
+    drawStartingState = true;
+    const world = playWorld("sync", [point(10, [-1.5, 2.5, -1]), spot(12, [0, 5, 0])]);
+    await withClock(world.handle.prewarmSceneMaterials());
+    const draw = vi.mocked(createStartingStateDraw).mock.results.at(-1)!.value as StartingStateDraw;
+    const presented = world.handle.presentFirstFrame();
+    let done = false;
+    void presented.finally(() => { done = true; });
+    const frames: Array<{ starting: boolean; presented: boolean }> = [];
+    for (let index = 0; index < 40 && !done; index++) {
+      await world.frame();
+      await Promise.resolve();
+      // A presentation attempt, or the presentation already complete (the load's diagnostics end with it).
+      frames.push({ starting: !draw.done, presented: done || (world.handle.renderDiagnostics().worldLoad?.presentation?.draws ?? 0) > 0 });
+    }
+    await presented;
+    // The authored lights make it draw, unpresented, until a frame finds nothing left to draw: that frame presents,
+    // instead of showing one more cleared loading frame.
+    const ended = frames.findIndex((frame) => !frame.starting);
+    expect(ended, JSON.stringify(frames)).toBeGreaterThan(0);
+    expect(frames.slice(0, ended + 1).map((frame) => frame.presented), JSON.stringify(frames))
+      .toEqual([...Array(ended).fill(false), true]);
+  });
+
+  it("a Play load starts loading the models it may spawn as its shader warm-up starts, and stages them after it", async () => {
+    // A model the Scene does not place: only the spawn warm-up loads its container.
+    const world = playWorld("sync", [point(10, [-1.5, 2.5, -1])]);
+    world.handle.setMeshAssets({ modelBytes: new Map([["statue", encodeTriangleGlb()]]) });
+    const warming = world.handle.prewarmSceneMaterials();
+    // Its decoding overlaps the Scene's own warm-up rather than following it.
+    expect(glbContainerLoadCount(world.handle.scene)).toBe(1);
+    await withClock(warming);
+    expect(world.handle.spawnableWarmStats()?.models).toBe(1);
+    expect(glbContainerLoadCount(world.handle.scene)).toBe(1);
   });
 
   it("a Play load counts its shader warm-up units, then the programs its graph's passes compile", async () => {
