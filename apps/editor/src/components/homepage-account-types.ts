@@ -26,9 +26,9 @@ export interface NativeProfileActions {
     code: string,
   ) => Promise<void>;
   /**
-   * Pauses the mobile foreground session check until the returned release is
-   * called: that check hides the app, which would drop a picked file or a form
-   * being filled in. With `checkWhenReleased`, a check that came due while held
+   * Pauses the mobile session check until the returned release is called: a
+   * check that signs out unmounts the launcher, which would drop a picked file
+   * or a form being filled in. With `checkWhenReleased`, a check that came due while held
    * runs as soon as this hold ends and no other hold remains (for forms; a file
    * picker's hold leaves the check to the next focus).
    */
@@ -68,6 +68,16 @@ export interface AccountDetails {
 
 export type HapticPlanId = "free" | "pro" | "enterprise";
 
+/** One Haptic Pro plan Subscribe can buy. */
+export interface BillingPlanOption {
+  /** RevenueCat package identifier. */
+  id: string;
+  /** "Monthly" or "Annual". */
+  period: string;
+  /** The store's localized price, verbatim. */
+  price: string;
+}
+
 /**
  * Billing for the signed-in account, through RevenueCat on every host. Without
  * keys, purchases stay unavailable and `unavailableReason` says why.
@@ -78,7 +88,17 @@ export interface BillingController {
   /** Provider status for the current paid plan, such as "Active" or "Past Due". */
   status?: string;
   renewsAt?: Date;
-  /** Wraps the Haptic Pro button so it opens the provider's checkout. */
+  /**
+   * Haptic Pro's plans in the current offering, Monthly first; undefined while
+   * they load, when the load failed, or without an account or keys.
+   */
+  plans?: BillingPlanOption[];
+  /** The plan Subscribe buys: Monthly unless the person picked another. */
+  selectedPlan?: string;
+  onSelectPlan?: (id: string) => void;
+  /** Called when the Subscription page shows; retries a load that failed. */
+  onShow?: () => void;
+  /** Wraps the Haptic Pro button so it opens the provider's checkout for the selected plan. */
   renderSubscribe?: (button: BillingButton) => ReactElement;
   /** Wraps the Manage Billing button so it opens the provider's billing page. */
   renderManage?: (button: BillingButton) => ReactElement;
