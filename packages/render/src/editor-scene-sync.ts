@@ -11,6 +11,7 @@ import { isPoolMember } from "./instance-pool";
 import { withNetMaterialChanges } from "./material-change-batch";
 import { DEFAULT_SORTING_LAYERS, isSceneLayerAnchorActor, resolveOverlayLayout } from "@haptic/core";
 import { applyEditorLayoutClips } from "./overlay-layout-render";
+import { acceptsUserInterfaceMaterial, restoreUserInterfaceFallback } from "./user-interface-material";
 import type {
   SerializedActor,
   SerializedComponent,
@@ -62,6 +63,8 @@ import { refreshText2DMaterials, text2DBitmapBytes } from "./text2d-mesh";
 import { pruneEditorCables } from "./cable-mesh";
 import { authoredMaterialInstancePreparation } from "./authored-material-instance";
 import type { NativePreparationPriority } from "./native-preparation";
+import { updateLandscapeMesh } from "./landscape-mesh";
+import { applyFoliageDistances, refreshFoliageMaterials, showEveryFoliageCell } from "./foliage-mesh";
 
 export type EditorSceneSyncOptions = {
   resolveMaterial?: MeshAssetContext["resolveMaterial"];
@@ -1339,7 +1342,7 @@ export class EditorSceneSync {
           actor.id,
           root,
           authoredMaterialGuid(component.properties.materialGuid),
-          { unlit: true },
+          { unlit: true, userInterface: true },
         );
         continue;
       }
@@ -1350,7 +1353,7 @@ export class EditorSceneSync {
             actor.id,
             root,
             authoredMaterialGuid(component.properties.materialGuid),
-            { unlit: true },
+            { unlit: true, userInterface: true },
           );
         }
         continue;
@@ -1390,7 +1393,7 @@ export class EditorSceneSync {
     actorId: string,
     visual: Mesh,
     guid: string | null,
-    options?: { unlit?: boolean },
+    options?: { unlit?: boolean; userInterface?: boolean },
   ): void {
     if (!guid) return;
     const targets = meshAndDescendantMeshes(visual).filter(
@@ -1403,9 +1406,15 @@ export class EditorSceneSync {
       }
     }
     this.noteMaterialUse(actorId, guid);
+    const { userInterface, ...resolveOptions } = options ?? {};
     const material =
-      this.resolveMaterial?.(guid, { ...options, scene: this.scene }) ?? null;
+      this.resolveMaterial?.(guid, { ...resolveOptions, scene: this.scene }) ?? null;
     if (!material) return;
+    // A 2D Material or Panel draws only a User Interface Material; any other leaves its fallback look.
+    if (userInterface && !acceptsUserInterfaceMaterial(material)) {
+      for (const target of targets) restoreUserInterfaceFallback(target);
+      return;
+    }
     for (const target of targets) {
       if (isColliderVisualTree(target)) continue;
       assignActorMeshMaterial(target, material, this.constructionMaterials);
@@ -1431,6 +1440,18 @@ export class EditorSceneSync {
     this.actorMaterials.clear();
     this.materialActors.clear();
     this.meshKinds.clear();
+    // The bytes, payloads and documents the last apply held: nothing reads them once disposed.
+    this.assets = undefined;
+    this.modelLoadBinding.modelBytes = undefined;
+    this.modelLoadBinding.modelSources = undefined;
+    this.modelLoadBinding.modelPayloads = undefined;
+    this.modelLoadBinding.slotPoseClips?.clear();
+    this.lastScene = null;
+    this.lastSceneActors = null;
+    this.liveTilemaps.clear();
+    this.liveTilemapsOwed.clear();
+    this.rejectedVisuals.clear();
+    this.deferredMaterialRefresh = undefined;
     pruneEditorCables(this.scene);
   }
 }
@@ -1497,5 +1518,3 @@ function meshAndDescendantMeshes(root: Mesh): AbstractMesh[] {
       : isPoolMember(child) && (!child.parent || pooledLeafOf(child.parent as AbstractMesh) !== child));
   return [root, ...children];
 }
-import { updateLandscapeMesh } from "./landscape-mesh";
-import { applyFoliageDistances, refreshFoliageMaterials, showEveryFoliageCell } from "./foliage-mesh";

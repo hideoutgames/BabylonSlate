@@ -3,6 +3,7 @@ import {
   decodeLandscapeField,
   isLandscapeChunkId,
   landscapeChunkId,
+  parseFoliageProperties,
   type SerializedActor,
   type SerializedComponent,
 } from "@haptic/core";
@@ -23,9 +24,11 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-type ComponentTransformer = (component: SerializedComponent) => SerializedComponent;
+/** `actor` is the owning actor, or undefined for a Prefab or Class root component. */
+export type ComponentTransformer = (component: SerializedComponent, actor?: SerializedActor) => SerializedComponent;
 
-function mapPayloadComponents<T>(payload: T, transform: ComponentTransformer): T {
+/** Applies `transform` to every component of a Scene, Prefab or Class payload; unchanged parts keep their identity. */
+export function mapPayloadComponents<T>(payload: T, transform: ComponentTransformer): T {
   if (!payload || typeof payload !== "object") return payload;
   const record = payload as {
     actors?: readonly SerializedActor[];
@@ -41,7 +44,7 @@ function mapPayloadComponents<T>(payload: T, transform: ComponentTransformer): T
       let nextComponents: SerializedComponent[] | undefined;
       for (let ci = 0; ci < actor.components.length; ci++) {
         const component = actor.components[ci]!;
-        const updated = transform(component);
+        const updated = transform(component, actor);
         if (updated !== component) {
           const copy = nextComponents ?? actor.components.slice();
           copy[ci] = updated;
@@ -79,21 +82,30 @@ function mapPayloadComponents<T>(payload: T, transform: ComponentTransformer): T
   } as T;
 }
 
-/** The raw `BSLD` bytes of a component's base64 `data`, or null when they are not a chunk its properties can read. */
+/**
+ * The key a Scene component's binary chunk is named by (`landscape:<key>`, `foliage:<key>`): `<actorId>/<componentId>`.
+ * Component ids are only unique within their actor (every instance of one Prefab carries the Prefab's ids), so the
+ * actor names the chunk too; a root component of a payload without actors is named by its id alone.
+ */
+export function sceneComponentChunkKey(component: SerializedComponent, actor: SerializedActor | undefined): string {
+  return actor ? `${actor.id}/${component.id}` : component.id;
+}
+
+/** The raw `HPLD` bytes of a component's base64 `data`, or null when they are not a chunk its properties can read. */
 function readableDataBytes(props: Record<string, unknown>, data: string): Uint8Array | null {
   const bytes = decodeLandscapeBase64ToBytes(data);
   return bytes && decodeLandscapeField({ ...props, data: undefined, chunkId: undefined }, bytes) ? bytes : null;
 }
 
 /**
- * Strips base64 `data` from every `LandscapeComponent` in a Scene payload and emits raw binary `BSLD` `.hasset`
- * chunks (`landscape:<componentId>`). Flat default terrains emit no binary chunk. Unreadable `data` is kept as it is,
+ * Strips base64 `data` from every `LandscapeComponent` in a Scene payload and emits raw binary `HPLD` `.hasset`
+ * chunks (`landscape:<actorId>/<componentId>`, `sceneComponentChunkKey`). Flat default terrains emit no binary chunk. Unreadable `data` is kept as it is,
  * so a save never replaces terrain it could not read with flat terrain. Prefab and Class payloads keep their terrain
  * inline: their components are copied into the Scenes that place them, which then own a chunk of their own.
  */
 export function extractLandscapeChunks<T>(payload: T): { payload: T; chunks: ChunkInput[] } {
   const chunks: ChunkInput[] = [];
-  const nextPayload = mapPayloadComponents(payload, (component) => {
+  const nextPayload = mapPayloadComponents(payload, (component, actor) => {
     if (component.classId !== "LandscapeComponent") return component;
     const props = component.properties;
     if (!props || typeof props !== "object") return component;
@@ -101,7 +113,7 @@ export function extractLandscapeChunks<T>(payload: T): { payload: T; chunks: Chu
     if (rawData) {
       const bytes = readableDataBytes(props, rawData);
       if (!bytes) return component;
-      const chunkId = landscapeChunkId(component.id);
+      const chunkId = landscapeChunkId(sceneComponentChunkKey(component, actor));
       chunks.push({
         id: chunkId,
         kind: LANDSCAPE_CHUNK_KIND,
@@ -127,7 +139,7 @@ export function extractLandscapeChunks<T>(payload: T): { payload: T; chunks: Chu
  * Restores raw binary `landscape:*` `.hasset` chunks into JSON-safe base64 `data`
  * strings on `LandscapeComponent` properties for Editor `SerializedScene` editing,
  * undo/redo diffs, crash recovery, and copy/paste. A component whose chunk is missing
- * or unreadable keeps its `chunkId` (`unreadableLandscapes` names it), so saving
+ * or unreadable keeps its `chunkId` (`unreadableComponentChunks` names it), so saving
  * keeps the stored chunk instead of writing flat terrain over it.
  */
 export function hydrateLandscapeChunksToEditor<T>(
@@ -155,9 +167,9 @@ export function hydrateLandscapeChunksToEditor<T>(
 }
 
 /**
- * Prepares a Scene payload and its raw binary `BSLD` chunks for Play or Export with zero
+ * Prepares a Scene payload and its raw binary `HPLD` chunks for Play or Export with zero
  * base64 entering the runtime:
- * - Unsaved Editor `properties.data` is decoded once into raw `BSLD` bytes and replaced with `chunkId`.
+ * - Unsaved Editor `properties.data` is decoded once into raw `HPLD` bytes and replaced with `chunkId`.
  * - Disk-resident `properties.chunkId` entries reuse their raw `storedChunks` bytes directly.
  */
 export function collectLandscapeChunksForPlay<T>(
@@ -165,7 +177,7 @@ export function collectLandscapeChunksForPlay<T>(
   storedChunks?: ReadonlyMap<string, Uint8Array>,
 ): { payload: T; chunks: Map<string, Uint8Array> } {
   const chunks = new Map<string, Uint8Array>();
-  const nextPayload = mapPayloadComponents(payload, (component) => {
+  const nextPayload = mapPayloadComponents(payload, (component, actor) => {
     if (component.classId !== "LandscapeComponent") return component;
     const props = component.properties;
     if (!props || typeof props !== "object") return component;
@@ -173,7 +185,7 @@ export function collectLandscapeChunksForPlay<T>(
     if (rawData) {
       const bytes = readableDataBytes(props, rawData);
       // Unreadable data keeps a chunk id with no bytes: the runtime reports it and plays it flat.
-      const chunkId = landscapeChunkId(component.id);
+      const chunkId = landscapeChunkId(sceneComponentChunkKey(component, actor));
       if (bytes) chunks.set(chunkId, bytes);
       const nextProps: Record<string, unknown> = { ...props, chunkId };
       delete nextProps.data;
@@ -194,19 +206,23 @@ export function collectLandscapeChunksForPlay<T>(
 }
 
 /**
- * The Landscapes in a Scene, Prefab or Class payload whose terrain cannot be read (a missing or damaged chunk, or
- * damaged inline data), which show and play flat. Read after `hydrateLandscapeChunksToEditor`.
+ * The Landscape and Foliage components of a Scene, Prefab or Class payload whose binary data cannot be read (a missing
+ * or damaged chunk, or damaged inline data): a Landscape shows and plays flat, Foliage draws nothing. Read after the
+ * chunks are hydrated; saving keeps such a component's stored data unchanged.
  */
-export function unreadableLandscapes(payload: unknown): Array<{ actorName: string | null; componentId: string }> {
-  const found: Array<{ actorName: string | null; componentId: string }> = [];
+export function unreadableComponentChunks(payload: unknown): Array<{ actorName: string | null; componentId: string; kind: "Landscape" | "Foliage" }> {
+  const found: Array<{ actorName: string | null; componentId: string; kind: "Landscape" | "Foliage" }> = [];
   const record = payload && typeof payload === "object"
     ? payload as { actors?: readonly SerializedActor[]; components?: readonly SerializedComponent[] }
     : {};
   const visit = (components: readonly SerializedComponent[] | undefined, actorName: string | null) => {
     if (!Array.isArray(components)) return;
     for (const component of components) {
-      if (component?.classId !== "LandscapeComponent") continue;
-      if (!decodeLandscapeField(component.properties)) found.push({ actorName, componentId: component.id });
+      if (component?.classId === "LandscapeComponent" && !decodeLandscapeField(component.properties)) {
+        found.push({ actorName, componentId: component.id, kind: "Landscape" });
+      } else if (component?.classId === "FoliageComponent" && parseFoliageProperties(component.properties).unreadable) {
+        found.push({ actorName, componentId: component.id, kind: "Foliage" });
+      }
     }
   };
   if (Array.isArray(record.actors)) for (const actor of record.actors) visit(actor.components, actor.name ?? null);

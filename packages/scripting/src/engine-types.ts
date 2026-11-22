@@ -137,6 +137,20 @@ export type EngineStruct = {
   fields: StructField[];
 };
 
+/** An engine Structure field as authored here; `ENGINE_STRUCTS` gives each the id `<structId>.<name>`. */
+export type EngineStructField = Omit<StructField, "id">;
+
+/** An engine Structure as authored here, before its fields take their ids. */
+export type EngineStructDefinition = {
+  id: string;
+  name: string;
+  fields: EngineStructField[];
+};
+
+function withFieldIds(definition: EngineStructDefinition): EngineStruct {
+  return { ...definition, fields: definition.fields.map((field) => ({ id: `${definition.id}.${field.name}`, ...field })) };
+}
+
 /** The engine enums whose values may also name a custom easing curve (`class:<ClassId>`). */
 const CUSTOM_EASING_CURVE_ENUM_IDS: ReadonlySet<string> = new Set([
   ENGINE_EASING_CURVE_ENUM_ID, ENGINE_CURVE_INTERPOLATION_ENUM_ID, ENGINE_TEXT2D_APPEAR_TRANSITION_ENUM_ID,
@@ -287,7 +301,7 @@ const ZERO_VECTOR = { x: 0, y: 0, z: 0 };
 const ZERO_ROTATOR = { pitch: 0, yaw: 0, roll: 0 };
 const ZERO_COLOR = { x: 0, y: 0, z: 0, w: 0 };
 
-function rangeStruct(id: string, name: string, typeId: string, min: unknown, max: unknown): EngineStruct {
+function rangeStruct(id: string, name: string, typeId: string, min: unknown, max: unknown): EngineStructDefinition {
   return {
     id, name,
     fields: [{ name: "Min", typeId, defaultValue: min }, { name: "Max", typeId, defaultValue: max }],
@@ -295,7 +309,7 @@ function rangeStruct(id: string, name: string, typeId: string, min: unknown, max
 }
 
 /** Min is at most Max on every axis; the editors and loaders keep it so (`normalizeRange` in core). */
-const RANGE_STRUCTS: readonly EngineStruct[] = [
+const RANGE_STRUCTS: readonly EngineStructDefinition[] = [
   rangeStruct(ENGINE_INT_RANGE_STRUCT_ID, "Int Range", "int", 0, 1),
   rangeStruct(ENGINE_FLOAT_RANGE_STRUCT_ID, "Float Range", "float", 0, 1),
   rangeStruct(ENGINE_VECTOR2_RANGE_STRUCT_ID, "Vector2 Range", "vec2", ZERO_VECTOR2, ZERO_VECTOR2),
@@ -303,7 +317,7 @@ const RANGE_STRUCTS: readonly EngineStruct[] = [
   rangeStruct(ENGINE_ROTATOR_RANGE_STRUCT_ID, "Rotator Range", "rotator", ZERO_ROTATOR, ZERO_ROTATOR),
 ];
 
-function curveStructs(curveId: string, keyId: string, name: string, typeId: string, zero: unknown, extraKeyFields: EngineStruct["fields"] = []): EngineStruct[] {
+function curveStructs(curveId: string, keyId: string, name: string, typeId: string, zero: unknown, extraKeyFields: EngineStructField[] = []): EngineStructDefinition[] {
   return [
     {
       id: keyId,
@@ -333,7 +347,7 @@ function curveStructs(curveId: string, keyId: string, name: string, typeId: stri
  * Keys are sorted by time (`normalizeCurve` in core); one key holds the whole value, with tangents per channel.
  * A Vector Curve Key's `Axes` (X 1, Y 2, Z 4; 7 all) lets it set only some axes, so each axis has its own keys.
  */
-const CURVE_STRUCTS: readonly EngineStruct[] = [
+const CURVE_STRUCTS: readonly EngineStructDefinition[] = [
   ...curveStructs(ENGINE_FLOAT_CURVE_STRUCT_ID, ENGINE_FLOAT_CURVE_KEY_STRUCT_ID, "Float", "float", 0),
   ...curveStructs(ENGINE_VECTOR_CURVE_STRUCT_ID, ENGINE_VECTOR_CURVE_KEY_STRUCT_ID, "Vector", "vec3", ZERO_VECTOR,
     [{ name: "Axes", typeId: "int", defaultValue: CURVE_ALL_AXES }]),
@@ -341,7 +355,7 @@ const CURVE_STRUCTS: readonly EngineStruct[] = [
 ];
 
 /** Engine user-style structs. Pin-kind math types stay first-class. */
-export const ENGINE_STRUCTS: readonly EngineStruct[] = [
+export const ENGINE_STRUCTS: readonly EngineStruct[] = ([
   {
     id: ENGINE_TAG_CONTAINER_STRUCT_ID,
     name: "TagContainer",
@@ -483,4 +497,4 @@ export const ENGINE_STRUCTS: readonly EngineStruct[] = [
       { name: "DigitalValue", typeId: "float", defaultValue: 1 },
     ],
   },
-];
+] satisfies EngineStructDefinition[]).map(withFieldIds);

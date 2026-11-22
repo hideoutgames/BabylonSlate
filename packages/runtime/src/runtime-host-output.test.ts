@@ -96,7 +96,7 @@ describe("output commands are detached from script state at emit", () => {
   it("sends a Print String color as it was when printed", () => {
     const emitted: CommandMessage[] = [];
     const bindings = createOutputHostBindings({ frameId: () => 1, tickIndex: () => 1, anchors: new Map(),
-      recordDiagnostic: () => {}, recordPrint: () => {}, emit: (command) => emitted.push(command) });
+      recordDiagnostic: () => {}, recordPrint: () => {}, emit: (command) => emitted.push(command), stopped: () => false });
     const color = { x: 1, y: 0.5, z: 0.25, w: 1 };
     bindings.print("hello", "key", 2, color);
     color.x = 0;

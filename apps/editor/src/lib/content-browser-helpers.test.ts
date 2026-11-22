@@ -2194,6 +2194,7 @@ describe("content-browser-helpers", () => {
     expect(materialHeaderMeta("Material", { domain: "particle" })).toEqual({
       domain: "particle",
     });
+    expect(materialHeaderMeta("Material", { domain: "ui" })).toEqual({ domain: "ui" });
     expect(materialHeaderMeta("Material", {})).toEqual({ domain: "surface" });
     expect(materialHeaderMeta("Class", { domain: "postProcess" })).toBeUndefined();
   });

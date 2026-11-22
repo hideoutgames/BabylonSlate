@@ -5,7 +5,7 @@ import { concatBytes, readU32LE, sha256Hex, writeU32LE } from "./bytes";
 const AREA_EMISSION_PROCESSOR = "babylon-9.20-rgba8-1024-v3";
 export const AREA_EMISSION_EDGE = 1024;
 export const AREA_EMISSION_CHUNK_KIND = "area-emission";
-const MAGIC = new TextEncoder().encode("BARE");
+const MAGIC = new TextEncoder().encode("HPRE");
 export type AreaEmissionMetadata = {
   processor: typeof AREA_EMISSION_PROCESSOR;
   sourceHash: string;

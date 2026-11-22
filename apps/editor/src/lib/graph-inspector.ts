@@ -314,7 +314,7 @@ export function variableAssetPickerAllowedTypes(typeClassId?: string): string[] 
 /** Definition literals use recursive value controls so collection fields retain their shape. */
 export function graphDataLiteralField(entry: LiteralPinDefault, schemas: TypeSchemas): StructField | undefined {
   if (entry.type.kind !== "structRef" || !schemas.dataDefinitions?.[entry.type.guid]) return undefined;
-  return { name: entry.name, typeId: "struct", typeClassId: entry.type.guid };
+  return { id: entry.name, name: entry.name, typeId: "struct", typeClassId: entry.type.guid };
 }
 
 export function pinDefaultPropertyRows(

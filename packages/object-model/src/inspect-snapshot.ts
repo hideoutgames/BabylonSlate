@@ -73,7 +73,10 @@ function classVariableTypes(
 
 /** JSON-safe inspect values: primitives stay; Object → guid/classId; cycles stringify. */
 export function sanitizeInspectValue(value: unknown): unknown {
-  if (value === undefined) return null;
+  if (value === undefined || value === null) return null;
+  // Primitives answer what the JSON round trip below gives them, without it.
+  if (typeof value === "string" || typeof value === "boolean") return value;
+  if (typeof value === "number") return Number.isFinite(value) ? (value === 0 ? 0 : value) : null;
   if (value instanceof EngineObject) {
     return { guid: value.guid, classId: value.classId };
   }

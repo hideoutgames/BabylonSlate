@@ -153,6 +153,14 @@ describe("packed Model envelope", () => {
     expect(peekPackedModelPayload(glb)).toBeNull();
     expect(decodePackedModelAsset(glb)).toBeNull();
   });
+
+  it("rejects an envelope of another version or with a truncated payload", () => {
+    const packed = encodePackedModelAsset({}, glb);
+    const otherVersion = packed.slice();
+    new DataView(otherVersion.buffer).setUint16(4, 2, true);
+    expect(() => decodePackedModelAsset(otherVersion)).toThrow(/version: 2/);
+    expect(() => peekPackedModelPayload(packed.subarray(0, 14))).toThrow(/truncated payload/);
+  });
 });
 
 describe("withSkeletonSockets", () => {

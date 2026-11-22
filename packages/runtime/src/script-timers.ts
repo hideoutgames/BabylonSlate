@@ -29,6 +29,11 @@ export const TIMER_MAX_FIRES_PER_STEP = 64;
  */
 export class ScriptTimers implements RuntimeSubsystem {
   private readonly timers = new Map<number, Timer>();
+  /** Each event's timer, by its delegate's object, then kind and name: one lookup replaces a scan on Set. */
+  private byEvent = new WeakMap<object, Map<string, Timer>>();
+  /** `advance` walks a copy of the timers made here, reused while it is not already walking one. */
+  private readonly advanceScratch: Timer[] = [];
+  private advancing = false;
   private nextId = 1;
   private readonly admission: Pick<OwnerAdmission, "canRunActions">;
   private readonly fire: (delegate: EventDelegate, owner: EngineObject | null) => void;
@@ -52,17 +57,31 @@ export class ScriptTimers implements RuntimeSubsystem {
     const delay = Number(startDelay);
     const interval = rate + (Number.isFinite(delay) && delay > 0 ? delay : 0);
     // One timer per event: setting it again restarts it, and its earlier handle no longer names a timer.
-    for (const timer of this.timers.values()) {
-      const bound = timer.delegate;
-      if (bound.object === delegate.object && bound.name === delegate.name && bound.kind === delegate.kind) this.timers.delete(timer.id);
-    }
+    let events = this.byEvent.get(delegate.object);
+    if (!events) this.byEvent.set(delegate.object, events = new Map());
+    const key = `${delegate.kind}\0${delegate.name}`;
+    const previous = events.get(key);
+    if (previous) this.timers.delete(previous.id);
     const id = this.nextId++;
-    this.timers.set(id, { id, owner, delegate, rate, looping: looping === true, interval, remaining: interval, paused: false });
+    const timer: Timer = { id, owner, delegate, rate, looping: looping === true, interval, remaining: interval, paused: false };
+    this.timers.set(id, timer);
+    events.set(key, timer);
     return id;
   }
 
   clear(id: number): void {
-    this.timers.delete(id);
+    const timer = this.timers.get(id);
+    if (timer) this.remove(timer);
+  }
+
+  private remove(timer: Timer): void {
+    this.timers.delete(timer.id);
+    const events = this.byEvent.get(timer.delegate.object);
+    const key = `${timer.delegate.kind}\0${timer.delegate.name}`;
+    if (events?.get(key) === timer) {
+      events.delete(key);
+      if (events.size === 0) this.byEvent.delete(timer.delegate.object);
+    }
   }
 
   setPaused(id: number, paused: boolean): void {
@@ -101,7 +120,23 @@ export class ScriptTimers implements RuntimeSubsystem {
    */
   advance(dt: number, canAdvance?: (owner: EngineObject | null | undefined) => boolean): void {
     if (this.timers.size === 0) return;
-    for (const timer of [...this.timers.values()]) {
+    // Timers set or cleared by a fired event do not change which ones this step walks.
+    const nested = this.advancing;
+    const walk = nested ? [] : this.advanceScratch;
+    for (const timer of this.timers.values()) walk.push(timer);
+    this.advancing = true;
+    try {
+      this.advanceTimers(walk, dt, canAdvance);
+    } finally {
+      if (!nested) {
+        this.advancing = false;
+        walk.length = 0;
+      }
+    }
+  }
+
+  private advanceTimers(walk: readonly Timer[], dt: number, canAdvance?: (owner: EngineObject | null | undefined) => boolean): void {
+    for (const timer of walk) {
       if (!this.live(timer.id) || timer.paused) continue;
       if (timer.owner && !this.admission.canRunActions(timer.owner)) continue;
       if (canAdvance && !canAdvance(timer.owner)) continue;
@@ -112,7 +147,7 @@ export class ScriptTimers implements RuntimeSubsystem {
           timer.remaining += timer.rate;
         } else {
           // A finished timer is gone before its event runs, so the event can read and reuse its handle.
-          this.timers.delete(timer.id);
+          this.remove(timer);
         }
         this.fire(timer.delegate, timer.owner);
         if (!timer.looping || this.timers.get(timer.id) !== timer || timer.paused) break;
@@ -123,6 +158,7 @@ export class ScriptTimers implements RuntimeSubsystem {
 
   cancelPending(): void {
     this.timers.clear();
+    this.byEvent = new WeakMap();
   }
 
   /** The timer, after dropping it when its owner or event object has gone. */
@@ -130,7 +166,7 @@ export class ScriptTimers implements RuntimeSubsystem {
     const timer = this.timers.get(id);
     if (!timer) return undefined;
     if (timer.owner?.destroyed || timer.delegate.object.destroyed) {
-      this.timers.delete(id);
+      this.remove(timer);
       return undefined;
     }
     return timer;

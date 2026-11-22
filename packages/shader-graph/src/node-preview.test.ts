@@ -72,6 +72,20 @@ describe("materialNodePreviewDocument", () => {
     expect(lowerMaterialDocument(preview).ok).toBe(true);
   });
 
+  it("wires a User Interface Material's preview into the output's Color and leaves Opacity at 1", () => {
+    const doc = createDefaultMaterialDocument("Panel", "ui");
+    doc.nodes = doc.nodes.map((node) => node.id === "output" ? { ...node, properties: { "default:opacity": [0.25] } } : node);
+    doc.nodes.push({ id: "box", type: "ui.roundedRectangle", position: at, properties: {} });
+    doc.edges.push({ id: "e-box-opacity", sourceNodeId: "box", sourcePinId: "fill", targetNodeId: "output", targetPinId: "opacity" });
+    const preview = materialNodePreviewDocument(doc, { nodeId: "box", pinId: "distance" })!;
+    expect(wiresInto(preview, "output")).toEqual(["__previewCombine.xyz -> color"]);
+    const lowered = lowerMaterialDocument(preview);
+    expect(lowered.ok).toBe(true);
+    if (!lowered.ok) return;
+    expect(lowered.plan.outputs.color).toEqual({ kind: "operation", operationId: "__previewCombine", pinId: "xyz" });
+    expect(lowered.plan.outputs.opacity).toEqual({ kind: "constant", type: "float", value: [1] });
+  });
+
   it("is null for a missing node, an unknown output and a Texture output", () => {
     const doc = surface();
     expect(materialNodePreviewDocument(doc, { nodeId: "missing", pinId: "out" })).toBeNull();

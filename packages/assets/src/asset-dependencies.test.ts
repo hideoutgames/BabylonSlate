@@ -320,8 +320,8 @@ describe("typed asset dependencies", () => {
       kind: "dataTree", defaultDefinitionGuid: "items",
       entries: [{ id: "sword", definitionGuid: "weapon", schema: [
         { name: "Appearance", typeId: "struct", typeClassId: "appearance", fields: [
-          { name: "Mesh", typeId: "asset", typeClassId: "Model" },
-          { name: "Quality", typeId: "enum", typeClassId: "quality" },
+          { id: "Mesh", name: "Mesh", typeId: "asset", typeClassId: "Model" },
+          { id: "Quality", name: "Quality", typeId: "enum", typeClassId: "quality" },
         ] },
       ], values: { Appearance: { Mesh: "sword-model", Quality: "Rare" } } }],
     });

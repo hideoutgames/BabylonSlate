@@ -1,5 +1,5 @@
 import { shouldCompressTexture, TEXTURE_DOWNSAMPLE_OPTIONS } from "@haptic/assets";
-import { dataFieldIdentity, newGuid } from "@haptic/core";
+import { newGuid } from "@haptic/core";
 import { ENUM_VALUE_MAX } from "@haptic/scripting";
 import type {
   EnumAsset,
@@ -118,7 +118,7 @@ export function patchStructureField(
     ...asset,
     fields: asset.fields.map((field, i) => {
       if (i !== index) return field;
-      const next = { ...field, ...patch, id: dataFieldIdentity(field) };
+      const next = { ...field, ...patch, id: field.id };
       // Soft is the absence of the property.
       if ("loading" in patch && patch.loading !== "hard") delete next.loading;
       if ("unit" in patch && !patch.unit) delete next.unit;

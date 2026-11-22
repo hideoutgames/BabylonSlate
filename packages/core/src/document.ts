@@ -126,114 +126,70 @@ export function isSceneWorkspaceKind(
   return kind === "scene" || kind === "scene-layer";
 }
 
-export function assetTypeForDocumentKind(kind: AssetDocumentKind): string {
-  switch (kind) {
-    case "scene":
-      return "Scene";
-    case "scene-layer":
-      return "SceneLayer";
-    case "graph":
-      return "Class";
-    case "prefab":
-      return "Prefab";
-    case "font":
-      return "Font";
-    case "sprite":
-      return "Sprite";
-    case "sprite-animation":
-      return "SpriteAnimation";
-    case "anim-graph-3d":
-      return "AnimationGraph3D";
-    case "blend-space":
-      return "BlendSpace";
-    case "sprite-blend-space":
-      return "SpriteBlendSpace";
-    case "anim-graph-2d":
-      return "AnimationGraph2D";
-    case "behaviour-tree":
-      return "BehaviourTree";
-    case "blackboard":
-      return "Blackboard";
-    case "save-game":
-      return "SaveGame";
-    case "material":
-      return "Material";
-    case "material-function":
-      return "MaterialFunction";
-    case "material-instance":
-      return "MaterialInstance";
-    case "tileset":
-      return "Tileset";
-    case "tilemap":
-      return "Tilemap";
-    case "enum":
-      return "Enum";
-    case "structure":
-      return "Structure";
-    case "data-definition":
-      return "DataDefinition";
-    case "data-tree":
-      return "DataTree";
-    case "global-parameter-collection":
-      return "GlobalParameterCollection";
-    case "float-curve":
-      return "FloatCurve";
-    case "vector-curve":
-      return "VectorCurve";
-    case "color-curve":
-      return "ColorCurve";
-    case "timeline":
-      return "Timeline";
-    case "timeline-clip-2d":
-      return "TimelineClip2D";
-    case "timeline-clip-3d":
-      return "TimelineClip3D";
-    case "script-interface":
-      return "ScriptInterface";
-    case "plugin-settings":
-      return "PluginSettings";
-    case "audio":
-      return "Audio";
-    case "input-action":
-      return "InputAction";
-    case "input-axis":
-      return "InputAxis";
-    case "audio-mixer":
-      return "AudioMixer";
-    case "audio-channel":
-      return "AudioChannel";
-    case "sound-attenuation":
-      return "SoundAttenuation";
-    case "camera-shake":
-      return "CameraShake";
-    case "particle-emitter":
-      return "ParticleEmitter";
-    case "particle-graph":
-      return "ParticleGraph";
-    case "particle-system":
-      return "ParticleSystem";
-    case "water":
-      return "Water";
-    case "model":
-      return "Model";
-    case "skeleton":
-      return "Skeleton";
-    case "animation":
-      return "Animation";
-    case "skybox-creator":
-      return "SkyboxCreator";
-    case "trace":
-      return "Trace";
-    case "texture":
-      return "Texture";
-    case "render-target":
-      return "RenderTarget";
-    case "render-target-texture":
-      return "RenderTargetTexture";
-    // Each extension asset keeps its own header type; this placeholder is never written.
-    case "extension-asset":
-      return "ExtensionAsset";
-  }
+/**
+ * The header type each asset document kind reads and writes. `extension-asset` is a placeholder: each extension
+ * asset keeps its own `extension.<guid>.<typeId>` header type, and this one is never written.
+ */
+const ASSET_TYPE_BY_DOCUMENT_KIND = {
+  scene: "Scene",
+  "scene-layer": "SceneLayer",
+  graph: "Class",
+  prefab: "Prefab",
+  font: "Font",
+  sprite: "Sprite",
+  "sprite-animation": "SpriteAnimation",
+  "anim-graph-3d": "AnimationGraph3D",
+  "blend-space": "BlendSpace",
+  "sprite-blend-space": "SpriteBlendSpace",
+  "anim-graph-2d": "AnimationGraph2D",
+  "behaviour-tree": "BehaviourTree",
+  blackboard: "Blackboard",
+  "save-game": "SaveGame",
+  material: "Material",
+  "material-function": "MaterialFunction",
+  "material-instance": "MaterialInstance",
+  tileset: "Tileset",
+  tilemap: "Tilemap",
+  enum: "Enum",
+  structure: "Structure",
+  "data-definition": "DataDefinition",
+  "data-tree": "DataTree",
+  "global-parameter-collection": "GlobalParameterCollection",
+  "float-curve": "FloatCurve",
+  "vector-curve": "VectorCurve",
+  "color-curve": "ColorCurve",
+  timeline: "Timeline",
+  "timeline-clip-2d": "TimelineClip2D",
+  "timeline-clip-3d": "TimelineClip3D",
+  "script-interface": "ScriptInterface",
+  "plugin-settings": "PluginSettings",
+  audio: "Audio",
+  "input-action": "InputAction",
+  "input-axis": "InputAxis",
+  "audio-mixer": "AudioMixer",
+  "audio-channel": "AudioChannel",
+  "sound-attenuation": "SoundAttenuation",
+  "camera-shake": "CameraShake",
+  "particle-emitter": "ParticleEmitter",
+  "particle-graph": "ParticleGraph",
+  "particle-system": "ParticleSystem",
+  water: "Water",
+  model: "Model",
+  skeleton: "Skeleton",
+  animation: "Animation",
+  "skybox-creator": "SkyboxCreator",
+  trace: "Trace",
+  texture: "Texture",
+  "render-target": "RenderTarget",
+  "render-target-texture": "RenderTargetTexture",
+  "extension-asset": "ExtensionAsset",
+} as const satisfies Record<AssetDocumentKind, string>;
+
+/** Every built-in asset header type. Extension asset types (`extension.<guid>.<typeId>`) are not in the union. */
+export type AssetType = Exclude<(typeof ASSET_TYPE_BY_DOCUMENT_KIND)[AssetDocumentKind], "ExtensionAsset">;
+
+export function assetTypeForDocumentKind<Kind extends AssetDocumentKind>(kind: Kind): (typeof ASSET_TYPE_BY_DOCUMENT_KIND)[Kind] {
+  return ASSET_TYPE_BY_DOCUMENT_KIND[kind];
 }
 
 /** Header types an extension declares: `extension.<extensionGuid>.<typeId>`. */

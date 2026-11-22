@@ -46,15 +46,15 @@ describe("createTemplateStorage", () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it("binds OPFS at the templates folder on web", async () => {
-    const storage = await createTemplateStorage("__slate_templates__");
+    const storage = await createTemplateStorage("__haptic_templates__");
     expect(storage).toBeInstanceOf(OpfsStorageAdapter);
-    expect(storage.getCurrentFolder()?.name).toBe("__slate_templates__");
+    expect(storage.getCurrentFolder()?.name).toBe("__haptic_templates__");
   });
 
   it("keeps the library out of the OPFS project list and the restored project", async () => {
     const projects = new OpfsStorageAdapter();
     const project = await projects.openDocumentsProject("Game");
-    await createTemplateStorage("__slate_templates__");
+    await createTemplateStorage("__haptic_templates__");
     const reopened = new OpfsStorageAdapter();
     expect(await reopened.listProjects()).toEqual([project]);
     expect(reopened.getCurrentFolder()).toEqual(project);
@@ -68,20 +68,20 @@ describe("createTemplateStorage", () => {
       project,
       library: { writeBinary: async (...args: unknown[]) => { writes.push(args); } },
     });
-    const storage = await createTemplateStorage("__slate_engine_plugins__");
+    const storage = await createTemplateStorage("__haptic_engine_plugins__");
     expect(storage).toBeInstanceOf(ElectronLibraryStorageAdapter);
     await storage.writeText("catalog.json", "{}");
-    expect(writes).toEqual([["__slate_engine_plugins__", "catalog.json", expect.any(ArrayBuffer)]]);
+    expect(writes).toEqual([["__haptic_engine_plugins__", "catalog.json", expect.any(ArrayBuffer)]]);
     expect(project.writeBinary).not.toHaveBeenCalled();
   });
 
   it("binds the Documents tier at the templates folder on mobile", async () => {
     isMobile.mockReturnValue(true);
-    const storage = await createTemplateStorage("__slate_templates__");
+    const storage = await createTemplateStorage("__haptic_templates__");
     expect(storage).toBeInstanceOf(FakeDocumentsAdapter);
     expect(storage.getCurrentFolder()).toEqual({
-      id: "documents:__slate_templates__",
-      name: "__slate_templates__",
+      id: "documents:__haptic_templates__",
+      name: "__haptic_templates__",
       tier: "documents",
     });
   });

@@ -4,6 +4,7 @@ import { isPlayEngineCommandType, type CommandMessage, type ControlMessage } fro
 import { Actor, ActorComponent } from "@haptic/object-model";
 import { UIControls2DRuntime } from "./ui-controls2d-runtime";
 import { createInProcessRuntime } from "./driver";
+import { variablesAtRelease } from "./testing/released-variables";
 
 function fixture() {
   const actors: Actor[] = [], events: Array<{ id: string; name: string; args: Record<string, unknown> }> = [];
@@ -241,9 +242,12 @@ describe("SceneLayer control runtime integration", () => {
       ]); runtime.tick();
       expect(actor.getVariable("eventChecked")).toBe(true);
       expect(commands.some((command) => command.type === "setUIControl2D" && command.componentId === "toggle" && command.focused === true)).toBe(true);
+      const released = variablesAtRelease(actor);
       runtime.removeSceneLayer(liveLayer.guid);
       runtime.applySceneLayerControl({ ...input, value: 10 });
-      expect(actor.getVariable("eventValue")).toBe(4);
+      expect(released.get("eventValue")).toBe(4);
+      // The stale input ran no handler: nothing wrote the released actor again.
+      expect(actor.getVariable("eventValue")).toBeUndefined();
     } finally { runtime.stop(); }
   });
 });

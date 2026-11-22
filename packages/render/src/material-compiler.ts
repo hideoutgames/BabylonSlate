@@ -4,6 +4,7 @@ import { Constants } from "@babylonjs/core/Engines/constants";
 import { TextureBlock } from "@babylonjs/core/Materials/Node/Blocks/Dual/textureBlock";
 import { FragmentOutputBlock } from "@babylonjs/core/Materials/Node/Blocks/Fragment/fragmentOutputBlock";
 import { ImageProcessingBlock } from "@babylonjs/core/Materials/Node/Blocks/Fragment/imageProcessingBlock";
+import { ScreenSizeBlock } from "@babylonjs/core/Materials/Node/Blocks/Fragment/screenSizeBlock";
 import { InputBlock } from "@babylonjs/core/Materials/Node/Blocks/Input/inputBlock";
 import { ParticleBlendMultiplyBlock } from "@babylonjs/core/Materials/Node/Blocks/Particle/particleBlendMultiplyBlock";
 import { BonesBlock } from "@babylonjs/core/Materials/Node/Blocks/Vertex/bonesBlock";
@@ -26,6 +27,7 @@ import type { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import type { Effect } from "@babylonjs/core/Materials/effect";
 import { Material } from "@babylonjs/core/Materials/material";
 import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
+import { ColorEncodingBlock } from "./color-encoding-block";
 import { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
@@ -41,7 +43,7 @@ import type {
   MaterialTextureFilter,
   MaterialValueType,
 } from "@haptic/shader-graph";
-import { globalParameterSelection } from "@haptic/core";
+import { fnv1a, globalParameterSelection } from "@haptic/core";
 import { MATERIAL_GLOBAL_PARAMETER_NODE_TYPE, componentCount, isPerInstanceParameter, materialNodeDefinition } from "@haptic/shader-graph";
 import { globalParameterDefaults, type GlobalParameterValueSource } from "./global-parameter-values";
 import { createGlobalParameterBlock } from "./material-global-parameter";
@@ -355,11 +357,13 @@ function operationBlockName(id: string): string {
  * style, a text glyph's rectangles, colour and visibility) or requires its members to share (the lighting's Receive
  * Shadows, a text's atlas, mode and outline), and per-mesh ones of meshes that never
  * batch (bones, morphs, a lattice) or of a pass that draws no batch (a fragment output's geometry terms; its
- * logarithmic depth is the Scene's). A block that binds and is not listed keeps its Material out of batches.
+ * logarithmic depth is the Scene's). The screen size (Screen Size, Screen UV, User Interface Input) is the render
+ * target's, which every member of a batch draws into. A block that binds and is not listed keeps its Material out of
+ * batches.
  */
 const BATCH_BINDINGS: ReadonlyArray<abstract new (...parameters: never[]) => NodeMaterialBlock> = [
   BonesBlock, MorphTargetsBlock, LatticeDeformerBlock, OverlayStyleBlock, FragmentOutputBlock, HapticLightingBlock,
-  ImageProcessingBlock, TextureBlock, ImageSourceBlock, SceneFogBlock, EnvironmentSampleBlock, TextMaterialBlock,
+  ImageProcessingBlock, TextureBlock, ImageSourceBlock, SceneFogBlock, EnvironmentSampleBlock, TextMaterialBlock, ScreenSizeBlock,
 ];
 
 function bindsAsABatchDoes(block: NodeMaterialBlock): boolean {
@@ -397,7 +401,7 @@ export function compileMaterialPlan(
       material.alphaMode = Constants.ALPHA_DISABLE;
     } else {
       applyAuthoredSurfaceBlend(material, plan);
-      if (plan.blendMode === "masked" && !options.water && !options.overlay && plan.domain !== "text") registerAlphaToCoverage(material);
+      if (plan.blendMode === "masked" && !options.water && !options.overlay && plan.domain !== "text" && plan.domain !== "ui") registerAlphaToCoverage(material);
       if (options.overlay) {
         material.transparencyMode = Material.MATERIAL_ALPHABLEND; material.needDepthPrePass = false;
         // A Multiply surface on a Scene Layer draws as Translucent (`attachSurfaceShading`).
@@ -485,6 +489,8 @@ export function compileMaterialPlan(
       created.push(uv, textGlyph);
       plumbing.worldPosition?.connectTo(plumbing.clipPosition!);
     }
+    // A User Interface Material draws the mesh where it is, from its UV (Element UV), unlit and unfogged.
+    if (plan.domain === "ui") plumbing.worldPosition?.connectTo(plumbing.clipPosition!);
   } catch (error) {
     diagnostics.push({
       code: "material.compile.plumbingFailed",
@@ -795,21 +801,49 @@ export function compileMaterialPlan(
     if (plan.domain === "text" && textGlyph) {
       const fragment = new DisplayFragmentOutputBlock(`${MATERIAL_BLOCK_PREFIX}_fragment`);
       const multiply = new MultiplyBlock(`${MATERIAL_BLOCK_PREFIX}_textFill`);
-      outputPoint("color", `${MATERIAL_BLOCK_PREFIX}_color`, true)?.connectTo(multiply.left);
+      // The graph's colour is linear (a Color, Parameter, Gradient or texture colour is the decoded pick); the glyph's
+      // span colour and the overlay style are display colours. Encode the graph's once, then multiply.
+      const display = new ColorEncodingBlock(`${MATERIAL_BLOCK_PREFIX}_textColor`, "display");
+      outputPoint("color", `${MATERIAL_BLOCK_PREFIX}_color`, true)?.connectTo(display.input);
+      display.output.connectTo(multiply.left);
       textGlyph.color.connectTo(multiply.right);
       const style = new OverlayStyleBlock(`${MATERIAL_BLOCK_PREFIX}_overlayStyle`);
       const styled = new MultiplyBlock(`${MATERIAL_BLOCK_PREFIX}_overlayFill`);
       multiply.output.connectTo(styled.left);
       style.rgba.connectTo(styled.right);
       styled.output.connectTo(fragment.rgba);
-      created.push(fragment, multiply, style, styled);
+      created.push(fragment, display, multiply, style, styled);
+      outputNodes.push(fragment);
+    } else if (plan.domain === "ui") {
+      // (Color, Opacity) times the component's tint and opacity (`OverlayStyleBlock`, white by default).
+      const fragment = new UserInterfaceFragmentOutputBlock(`${MATERIAL_BLOCK_PREFIX}_fragment`);
+      const style = new OverlayStyleBlock(`${MATERIAL_BLOCK_PREFIX}_overlayStyle`);
+      created.push(fragment, style);
+      const styled = (value: NodeMaterialConnectionPoint | null, tint: NodeMaterialConnectionPoint, suffix: string) => {
+        if (!value) return tint;
+        const multiply = new MultiplyBlock(`${MATERIAL_BLOCK_PREFIX}_${suffix}`);
+        created.push(multiply);
+        value.connectTo(multiply.left);
+        tint.connectTo(multiply.right);
+        return multiply.output;
+      };
+      styled(outputPoint("color", `${MATERIAL_BLOCK_PREFIX}_color`, true), style.rgb, "overlayColor").connectTo(fragment.rgb);
+      styled(outputPoint("opacity", `${MATERIAL_BLOCK_PREFIX}_opacity`, false), style.alpha, "overlayAlpha").connectTo(fragment.a);
       outputNodes.push(fragment);
     } else if (plan.domain === "postProcess" || plan.domain === "particle") {
       const fragment = plan.domain === "particle"
         ? new DisplayFragmentOutputBlock(`${MATERIAL_BLOCK_PREFIX}_fragment`)
         : new FragmentOutputBlock(`${MATERIAL_BLOCK_PREFIX}_fragment`);
       created.push(fragment);
-      const color = outputPoint("color", `${MATERIAL_BLOCK_PREFIX}_color`, true);
+      let color = outputPoint("color", `${MATERIAL_BLOCK_PREFIX}_color`, true);
+      if (color && plan.domain === "particle") {
+        // The graph's colour is linear (Particle Color decodes where it enters, `input.particleColor`): encoded for
+        // display once, where the multiply blend and the display output expect it.
+        const display = new ColorEncodingBlock(`${MATERIAL_BLOCK_PREFIX}_particleDisplay`, "display");
+        created.push(display);
+        color.connectTo(display.input);
+        color = display.output;
+      }
       if (color && material.mode === NodeMaterialModes.Particle) {
         connectParticleBlend(MATERIAL_BLOCK_PREFIX, created, color, fragment.rgba);
       } else if (color) color.connectTo(fragment.rgba);
@@ -1073,15 +1107,17 @@ export function compileMaterialPlan(
     (block): block is BonesBlock | MorphTargetsBlock | TextMaterialBlock | LatticeDeformerBlock | OverlayStyleBlock | WaterWavesBlock | GeometrySurfaceOutputBlock =>
       block instanceof BonesBlock || block instanceof MorphTargetsBlock || block instanceof TextMaterialBlock || block instanceof LatticeDeformerBlock || block instanceof OverlayStyleBlock || block instanceof WaterWavesBlock || block instanceof GeometrySurfaceOutputBlock,
   );
-  // The stock vertex stage keeps a surface's or a text's vertices on its mesh: no custom blocks, and no World Position
-  // Offset (which is also how a graph's water waves move them).
-  const bounded = (plan.domain === "surface" || plan.domain === "text") && plan.cost.customBlocks === 0 &&
+  // The stock vertex stage keeps a surface's, a text's or a User Interface Material's vertices on its mesh: no custom
+  // blocks, and no World Position Offset (which is also how a graph's water waves move them).
+  const bounded = (plan.domain === "surface" || plan.domain === "text" || plan.domain === "ui") && plan.cost.customBlocks === 0 &&
     isIdentityWorldPositionOffset(plan.outputs.worldPositionOffset ?? null);
   if (bounded) markBoundedMaterial(material);
   // A Scene Layer Material with the stock vertex stage draws every mesh the same but for its world matrix, its overlay
   // style and Receive Shadows, so its draws may batch, provided nothing else it binds can depend on the mesh. A text's
-  // Material binds each glyph's own rectangles, colour and visibility, which a batch of glyphs carries with them.
-  if (bounded && (options.overlay || plan.domain === "text") && created.every(bindsAsABatchDoes)) markDrawBatchMaterial(material, plan.domain === "text");
+  // Material binds each glyph's own rectangles, colour and visibility, which a batch of glyphs carries with them. A
+  // User Interface Material is a Scene Layer's whether or not it compiles with `overlay`.
+  if (bounded && (options.overlay || plan.domain === "text" || plan.domain === "ui") && created.every(bindsAsABatchDoes))
+    markDrawBatchMaterial(material, plan.domain === "text");
   // The light block rebinds only its receiver terms.
   const lightingBlocks = created.filter((block): block is HapticLightingBlock => block instanceof HapticLightingBlock);
   if (perMeshBlocks.length > 0 || lightingBlocks.length > 0) {
@@ -1388,29 +1424,34 @@ export function shareCompiledProgram(material: NodeMaterial, key: string): void 
   material.onDisposeObservable.addOnce(leave);
 }
 
-/** Build ids of particle programs by key and generated code, for the Engine's life. */
-const particlePrograms = new WeakMap<AbstractEngine, Map<string, Map<string, number>>>();
+/** Particle programs an Engine remembers for adoption (`shareParticleProgram`), least recently used first out. */
+export const PARTICLE_PROGRAM_CACHE_SIZE = 256;
+/** A remembered particle program: its generated code, the equality check behind its digest, and its build id. */
+type ParticleProgram = { shaders: string; buildId: number };
+/** Per Engine, particle programs by key and digest of their generated code, least recently used first. */
+const particlePrograms = new WeakMap<AbstractEngine, Map<string, ParticleProgram>>();
 
 /**
  * A particle NodeMaterial names its Effect after the material and its build id (`name + buildId + "_" +
  * blendMode`), and the Engine's Effect cache keys on that name, so every build compiles its own program even when
  * its code is the same, as it is for each emitter's instance of one particle Material. After the first build, adopt
  * the id an earlier build under the same key and byte-identical code took, so they share one Effect. Ids outlive
- * their materials: a later Play's emitters then name the Effect the last one kept (`keepPlayEffects`). Particle
+ * their materials: a later Play's emitters then name the Effect the last one kept (`keepPlayEffects`). The Engine
+ * remembers the last `PARTICLE_PROGRAM_CACHE_SIZE` programs, keyed by a digest of their code and checked against the
+ * code itself, so a digest collision adopts nothing; forgetting one only means a later build compiles its own program
+ * (no Effect is disposed: they belong to the Engine's cache and the materials using them). Particle
  * Materials never rebuild, and every particle Effect is created right after its source is registered. Post-process
  * Materials do not share: Babylon creates a pass's Effect a tick after registering its source, and a pass's cleanup
  * (`OwnedPostProcess`) or a rebuild deletes the sources by that name, which another Material's pass would still read.
  */
 function shareParticleProgram(material: NodeMaterial, key: string): void {
   const engine = material.getScene().getEngine();
-  let byKey = particlePrograms.get(engine);
-  if (!byKey) particlePrograms.set(engine, (byKey = new Map()));
-  let programs = byKey.get(key);
-  if (!programs) byKey.set(key, (programs = new Map()));
+  let programs = particlePrograms.get(engine);
+  if (!programs) particlePrograms.set(engine, (programs = new Map()));
   const registry = programs;
-  let shaders: string | undefined;
+  let entry: string | undefined;
   sharedProgramForgetters.set(material, () => {
-    if (shaders !== undefined && registry.get(shaders) === material.buildId) registry.delete(shaders);
+    if (entry !== undefined && registry.get(entry)?.buildId === material.buildId) registry.delete(entry);
   });
   let adopted: number | undefined;
   let firstBuild = true;
@@ -1418,16 +1459,23 @@ function shareParticleProgram(material: NodeMaterial, key: string): void {
     if (adopted !== undefined && material.buildId === adopted) material.buildId = freshBuildId();
     adopted = undefined;
     if (!firstBuild) {
-      shaders = undefined;
+      entry = undefined;
       return;
     }
     firstBuild = false;
-    shaders = material.compiledShaders;
-    const known = registry.get(shaders);
-    if (known !== undefined) {
-      material.buildId = adopted = known;
+    const shaders = material.compiledShaders;
+    entry = `${key}#${fnv1a(shaders)}`;
+    const known = registry.get(entry);
+    registry.delete(entry);
+    if (known?.shaders === shaders) {
+      registry.set(entry, known);
+      material.buildId = adopted = known.buildId;
       noteAdoptedProgram(engine);
-    } else registry.set(shaders, material.buildId);
+      return;
+    }
+    // Unknown code, or other code under the same digest: this build's program takes the slot.
+    registry.set(entry, { shaders, buildId: material.buildId });
+    if (registry.size > PARTICLE_PROGRAM_CACHE_SIZE) registry.delete(registry.keys().next().value!);
   }, undefined, true);
 }
 
@@ -1516,7 +1564,7 @@ function applyAuthoredSurfaceBlend(
   material: NodeMaterial,
   plan: MaterialBuildPlan,
 ): void {
-  if (plan.domain === "text") {
+  if (plan.domain === "text" || plan.domain === "ui") {
     material.backFaceCulling = false;
     material.alphaMode = plan.blendMode === "additive" ? Constants.ALPHA_ADD : Constants.ALPHA_COMBINE;
     material.transparencyMode = Material.MATERIAL_ALPHABLEND;
@@ -1729,7 +1777,8 @@ RegisterClass(
 );
 
 // Particle and Text outputs write display color: Particle Color and glyph span
-// colors are display-space, and Legacy Display shows the output unchanged. Like
+// colors are display-space (a Text or Particle graph's own linear colour is encoded first, `ColorEncodingBlock`), and Display
+// Space shows the output unchanged. Like
 // Babylon's own particle and Standard shaders, they decode to linear when a
 // Scene Linear display stage (applyByPostProcess) encodes the frame once.
 class DisplayFragmentOutputBlock extends FragmentOutputBlock {
@@ -1749,6 +1798,30 @@ class DisplayFragmentOutputBlock extends FragmentOutputBlock {
 RegisterClass(
   "BABYLON.DisplayFragmentOutputBlock",
   DisplayFragmentOutputBlock,
+);
+
+// User Interface colour is linear, as a Color node's or an unlit surface's is: encoded for display here (as a Scene
+// Layer's unlit surface encodes it, plain `toGammaSpace`, no image processing), except under a Scene Linear display
+// stage (applyByPostProcess), which encodes the frame once. Scene Layer Scenes never have that stage; the editor's Scene
+// Layer tab and the Material preview may.
+class UserInterfaceFragmentOutputBlock extends FragmentOutputBlock {
+  override getClassName(): string {
+    return "UserInterfaceFragmentOutputBlock";
+  }
+
+  override prepareDefines(
+    defines: NodeMaterialDefines,
+    material: NodeMaterial,
+  ): void {
+    this.convertToLinearSpace = false;
+    this.convertToGammaSpace = !material.imageProcessingConfiguration.applyByPostProcess;
+    super.prepareDefines(defines, material);
+  }
+}
+
+RegisterClass(
+  "BABYLON.UserInterfaceFragmentOutputBlock",
+  UserInterfaceFragmentOutputBlock,
 );
 
 /**

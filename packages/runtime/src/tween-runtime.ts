@@ -47,6 +47,11 @@ export function tweenOwnerAlive(owner?: EngineObject | null): boolean {
 /** Simulation-clock latent actions. Resolving false unwinds a cancelled action without Completed. */
 export class TweenRuntime {
   private readonly active = new Set<ActiveTween>();
+  /** Active tweens by storage identity, so a new tween finds the ones it replaces without a scan. */
+  private readonly byIdentity = new Map<object, Set<ActiveTween>>();
+  /** `advance`'s copy of the tweens it steps, reused while it is not already stepping. */
+  private readonly stepScratch: ActiveTween[] = [];
+  private advancing = false;
   private stopped = false;
   private readonly canRun: (owner?: EngineObject | null) => boolean;
 
@@ -63,16 +68,19 @@ export class TweenRuntime {
       !Number.isFinite(request.duration) || a === null || b === null ||
       !tweenOwnerAlive(request.owner) || !tweenOwnerAlive(reference.owner)) return TickWait.from(false);
     const channels = reference.channels ?? [reference.property];
-    for (const previous of this.active) {
-      if (previous.reference.identity === reference.identity &&
-        (previous.reference.channels ?? [previous.reference.property]).some((key) => channels.includes(key))) {
-        this.finish(previous, false);
+    const sameStorage = this.byIdentity.get(reference.identity);
+    if (sameStorage) {
+      // Copied: finishing one may resolve a wait that starts another on this storage.
+      for (const previous of [...sameStorage]) {
+        if (this.active.has(previous) && previous.reference.channels!.some((key) => channels.includes(key))) {
+          this.finish(previous, false);
+        }
       }
     }
     return TickWait.start<boolean>((resolve, reject) => {
       const tween: ActiveTween = { ...request, reference: { ...reference, channels: [...channels] },
         a, b, curve: parseEasingCurve(request.curve), elapsed: 0, started: false, resolve, reject };
-      this.active.add(tween);
+      this.add(tween);
       this.advanceOne(tween, 0);
     });
   }
@@ -82,14 +90,31 @@ export class TweenRuntime {
     if (this.active.size === 0) return;
     const delta = Number.isFinite(deltaSeconds) && deltaSeconds > 0 ? deltaSeconds : 0;
     // A setter may synchronously start another action; it begins advancing next tick.
-    const current = canAdvance ? [...this.active].filter((tween) => canAdvance(tween.owner)) : [...this.active];
-    for (const tween of current) {
-      if (!tween.reference.worldTransformDepth && this.active.has(tween)) this.advanceOne(tween, delta);
+    const nested = this.advancing;
+    const current = nested ? [] : this.stepScratch;
+    let worldWrites = false;
+    for (const tween of this.active) {
+      if (canAdvance && !canAdvance(tween.owner)) continue;
+      current.push(tween);
+      if (tween.reference.worldTransformDepth) worldWrites = true;
     }
-    const world = current.filter((tween) => tween.reference.worldTransformDepth && this.active.has(tween))
-      .map((tween) => ({ tween, depth: tween.reference.worldTransformDepth!() }))
-      .sort((a, b) => a.depth - b.depth);
-    for (const { tween } of world) if (this.active.has(tween)) this.advanceOne(tween, delta);
+    this.advancing = true;
+    try {
+      for (const tween of current) {
+        if (!tween.reference.worldTransformDepth && this.active.has(tween)) this.advanceOne(tween, delta);
+      }
+      // World writes follow, ancestors first; only they need ordering.
+      if (!worldWrites) return;
+      const world = current.filter((tween) => tween.reference.worldTransformDepth && this.active.has(tween))
+        .map((tween) => ({ tween, depth: tween.reference.worldTransformDepth!() }))
+        .sort((a, b) => a.depth - b.depth);
+      for (const { tween } of world) if (this.active.has(tween)) this.advanceOne(tween, delta);
+    } finally {
+      if (!nested) {
+        this.advancing = false;
+        current.length = 0;
+      }
+    }
   }
 
   cancelInvalid(): void {
@@ -129,13 +154,28 @@ export class TweenRuntime {
         if (tween.reference.set(value) === false) this.finish(tween, false);
       }
     } catch (error) {
-      this.active.delete(tween);
+      this.remove(tween);
       tween.reject(error);
     }
   }
 
-  private finish(tween: ActiveTween, completed: boolean): void {
+  private add(tween: ActiveTween): void {
+    this.active.add(tween);
+    const identity = tween.reference.identity;
+    let sameStorage = this.byIdentity.get(identity);
+    if (!sameStorage) this.byIdentity.set(identity, sameStorage = new Set());
+    sameStorage.add(tween);
+  }
+
+  private remove(tween: ActiveTween): void {
     this.active.delete(tween);
+    const identity = tween.reference.identity;
+    const sameStorage = this.byIdentity.get(identity);
+    if (sameStorage?.delete(tween) && sameStorage.size === 0) this.byIdentity.delete(identity);
+  }
+
+  private finish(tween: ActiveTween, completed: boolean): void {
+    this.remove(tween);
     tween.resolve(completed);
   }
 }

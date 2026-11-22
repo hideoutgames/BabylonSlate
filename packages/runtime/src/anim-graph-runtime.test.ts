@@ -298,4 +298,21 @@ describe("AnimGraphRuntime slots", () => {
     runtime.retireActor(actors[0]!);
     expect(results).toEqual([false]);
   });
+
+  it("ends every play when the session stops, and forgets the session's graphs and clips", () => {
+    const { actors, runtime } = setup(slottedGraph(), 2);
+    runtime.replaceAnimClipCatalog(catalog);
+    const handles = actors.map((actor) => runtime.control(actor.components[0]!)!.playSlotAnimation({ ...request, loopCount: 0 }));
+    runtime.tick(0.1);
+    const results: boolean[] = [];
+    for (const handle of handles) settle(runtime.waitSlot(handle, "completed"), (value) => results.push(value));
+    runtime.cancelPending();
+    // The latent continuations resume (and go) at stop, not never.
+    expect(results).toEqual([false, false]);
+    expect(runtime.waitSlot(handles[0]!, "completed")).toBe(false);
+    runtime.dispose();
+    expect(runtime.traceStates()).toEqual([]);
+    // Neither the graph nor its clips outlive the session.
+    expect(runtime.control(actors[0]!.components[0]!)?.playSlotAnimation(request) ?? 0).toBe(0);
+  });
 });

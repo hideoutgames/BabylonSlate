@@ -31,7 +31,7 @@ import { useDebugMode } from "../context/app-settings-context";
 import { TemplatePickCard } from "./homepage-template-card";
 
 export type HomepageTemplate = { id: string; name: string; imageUrl?: string };
-const usageKey = "slate:template-usage";
+const usageKey = "haptic:template-usage";
 function readUsage(): Record<string, number> {
   try {
     const value: unknown = JSON.parse(localStorage.getItem(usageKey) ?? "{}");

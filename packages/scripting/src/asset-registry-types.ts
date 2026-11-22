@@ -1,5 +1,5 @@
 import { ASSET_TYPES } from "@haptic/core";
-import type { EngineEnum, EngineStruct } from "./engine-types";
+import type { EngineEnum, EngineStructDefinition } from "./engine-types";
 
 /** Engine types behind the Asset Registry nodes (`packages/scripting-nodes/src/asset-registry.ts`). */
 export const ENGINE_ASSET_TYPE_ENUM_ID = "engine:AssetType";
@@ -16,7 +16,7 @@ export const ASSET_REGISTRY_ENUMS: EngineEnum[] = [
 ];
 
 /** Field names are the runtime object keys Break and Make Structure read. */
-export const ASSET_REGISTRY_STRUCTS: EngineStruct[] = [
+export const ASSET_REGISTRY_STRUCTS: EngineStructDefinition[] = [
   {
     id: ENGINE_ASSET_DATA_STRUCT_ID,
     name: "Asset Data",

@@ -216,6 +216,8 @@ function scaleReverbAmount(value: number, scale: number): number {
 export class AudioService {
   private readonly backend: AudioPlaybackBackend;
   private readonly cache: AudioBufferCache;
+  /** This session's eviction listener, removed on dispose: a shared cache outlives the session. */
+  private readonly evictListener = (guid: string): void => this.releaseEvictedClip(guid);
   private readonly ownedCache: boolean;
   private readonly onDiagnostic?: (diagnostic: AudioDiagnostic) => void;
   private readonly onVoiceEnded?: (voiceId: string, dropped?: boolean) => void;
@@ -296,7 +298,7 @@ export class AudioService {
     this.ownedCache = !options.cache;
     this.cache = options.cache ?? new AudioBufferCache();
     this.maxVoices = Math.max(1, options.maxVoices ?? AUDIO_MAX_CONCURRENT_VOICES);
-    this.cache.addEvictListener((guid) => this.releaseEvictedClip(guid));
+    this.cache.addEvictListener(this.evictListener);
     this.onDiagnostic = options.onDiagnostic;
     this.onVoiceEnded = options.onVoiceEnded;
     this.onAssetReady = options.onAssetReady;
@@ -720,6 +722,7 @@ export class AudioService {
     this.sentListener = null;
     this.sentReverb.landed = false;
     this.cache.flushUnreferenced();
+    this.cache.removeEvictListener(this.evictListener);
     if (this.ownedCache) this.cache.dispose();
     this.unlocked = false;
     this.lastGain = null;

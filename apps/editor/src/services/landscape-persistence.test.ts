@@ -52,7 +52,7 @@ function exportInputs(service: ProjectService) {
 }
 
 describe("Landscape binary .hasset persistence and export sidecars", () => {
-  it("stores sculpted terrain as raw BSLD chunks on disk, hydrates on reload, drops orphans on delete, and exports raw sidecars", async () => {
+  it("stores sculpted terrain as raw HPLD chunks on disk, hydrates on reload, drops orphans on delete, and exports raw sidecars", async () => {
     const storage = new MemoryStorageAdapter("documents");
     await storage.openDocumentsProject("LandscapeTest.hproject");
     await installMinimalProject(storage);
@@ -93,7 +93,7 @@ describe("Landscape binary .hasset persistence and export sidecars", () => {
     // 1. Inspect raw .hasset on disk: JSON document chunk must contain `chunkId` and ZERO base64 `data` / `heights` / `weights`.
     const rawBytes = await storage.readBinary(scenePath);
     const header = readAssetDocumentHeader(rawBytes);
-    const expectedChunkId = landscapeChunkId("comp-land");
+    const expectedChunkId = landscapeChunkId("actor-land/comp-land");
     expect(header.chunks.some((chunk) => chunk.id === expectedChunkId)).toBe(true);
     const diskDoc = await decodeAssetDocument(rawBytes);
     const diskProps = (diskDoc.payload as unknown as SerializedScene).actors[0]!.components[0]!.properties;
@@ -112,7 +112,7 @@ describe("Landscape binary .hasset persistence and export sidecars", () => {
     expect(parsed.weights[12 * 4]).toBe(80);
     expect(parsed.weights[12 * 4 + 2]).toBe(175);
 
-    // 3. Export loader collects raw BSLD sidecar bytes and keeps Scene JSON free of base64.
+    // 3. Export loader collects raw HPLD sidecar bytes and keeps Scene JSON free of base64.
     const registry = service.registry!;
     const sceneGuid = service.guidForPath(scenePath)!;
     const exportInputs = await loadExportDocuments({
@@ -121,7 +121,7 @@ describe("Landscape binary .hasset persistence and export sidecars", () => {
       loadDocumentWithChunks: (kind, path, chunks) => service.loadDocumentWithChunks(kind as never, path, chunks),
       readAssetChunk: (path, chunkId) => service.readAssetChunk(path, chunkId),
     });
-    const exportedChunks = exportInputs.landscapeChunksByGuid(sceneGuid);
+    const exportedChunks = exportInputs.componentChunksByGuid(sceneGuid);
     expect(exportedChunks).toHaveLength(1);
     expect(exportedChunks[0]!.chunkId).toBe(expectedChunkId);
     expect(decodeLandscapeChunk(exportedChunks[0]!.bytes)?.heights[12]).toBeCloseTo(5.75, 5);
@@ -148,7 +148,7 @@ describe("Landscape binary .hasset persistence and export sidecars", () => {
       const raw = await storage.readBinary(path);
       expect(readAssetDocumentHeader(raw).chunks.some((chunk) => chunk.id.startsWith("landscape:"))).toBe(false);
       const stored = await decodeAssetDocument(raw);
-      const content = service.documentContentFromStored(kind, path, stored) as { components: Array<{ properties: Record<string, unknown> }> };
+      const content = service.documentContentFromStored(kind, stored) as { components: Array<{ properties: Record<string, unknown> }> };
       expect(parseLandscapeProperties(content.components[0]!.properties).heights[12]).toBeCloseTo(height, 5);
     }
 
@@ -165,7 +165,7 @@ describe("Landscape binary .hasset persistence and export sidecars", () => {
     const sceneGuid = service.guidForPath(MAIN_SCENE_FILE)!;
     const classGuid = service.guidForPath(classPath)!;
     const inputs = await exportInputs(service);
-    const sceneChunks = inputs.landscapeChunksByGuid(sceneGuid);
+    const sceneChunks = inputs.componentChunksByGuid(sceneGuid);
     expect(sceneChunks).toHaveLength(1);
     expect(decodeLandscapeChunk(sceneChunks[0]!.bytes)!.heights[12]).toBeCloseTo(4.5, 5);
     const exportedClass = inputs.graphByGuid(classGuid) as SerializedGraph;
@@ -207,7 +207,7 @@ describe("Landscape binary .hasset persistence and export sidecars", () => {
     const play = collectLandscapeChunksForPlay(opened, new Map([[chunkId, damaged]]));
     expect(play.chunks.size).toBe(0);
     const inputs = await exportInputs(service);
-    expect(inputs.landscapeChunksByGuid(service.guidForPath(MAIN_SCENE_FILE)!)).toEqual([]);
+    expect(inputs.componentChunksByGuid(service.guidForPath(MAIN_SCENE_FILE)!)).toEqual([]);
     expect(inputs.bytesByGuid(service.guidForPath(MAIN_SCENE_FILE)!)).not.toBeNull();
   });
 });

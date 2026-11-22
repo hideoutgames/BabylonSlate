@@ -1,7 +1,8 @@
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { Scene } from "@babylonjs/core/scene";
 import { MaterialLibrary, ownedMaterialPreparation } from "./material-library";
-import { componentIdForPlayMesh, wantsOverlayUnlitMaterial, type SnapshotSceneBinding } from "./snapshot-apply";
+import { componentIdForPlayMesh, takesUserInterfaceMaterial, wantsOverlayUnlitMaterial, type SnapshotSceneBinding } from "./snapshot-apply";
+import { acceptsUserInterfaceMaterial } from "./user-interface-material";
 import { prepareSceneStream } from "./scene-stream-preparation";
 
 /** Cancel the capture wait, without claiming the underlying native work ended. */
@@ -45,6 +46,8 @@ export async function drainFinalAuthoringResources(scene: Scene, binding: Snapsh
       const resolveOptions = { unlit: wantsOverlayUnlitMaterial(binding, slot), ...(parameters?.materialAssetGuid === guid ? { instanceKey: key } : {}) };
       const material = library.materialFor(mesh.getScene(), guid, resolveOptions);
       if (!material) throw new Error(`Material ${guid} on actor slot ${slot} has no complete native owner.`);
+      // A 2D component keeps its fallback look for a Material of another domain (`applyMaterialToActorMeshes`).
+      if (takesUserInterfaceMaterial(binding, slot) && !acceptsUserInterfaceMaterial(material)) continue;
       if (!prepared.has(material)) {
         prepared.add(material);
         const diagnostics = await waitForFinalAuthoringPreparation(ownedMaterialPreparation(material), options.signal);

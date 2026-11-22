@@ -23,7 +23,6 @@ import type {
   AssetRegistry,
   ClassAssetReplacement,
   ExternalChangeClassification,
-  MigrationPending,
   PluginDescriptor,
   PluginDiagnostic,
   ProjectSearchIndex,
@@ -94,11 +93,10 @@ export type CloseProjectResult =
 /**
  * How a Save All ended. `saved` wrote everything; `locked` wrote everything
  * except documents someone else holds a source control lock on, which stay
- * unsaved. Nothing was written for `migrations` (pending schema migrations
- * wait for approval), `authoring-locked` (Play or a Simulation holds the
- * project) or `no-document` (no project is open).
+ * unsaved. Nothing was written for `authoring-locked` (Play or a Simulation
+ * holds the project) or `no-document` (no project is open).
  */
-export type SaveAllOutcome = "saved" | "locked" | "migrations" | "authoring-locked" | "no-document";
+export type SaveAllOutcome = "saved" | "locked" | "authoring-locked" | "no-document";
 
 /** What a Save All the user asked for was for: Play and Preview Build cannot start while documents stay unsaved. */
 export type SaveFailedPurpose = "save" | "play" | "preview";
@@ -235,9 +233,6 @@ export interface DocumentContextValue {
   autoSaveStatus: { state: "saving" | "saved" | "error"; message?: string } | null;
   /** Documents a Save All the user asked for left unsaved because someone else has locked them. */
   saveFailed: SaveFailed | null;
-  migrationPending: MigrationPending[];
-  /** Advances each time a Save All the user asked for is refused for pending migrations. */
-  migrationPromptRequest: number;
   templates: ProjectTemplateCatalogEntry[];
   homepageReady: boolean;
   refreshTemplates: () => Promise<void>;
@@ -268,12 +263,9 @@ export interface DocumentContextValue {
   setAutoSavePaused: (paused: boolean) => void;
   /**
    * The Save All the user asked for (`purpose` names what for in Save
-   * Failed): pending migrations open their prompt, and documents someone else
-   * has locked are listed in Save Failed.
+   * Failed): documents someone else has locked are listed in Save Failed.
    */
   saveAll: (purpose?: SaveFailedPurpose) => Promise<SaveAllOutcome>;
-  /** Approve pending schema migrations and run the complete Save All. */
-  approveMigrationsAndSave: (purpose?: SaveFailedPurpose) => Promise<SaveAllOutcome>;
   /** Save Failed's **Ignore**: the documents stay unsaved in the editor. */
   dismissSaveFailed: () => void;
   /**
@@ -637,8 +629,6 @@ export type EditorShellState = Pick<
   | "listedProjects"
   | "needsReconnect"
   | "recoveryAvailable"
-  | "migrationPending"
-  | "migrationPromptRequest"
   | "saveFailed"
   | "templates"
   | "homepageReady"

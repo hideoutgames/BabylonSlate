@@ -7,6 +7,7 @@ import {
   initNavigation,
   navMeshDebugPrimitives,
   staticBlockerBakeParts,
+  withNavigation,
 } from "@haptic/navigation";
 
 vi.mock("@haptic/navigation", async (importOriginal) => {
@@ -59,7 +60,8 @@ describe("NavMeshDebugOverlay", () => {
     expect(overlay.mesh!.receiveShadows).toBe(false);
     expect(overlay.mesh!.renderingGroupId).toBe(1);
     const positions = overlay.mesh!.getVerticesData(VertexBuffer.PositionKind);
-    const primitives = navMeshDebugPrimitives(bytes);
+    // The overlay let go of the Recast module once it had drawn: decode again as it does.
+    const primitives = await withNavigation(() => navMeshDebugPrimitives(bytes));
     const rawY = primitives.find((primitive) => primitive.type === "tris")
       ?.vertices[0]?.[1] ?? 0;
     expect(positions?.[1]).toBeCloseTo(rawY + NAVMESH_DEBUG_Y_OFFSET, 5);

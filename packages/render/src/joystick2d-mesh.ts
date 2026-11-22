@@ -4,7 +4,8 @@ import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import type { Scene } from "@babylonjs/core/scene";
 import { parseJoystick2DProperties, type Joystick2DProperties } from "@haptic/core";
 import type { MeshAssetContext } from "./mesh-assets";
-import { applyOverlayUnlitMaterial, type OverlayUnlitFallback } from "./overlay-texture-quad";
+import { applyUserInterfaceFallback, type OverlayUnlitFallback } from "./overlay-texture-quad";
+import { acceptsUserInterfaceMaterial } from "./user-interface-material";
 import { VisualBundle } from "./visual-bundle";
 import { applyOverlayVisualStyle } from "./overlay-visual-style";
 
@@ -26,7 +27,7 @@ export function refreshJoystick2DMaterials(root: Mesh, assets?: MeshAssetContext
     if (!visual) continue;
     const resolve = (target: AbstractMesh, guid: string | null, fallback: OverlayUnlitFallback) => {
       const material = guid ? assets?.resolveMaterial?.(guid, { scene: mesh.getScene(), unlit: true }) : null;
-      if (material) target.material = material;
+      if (acceptsUserInterfaceMaterial(material)) target.material = material;
       else fallback.apply(target);
     };
     resolve(mesh, visual.properties.backgroundMaterialGuid, visual.fallbacks.background);
@@ -45,7 +46,7 @@ export function createJoystick2DMesh(
       ? MeshBuilder.CreatePlane(suffix, { size: radius * 2 }, scene)
       : MeshBuilder.CreateDisc(suffix, { radius, tessellation: 48 }, scene);
     bundle.ownRenderUser(mesh);
-    const fallback = applyOverlayUnlitMaterial(mesh, [0.75, 0.75, 0.75], alpha);
+    const fallback = applyUserInterfaceFallback(mesh, [0.75, 0.75, 0.75], alpha);
     return { mesh, fallback };
   };
   try {

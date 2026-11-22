@@ -21,6 +21,7 @@ import { validMaterialParameterValue } from "./material-parameters";
 import { applyMaterialBounds } from "./material-bounds";
 import { isInstancePoolSource } from "./instance-pool";
 import { setDrawnMaterial } from "./pooled-visuals";
+import { acceptsUserInterfaceMaterial, restoreUserInterfaceFallback } from "./user-interface-material";
 import { rebindWaterMeshMaterial } from "./water-mesh";
 import { markSceneReadinessDirty, onSceneReceiversChanged } from "./scene-readiness-signal";
 import { shaderLinkLog } from "./material-glsl-diagnostics";
@@ -100,6 +101,8 @@ function cacheKey(
  * Material's water variant (`acquireWaterVariant`), so it moves to the next generation's water variant.
  */
 function rebindMaterial(scene: Scene, from: Material, to: Material): void {
+  // A Material edited out of the User Interface domain: a 2D component's surface takes its fallback look instead.
+  const leavesUserInterface = acceptsUserInterfaceMaterial(from) && !acceptsUserInterfaceMaterial(to);
   const replaceSubmaterials = (material: Material) => {
     if (!(material instanceof MultiMaterial)) return;
     material.subMaterials = material.subMaterials.map((child) => {
@@ -111,7 +114,9 @@ function rebindMaterial(scene: Scene, from: Material, to: Material): void {
   for (const mesh of [...scene.meshes]) {
     // A group source follows its members, which move to the group drawn with `to` (`setDrawnMaterial`).
     if (mesh instanceof Mesh && isInstancePoolSource(mesh)) continue;
-    if (mesh.material === from) { applyMaterialBounds(setDrawnMaterial(mesh, to)); }
+    if (mesh.material === from) {
+      if (!leavesUserInterface || !restoreUserInterfaceFallback(mesh)) applyMaterialBounds(setDrawnMaterial(mesh, to));
+    }
     else if (mesh.material && waterVariantBase(mesh.material) === from && rebindWaterMeshMaterial(mesh, to)) applyMaterialBounds(mesh);
     else if (mesh.material) replaceSubmaterials(mesh.material);
   }

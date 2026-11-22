@@ -485,7 +485,7 @@ it("remaps every stored reference to a colliding asset, keeping values declared 
       { kind: "variable", name: "Skin", typeId: "asset", typeClassId: "Texture", defaultValue: "tex" },
       { kind: "variable", name: "Caption", typeId: "string", defaultValue: "tex" },
     ],
-    functionGraphs: { fn: { nodes: [{ data: { dataSchema: [{ name: "Caption", typeId: "string" }], "default:values": { Caption: "tex" } } }] } },
+    functionGraphs: { fn: { nodes: [{ data: { dataSchema: [{ id: "Caption", name: "Caption", typeId: "string" }], "default:values": { Caption: "tex" } } }] } },
   };
   const results = remapImportResultGuids([
     asset("Texture", "tex", {}),

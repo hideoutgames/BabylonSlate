@@ -35,7 +35,15 @@ import type { ThinParticleSystem } from "@babylonjs/core/Particles/thinParticleS
  * vector or colour per operation. Here each queue item of a block below becomes one generated function: the reads its
  * process makes, as straight-line JavaScript in the same order, with the same number of reads of every producer (a
  * Random or a contextual source that writes as it reads is read as often as before) and the same arithmetic, operand
- * by operand, so a seeded run is bit-identical, its random sequence included (`particle-update-compiler.test.ts`).
+ * by operand, so a seeded run is bit-identical, its random sequence included (`particle-graph-realize.test.ts`).
+ *
+ * - A pure producer (an Input that reads without writing, and Math, Clamp, Gradient, Lerp, NLerp and Trigonometry over
+ *   pure producers) is evaluated once per call however many reads reach it: Babylon re-evaluates it per read, which a
+ *   graph whose values fan out and meet again (a diamond) repeats exponentially. Its value is the same either way.
+ * - A queue item whose function would hold more than `PARTICLE_MAX_EMITTED_STATEMENTS` statements (impure reads still
+ *   expand per read) keeps Babylon's process, with a warning.
+ * - Math truncates its result only when its output is an Int. Babylon truncates whenever the left input is an Int,
+ *   which turns an Int times a vector into 0 and drops an Int times a Float's fraction.
  *
  * Generated code, not composed closures: closures made from one function literal share its inline caches, so a graph
  * of them calls through megamorphic sites V8 cannot inline, which costs most of what resolving the reads saves.
@@ -47,6 +55,12 @@ import type { ThinParticleSystem } from "@babylonjs/core/Particles/thinParticleS
  *   is consumed (copied, or combined component by component) before the site runs again, and no generated code hands
  *   one to anything that could keep it.
  */
+
+/** Most statements one generated update function holds (`ParticleUpdateTooLarge`). */
+export const PARTICLE_MAX_EMITTED_STATEMENTS = 4096;
+
+/** A queue item's function would hold more than `PARTICLE_MAX_EMITTED_STATEMENTS` statements. */
+class ParticleUpdateTooLarge extends Error {}
 
 type State = NodeParticleBuildState;
 type Process = (particle: Particle, system: ThinParticleSystem) => void;
@@ -112,6 +126,38 @@ class Emitter {
   /** Objects the code refers to as `R[i]`: ports, blocks and the read sites' own results. */
   readonly refs: unknown[] = [];
   private next = 0;
+  /** Reads emitted so far that may write as they read (Babylon's own, and writing contextual sources). */
+  private impureReads = 0;
+  /**
+   * The variable holding each pure producer's value (by output port), per block scope the code has open, innermost
+   * last: a variable declared in a branch is not in scope after it.
+   */
+  private readonly scopes: Map<NodeParticleConnectionPoint, string>[] = [new Map()];
+
+  /** Appends one statement, refusing to grow past `PARTICLE_MAX_EMITTED_STATEMENTS`. */
+  emit(line: string): void {
+    if (this.lines.length >= PARTICLE_MAX_EMITTED_STATEMENTS) throw new ParticleUpdateTooLarge();
+    this.lines.push(line);
+  }
+
+  /** Emits `line`, which opens a block (`if (...) {`, `} else {`), entering its scope. */
+  openScope(line: string): void {
+    this.emit(line);
+    this.scopes.push(new Map());
+  }
+
+  /** Leaves the innermost scope, whose closing brace the caller emits. */
+  closeScope(): void {
+    this.scopes.pop();
+  }
+
+  private known(output: NodeParticleConnectionPoint): string | undefined {
+    for (let i = this.scopes.length - 1; i >= 0; i--) {
+      const value = this.scopes[i]!.get(output);
+      if (value !== undefined) return value;
+    }
+    return undefined;
+  }
 
   ref(value: unknown): string {
     let index = this.refs.indexOf(value);
@@ -122,7 +168,7 @@ class Emitter {
   /** A new variable holding `expression`, evaluated now. */
   bind(expression: string): string {
     const name = `v${this.next++}`;
-    this.lines.push(`const ${name} = ${expression};`);
+    this.emit(`const ${name} = ${expression};`);
     return name;
   }
 
@@ -139,18 +185,18 @@ class Emitter {
   /** Writes one expression per component of `type` into `target`. */
   store(type: Types, target: string, components: readonly string[]): void {
     if (type === Types.Vector3) {
-      this.lines.push(`${target}.set(${components.join(", ")});`);
+      this.emit(`${target}.set(${components.join(", ")});`);
       return;
     }
     const names = COMPONENTS[type]!;
     // Every component is computed before the first is written, as Babylon's constructor arguments are.
     const values = components.map((component) => this.bind(component));
-    for (let i = 0; i < names.length; i++) this.lines.push(`${target}.${names[i]} = ${values[i]};`);
+    for (let i = 0; i < names.length; i++) this.emit(`${target}.${names[i]} = ${values[i]};`);
   }
 
   variable(): string {
     const name = `v${this.next++}`;
-    this.lines.push(`let ${name};`);
+    this.emit(`let ${name};`);
     return name;
   }
 
@@ -158,10 +204,18 @@ class Emitter {
   read(port: NodeParticleConnectionPoint): string {
     const source = port.connectedPoint;
     if (source && source._storedFunction) {
+      const known = this.known(source);
+      if (known !== undefined) return known;
+      const impureBefore = this.impureReads;
       const compiled = this.output(source);
-      if (compiled !== null) return compiled;
+      if (compiled !== null) {
+        // Nothing under it writes as it reads: every later read in this scope takes the same value.
+        if (this.impureReads === impureBefore) this.scopes.at(-1)!.set(source, compiled);
+        return compiled;
+      }
     }
     if (!source && !port.isConnected) return this.bind(`${this.ref(port)}.value`);
+    this.impureReads += 1;
     return this.bind(`${this.ref(port)}.getConnectedValue(state)`);
   }
 
@@ -184,11 +238,15 @@ class Emitter {
         case SystemSources.Time: return this.bind("system._actualFrame");
         case SystemSources.Delta: return this.bind("system._scaledUpdateSpeed");
       }
+      this.impureReads += 1;
       return this.bind(`state.getSystemValue(${internals._systemSource})`);
     }
     if (block.isContextual) {
+      const source = CONTEXTUAL[internals._contextualSource];
+      if (source) return this.bind(source);
       // Sources that write as they read (scaled direction, colour step, local position) keep Babylon's own code.
-      return this.bind(CONTEXTUAL[internals._contextualSource] ?? `state.getContextualValue(${internals._contextualSource})`);
+      this.impureReads += 1;
+      return this.bind(`state.getContextualValue(${internals._contextualSource})`);
     }
     return this.bind(`${this.ref(block)}.value`);
   }
@@ -200,13 +258,13 @@ class Emitter {
     const symbol = { [ParticleMathBlockOperations.Add]: "+", [ParticleMathBlockOperations.Subtract]: "-",
       [ParticleMathBlockOperations.Multiply]: "*", [ParticleMathBlockOperations.Divide]: "/" }[operation as number];
     const minMax = operation === ParticleMathBlockOperations.Min ? "Math.min" : operation === ParticleMathBlockOperations.Max ? "Math.max" : null;
-    // Babylon truncates the result when the left input is an Int.
-    const truncate = (value: string) => (left.type === Types.Int ? this.bind(`${value} | 0`) : value);
+    // An Int result is truncated; a Float or vector one is not (where Babylon truncates whenever the left input is an Int).
+    const truncate = (value: string) => (block.output.type === Types.Int ? this.bind(`${value} | 0`) : value);
     if (leftScalar && rightScalar) {
+      // Decided before any read: a read emitted and then left to Babylon would be made twice.
+      if (!symbol && !minMax) return null;
       const a = this.read(left), b = this.read(right);
-      if (symbol) return truncate(this.bind(`${a} ${symbol} ${b}`));
-      if (minMax) return truncate(this.bind(`${minMax}(${a}, ${b})`));
-      return null;
+      return truncate(this.bind(symbol ? `${a} ${symbol} ${b}` : `${minMax}(${a}, ${b})`));
     }
     // Arithmetic between a vector or colour and a scalar or one of its own type; Min and Max between vectors, and
     // anything Babylon would throw on (a colour's division), keep Babylon's.
@@ -255,7 +313,7 @@ class Emitter {
     const type = block.output.type;
     const names = COMPONENTS[type];
     if (entries.length === 1) {
-      this.lines.push(`${result} = ${this.read(entries[0]!.value)};`);
+      this.emit(`${result} = ${this.read(entries[0]!.value)};`);
       return result;
     }
     // Babylon's walk down the entries, unrolled: the first whose reference is at most the gradient, interpolated
@@ -265,30 +323,32 @@ class Emitter {
     for (let i = entries.length - 1; i >= 0; i--) {
       const entry = entries[i]!;
       const reference = this.bind(`${this.ref(entry)}.reference`);
-      this.lines.push(`if (${reference} <= ${gradient}) {`);
+      this.openScope(`if (${reference} <= ${gradient}) {`);
       const current = this.read(entry.value);
       const following = entries[i + 1];
       if (!following) {
-        this.lines.push(`${result} = ${current};`);
+        this.emit(`${result} = ${current};`);
       } else {
         const next = this.read(following.value);
         const scale = this.bind(`Math.max(0, Math.min(1, (${gradient} - ${reference}) / (${this.ref(following)}.reference - ${reference})))`);
         // Babylon's `Lerp`s: start + (end - start) * amount, per component; any other type keeps the current value.
         const lerp = (a: string, b: string) => `${a} + (${b} - ${a}) * ${scale}`;
         if (type === Types.Float) {
-          this.lines.push(`${result} = ${lerp(current, next)};`);
+          this.emit(`${result} = ${lerp(current, next)};`);
         } else if (names) {
           this.store(type, out!, names.map((component) => lerp(`${current}.${component}`, `${next}.${component}`)));
-          this.lines.push(`${result} = ${out};`);
+          this.emit(`${result} = ${out};`);
         } else {
-          this.lines.push(`${result} = ${current};`);
+          this.emit(`${result} = ${current};`);
         }
       }
-      this.lines.push("} else {");
+      this.closeScope();
+      this.openScope("} else {");
       opened += 1;
     }
-    this.lines.push(`${result} = 0;`);
-    this.lines.push("}".repeat(opened));
+    this.emit(`${result} = 0;`);
+    this.emit("}".repeat(opened));
+    for (let i = 0; i < opened; i++) this.closeScope();
     return result;
   }
 
@@ -305,9 +365,9 @@ class Emitter {
     if (normalize) {
       if (type === Types.Color4) {
         const length = this.bind(`Math.sqrt(${out}.r * ${out}.r + ${out}.g * ${out}.g + ${out}.b * ${out}.b + ${out}.a * ${out}.a)`);
-        this.lines.push(`if (${length} !== 0) ${out}.scaleInPlace(1 / ${length});`);
+        this.emit(`if (${length} !== 0) ${out}.scaleInPlace(1 / ${length});`);
       } else {
-        this.lines.push(`${out}.normalize();`);
+        this.emit(`${out}.normalize();`);
       }
     }
     return out;
@@ -333,12 +393,12 @@ class Emitter {
 /** The generated process for the queue item `block` added, or null to keep Babylon's. */
 function compileProcess(block: NodeParticleBlock, state: State, system: ThinParticleSystem): Process | null {
   const emitter = new Emitter();
-  if (block instanceof UpdateColorBlock) emitter.lines.push(`particle.color.copyFrom(${emitter.read(block.color)});`);
-  else if (block instanceof UpdateDirectionBlock) emitter.lines.push(`particle.direction.copyFrom(${emitter.read(block.direction)});`);
-  else if (block instanceof UpdatePositionBlock) emitter.lines.push(`particle.position.copyFrom(${emitter.read(block.position)});`);
-  else if (block instanceof UpdateScaleBlock) emitter.lines.push(`particle.scale.copyFrom(${emitter.read(block.scale)});`);
-  else if (block instanceof UpdateSizeBlock) emitter.lines.push(`particle.size = ${emitter.read(block.size)};`);
-  else if (block instanceof UpdateAngleBlock) emitter.lines.push(`particle.angle = ${emitter.read(block.angle)};`);
+  if (block instanceof UpdateColorBlock) emitter.emit(`particle.color.copyFrom(${emitter.read(block.color)});`);
+  else if (block instanceof UpdateDirectionBlock) emitter.emit(`particle.direction.copyFrom(${emitter.read(block.direction)});`);
+  else if (block instanceof UpdatePositionBlock) emitter.emit(`particle.position.copyFrom(${emitter.read(block.position)});`);
+  else if (block instanceof UpdateScaleBlock) emitter.emit(`particle.scale.copyFrom(${emitter.read(block.scale)});`);
+  else if (block instanceof UpdateSizeBlock) emitter.emit(`particle.size = ${emitter.read(block.size)};`);
+  else if (block instanceof UpdateAngleBlock) emitter.emit(`particle.angle = ${emitter.read(block.angle)};`);
   else return null;
   const source = `return function (particle) {\nstate.particleContext = particle;\nstate.systemContext = system;\n${emitter.lines.join("\n")}\n};`;
   return new Function("R", "state", "system", source)(emitter.refs, state, system) as Process;
@@ -373,9 +433,12 @@ export class ParticleUpdateQueueOwners {
       let process: Process | null;
       try {
         process = block ? compileProcess(block, state, system) : null;
-      } catch {
+      } catch (error) {
         // A step this module cannot generate keeps Babylon's process; the graph still builds.
         process = null;
+        if (block && error instanceof ParticleUpdateTooLarge) {
+          console.warn(`[render] Particle update "${block.name}" keeps Babylon's evaluation: its reads expand past ${PARTICLE_MAX_EMITTED_STATEMENTS} statements.`);
+        }
       }
       if (!process) continue;
       item.process = process;
