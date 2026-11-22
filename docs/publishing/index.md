@@ -52,7 +52,7 @@ Windows and Linux games are the same web game in a desktop player built on Elect
 - Keep the whole folder together; the game reads its files from the `resources` folder beside the program.
 - The game's saves are stored per project in your user data folder under `Haptic Games`, so renaming the project keeps them.
 - The game window cannot open other pages. Links it opens go to the system browser.
-- Desktop games make no network requests: scripts, including **Execute JavaScript**, can load only the game's own files. Use the web package for a game that talks to a server.
+- Desktop games can connect to HTTPS and secure WebSocket (`wss`) servers, for example from **Execute JavaScript**, but not over plain HTTP or WS. They cannot load scripts, pages, images, sounds or fonts from the network: those come only from the game's own files.
 - The folder includes the licences of Electron and Chromium (`LICENSE`, `LICENSES.chromium.html`) beside `legal/THIRD-PARTY-NOTICES.txt` in `resources/game`. Keep them when you share the game.
 ### Linux formats
 

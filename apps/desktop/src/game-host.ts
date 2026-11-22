@@ -67,7 +67,7 @@ void app.whenReady().then(async () => {
     callback(allowsGamePermission(permission, details.requestingUrl)));
   session.defaultSession.setPermissionCheckHandler((_contents, permission, _origin, details) =>
     allowsGamePermission(permission, details.requestingUrl ?? ""));
-  // Built once: the strict offline policy of the player page (no network, never embedded).
+  // Built once: the player page's policy (HTTPS and secure WebSocket connections only, no remote scripts, never embedded).
   const policy = playerContentSecurityPolicy("'none'");
   protocol.handle("app", async request => {
     try {

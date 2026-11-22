@@ -29,11 +29,15 @@ describe("desktop content security policies", () => {
     expect(policy.get("frame-src")).not.toContain("*");
   });
 
-  it("runs the player's compiled scripts and WebAssembly but reaches no network, and only the editor embeds Preview", () => {
-    const preview = directives(playerContentSecurityPolicy("app://babylonslate"));
-    expect(preview.get("script-src")).toEqual(["'self'", "'unsafe-eval'", "'wasm-unsafe-eval'"]);
-    expect(preview.get("connect-src")).toEqual(["'self'", "data:", "blob:"]);
-    expect(preview.get("frame-ancestors")).toEqual(["app://babylonslate"]);
-    expect(directives(playerContentSecurityPolicy("'none'")).get("frame-ancestors")).toEqual(["'none'"]);
+  it("lets games and Preview connect to any HTTPS or secure WebSocket host but load scripts and frames only from themselves", () => {
+    const shared = "default-src 'self'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'; worker-src 'self' blob:; "
+      + "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' data: blob:; font-src 'self' data: blob:; "
+      + "connect-src 'self' data: blob: https: wss:; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'none'; ";
+    // A game behaves the same in Preview as exported: only who may embed it differs.
+    expect(playerContentSecurityPolicy("app://babylonslate")).toBe(`${shared}frame-ancestors app://babylonslate`);
+    expect(playerContentSecurityPolicy("'none'")).toBe(`${shared}frame-ancestors 'none'`);
+    for (const plain of ["http:", "ws:", "*"]) {
+      expect(playerContentSecurityPolicy("'none'").split(/[\s;]+/)).not.toContain(plain);
+    }
   });
 });

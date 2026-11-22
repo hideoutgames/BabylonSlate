@@ -48,7 +48,7 @@ Preview Build packs textures uncompressed, while Packaging uses compressed textu
 
 ## Kept apart from the editor
 
-The game runs in a frame that cannot leave the preview, open dialogs or submit forms, and its saves are kept with the other preview saves. In the desktop app the game also runs at its own address, apart from the editor: it cannot reach the editor, your projects or the app's settings, cannot open windows or links, and makes no network requests.
+The game runs in a frame that cannot leave the preview, open dialogs or submit forms, and its saves are kept with the other preview saves. In the desktop app the game also runs at its own address, apart from the editor: it cannot reach the editor, your projects or the app's settings, and cannot open windows or links. As in an exported desktop game, it can connect to HTTPS and secure WebSocket servers but cannot load scripts or pages from the network.
 
 ## Related
 

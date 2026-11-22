@@ -54,7 +54,10 @@ export function editorContentSecurityPolicy(inlineScripts: readonly string[]): s
  * editor) and an exported desktop game at `app://game` (never embedded). Both
  * run compiled scripts with `new Function` and compile WebAssembly; texture
  * and mesh decoders start workers from blob URLs, and loaded assets are shown
- * through blob URLs. Nothing reaches the network.
+ * through blob URLs. Games are online: scripts (Execute JavaScript) may reach
+ * any HTTPS or secure WebSocket host, never plain HTTP or WS. Scripts, frames,
+ * images, media and fonts still come only from the game itself, as no engine
+ * feature loads them from the network.
  */
 export function playerContentSecurityPolicy(frameAncestors: "'none'" | string): string {
   return [
@@ -65,7 +68,7 @@ export function playerContentSecurityPolicy(frameAncestors: "'none'" | string): 
     "img-src 'self' data: blob:",
     "media-src 'self' data: blob:",
     "font-src 'self' data: blob:",
-    "connect-src 'self' data: blob:",
+    "connect-src 'self' data: blob: https: wss:",
     "frame-src 'none'",
     "object-src 'none'",
     "base-uri 'self'",
