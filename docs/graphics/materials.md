@@ -1,6 +1,6 @@
 # Materials
 
-A [Material](../assets/material.md) is a node graph that decides how a surface, particle, text or full-screen effect looks. [Material Instances](../assets/material-instance.md) reuse a Material with different parameter values, and [Material Functions](../assets/material-function.md) package node groups for reuse.
+A [Material](../assets/material.md) is a node graph that decides how a surface, particle, text, 2D interface element or full-screen effect looks. [Material Instances](../assets/material-instance.md) reuse a Material with different parameter values, and [Material Functions](../assets/material-function.md) package node groups for reuse.
 
 ## Create a Material
 
@@ -22,19 +22,30 @@ With no node selected, the **Inspector** shows the Material's settings.
 | **Post Process** | Full-screen scene passes | [Post Process Output](../scripting/material/post-process-output.md) |
 | **Particle** | The look of particle emitters | [Particle Output](../scripting/material/particle-output.md) |
 | **Text** | 2D text in Scene Layers | [Text Output](../scripting/material/text-output.md) |
+| **User Interface** | 2D Materials, 2D Panels, 2D Joysticks and 2D controls in Scene Layers | [User Interface Output](../scripting/material/user-interface-output.md) |
 
 Changing the domain removes nodes the new domain does not support.
 
 | Setting | Description |
 | --- | --- |
 | **Shading Model** | **PBR** (lit) or **Unlit**. Surface and Landscape only. |
-| **Blend Mode** | **Opaque**, **Masked**, **Translucent** or **Additive**. Particle emitters set their own blending. |
+| **Blend Mode** | **Opaque**, **Masked**, **Translucent** or **Additive**. User Interface Materials offer only **Translucent** and **Additive**. Particle emitters set their own blending. |
 | **Alpha Cutoff** | Masked only. Pixels with lower opacity are cut out. |
-| **Two Sided** | Draws back faces too. |
-| **Default Normals** | **Model Normals** or **Flat Normals** when the Normal input is unconnected. Flat Normals shade each triangle as a flat face. |
-| **Bounds Padding (Local)** | Enlarges culling bounds for Materials that move vertices, so displaced meshes do not vanish at screen edges. |
+| **Two Sided** | Draws back faces too. Surface and Landscape only. |
+| **Default Normals** | **Model Normals** or **Flat Normals** when the Normal input is unconnected. Flat Normals shade each triangle as a flat face. Surface and Landscape only. |
+| **Bounds Padding (Local)** | Enlarges culling bounds for Materials that move vertices, so displaced meshes do not vanish at screen edges. Surface and Landscape only. |
 
 In CEL projects, lit Surface Materials switch to CEL lighting automatically. Unlit and post-process Materials keep their own shading.
+
+## User Interface Materials
+
+A User Interface Material draws a flat 2D element of a Scene Layer, such as a panel, a button background, a health bar or a cooldown dial.
+
+- **Where to use it**: the **Material** of a [2D Material](../components/2d-material.md), a [2D Panel](../components/2d-panel.md) with **Source** set to Material, the Materials of a [2D Joystick](../components/2d-joystick.md), and the Materials of the 2D controls, such as a [2D Slider](../components/2d-slider.md) or a [2D Progress Bar](../components/2d-progress-bar.md). Their pickers list only User Interface Materials and their Material Instances, and these components draw no other domain. A 3D mesh placed in a Scene Layer still uses a Surface Material.
+- **Output**: wire the colour into **Color** and the shape into **Opacity** on [User Interface Output](../scripting/material/user-interface-output.md). The Material is always unlit and two-sided, and **Blend Mode** is **Translucent** or **Additive**.
+- **Tint and opacity**: the component's **Tint** and **Opacity** multiply the Material's colour and opacity, so one Material can be faded or tinted per element.
+- **Pixels**: [User Interface Input](../scripting/material/user-interface-input.md) gives the element's size and each pixel's position in pixels, from the element's bottom left. [Rounded Rectangle](../scripting/material/rounded-rectangle.md), [Ellipse](../scripting/material/ellipse.md), [Linear Progress](../scripting/material/linear-progress.md) and [Radial Progress](../scripting/material/radial-progress.md) build antialiased shapes and fills from them, so corners and borders stay sharp at any size. Pixels are pixels of the screen in Play.
+- **Preview**: the **Preview** window shows the Material as one element that fills the window, as if the window were the element. There is no shape to pick and no orbit or zoom. Pixel sizes in the preview are pixels of the Preview window.
 
 ## Parameters
 
