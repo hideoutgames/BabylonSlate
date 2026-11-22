@@ -362,9 +362,11 @@ describe("material lowering", () => {
       expect(values.programHash).toBe(base.programHash);
       expect(values.valueHash).not.toBe(base.valueHash);
     }
-    // A literal on the Material Output is a bound value too; the shape is code.
+    // A literal is code; read from the Material record (`worlddebug materialrecords on`), a Material Output literal is
+    // a bound value, and the shape is code.
     const literal = textured({ literal: 0.25 });
-    expect([literal.programHash, literal.valueHash === base.valueHash]).toEqual([base.programHash, false]);
+    expect([literal.programHash === base.programHash, literal.valueHash]).toEqual([false, base.valueHash]);
+    expect([literal.recordProgramHash, literal.recordValueHash === base.recordValueHash]).toEqual([base.recordProgramHash, false]);
     expect(plan(surfaceWithMultiply()).programHash).not.toBe(plan(createDefaultMaterialDocument()).programHash);
   });
 
@@ -407,10 +409,10 @@ describe("material lowering", () => {
     expect(op("pick").inputs.condition).not.toHaveProperty("hoisted");
     // A hoisted literal is a bound value: another Shade or When True shares the program.
     const shaded = graph([0.2, 0.9, 0.4], 0.5);
-    expect([shaded.programHash, shaded.valueHash === base.valueHash]).toEqual([base.programHash, false]);
+    expect([shaded.recordProgramHash, shaded.recordValueHash === base.recordValueHash]).toEqual([base.recordProgramHash, false]);
     // A kept literal is code.
-    expect(graph([1, 0.5, 0.25], 0.75).programHash).not.toBe(base.programHash);
-    expect(graph([1, 0.5, 0.25], 0.5, 0).programHash).not.toBe(base.programHash);
+    expect(graph([1, 0.5, 0.25], 0.75).recordProgramHash).not.toBe(base.recordProgramHash);
+    expect(graph([1, 0.5, 0.25], 0.5, 0).recordProgramHash).not.toBe(base.recordProgramHash);
   });
 
   it("names the compiler's choices from Material Output literals as flags, so only literals that agree on them share a program", () => {
@@ -441,13 +443,13 @@ describe("material lowering", () => {
     for (const [first, second, flag] of cases) {
       const [a, b] = [plan(first), plan(second)];
       expect([a.outputFlags[flag], b.outputFlags[flag]], flag).toEqual([false, false]);
-      expect(a.programHash, flag).not.toBe(base.programHash);
-      expect([b.programHash, b.valueHash === a.valueHash], flag).toEqual([a.programHash, false]);
+      expect(a.recordProgramHash, flag).not.toBe(base.recordProgramHash);
+      expect([b.recordProgramHash, b.recordValueHash === a.recordValueHash], flag).toEqual([a.recordProgramHash, false]);
     }
     // Environment Influence 0 compiles the environment out: a program of its own.
     const unlitByEnvironment = plan({ environmentInfluence: [0] });
     expect(unlitByEnvironment.outputFlags.environmentInfluenceZero).toBe(true);
-    expect(unlitByEnvironment.programHash).not.toBe(plan({ environmentInfluence: [0.3] }).programHash);
+    expect(unlitByEnvironment.recordProgramHash).not.toBe(plan({ environmentInfluence: [0.3] }).recordProgramHash);
   });
 
   it("hoists no literal of a Particle or Post Process plan, whose programs have no record", () => {

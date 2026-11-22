@@ -8,7 +8,6 @@ import { Scene } from "@babylonjs/core/scene";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { convertGlslToMaterial, lowerMaterialDocument } from "@haptic/shader-graph";
 import { compileMaterialPlan } from "./material-compiler";
-import { MaterialRecordReadBlock } from "./material-record";
 
 const disposers: Array<() => void> = [];
 afterEach(() => {
@@ -47,7 +46,7 @@ it("builds converted fragment math as native Babylon blocks with live numeric un
 
   for (const [name, value] of Object.entries({ gain: 0.17, "tint.x": 0.29, "tint.y": 0.43, "tint.z": 0.67 })) {
     expect(compiled.setParameter(name, { kind: "float", value })).toBe(true);
-    const input = compiled.material.attachedBlocks.find((block): block is MaterialRecordReadBlock => block instanceof MaterialRecordReadBlock && block.value === value);
+    const input = compiled.material.getInputBlocks().find((block) => block.value === value);
     expect(input?.output.endpoints.length).toBeGreaterThan(0);
     expect(input?.convertToLinearSpace).toBe(false);
   }

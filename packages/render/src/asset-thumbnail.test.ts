@@ -30,7 +30,6 @@ import { PreparationTimedOut, SceneRenderCoordinator } from "./scene-render-coor
 import { SCENE_CAPTURE_CEILING_MS, SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
 import type { ThumbnailCaptureResult } from "./thumbnail-capture";
 import { installVirtualClock, POLL_MS } from "./virtual-clock-test-fixtures";
-import { MaterialRecordReadBlock } from "./material-record";
 
 /** How long loading and readback may take before a capture expires. */
 const CAPTURE_BOUND_MS = 30_000;
@@ -68,8 +67,7 @@ describe("asset thumbnail capture", () => {
       const material = sphere.material as NodeMaterial;
       captured = {
         vertices: sphere.getTotalVertices(),
-        // A literal on the Material Output is a slot of the Material's record holding the authored value.
-        colors: material.attachedBlocks.flatMap((block) => (block instanceof InputBlock || block instanceof MaterialRecordReadBlock) && block.value instanceof Color3 ? [block.value.asArray()] : []),
+        colors: material.attachedBlocks.flatMap((block) => block instanceof InputBlock && block.value instanceof Color3 ? [block.value.asArray()] : []),
         alpha: preview.clearColor.a,
         target: preview.activeCamera!.outputRenderTarget,
       };

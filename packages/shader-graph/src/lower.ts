@@ -124,6 +124,13 @@ export interface MaterialBuildPlan {
    * its Global Parameter selections and its bounds padding. Two plans that differ only here share one program.
    */
   valueHash: string;
+  /**
+   * `programHash` as a program reading the Material record compiles the plan (`worlddebug materialrecords on`): hoisted
+   * literals are values, not code, and `outputFlags` are code.
+   */
+  recordProgramHash: string;
+  /** `valueHash` with the record's hoisted literals among the bound values. */
+  recordValueHash: string;
 }
 
 /**
@@ -304,20 +311,25 @@ function isBoundProperty(operation: MaterialOperation, key: string, hoisted: Rea
   return operation.nodeType === MATERIAL_GLOBAL_PARAMETER_NODE_TYPE && GLOBAL_PARAMETER_PROPERTIES.has(key);
 }
 
-/** `programHash` and `valueHash` of a lowered plan (see `MaterialBuildPlan`). */
+/**
+ * The program and value hashes of a lowered plan (see `MaterialBuildPlan`): with `record`, as the Material record
+ * compiles it (hoisted literals are values, pin defaults are their operands); without, as plain uniforms and literals.
+ */
 function hashPlanParts(
   operations: readonly MaterialOperation[],
   outputs: Record<string, MaterialOperand | null>,
   textures: readonly MaterialTextureBinding[],
   hoistedConstants: readonly string[],
+  record: boolean,
   programHeader: string,
   valueHeader: string,
 ): { programHash: string; valueHash: string } {
   const positions = new Map(operations.map((operation, index) => [operation.id, index]));
-  const hoisted = new Set(hoistedConstants);
+  const hoisted = new Set(record ? hoistedConstants : []);
+  const isHoisted = (value: MaterialOperand) => record && value.kind === "constant" && value.hoisted === true;
   const operand = (value: MaterialOperand | null | undefined): string => {
     if (!value) return "none";
-    if (value.kind === "constant") return value.hoisted ? `h:${value.type}` : `c:${value.type}:${value.value.join("/")}`;
+    if (value.kind === "constant") return isHoisted(value) ? `h:${value.type}` : `c:${value.type}:${value.value.join("/")}`;
     return `o:${positions.get(value.operationId) ?? "?"}:${value.pinId}${
       value.conversions?.map(({ from, to }) => `:${from}>${to}`).join("") ?? ""
     }`;
@@ -329,13 +341,13 @@ function hashPlanParts(
   operations.forEach((operation, index) => {
     const inputs = Object.keys(operation.inputs).sort().map((pinId) => `${pinId}=${operand(operation.inputs[pinId])}`).join(",");
     // A pin default (`default:<pin>`) is the operand that carries it, described with the inputs.
-    const keys = Object.keys(operation.properties).sort().filter((key) => key !== "__pins" && !key.startsWith("default:"));
+    const keys = Object.keys(operation.properties).sort().filter((key) => key !== "__pins" && !(record && key.startsWith("default:")));
     const code = keys.filter((key) => !isBoundProperty(operation, key, hoisted)).map((key) => property(operation, key)).join(",");
     program.push(`${operation.nodeType}|${operation.resolvedType}|${inputs}|${code}|${bound.has(operation.id) ? "texture" : ""}`);
     const value = keys.filter((key) => isBoundProperty(operation, key, hoisted)).map((key) => property(operation, key));
     for (const pinId of Object.keys(operation.inputs).sort()) {
       const input = operation.inputs[pinId]!;
-      if (input.kind === "constant" && input.hoisted) value.push(`${pinId}=${input.value.join("/")}`);
+      if (input.kind === "constant" && isHoisted(input)) value.push(`${pinId}=${input.value.join("/")}`);
     }
     const binding = bound.get(operation.id);
     if (binding) value.push(`binding:${binding.textureGuid}:${binding.filter ?? "linear"}`);
@@ -344,7 +356,7 @@ function hashPlanParts(
   for (const key of Object.keys(outputs).sort()) {
     program.push(`out:${key}=${operand(outputs[key])}`);
     const output = outputs[key];
-    if (output?.kind === "constant" && output.hoisted) values.push(`out:${key}=${output.value.join("/")}`);
+    if (output?.kind === "constant" && isHoisted(output)) values.push(`out:${key}=${output.value.join("/")}`);
   }
   return { programHash: fnv1a(program.join("\n")), valueHash: fnv1a(values.join("\n")) };
 }
@@ -667,6 +679,10 @@ function lowerWithinBudget(
 
   const cost = costOf(operations);
   const outputFlags = materialOutputFlags(outputs, operations);
+  const shapeHeader = (record: boolean) => [
+    doc.domain, doc.shadingModel, doc.blendMode, doc.twoSided ? "two-sided" : "one-sided", doc.defaultNormals, String(doc.alphaCutoff),
+    ...(record ? [JSON.stringify(outputFlags)] : []),
+  ].join("|");
   const hoistedConstants = hoistMaterialLiterals(doc.domain, operations, outputs, cost.customBlocks, outputFlags);
   const header = [
     doc.domain,
@@ -700,10 +716,9 @@ function lowerWithinBudget(
       hash: hashPlan(operations, outputs, header),
       hoistedConstants,
       outputFlags,
-      ...hashPlanParts(operations, outputs, textures, hoistedConstants, [
-        doc.domain, doc.shadingModel, doc.blendMode, doc.twoSided ? "two-sided" : "one-sided", doc.defaultNormals, String(doc.alphaCutoff),
-        JSON.stringify(outputFlags),
-      ].join("|"), String(doc.boundsPadding ?? 0)),
+      ...hashPlanParts(operations, outputs, textures, hoistedConstants, false, shapeHeader(false), String(doc.boundsPadding ?? 0)),
+      ...(({ programHash, valueHash }) => ({ recordProgramHash: programHash, recordValueHash: valueHash }))(
+        hashPlanParts(operations, outputs, textures, hoistedConstants, true, shapeHeader(true), String(doc.boundsPadding ?? 0))),
     },
   };
 }

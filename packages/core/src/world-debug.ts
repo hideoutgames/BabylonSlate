@@ -9,10 +9,13 @@
  * occlusion and volumetric marches draw in the Screen-Space Shadows pass instead of passes of their own, an opt-in that
  * awaits a native-GPU proof that the picture is unchanged. `spritebatching` off ejects every Play world sprite from its
  * thin-instanced batch to a quad of its own and batches none built after (the picture unchanged, to size what batching
- * saves); back on, sprites built afterwards batch again. Debug only, never saved.
+ * saves); back on, sprites built afterwards batch again. `materialrecords` is off by default too: on, the Scene's graph
+ * Materials compile again to read their parameters and literals from a per-Material uniform block (the Material record),
+ * so Materials of one shape share a program, an opt-in that awaits a native-GPU proof that the picture is unchanged.
+ * Debug only, never saved.
  */
 export const WORLD_DEBUG_PARTS = [
   "world", "lighting", "shadowtaps", "locallights", "shading", "geometryonce", "geometryoncescissor", "mergedmarches",
-  "spritebatching",
+  "spritebatching", "materialrecords",
 ] as const;
 export type WorldDebugPart = (typeof WORLD_DEBUG_PARTS)[number];

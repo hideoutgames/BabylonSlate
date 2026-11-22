@@ -25,7 +25,6 @@ import { compileMaterialPlan } from "./material-compiler";
 import { nodeBlockName } from "./test-support/material-node-blocks";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { ImageSourceBlock } from "@babylonjs/core/Materials/Node/Blocks/Dual/imageSourceBlock";
-import { MaterialRecordReadBlock } from "./material-record";
 
 const dispose: Array<() => void> = [];
 afterEach(() => { while (dispose.length) dispose.pop()!(); vi.restoreAllMocks(); });
@@ -318,8 +317,7 @@ describe("material node contracts", () => {
     expect(uniforms.length).toBeGreaterThan(0);
     expect(uniforms.every((uniform) => !uniform.includes("__"))).toBe(true);
     expect(result.setParameter("Opacity", { kind: "float", value: 0.75 })).toBe(true);
-    // A parameter is a slot of the Material's record.
-    expect(result.material.attachedBlocks.some((block) => block instanceof MaterialRecordReadBlock && block.value === 0.75)).toBe(true);
+    expect(result.material.attachedBlocks.some((block) => block instanceof InputBlock && block.value === 0.75)).toBe(true);
   });
 
   it.each(["parameter", "inline", "forwarded"])("compiles and binds a %s texture sampler for custom UV sampling", async (source) => {
@@ -483,9 +481,8 @@ describe("material node contracts", () => {
     wire(doc, "clamp", "out", "output", "roughness");
     const result = await compile(doc);
     for (const id of ["minimum", "maximum"]) {
-      const input = result.material.getBlockByName(nodeBlockName(doc, id));
-      expect(input).toBeInstanceOf(MaterialRecordReadBlock);
-      expect(input?.outputs[0]?.hasEndpoints).toBe(true);
+      const input = result.material.getInputBlockByPredicate((block) => block.name === nodeBlockName(doc, id));
+      expect(input?.output.hasEndpoints).toBe(true);
     }
     expect(result.setParameter("Minimum", { kind: "float", value: 0.2 })).toBe(true);
   });

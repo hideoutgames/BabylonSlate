@@ -36,6 +36,7 @@ import { acquireAuthoredMaterialVariant, compileMaterialPlan, isGpuTextureSample
 import { fnv1a } from "@haptic/core";
 import { nodeBlockName } from "./test-support/material-node-blocks";
 import { materialProgramCensus } from "./material-program-census";
+import { setSceneWorldDebug } from "./world-debug";
 import { MATERIAL_RECORD_MAX_SLOTS, MaterialRecordReadBlock } from "./material-record";
 import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
 import { blockAdapterFor } from "./material-block-registry";
@@ -74,6 +75,13 @@ function host(): Scene {
     scene.dispose();
     engine.dispose();
   });
+  return scene;
+}
+
+/** A Scene whose Materials read the Material record (`worlddebug materialrecords on`; off by default). */
+function recordHost(): Scene {
+  const scene = host();
+  setSceneWorldDebug(scene, "materialrecords", true);
   return scene;
 }
 
@@ -310,11 +318,63 @@ function multiplyMaterial(): MaterialDocument {
 }
 
 describe("material compiler", () => {
+  it("writes literals into the shader as constants and keeps a parameter as a uniform it can rewrite", () => {
+    const doc = createDefaultMaterialDocument("literals");
+    doc.nodes.push({ id: "grit", type: "param.float", position: { x: 0, y: 100 }, properties: { name: "Grit", value: [0.3] } });
+    doc.edges.push({ id: "e-grit", sourceNodeId: "grit", sourcePinId: "out", targetNodeId: "output", targetPinId: "roughness" });
+    const result = compileMaterialPlan(planFor(doc), { scene: host(), name: "literals" });
+    if (!result.ok) throw new Error(result.diagnostics.map((row) => row.message).join(", "));
+    disposers.push(() => result.material.dispose());
+    const values = result.material.getInputBlocks().filter((block) => block.isUniform && !block.isSystemValue);
+
+    expect(result.setParameter("Grit", { kind: "float", value: 0.7 })).toBe(true);
+    const parameter = values.filter((block) => block.value === 0.7);
+    expect(parameter).toHaveLength(1);
+    expect(parameter[0]!.isConstant).toBe(false);
+    // Everything else the graph holds a value for is a literal: no uniform to send on every bind.
+    const literals = values.filter((block) => block !== parameter[0]);
+    expect(literals.length).toBeGreaterThan(0);
+    expect(literals.every((block) => block.isConstant)).toBe(true);
+  });
+
+  it.each([
+    ["a Surface", () => createDefaultMaterialDocument()],
+    ["an unlit masked Surface", () => { const doc = createDefaultMaterialDocument(); doc.shadingModel = "unlit"; doc.blendMode = "masked"; return doc; }],
+    ["a Decal", () => setMaterialDomain(createDefaultMaterialDocument(), "decal")],
+    ["a Text", () => setMaterialDomain(createDefaultMaterialDocument(), "text")],
+    ["a parameterised Surface", () => {
+      const doc = multiplyMaterial();
+      doc.nodes.push({ id: "grit", type: "param.float", position: { x: 0, y: 0 }, properties: { name: "Grit", value: [0.3] } });
+      doc.edges.push({ id: "e-grit", sourceNodeId: "grit", sourcePinId: "out", targetNodeId: "output", targetPinId: "roughness" });
+      return doc;
+    }],
+  ] as const)("compiles %s without the Material record unless worlddebug materialrecords is on", async (_kind, make) => {
+    const compile = (scene: Scene) => {
+      const result = compileMaterialPlan(planFor(make()), { scene, name: "switch" });
+      if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+      disposers.push(() => result.dispose());
+      return result;
+    };
+    const [off, on] = [compile(host()), compile(recordHost())];
+    await Promise.all([off.ready, on.ready]);
+    // Off: no record block, no record read, the plan's hoisting marks unread; every value a uniform or a literal.
+    expect(off.material.compiledShaders).not.toContain("HapticMaterial");
+    expect(off.material.attachedBlocks.some((block) => block instanceof MaterialRecordReadBlock)).toBe(false);
+    // On: the same plan reads its values from the record.
+    expect(on.material.compiledShaders).toContain("uniform HapticMaterial");
+    // Switching back off compiles what off compiled before, byte for byte.
+    const scene = recordHost();
+    setSceneWorldDebug(scene, "materialrecords", false);
+    const again = compile(scene);
+    await again.ready;
+    expect(again.material.compiledShaders).toBe(off.material.compiledShaders);
+  });
+
   it("reads a parameter from the Material's record, which a write changes, and sends no loose uniform", async () => {
     const doc = createDefaultMaterialDocument("literals");
     doc.nodes.push({ id: "grit", type: "param.float", position: { x: 0, y: 100 }, properties: { name: "Grit", value: [0.3] } });
     doc.edges.push({ id: "e-grit", sourceNodeId: "grit", sourcePinId: "out", targetNodeId: "output", targetPinId: "roughness" });
-    const scene = host();
+    const scene = recordHost();
     const result = compileMaterialPlan(planFor(doc), { scene, name: "literals" });
     if (!result.ok) throw new Error(result.diagnostics.map((row) => row.message).join(", "));
     disposers.push(() => result.dispose());
@@ -342,7 +402,7 @@ describe("material compiler", () => {
   });
 
   it("holds a Color parameter's RGB in linear space and a Vector's raw, and binds each Material's own record on its draws", async () => {
-    const scene = host();
+    const scene = recordHost();
     scene.setTransformMatrix(Matrix.Identity(), Matrix.Identity());
     const compile = (tint: number[], glow: number[], name: string) => {
       const doc = createDefaultMaterialDocument();
@@ -395,7 +455,7 @@ describe("material compiler", () => {
   });
 
   it("shares one program between Materials that differ only in hoisted literals, each reading its own values", async () => {
-    const scene = host();
+    const scene = recordHost();
     scene.setTransformMatrix(Matrix.Identity(), Matrix.Identity());
     /** Base Color = World Normal x a Color literal, Roughness = Time x a Float literal: both literals meet runtime values. */
     const compile = (shade: number[], scale: number, name: string) => {
@@ -425,7 +485,7 @@ describe("material compiler", () => {
     const warm = compile([1, 0.5, 0.25], 0.3, "material:warm");
     const cool = compile([0.25, 0.5, 1], 0.8, "material:cool");
     await Promise.all([warm.result.ready, cool.result.ready]);
-    expect(warm.plan.programHash).toBe(cool.plan.programHash);
+    expect(warm.plan.recordProgramHash).toBe(cool.plan.recordProgramHash);
     expect(cool.result.material.compiledShaders).toBe(warm.result.material.compiledShaders);
     expect(cool.result.material.buildId).toBe(warm.result.material.buildId);
     // Neither literal is in the code; each Material's record holds its own, the Color in linear space as a Color
@@ -461,7 +521,7 @@ describe("material compiler", () => {
   });
 
   it("shares one program between Materials that differ only in Material Output literals whose flags agree", async () => {
-    const scene = host();
+    const scene = recordHost();
     const compile = (defaults: Record<string, number[]>, name: string) => {
       const doc = createDefaultMaterialDocument();
       const output = doc.nodes.find((node) => node.id === "output")!;
@@ -487,7 +547,7 @@ describe("material compiler", () => {
   });
 
   it("gives the record one binding point in every program and binds it only when another Material's record is drawn", async () => {
-    const scene = host();
+    const scene = recordHost();
     scene.setTransformMatrix(Matrix.Identity(), Matrix.Identity());
     const engine = scene.getEngine() as NullEngine & { _features: { useUBOBindingCache: boolean } };
     // As on WebGL: Babylon skips a bind whose buffer is already at its binding point.
@@ -549,7 +609,7 @@ describe("material compiler", () => {
       if (index) doc.edges.push({ id: `sum${index - 1}-sum`, sourceNodeId: `sum${index - 1}`, sourcePinId: "out", targetNodeId: `sum${index}`, targetPinId: "b" });
     }
     doc.edges.push({ id: "sum-out", sourceNodeId: `sum${count - 1}`, sourcePinId: "out", targetNodeId: "output", targetPinId: "roughness" });
-    const result = compileMaterialPlan(planFor(doc), { scene: host(), name: "wide" });
+    const result = compileMaterialPlan(planFor(doc), { scene: recordHost(), name: "wide" });
     if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
     disposers.push(() => result.dispose());
     expect(result.material.attachedBlocks.some((block) => block instanceof MaterialRecordReadBlock)).toBe(false);
@@ -792,9 +852,8 @@ describe("material compiler", () => {
         }
       };
       visit(fragment);
-      // The authored emissive reaches the fragment output from the Material's record.
       const colors = [...visited]
-        .filter((block) => block.getClassName() === "InputBlock" || block instanceof MaterialRecordReadBlock)
+        .filter((block) => block.getClassName() === "InputBlock")
         .map((block) => (block as import("@babylonjs/core").InputBlock).value);
       expect(colors).toContainEqual(
         expect.objectContaining({ r: 4, g: 0.25, b: 0 }),
@@ -1184,7 +1243,7 @@ describe("material compiler", () => {
     if (!result.ok) return;
     disposers.push(() => result.material.dispose());
     const constants = result.material.attachedBlocks.filter(
-      (block) => block.getClassName() === "InputBlock" || block instanceof MaterialRecordReadBlock,
+      (block) => block.getClassName() === "InputBlock",
     );
     const authored = constants.find((block) => {
       const value = (block as unknown as { value?: { r?: number } }).value;
@@ -3102,16 +3161,12 @@ describe("User Interface Materials", () => {
       mesh.dispose();
       return (defines.match(/^#define (IMAGEPROCESSING|CONVERTTOGAMMA|CONVERTTOLINEAR)\d*$/gm) ?? []).map((define) => define.replace(/\d+$/, ""));
     };
-    // Both read the colour's linear value (the Color node's sRGB pick, decoded) from their record and encode it once
-    // with the same conversion: the screen shows the pick.
-    const held = (material: Material) => {
-      const slot = (material as NodeMaterial).attachedBlocks.find((block): block is MaterialRecordReadBlock =>
-        block instanceof MaterialRecordReadBlock && block.value instanceof Color3)!;
-      return Array.from(slot.record.data.subarray(slot.slot * 4, slot.slot * 4 + 3));
-    };
-    const linear = new Color3(...picked as [number, number, number]).toLinearSpace(scene.getEngine().useExactSrgbConversions).asArray().map(Math.fround);
-    expect(linear).not.toEqual(picked.map(Math.fround));
-    expect([held(ui), held(surface)]).toEqual([linear, linear]);
+    // Both write the colour's linear value (the Color node's sRGB pick, decoded) and encode it once with the same
+    // conversion: the screen shows the pick.
+    const literal = /vec3\((0\.\d+), (0\.\d+), (0\.\d+)\)/;
+    const linear = ui.compiledShaders.split("// Fragment shader")[1]!.match(literal)![0];
+    expect(linear).not.toBe("vec3(0.5, 0.25, 0.75)");
+    expect(surface.compiledShaders).toContain(linear);
     expect(await encodings(ui)).toEqual(["#define CONVERTTOGAMMA"]);
     expect(await encodings(ui)).toEqual(await encodings(surface));
     // The editor's Scene Layer tab and the Material preview may have a Scene Linear display stage, which encodes once.

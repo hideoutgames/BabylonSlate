@@ -89,6 +89,7 @@ import { markBoundedMaterial, markDrawBatchMaterial } from "./draw-batch-world-b
 import { OverlayStyleBlock } from "./overlay-style-block";
 import { SceneFogBlock } from "./scene-fog-block";
 import { createDecalPlumbing } from "./decal-projection-block";
+import { materialRecordsOn } from "./world-debug";
 import { MATERIAL_RECORD_BLOCK, MaterialRecord, MaterialRecordReadBlock, planMaterialRecord, type MaterialRecordValue } from "./material-record";
 import { LayerMultiplyBlock, MultiplyBlendFactorBlock, MultiplyFactorOutputBlock } from "./multiply-blend-block";
 import { followLayerMultiplyAlphaMode } from "./layer-composite";
@@ -454,9 +455,10 @@ export function compileMaterialPlan(
   // carries only the decal's own instance rows, so in the Decal domain it stays a uniform.
   const isPerInstance = (operation: MaterialOperation) =>
     operation.source.callPath.length === 0 && plan.domain !== "decal" && isPerInstanceParameter(operation.nodeType, operation.properties);
-  // A Material-mode program reads its parameters from the Material's record (`material-record.ts`); Particle and Post
-  // Process programs, and a plan too large for a record, keep plain uniforms.
-  const recordPlan = material.mode === NodeMaterialModes.Material ? planMaterialRecord(plan, isPerInstance) : null;
+  // With `worlddebug materialrecords on`, a Material-mode program reads its parameters and hoisted literals from the
+  // Material's record (`material-record.ts`); Particle and Post Process programs, and a plan too large for a record,
+  // keep plain uniforms. Off (the default), every Material compiles its parameters as uniforms and literals as code.
+  const recordPlan = material.mode === NodeMaterialModes.Material && materialRecordsOn(scene) ? planMaterialRecord(plan, isPerInstance) : null;
   const record = recordPlan ? new MaterialRecord(scene.getEngine(), recordPlan.slots) : null;
   if (record) material.onDisposeObservable.addOnce(() => record.dispose());
   /** A block reading `slot` of the record, which holds `value` (a parameter's default or a hoisted literal). */

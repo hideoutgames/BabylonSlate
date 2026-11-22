@@ -18,6 +18,7 @@ import {
   lowerMaterialDocumentCached,
 } from "@haptic/shader-graph";
 import { isDisposedNodeMaterial } from "./gpu-resource-live";
+import { materialRecordsOn } from "./world-debug";
 import { validMaterialParameterValue } from "./material-parameters";
 import { applyMaterialBounds } from "./material-bounds";
 import { isInstancePoolSource } from "./instance-pool";
@@ -158,6 +159,8 @@ interface MaterialLibraryOptions {
 
 interface CacheEntry {
   assetGuid: string;
+  /** The document it was compiled from and how, to compile it again (`recompileScene`). */
+  source: { doc: MaterialDocument; options: MaterialAcquireOptions | undefined };
   material: NodeMaterial;
   hash: string;
   refCount: number;
@@ -199,9 +202,12 @@ export class MaterialLibrary {
     this.options = options;
   }
 
-  private generationHash(plan: MaterialBuildPlan): string {
-    if (!this.options.textureIdentity) return plan.hash;
-    return JSON.stringify([plan.hash, plan.textures.map((texture) => [texture.textureGuid, this.options.textureIdentity!(texture.textureGuid) ?? null])]);
+  /** A generation's identity: its plan, its textures' identities, and whether `scene` compiles it reading the record. */
+  private generationHash(plan: MaterialBuildPlan, scene: Scene): string {
+    const base = this.options.textureIdentity
+      ? JSON.stringify([plan.hash, plan.textures.map((texture) => [texture.textureGuid, this.options.textureIdentity!(texture.textureGuid) ?? null])])
+      : plan.hash;
+    return materialRecordsOn(scene) ? `${base}:records` : base;
   }
 
   private entriesFor(scene: Scene): Map<string, CacheEntry> {
@@ -244,7 +250,7 @@ export class MaterialLibrary {
     const entry = this.pending.get(scene)?.get(key) ?? entries.get(key);
     return (
       entry !== undefined &&
-      entry.hash === this.generationHash(lowered.plan) &&
+      entry.hash === this.generationHash(lowered.plan, scene) &&
       !isDisposedNodeMaterial(entry.material, scene)
     );
   }
@@ -289,7 +295,7 @@ export class MaterialLibrary {
     const existing = entries.get(key);
     const pending = this.pending.get(scene)!;
     const waiting = pending.get(key);
-    const hash = this.generationHash(lowered.plan);
+    const hash = this.generationHash(lowered.plan, scene);
     if (waiting?.hash === hash && !isDisposedNodeMaterial(waiting.material, scene)) {
       waiting.refCount += 1;
       return { ok: true, material: waiting.material, hash: waiting.hash, plan: lowered.plan, ready: waiting.ready };
@@ -511,6 +517,7 @@ export class MaterialLibrary {
     };
     const candidate: CacheEntry = {
       assetGuid,
+      source: { doc, options },
       material: compiled.material,
       hash,
       refCount: (waiting?.refCount ?? existing?.refCount ?? 0) + 1,
@@ -620,6 +627,28 @@ export class MaterialLibrary {
     if (entry.refCount > 0) return;
     entry.dispose();
     entries.delete(key);
+  }
+
+  /**
+   * Compiles every published Material of `scene` again, as its next resolve would after a change to how the Scene
+   * compiles Materials (`worlddebug materialrecords`): each keeps its parameter values, and its meshes move to the new
+   * generation once it is ready, as for an edited document.
+   */
+  recompileScene(scene: Scene): void {
+    for (const [, entry] of [...(this.scenes.get(scene) ?? [])]) {
+      if (isDisposedNodeMaterial(entry.material, scene)) continue;
+      const { doc, options } = entry.source;
+      const lowered = this.planFor(doc, options?.unlit);
+      if (!lowered.ok) continue;
+      const parameters = new Map<string, MaterialParameterValue>();
+      for (const operation of lowered.plan.operations) {
+        if (!operation.nodeType.startsWith("param.") || operation.source.callPath.length) continue;
+        const name = String(operation.properties.name ?? "").trim();
+        const value = entry.getParameter(name);
+        if (value) parameters.set(name, value);
+      }
+      this.resolve(scene, entry.assetGuid, doc, { ...options, instanceKey: entry.instanceKey, parameters });
+    }
   }
 
   releaseScene(scene: Scene): void {
@@ -770,7 +799,7 @@ export class MaterialLibrary {
 
   private isReadyPlan(scene: Scene, assetGuid: string, plan: MaterialLowerResult, options?: MaterialAcquireOptions): boolean {
     const entry = this.scenes.get(scene)?.get(cacheKey(assetGuid, options?.unlit, options?.instanceKey, options?.logicalSceneBuffers));
-    return plan.ok && !!entry && entry.hash === this.generationHash(plan.plan) && !isDisposedNodeMaterial(entry.material, scene);
+    return plan.ok && !!entry && entry.hash === this.generationHash(plan.plan, scene) && !isDisposedNodeMaterial(entry.material, scene);
   }
 
   /** Recompile changed dependencies while retaining the last usable generation. */
