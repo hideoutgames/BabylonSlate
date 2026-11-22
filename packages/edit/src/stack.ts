@@ -46,9 +46,9 @@ interface BudgetedEntry<TDoc> extends StackEntry<TDoc> {
 function invertMeasured<TDoc>(
   command: EditCommand<TDoc>,
 ): { inverse: EditCommand<TDoc>; bytes: number } {
-  const forwardBytes = command.byteSize ?? 0;
+  const forwardBytes = command.byteSize;
   const inverse = command.invert();
-  return { inverse, bytes: Math.max(forwardBytes, inverse.byteSize ?? 0) };
+  return { inverse, bytes: Math.max(forwardBytes, inverse.byteSize) };
 }
 
 /**
@@ -61,6 +61,9 @@ export class DocumentEditStack<TDoc> {
   private maxBytes: number;
   private undoStack: BudgetedEntry<TDoc>[] = [];
   private redoStack: BudgetedEntry<TDoc>[] = [];
+  /** Running totals of the entries' `bytes`, so budget checks never rescan history. */
+  private undoByteTotal = 0;
+  private redoByteTotal = 0;
   private mergeOpen = false;
   /** Merge key of the open gesture whose history was cleared for size. */
   private clearedMergeKey: string | undefined;
@@ -92,18 +95,12 @@ export class DocumentEditStack<TDoc> {
   }
 
   get undoBytes(): number {
-    return this.undoStack.reduce(
-      (sum, entry) => sum + entry.bytes,
-      0,
-    );
+    return this.undoByteTotal;
   }
 
   /** Recorded bytes held by both the Undo and the Redo entries. */
   get historyBytes(): number {
-    return this.redoStack.reduce(
-      (sum, entry) => sum + entry.bytes,
-      this.undoBytes,
-    );
+    return this.undoByteTotal + this.redoByteTotal;
   }
 
   /**
@@ -118,7 +115,7 @@ export class DocumentEditStack<TDoc> {
     const continuesGesture =
       (this.mergeOpen || options?.amend === true) && command.mergeKey !== undefined;
     if (continuesGesture && command.mergeKey === this.clearedMergeKey) {
-      this.redoStack = [];
+      this.clearRedo();
       return { doc: next, command, history: "cleared-gesture" };
     }
     const top = this.undoStack[this.undoStack.length - 1];
@@ -136,16 +133,17 @@ export class DocumentEditStack<TDoc> {
         : {
             command,
             inverse: top.inverse,
-            bytes: (top.inverse.byteSize ?? 0) + (command.byteSize ?? 0),
+            bytes: top.inverse.byteSize + command.byteSize,
           };
-      this.redoStack = [];
+      this.clearRedo();
+      this.undoByteTotal += merged.bytes - top.bytes;
       Object.assign(top, merged);
       entry = top;
     } else {
       // Inverting only here: a merged step never needs its own inverse.
       entry = { command, ...invertMeasured(command) };
-      this.redoStack = [];
-      this.undoStack.push(entry);
+      this.clearRedo();
+      this.pushUndo(entry);
     }
     this.clearedMergeKey = undefined;
     this.mergeOpen = true;
@@ -160,7 +158,7 @@ export class DocumentEditStack<TDoc> {
   /**
    * Apply one separate undo step only when its complete forward and inverse
    * costs fit. Rejection (or a throwing pure command) changes neither stack.
-   * Unlike ordinary edits, both commands must explicitly account for bytes.
+   * Unlike ordinary edits, both sizes must be whole, non-negative byte counts.
    */
   applyWithHistoryAdmission(
     doc: TDoc,
@@ -170,7 +168,6 @@ export class DocumentEditStack<TDoc> {
     const forwardBytes = command.byteSize;
     const inverseBytes = inverse.byteSize;
     if (
-      forwardBytes === undefined || inverseBytes === undefined ||
       !Number.isSafeInteger(forwardBytes) || forwardBytes < 0 ||
       !Number.isSafeInteger(inverseBytes) || inverseBytes < 0 ||
       !Number.isSafeInteger(forwardBytes + inverseBytes)
@@ -183,8 +180,8 @@ export class DocumentEditStack<TDoc> {
     }
     const next = command.apply(doc);
     if (next === doc) return { ok: true, status: "unchanged", doc, command };
-    this.undoStack.push({ command, inverse, bytes });
-    this.redoStack = [];
+    this.pushUndo({ command, inverse, bytes });
+    this.clearRedo();
     // A later ordinary gesture must not merge into this discrete transaction.
     this.endGesture();
     this.trim();
@@ -195,8 +192,10 @@ export class DocumentEditStack<TDoc> {
     this.endGesture();
     const entry = this.undoStack.pop();
     if (!entry) return null;
+    this.undoByteTotal -= entry.bytes;
     const next = entry.inverse.apply(doc);
     this.redoStack.push(entry);
+    this.redoByteTotal += entry.bytes;
     return { doc: next, command: entry.inverse };
   }
 
@@ -204,8 +203,9 @@ export class DocumentEditStack<TDoc> {
     this.endGesture();
     const entry = this.redoStack.pop();
     if (!entry) return null;
+    this.redoByteTotal -= entry.bytes;
     const next = entry.command.apply(doc);
-    this.undoStack.push(entry);
+    this.pushUndo(entry);
     this.trim();
     return { doc: next, command: entry.command };
   }
@@ -213,7 +213,8 @@ export class DocumentEditStack<TDoc> {
   clear(): void {
     this.endGesture();
     this.undoStack = [];
-    this.redoStack = [];
+    this.undoByteTotal = 0;
+    this.clearRedo();
   }
 
   /** Prevent the next edit from coalescing with a completed gesture. */
@@ -222,12 +223,22 @@ export class DocumentEditStack<TDoc> {
     this.clearedMergeKey = undefined;
   }
 
+  private pushUndo(entry: BudgetedEntry<TDoc>): void {
+    this.undoStack.push(entry);
+    this.undoByteTotal += entry.bytes;
+  }
+
+  private clearRedo(): void {
+    this.redoStack = [];
+    this.redoByteTotal = 0;
+  }
+
   private trim(): void {
     while (
       this.undoStack.length > this.maxEntries ||
-      (this.undoBytes > this.maxBytes && this.undoStack.length > 0)
+      (this.undoByteTotal > this.maxBytes && this.undoStack.length > 0)
     ) {
-      this.undoStack.shift();
+      this.undoByteTotal -= this.undoStack.shift()!.bytes;
     }
   }
 }
