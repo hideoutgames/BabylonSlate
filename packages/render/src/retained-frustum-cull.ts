@@ -23,18 +23,18 @@ import { followBounds, journalFollows, openRenderChangeReader, readBounds, Rende
  *   (`setEnabled`, a re-parent), `Visibility` (`isVisible`, `inheritVisibility`, `visibility`, a source's for its
  *   instances), `Dispatch` (`layerMask`; a level a LOD master gains or loses), `Ready` (`_setReady`, a source's; an
  *   instance taking another source);
- * - the `scaling` vector (read for a zero component every frame: in-place writes have no write point): `Transform`
- *   (the `scaling` setter replaces it);
+ * - the `scaling` vector object (its components are read live, below): `Transform` (the `scaling` setter replaces it);
  * - the world bounding sphere's centre and radius and the bounding box's eight world corners, read through
  *   `getBoundingInfo()`, only where Babylon's loop would call it: `Transform` (a world matrix computed or replaced,
  *   which marks the bounds for Babylon's lazy update), `Bounds` (a bounding info replaced, or the world values of the
  *   one it holds written: `followBounds`).
  * Every mesh is read again after a journal the reader fell behind on.
  *
- * Read live: `alwaysSelectAsActiveMesh` and `cullingStrategy`, plain fields with no write point, but only where they can
- * change the answer: the first for a mesh the copies find outside the frustum, the second where its strategies
- * disagree. `delayLoadState` decides at a mesh's first read (Babylon's delay loading only moves on from a state that
- * is not 0 or 1, and Haptic never starts it).
+ * Read live, each only where it can change the answer: a zero component of the retained `scaling` vector (written in
+ * place, with no write point) for a mesh the copies find in the frustum; `alwaysSelectAsActiveMesh` and
+ * `cullingStrategy`, plain fields, for a mesh they find outside it and one whose strategies disagree. `delayLoadState`
+ * decides at a mesh's first read (Babylon's delay loading only moves on from a state that is not 0 or 1, and Haptic
+ * never starts it).
  *
  * A mesh whose class or own object redefines what a copy follows (`followed`), a `Mesh` still delay-loading, and an
  * instance of such a source are tested by Babylon's own reads, in their place in the pass (`FLAGS_LIVE`,
@@ -300,7 +300,22 @@ export class RetainedFrustumCull {
         work.live += 1;
         if (mesh.isBlocked || !mesh.isReady() || !mesh.isEnabled() || mesh.scaling.hasAZeroComponent) continue;
         if (!mesh.isVisible || !(mesh.visibility > 0) || (mesh.layerMask & layerMask) === 0) continue;
-      } else if (state & OUT || (layerMasks[slot]! & layerMask) === 0 || scalings[slot]!.hasAZeroComponent) continue;
+      } else {
+        if (state & OUT || (layerMasks[slot]! & layerMask) === 0) continue;
+        if (!(skip || state & (BOUNDS_STALE | BOUNDS_LIVE) || checked)) {
+          // A copy wholly in or out of the frustum needs one of the two live reads: the scale where it is in, whatever
+          // `alwaysSelectAsActiveMesh` says; `alwaysSelectAsActiveMesh` where it is out, whatever the scale.
+          work.tested += 1;
+          const verdict = this.verdict(slot);
+          if (verdict !== ALL_IN) {
+            work.fieldReads += 1;
+            if (!mesh.alwaysSelectAsActiveMesh && (verdict === ALL_OUT || !this.answer(verdict, mesh.cullingStrategy))) continue;
+          }
+          if (!scalings[slot]!.hasAZeroComponent) output[count++] = mesh;
+          continue;
+        }
+        if (scalings[slot]!.hasAZeroComponent) continue;
+      }
       if (skip || this.shows(slot, mesh, state, checked, frustum)) output[count++] = mesh;
     }
     output.length = count;
@@ -329,6 +344,7 @@ export class RetainedFrustumCull {
       work.tested += 1;
       return this.answer(this.verdict(slot), mesh.cullingStrategy);
     }
+    // A FLAGS_LIVE mesh's copy (the pass tests the others itself).
     work.tested += 1;
     const verdict = this.verdict(slot);
     if (verdict === ALL_IN) return true;
