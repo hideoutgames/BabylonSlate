@@ -531,6 +531,10 @@ function settingNotes(
   const unsettled = sample.unsettled;
   if (unsettled && (unsettled.firstDraws > 0 || unsettled.compiling > 0))
     notes.push(`COMPILING: ${unsettled.firstDraws} first drawn, ${unsettled.compiling} compiling`);
+  // What its commands compiled before the window, apart from the window's frames.
+  const switched = sample.switched;
+  if (switched && (switched.firstDraws > 0 || (switched.programs ?? 0) !== 0))
+    notes.push(`switch: ${switched.firstDraws} first drawn (${switched.stalls} long), programs ${switched.programs === null ? "?" : `${switched.programs >= 0 ? "+" : ""}${switched.programs}`}, ${(switched.ms / 1000).toFixed(1)} s`);
   if (first?.settings && sample.settings && sample !== first) {
     const changes = settingsChanges(first.settings, sample.settings);
     const field = (change: string) => change.slice(0, change.indexOf("="));

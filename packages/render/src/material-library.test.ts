@@ -28,7 +28,7 @@ import { setTestTextureBudget } from "./test-support/resource-cache-budget";
 import { applyUserInterfaceFallback } from "./overlay-texture-quad";
 import { isUnlitMaterial } from "./unlit-material";
 import { nodeBlockName } from "./test-support/material-node-blocks";
-import { setSceneWorldDebug } from "./world-debug";
+import { setSceneWorldDebug, startEngineWithMaterialRecords, worldDebugFingerprint } from "./world-debug";
 
 const disposers: Array<() => void> = [];
 
@@ -987,6 +987,28 @@ describe("material library", () => {
     expect(library.getParameter(scene, "grit", "Grit", { instanceKey: "1|body" })).toEqual({ kind: "float", value: 0.8 });
     expect(library.materialFor(scene, "grade")).toBe(pass.material);
     expect(scene.materials.includes(pass.material)).toBe(true);
+  });
+
+  it("compiles with the Material record from the first acquire on an Engine started with it, until worlddebug switches it off", async () => {
+    const scene = host();
+    startEngineWithMaterialRecords(scene.getEngine(), true);
+    const library = new MaterialLibrary();
+    disposers.push(() => library.dispose());
+    const doc = tinted(0.4);
+    expect(worldDebugFingerprint(scene)).toBe("materialrecords on");
+    const acquired = library.acquire(scene, "tinted", doc);
+    if (!acquired.ok) throw new Error("acquire failed");
+    expect(await acquired.ready).toEqual([]);
+    expect(acquired.material.compiledShaders).toContain("uniform HapticMaterial");
+    // Another Engine keeps the built-in default.
+    expect(worldDebugFingerprint(host())).toBe("none");
+
+    expect(setSceneWorldDebug(scene, "materialrecords", true)).toBe(false);
+    expect(setSceneWorldDebug(scene, "materialrecords", false)).toBe(true);
+    expect(worldDebugFingerprint(scene)).toBe("none");
+    library.recompileScene(scene);
+    await vi.waitFor(() => expect(library.isReady(scene, "tinted", doc)).toBe(true));
+    expect(library.materialFor(scene, "tinted")!.compiledShaders).not.toContain("HapticMaterial");
   });
 
   it("never shares one material instance across two scenes", () => {

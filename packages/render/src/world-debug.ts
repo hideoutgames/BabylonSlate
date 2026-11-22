@@ -1,3 +1,4 @@
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import type { Scene } from "@babylonjs/core/scene";
 import { WORLD_DEBUG_PARTS, type WorldDebugPart } from "@haptic/core";
 import { markSceneReadinessDirty } from "./scene-readiness-signal";
@@ -30,9 +31,27 @@ const DEFAULT_OFF: ReadonlySet<WorldDebugPart> = new Set(["mergedmarches", "mate
  */
 const PROGRAM_FREE_PARTS: ReadonlySet<WorldDebugPart> = new Set(["geometryonce", "geometryoncescissor", "mergedmarches", "spritebatching", "materialrecords"]);
 
+/**
+ * The Engines created with the Material record on from the start (`materialrecords on`, stored by
+ * `material-records-setting.ts` and read when the project Engine is created): every Scene of such an Engine starts with
+ * `materialrecords` on, so the load, its warm-up and the engine default and built-in water compile with it.
+ */
+const recordsFromStart = new WeakSet<AbstractEngine>();
+
+/** Marks `engine` as created with the Material record on (`materialRecordsStartupSetting`), before any Scene of it compiles. */
+export function startEngineWithMaterialRecords(engine: AbstractEngine, enabled: boolean): void {
+  if (enabled) recordsFromStart.add(engine); else recordsFromStart.delete(engine);
+}
+
+/** Whether `part` is off for `scene` before any switch: its built-in default, or on for the Material record from the start. */
+function startsOff(scene: Scene, part: WorldDebugPart): boolean {
+  if (part === "materialrecords" && recordsFromStart.has(scene.getEngine())) return false;
+  return DEFAULT_OFF.has(part);
+}
+
 /** Whether `part` of the world is switched off for `scene`. */
 export function worldDebugOff(scene: Scene, part: WorldDebugPart): boolean {
-  return DEFAULT_OFF.has(part) !== (switched.get(scene) ?? NONE).has(part);
+  return startsOff(scene, part) !== (switched.get(scene) ?? NONE).has(part);
 }
 
 /**
@@ -69,11 +88,12 @@ export function geometryRepeat(scene: Scene): "none" | "full" | "scissor" {
 }
 
 /**
- * `RenderDiagnostics.settings`' `world.debug`: the parts switched from their default, in `WORLD_DEBUG_PARTS` order (a
- * part off by default as `<part> on`), or `none`.
+ * `RenderDiagnostics.settings`' `world.debug`: the parts away from their built-in default, by a switch or from the
+ * Engine's start (`materialrecords on` stored), in `WORLD_DEBUG_PARTS` order (a part off by default as `<part> on`), or
+ * `none`.
  */
 export function worldDebugFingerprint(scene: Scene): string {
-  const parts = WORLD_DEBUG_PARTS.filter((part) => (switched.get(scene) ?? NONE).has(part))
+  const parts = WORLD_DEBUG_PARTS.filter((part) => worldDebugOff(scene, part) !== DEFAULT_OFF.has(part))
     .map((part) => DEFAULT_OFF.has(part) ? `${part} on` : part);
   return parts.length ? parts.join(",") : "none";
 }

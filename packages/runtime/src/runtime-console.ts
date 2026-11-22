@@ -184,6 +184,7 @@ export class RuntimeConsole {
       setGpuProbe: (action) => host.emit({ type: "setGpuProbeDebug", action }),
       setFramesInFlight: (mode) => host.emit({ type: "setFramesInFlightDebug", mode }),
       setPreserveDrawingBuffer: (enabled) => host.emit({ type: "setPreserveDrawingBufferDebug", enabled: Boolean(enabled) }),
+      setMaterialRecordsStartup: (enabled) => host.emit({ type: "setMaterialRecordsStartupDebug", enabled: Boolean(enabled) }),
       setFrameCap: (fps) => {
         host.requestScalability({ kind: "patch", frameCap: fps > 0 ? fps : DEFAULT_PLAY_FRAME_CAP });
       },
