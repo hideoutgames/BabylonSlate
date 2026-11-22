@@ -319,6 +319,7 @@ export default defineConfig(
       "apps/docs/.vitepress/dist",
       "apps/player/dist",
       "apps/editor/dist",
+      "apps/desktop/dist",
       // Vendored decoder builds: no rule applies to them, and parsing them costs seconds per run.
       "apps/editor/public/basis/basis_encoder.js",
       "apps/editor/public/draco/draco_wasm_wrapper_gltf.js",
