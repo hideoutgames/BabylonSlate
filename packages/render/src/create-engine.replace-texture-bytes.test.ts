@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
 import { createActor, createDefaultScene, createMeshComponent } from "@haptic/core";
-import { createEngine } from "./create-engine";
+import { createEngine } from "./editor-engine";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { sampledTextureDocument } from "./sampled-texture-material-fixture";
 import { ktx2HeaderBytes } from "./texture-test-fixtures";

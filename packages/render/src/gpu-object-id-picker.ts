@@ -1,3 +1,5 @@
+// Its FrameGraph work needs Babylon's engine extensions on any Engine, including one a caller made without createEngine.
+import "./babylon-registrations";
 import type { Material } from "@babylonjs/core/Materials/material";
 import type { Plane } from "@babylonjs/core/Maths/math.plane";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";

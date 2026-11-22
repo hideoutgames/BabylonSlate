@@ -257,6 +257,13 @@ const playerNoReactNoCapacitor = babylonBoundary(
       group: CAPACITOR_PATTERNS,
       message: "apps/player must not import Capacitor (engineplan section 15).",
     },
+    {
+      group: [
+        "@haptic/assets/hasset", "@haptic/navigation/bake", "@haptic/render/convert-obj-to-glb", "@haptic/render/convert-stl-to-glb",
+        "@recast-navigation/generators", "@babylonjs/serializers", "@babylonjs/serializers/**", "zod", "@noble/hashes", "@noble/hashes/**",
+      ],
+      message: "Editor-only code (asset files, navmesh baking, model conversion) must stay out of exported games.",
+    },
   ],
 );
 

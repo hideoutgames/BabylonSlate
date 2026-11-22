@@ -2,7 +2,9 @@
  * Babylon side effects that Haptic's Engines rely on and that no imported Babylon class module registers itself.
  * Haptic imports Babylon by module, never from the `@babylonjs/core` root (which registers everything), so each
  * engine extension and scene augmentation the renderer calls must be imported once, here or in the module that
- * uses it. `create-engine.ts` loads this module before it constructs an Engine.
+ * uses it. `create-engine.ts` loads this module before it constructs an Engine, and each module that builds a FrameGraph
+ * or calls the multiple-render-target extension loads it too, for an Engine made without `createEngine`: under
+ * `sideEffects`, importing one module of `@haptic/render` evaluates only what that module imports.
  */
 // registerView, unRegisterView, _renderViews and inputElement: Scene and Play views (registered-view-admission).
 import "@babylonjs/core/Engines/AbstractEngine/abstractEngine.views";

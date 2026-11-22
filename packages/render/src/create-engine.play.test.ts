@@ -61,7 +61,8 @@ import {
   setCustomEasingCurves,
 } from "@haptic/core";
 import { createDefaultMaterialDocument } from "@haptic/shader-graph";
-import { createEngine, COMPILE_HOLD_PAUSE_DELAY_MS, syncEditorPlayState } from "./create-engine";
+import { COMPILE_HOLD_PAUSE_DELAY_MS, syncEditorPlayState } from "./create-engine";
+import { createEngine } from "./editor-engine";
 import { AUTHORED_CAMERA_PREFIX } from "./scene-illumination";
 import { sceneOutputScale } from "./scene-output-scale";
 import type { RenderPerformanceSample } from "./render-performance";

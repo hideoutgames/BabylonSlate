@@ -4,7 +4,7 @@ import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { PointerDragBehavior } from "@babylonjs/core/Behaviors/Meshes/pointerDragBehavior";
 import { createActor, createDefaultScene, createMeshComponent } from "@haptic/core";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
-import { createEngine } from "./create-engine";
+import { createEngine } from "./editor-engine";
 
 class FakeCanvas {
   width = 256;

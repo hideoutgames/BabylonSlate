@@ -3,10 +3,14 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "sideEffects": [
+    "./src/bake-worker.ts"
+  ],
   "exports": {
     ".": "./src/index.ts",
     "./chunk": "./src/chunk.ts",
-    "./settings": "./src/settings.ts"
+    "./settings": "./src/settings.ts",
+    "./bake": "./src/bake.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

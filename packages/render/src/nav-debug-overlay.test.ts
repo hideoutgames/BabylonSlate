@@ -3,12 +3,12 @@ import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  generateNavMesh,
   initNavigation,
   navMeshDebugPrimitives,
   staticBlockerBakeParts,
   withNavigation,
 } from "@haptic/navigation";
+import { generateNavMesh } from "@haptic/navigation/bake";
 
 vi.mock("@haptic/navigation", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@haptic/navigation")>();
