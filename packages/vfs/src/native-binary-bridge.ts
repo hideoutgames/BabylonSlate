@@ -102,13 +102,15 @@ function requestBody(data: Uint8Array): Uint8Array<ArrayBuffer> {
  * file), staged natively and renamed into place on commit.
  */
 export class NativeBinaryBridge {
+  private readonly config: NativeBinaryBridgeConfig;
+  private readonly plugin: NativeBinaryBridgePlugin;
+  private readonly fetchImpl: Fetch;
   private bodyWrites: boolean;
 
-  constructor(
-    private readonly config: NativeBinaryBridgeConfig,
-    private readonly plugin: NativeBinaryBridgePlugin,
-    private readonly fetchImpl: Fetch = (input, init) => globalThis.fetch(input, init),
-  ) {
+  constructor(config: NativeBinaryBridgeConfig, plugin: NativeBinaryBridgePlugin, fetchImpl: Fetch = (input, init) => globalThis.fetch(input, init)) {
+    this.config = config;
+    this.plugin = plugin;
+    this.fetchImpl = fetchImpl;
     this.bodyWrites = config.writes === "body";
   }
 
