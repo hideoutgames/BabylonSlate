@@ -39,7 +39,7 @@ export async function waitForEditorInteractive(page: Page): Promise<void> {
   await expect(page.getByTestId("editor-chrome-bar")).toBeVisible({
     timeout: PROJECT_BOOT_TIMEOUT_MS,
   });
-  await expect(page.locator(".slate-loading")).toHaveCount(0, {
+  await expect(page.locator(".haptic-loading")).toHaveCount(0, {
     timeout: PROJECT_BOOT_TIMEOUT_MS,
   });
 }

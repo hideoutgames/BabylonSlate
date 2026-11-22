@@ -156,21 +156,21 @@ export class SharedOutlineMaskRenderer {
       throw new Error(`Shared outlines do not yet qualify alpha texture UV set ${unsupported.coordinatesIndex + 1} on "${source.name}".`);
     const attributes = [VertexBuffer.PositionKind];
     const defines = ["#define STORE_CAMERASPACE_Z"];
-    if (hasMeshLatticeDeformer(subMesh.getEffectiveMesh())) defines.push("#define SLATE_LATTICE");
+    if (hasMeshLatticeDeformer(subMesh.getEffectiveMesh())) defines.push("#define HAPTIC_LATTICE");
     const uv1 = (samplesUV1(texture) || samplesUV1(opacity)) && mesh.isVerticesDataPresent(VertexBuffer.UVKind);
     const uv2 = (samplesUV2(texture) || samplesUV2(opacity)) && mesh.isVerticesDataPresent(VertexBuffer.UV2Kind);
     if (texture || opacity) {
       defines.push("#define ALPHATEST");
       if (uv1) { attributes.push(VertexBuffer.UVKind); defines.push("#define UV1"); }
       if (uv2) { attributes.push(VertexBuffer.UV2Kind); defines.push("#define UV2"); }
-      defineCoverageSampler(defines, texture, "SLATE_DIFFUSE", uv1, uv2);
-      defineCoverageSampler(defines, opacity, "SLATE_OPACITY", uv1, uv2);
+      defineCoverageSampler(defines, texture, "HAPTIC_DIFFUSE", uv1, uv2);
+      defineCoverageSampler(defines, opacity, "HAPTIC_OPACITY", uv1, uv2);
     }
     const vertexAlpha = mesh.hasVertexAlpha && mesh.useVertexColors && mesh.isVerticesDataPresent(VertexBuffer.ColorKind);
     const instanceAlpha = hardware && mesh.hasThinInstances && mesh.isVerticesDataPresent(VertexBuffer.ColorInstanceKind);
     if (vertexAlpha) { attributes.push(VertexBuffer.ColorKind); defines.push("#define VERTEXCOLOR", "#define VERTEXALPHA"); }
     if (instanceAlpha) { attributes.push(VertexBuffer.ColorInstanceKind); defines.push("#define INSTANCESCOLOR"); }
-    if (vertexAlpha || instanceAlpha) defines.push("#define SLATE_VERTEX_ALPHA");
+    if (vertexAlpha || instanceAlpha) defines.push("#define HAPTIC_VERTEX_ALPHA");
     let cpuSkinning = false;
     if (mesh.useBones && mesh.computeBonesUsingShaders) {
       attributes.push(VertexBuffer.MatricesIndicesKind, VertexBuffer.MatricesWeightsKind);

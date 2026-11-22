@@ -43,7 +43,7 @@ function nativeMaterial<T extends PBRMaterial | StandardMaterial>(
 ): T {
   // The renderer registers this plugin on every native material, even after a test
   // disposed the last Engine. Without it the trusted-plugin cases below are vacuous.
-  expect(material.pluginManager?.getPlugin("SlateTextureQuality")).toBeInstanceOf(
+  expect(material.pluginManager?.getPlugin("HapticTextureQuality")).toBeInstanceOf(
     TextureQualityPlugin,
   );
   return material;

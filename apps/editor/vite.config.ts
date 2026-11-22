@@ -82,7 +82,7 @@ export default defineConfig({
     {
       // Only a distribution build, which refuses test-mode storage, may ship the generated
       // manifest: native packaging and signing require it as proof of a production bundle.
-      name: "slate-distribution-manifest",
+      name: "haptic-distribution-manifest",
       apply: "build",
       async writeBundle(options) {
         if (!distributionBuild && options.dir) {

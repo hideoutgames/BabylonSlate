@@ -161,9 +161,9 @@ describe("packaged renderer boundary", () => {
     expect(() => validateIpcArguments("save-games:write", ["save-games/project/game/profile/slot/generation-a.save", "{}"]))
       .not.toThrow();
     expect(() => validateIpcArguments("settings:write", ["{}"])).not.toThrow();
-    expect(() => validateIpcArguments("account-secrets:get", ["slate-clerk-client:pk_test_example"])).not.toThrow();
-    expect(() => validateIpcArguments("account-secrets:set", ["slate-clerk-client:pk_test_example", "token"])).not.toThrow();
-    expect(() => validateIpcArguments("account-secrets:delete", ["slate-clerk-client:pk_test_example"])).not.toThrow();
+    expect(() => validateIpcArguments("account-secrets:get", ["haptic-clerk-client:pk_test_example"])).not.toThrow();
+    expect(() => validateIpcArguments("account-secrets:set", ["haptic-clerk-client:pk_test_example", "token"])).not.toThrow();
+    expect(() => validateIpcArguments("account-secrets:delete", ["haptic-clerk-client:pk_test_example"])).not.toThrow();
     expect(() => validateIpcArguments("project:writeBinary", ["assets/a.bin", new ArrayBuffer(4)])).not.toThrow();
     expect(() => validateIpcArguments("file:save", ["Haptic_Dark.haptic-theme.json", new ArrayBuffer(4)])).not.toThrow();
     expect(() => validateIpcArguments("project:delete", [{ id: "node:/data/projects/Game", name: "Game", tier: "documents" }]))

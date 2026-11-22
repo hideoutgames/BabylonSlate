@@ -5,7 +5,7 @@ import { expect, test } from "./profile-context";
 
 async function openApplicationSettings(page: Page) {
   await page.goto("/");
-  await expect(page.locator(".slate-loading")).toHaveCount(0, { timeout: 30_000 });
+  await expect(page.locator(".haptic-loading")).toHaveCount(0, { timeout: 30_000 });
   await page.getByTestId("homepage-account").click();
   await page.getByTestId("homepage-account-open").click();
   const center = page.getByTestId("homepage-account-center");

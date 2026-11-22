@@ -349,7 +349,7 @@ export function materialOperationBlockName(index: number): string {
  * reserved double underscore, including when an adapter appends a suffix. */
 function operationBlockName(id: string): string {
   const name = id.replace(/[^A-Za-z0-9_]/g, "_").replace(/[0-9]/g, "").replace(/_+/g, "_").replace(/^_|_$/g, "");
-  return !name || name.startsWith("gl_") ? `slate_${name || "node"}` : name;
+  return !name || name.startsWith("gl_") ? `haptic_${name || "node"}` : name;
 }
 
 /**
@@ -431,7 +431,7 @@ export function compileMaterialPlan(
   const plumbing: MaterialPlumbing = { particlePreview: plan.domain === "particle" && options.particlePreview,
     logicalSceneBuffers: plan.domain === "postProcess" && options.logicalSceneBuffers };
   if (plan.operations.some((operation) => ["input.worldPosition", "input.cameraPosition", "input.objectPosition", "texture.triplanar", "landscape.uv", "landscape.height"].includes(operation.nodeType))) {
-    const origin = new InputBlock("slateFloatingOrigin", undefined, NodeMaterialBlockConnectionPointTypes.Vector3);
+    const origin = new InputBlock("hapticFloatingOrigin", undefined, NodeMaterialBlockConnectionPointTypes.Vector3);
     origin.valueCallback = () => scene.floatingOriginOffset;
     plumbing.worldOrigin = origin.output;
     created.push(origin);

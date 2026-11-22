@@ -453,7 +453,7 @@ export function createLandscapeMesh(scene: Scene, name: string, properties: unkn
   const data = parseLandscapeProperties(properties);
   const root = new Mesh(name, scene);
   root.isPickable = false;
-  root.metadata = { ...(root.metadata ?? {}), slateLandscape: true };
+  root.metadata = { ...(root.metadata ?? {}), hapticLandscape: true };
   const chunks: Chunk[] = [];
   for (let z = 0; z < data.subdivisions; z += CHUNK_CELLS) {
     for (let x = 0; x < data.subdivisions; x += CHUNK_CELLS) {

@@ -27,7 +27,7 @@ type SpawnSystem = { _updateQueueStart: QueueItem | null; _actualFrame: number; 
  * texture and spaces calls in wall-clock milliseconds; this one hands the particle's world
  * position and velocity, with the system's simulated time, to a `ParticleSpawnSink` instead.
  */
-export class SlateSpawnBlock extends NodeParticleBlock {
+export class HapticSpawnBlock extends NodeParticleBlock {
   sink: ParticleSpawnSink | null = null;
 
   constructor(name: string) {
@@ -38,7 +38,7 @@ export class SlateSpawnBlock extends NodeParticleBlock {
   }
 
   override getClassName(): string {
-    return "SlateSpawnBlock";
+    return "HapticSpawnBlock";
   }
 
   get particle(): NodeParticleConnectionPoint {

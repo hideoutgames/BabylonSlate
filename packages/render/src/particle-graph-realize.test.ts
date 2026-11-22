@@ -95,7 +95,7 @@ describe("realizeParticleGraph", () => {
     expect(system).not.toBeInstanceOf(GPUParticleSystem);
     expect(system.updateSpeed).toBe(PARTICLE_UPDATE_SPEED);
     expect(system.emitter).toBe(emitter);
-    expect(system.particleTexture?.name).toBe("slate:particleReadiness");
+    expect(system.particleTexture?.name).toBe("haptic:particleReadiness");
     expect(system.isReady()).toBe(false);
     // The readiness texture is the only thing NullEngine keeps from becoming ready.
     system.particleTexture!.isReady = () => true;

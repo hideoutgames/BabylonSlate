@@ -18,10 +18,10 @@ export function mannequinShadowProbe(scene: Scene, modelOnly = false) {
   if (!saved) { saved = new Map(); originals.set(scene, saved); }
   const controller = sceneShadowController(scene);
   for (const mesh of scene.meshes) {
-    if (!saved.has(mesh)) saved.set(mesh, mesh.metadata?.slateShadowParticipation);
+    if (!saved.has(mesh)) saved.set(mesh, mesh.metadata?.hapticShadowParticipation);
     const original = saved.get(mesh);
     controller.setParticipation(mesh, modelOnly ? { ...original, castShadows: names.has(mesh.name) } : original ?? {});
-    if (!modelOnly && !original && mesh.metadata) delete mesh.metadata.slateShadowParticipation;
+    if (!modelOnly && !original && mesh.metadata) delete mesh.metadata.hapticShadowParticipation;
   }
   return meshes.map(mesh => {
     const world = mesh.computeWorldMatrix(true);

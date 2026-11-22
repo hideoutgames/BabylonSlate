@@ -472,13 +472,13 @@ it("registers the transparent pass before its first readiness probe and unregist
 /** The kind of a water effect, from its defines: depth pre-pass, or colour with or without the scene copy's features. */
 function waterVariant(defines: string): string {
   if (defines.includes("#define DEPTHPREPASS\n")) return "depth";
-  return defines.includes("#define SLATE_WATER_NODE_COPY\n") ? "colour with copy" : "colour without copy";
+  return defines.includes("#define HAPTIC_WATER_NODE_COPY\n") ? "colour with copy" : "colour without copy";
 }
 
 /** Every water variant the engine has compiled. */
 function compiledWaterVariants(engine: NullEngine): string[] {
   const effects = (engine as unknown as { _compiledEffects: Record<string, { defines: string }> })._compiledEffects;
-  return Object.values(effects).filter((effect) => /^#define SLATE_WATER_SURFACE$/m.test(effect.defines ?? ""))
+  return Object.values(effects).filter((effect) => /^#define HAPTIC_WATER_SURFACE$/m.test(effect.defines ?? ""))
     .map((effect) => waterVariant(effect.defines)).sort();
 }
 
@@ -567,7 +567,7 @@ function holdWaterLinks(engine: NullEngine) {
   const createEffect = engine.createEffect.bind(engine);
   vi.spyOn(engine, "createEffect").mockImplementation((...args) => {
     const effect = createEffect(...args);
-    if (!held.includes(effect) && /^#define SLATE_WATER_SURFACE$/m.test(effect.defines)) {
+    if (!held.includes(effect) && /^#define HAPTIC_WATER_SURFACE$/m.test(effect.defines)) {
       held.push(effect);
       if (!holding) released.add(effect);
       const isReady = effect.isReady.bind(effect);
@@ -695,7 +695,7 @@ it.each([["transparent", false], ["geometry", true]] as const)(
     /** Whether the pass's fog variant of the mirroring first body or the second body, which mirrors nothing, was requested. */
     const fogLinked = (second: boolean) => links.requestedDefines().some((defines) =>
       defines.includes("#define FOG\n") && defines.includes("#define PREPASS\n") === geometry
-      && !defines.includes("#define DEPTHPREPASS\n") && defines.includes("#define SLATE_WATER_NODE_PLANAR\n") === !second);
+      && !defines.includes("#define DEPTHPREPASS\n") && defines.includes("#define HAPTIC_WATER_NODE_PLANAR\n") === !second);
     // Fog gives every body new variants before the load is ready (outside Scene observables, so the change marks
     // readiness dirty itself) and the links requested so far finish. The probe waits on the first body's new
     // variant, and the second body's link ahead again meanwhile; both keep their previous variants until then.
@@ -753,7 +753,7 @@ it("follows a backbuffer resize in place, keeping every task and render pass id"
   // Water reads the copy's size on every draw, so its refraction and march follow the resize without recompiling.
   const binds = vi.spyOn(Effect.prototype, "setFloat4");
   await settle(graph, camera);
-  const screens = binds.mock.calls.filter(([name]) => name === "slateWaterNodeScreen");
+  const screens = binds.mock.calls.filter(([name]) => name === "hapticWaterNodeScreen");
   expect(screens.length).toBeGreaterThan(0);
   expect(screens.at(-1)!.slice(1, 3)).toEqual([1 / 256, 1 / 160]);
   graph.dispose();

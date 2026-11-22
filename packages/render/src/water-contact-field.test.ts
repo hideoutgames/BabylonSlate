@@ -63,7 +63,7 @@ function contactAt(field: WaterContactField, x: number, z: number, height: numbe
 function flatSurface(scene: Scene, amplitude: number, surfaceY: (x: number, z: number) => number | null = () => 0, range = 2, x = 0, z = 0): WaterFieldSurface {
   const mesh = MeshBuilder.CreateGround("water", { width: 40, height: 40 }, scene);
   mesh.position.set(x, 0, z); mesh.computeWorldMatrix(true);
-  mesh.metadata = { slateWater: true };
+  mesh.metadata = { hapticWater: true };
   return { mesh, unbounded: false, amplitude, contactRange: range, surfaceY };
 }
 

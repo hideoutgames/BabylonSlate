@@ -163,9 +163,9 @@ export async function runWaterCutProof() {
     // It samples the view's scene copy, which the view plans once the water asks for it: a few frames.
     const starterPixels = await draw(6);
     const compiled = (engine as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects;
-    const geometryEffects = Object.values(compiled).filter((effect) => /#define SLATE_WATER_EFFECTS_GEOMETRY/.test(effect.defines)).length;
+    const geometryEffects = Object.values(compiled).filter((effect) => /#define HAPTIC_WATER_EFFECTS_GEOMETRY/.test(effect.defines)).length;
     // It refracted through the view's scene copy.
-    const starterCopied = Object.values(compiled).some((effect) => /#define SLATE_WATER_NODE_COPY/.test(effect.defines));
+    const starterCopied = Object.values(compiled).some((effect) => /#define HAPTIC_WATER_NODE_COPY/.test(effect.defines));
     starterWater.dispose();
     starter.dispose();
     // Dense fog over a floor below the water, all of it seen through the water: the copy holds the floor fogged once,
@@ -238,7 +238,7 @@ export async function runWaterCutProof() {
     const holeX = Vector3.Project(centre, Matrix.IdentityReadOnly, scene.getTransformMatrix(), camera.viewport.toGlobal(canvas.width, canvas.height)).x;
     const effects = (engine as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects;
     // Water's depth pre-pass draws its own program, which discards removed water and returns before the look.
-    const prePassEffects = Object.values(effects).filter((effect) => /#define DEPTHPREPASS/.test(effect.defines) && /#define SLATE_WATER_SURFACE/.test(effect.defines)).length;
+    const prePassEffects = Object.values(effects).filter((effect) => /#define DEPTHPREPASS/.test(effect.defines) && /#define HAPTIC_WATER_SURFACE/.test(effect.defines)).length;
     graph.dispose();
     return {
       width: canvas.width, height: canvas.height, holeX, captures, prePassEffects, geometryEffects, starterPixels, starterCopied,

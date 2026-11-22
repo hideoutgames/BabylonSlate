@@ -47,7 +47,7 @@ export async function seedEngineSettings(
 async function waitForInteractive(page: Page, timeout: number): Promise<void> {
   await acceptUnsavedPlayPrompts(page);
   await expect(page.getByTestId("editor-chrome-bar")).toBeVisible({ timeout });
-  await expect(page.locator(".slate-loading")).toHaveCount(0, { timeout });
+  await expect(page.locator(".haptic-loading")).toHaveCount(0, { timeout });
 }
 
 /** Homepage → Create Project → Feature Test → editor interactive. */

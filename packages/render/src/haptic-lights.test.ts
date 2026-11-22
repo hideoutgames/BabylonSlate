@@ -173,7 +173,7 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     const cel = await drawnDefines(scene, mesh, material);
     expect(cel).toContain("#define HAPTIC_CEL");
     expect(cel.some((line) => /#define (LIGHT\d|HAPTIC_ENVIRONMENT)/.test(line))).toBe(false);
-    expect(material.compiledShaders).toContain("slateCelBand");
+    expect(material.compiledShaders).toContain("hapticCelBand");
     // Frozen and drawn, as the editor holds library Materials: only a dirty mark re-prepares its defines.
     material.freeze();
     expect(await drawnDefines(scene, mesh, material)).toEqual(cel);
