@@ -35,6 +35,7 @@ const textDecoder = new TextDecoder();
  */
 export class MemoryStorageAdapter implements ProjectStorage {
   readonly hasStrongSourceRevisions: boolean = true;
+  readonly speculativeRangeReads = true;
   private readonly reads = new StorageReadCounter();
   private nextRevision = 0;
   getReadMetrics() { return this.reads.snapshot(); }

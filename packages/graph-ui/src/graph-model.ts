@@ -192,11 +192,14 @@ export function reconcileCanvasGraph(options: {
   localEdges: readonly ReconcileCanvasEdge[];
   incoming: GraphDocument;
   lastEmitted?: GraphDocument | null;
+  /** Signs `incoming` and `lastEmitted`: a caller that keeps signatures by graph passes its lookup. */
+  signatureOf?: (graph: GraphDocument) => string;
 }): { nodes: ReconcileCanvasNode[]; edges: ReconcileCanvasEdge[] } | null {
-  const incomingSig = canonicalGraphSignature(options.incoming);
+  const signatureOf = options.signatureOf ?? canonicalGraphSignature;
+  const incomingSig = signatureOf(options.incoming);
   if (
     options.lastEmitted &&
-    incomingSig === canonicalGraphSignature(options.lastEmitted)
+    incomingSig === signatureOf(options.lastEmitted)
   ) {
     return null;
   }

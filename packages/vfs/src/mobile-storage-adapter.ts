@@ -122,6 +122,7 @@ export class MobileStorageAdapter implements ProjectStorage {
 
   getReadMetrics() { return this.port().getReadMetrics?.() ?? { operations: 0, fullReads: 0, rangeReads: 0, requestedBytes: 0, actualBytesRead: 0 }; }
   get hasStrongSourceRevisions() { return this.port().hasStrongSourceRevisions === true; }
+  get speculativeRangeReads() { return this.port().speculativeRangeReads === true; }
 
   async readBinaryRange(path: string, offset: number, length: number, expectedRevision?: string, options?: StorageReadOptions) {
     await this.init();

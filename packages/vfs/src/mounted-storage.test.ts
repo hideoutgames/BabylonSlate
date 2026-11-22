@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
+import type { ProjectStorage } from "@haptic/core";
 import { MemoryStorageAdapter } from "./memory-adapter";
 import { createMountedProjectStorage } from "./mounted-storage";
+import { HttpCatalogStorageAdapter } from "./http-catalog-storage";
+import { createReadOnlyProjectStorage } from "./read-only-storage";
 
 describe("mounted project storage", () => {
   it("takes metadata-only views and routes settings overlays without copying source payloads", async () => {
@@ -27,6 +30,25 @@ describe("mounted project storage", () => {
     await expect(view.remove("plugin/assets/large")).rejects.toThrow(/read-only/i);
     await expect(view.readBinaryRange("../plugin/settings", 0, 1)).rejects.toThrow(/path/i);
     expect(await source.readText("generation/settings")).toBe("original");
+  });
+
+  it("allows speculative range reads only when every mount does, through the read-only view and its read scope", async () => {
+    const local = new MemoryStorageAdapter();
+    const http = new HttpCatalogStorageAdapter({ version: 1, files: [] }, { baseUrl: "/", fetch: vi.fn<typeof fetch>() });
+    const localOnly = createMountedProjectStorage([{ path: "a", storage: local, sourcePath: "" }]);
+    const mixed = createMountedProjectStorage([
+      { path: "a", storage: local, sourcePath: "" },
+      { path: "b", storage: http, sourcePath: "" },
+    ]);
+    expect(localOnly.speculativeRangeReads).toBe(true);
+    expect(mixed.speculativeRangeReads).toBe(false);
+    expect((http as ProjectStorage).speculativeRangeReads).toBeUndefined();
+    expect(createReadOnlyProjectStorage(localOnly).speculativeRangeReads).toBe(true);
+    expect(createReadOnlyProjectStorage(mixed).speculativeRangeReads).toBe(false);
+    const scoped = Object.assign(new MemoryStorageAdapter(), {
+      withReadScope: <T>(operation: (reader: MemoryStorageAdapter) => Promise<T>) => operation(local),
+    });
+    expect(await createReadOnlyProjectStorage(scoped).withReadScope!(async (reader) => reader.speculativeRangeReads)).toBe(true);
   });
 
   it("lists a file mount with a deeper mount below it as the directory stat reports", async () => {

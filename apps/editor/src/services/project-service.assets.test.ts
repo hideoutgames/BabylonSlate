@@ -1340,7 +1340,8 @@ describe("project documents as .hasset", () => {
     let held = false;
     const readSpy = vi.spyOn(storage, "readBinaryRange").mockImplementation(async (...args) => {
       const result = await read(...args);
-      if (args[0] === path && args[1] === 12 && !held) {
+      // The scan's read that completes the header (one bounded read, or the second of two).
+      if (args[0] === path && args[1] + args[2] > 12 && !held) {
         held = true;
         capturedHeader();
         await scanning;

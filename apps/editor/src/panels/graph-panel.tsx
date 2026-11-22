@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPositionFreeGraphSelector } from "../lib/position-free-graph";
 import type { IDockviewPanelProps } from "dockview-react";
 import { LazyGlslCodePreview } from "../components/lazy-code-editors";
 import {
@@ -190,6 +191,10 @@ export function GraphPanel(
     () => serializedGraphFromDocument(doc?.ref.kind ?? "", doc?.content),
     [doc?.ref.kind, doc?.content],
   );
+  // The graph as validation and member symbols see it: a node drag changes only positions, which
+  // neither reads, so it keeps this object and runs neither again.
+  const [selectPositionFree] = useState(() => createPositionFreeGraphSelector<typeof graphContent>());
+  const positionFreeContent = selectPositionFree(graphContent);
   // A SceneScript / SceneLayerScript names its owner's actors in Get <Actor> and Get <Component> (<Actor>).
   const ownerActors = doc?.ref.kind === "scene" || doc?.ref.kind === "scene-layer"
     ? (doc.content as SerializedScene | null)?.actors
@@ -221,7 +226,7 @@ export function GraphPanel(
   const runTrace = classRunTrace ?? animObjectRunTrace;
   const memberSymbols = useMemo(() => {
     const graphs = { ...otherClassGraphs };
-    if (classId && graphContent) graphs[classId] = graphContent;
+    if (classId && positionFreeContent) graphs[classId] = positionFreeContent;
     const symbols = [
       ...classMemberSymbolsFromGraphs(graphs, { parentOf }),
       ...ownedTimelineClipDispatcherSymbols(ownedTimelineClips ?? []),
@@ -230,7 +235,7 @@ export function GraphPanel(
     ];
     const seen = new Set<string>();
     return symbols.filter((symbol) => !seen.has(symbol.id) && Boolean(seen.add(symbol.id)));
-  }, [classId, graphContent, otherClassGraphs, ownedTimelineClips, parentOf, timelineAssets]);
+  }, [classId, positionFreeContent, otherClassGraphs, ownedTimelineClips, parentOf, timelineAssets]);
   // Keyed on the Scene class ids alone: Scene content edits never change them.
   const sceneClassIdsKey = sceneDocuments.map((scene) => sceneAssetClassId(scene.guid)).join("\n");
   const knownClassIds = useMemo(
@@ -439,6 +444,8 @@ export function GraphPanel(
     return () => setCanvasDropApi(null);
   }, [canvasApi, focused, setCanvasDropApi]);
 
+  // Without saved content the default graph is validated; with it, the position-free content.
+  const validationGraph = positionFreeContent ?? graph;
   // Edit-time validation is debounced so typing in a node does not re-run the
   // whole pass on every keystroke; save and pre-Preview sweeps are immediate.
   useEffect(() => {
@@ -454,7 +461,7 @@ export function GraphPanel(
       return;
     }
     const handle = window.setTimeout(() => {
-      const graphPayload = graphContent ?? graph;
+      const graphPayload = validationGraph;
       setDiagnostics([
         ...validateSerializedGraph(graphPayload, {
           assetGuid,
@@ -465,7 +472,7 @@ export function GraphPanel(
           members: memberSymbols,
           knownClassIds,
           implementedInterfaces: collectImplementedInterfaceContexts({
-            graph: graphContent ?? undefined,
+            graph: positionFreeContent ?? undefined,
             classId,
             parentOf,
             parentGraphs: otherClassGraphs,
@@ -495,7 +502,7 @@ export function GraphPanel(
           [
             {
               id: PREFAB_ROOT_ID,
-              components: graphContent?.components ?? [],
+              components: positionFreeContent?.components ?? [],
             },
           ],
           {
@@ -518,8 +525,8 @@ export function GraphPanel(
     classId,
     doc?.ref.kind,
     documentId,
-    graphContent,
-    graph,
+    positionFreeContent,
+    validationGraph,
     hierarchy,
     knownClassIds,
     memberSymbols,

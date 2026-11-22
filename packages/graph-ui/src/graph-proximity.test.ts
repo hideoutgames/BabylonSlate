@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { OrientedConnection } from "./graph-connect";
-import { findProximityConnections, type ProximityPin } from "./graph-proximity";
+import { findProximityConnections, pinBox, pinBoxWithinReach, type ProximityPin } from "./graph-proximity";
 
 const source: ProximityPin = {
   nodeId: "source",
@@ -231,5 +231,42 @@ describe("findProximityConnections", () => {
         isValidConnection: () => false,
       }),
     ).toEqual([]);
+  });
+});
+
+describe("pinBoxWithinReach", () => {
+  it("leaves out only nodes whose pins could join no suggestion", () => {
+    let seed = 11;
+    const random = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+    for (let trial = 0; trial < 40; trial++) {
+      // Nodes of a few pins each; the first two move. Pins sit on both sides of each node.
+      const nodes = Array.from({ length: 30 }, (_, index) => {
+        const x = random() * 2000;
+        const y = random() * 1200;
+        return Array.from({ length: 4 }, (_, pin): ProximityPin => ({
+          nodeId: `n${index}`,
+          pinId: `p${pin}`,
+          direction: pin % 2 === 0 ? "in" : "out",
+          x: x + (pin % 2 === 0 ? 0 : 240),
+          y: y + 40 * pin,
+        }));
+      });
+      const movingNodeIds = new Set(["n0", "n1"]);
+      const maxDistance = 20 + random() * 300;
+      const options = { edges: [], movingNodeIds, maxDistance, isValidConnection: () => true };
+      const moving = nodes.slice(0, 2).flat();
+      const reach = pinBox(moving)!;
+      const kept = nodes.slice(2).filter((pins) => pinBoxWithinReach(pinBox(pins), reach, maxDistance));
+      expect(findProximityConnections({ ...options, pins: [...moving, ...kept.flat()] }))
+        .toEqual(findProximityConnections({ ...options, pins: nodes.flat() }));
+    }
+  });
+
+  it("keeps a pin exactly at the reach and leaves out one just past it", () => {
+    const reach = { minX: 0, minY: 0, maxX: 10, maxY: 10 };
+    expect(pinBoxWithinReach({ minX: 60, minY: 0, maxX: 70, maxY: 0 }, reach, 50)).toBe(true);
+    expect(pinBoxWithinReach({ minX: 60.5, minY: 0, maxX: 70, maxY: 0 }, reach, 50)).toBe(false);
+    expect(pinBoxWithinReach({ minX: 0, minY: -40.5, maxX: 0, maxY: -40.5 }, reach, 40)).toBe(false);
+    expect(pinBoxWithinReach(null, reach, 40)).toBe(false);
   });
 });

@@ -82,6 +82,7 @@ export interface DocumentsFilesystemApi {
  * Android app-private Data. No picker — projects live under BabylonSlate/projects/.
  */
 export class DocumentsStorageAdapter implements ProjectStorage {
+  readonly speculativeRangeReads = true;
   private readonly reads = new StorageReadCounter();
   getReadMetrics() { return this.reads.snapshot(); }
   private folder: ProjectFolderHandle | null = null;

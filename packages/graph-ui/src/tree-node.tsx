@@ -15,6 +15,7 @@ import { NodeKindIcon } from "./node-icons";
 import { isPinWired } from "./pin-connections";
 import { useRunNodeStatus } from "./use-run-node-status";
 import { NodeRenameField, useNodeTitleGestures, useRenameValue } from "./node-title";
+import { useNodeRename, usePendingPinId } from "./graph-node-state";
 
 
 type AttachedRow = { id: string; classId: string; title?: string };
@@ -63,8 +64,8 @@ function TreePinHandle({
   position: Position;
   label: string;
 }) {
-  const { onPinTap, pendingPin } = useGraphEditorContext();
-  const pending = pendingPin?.nodeId === nodeId && pendingPin.pinId === pinId;
+  const { onPinTap } = useGraphEditorContext();
+  const pending = usePendingPinId(nodeId) === pinId;
   // Indexed once per edges array, so a drag or pan frame does not scan every edge per pin.
   const connected = useStore((state) =>
     isPinWired(state.edges, nodeId, { id: pinId, direction }),
@@ -105,7 +106,6 @@ export function TreeNode({ id, data, selected }: NodeProps<CanvasNode>) {
     onAttachmentDoubleClick,
     contextMenuItemsForNode,
     contextMenuItemsForAttachment,
-    renamingNodeId,
     onNodeRenameCommit,
     onNodeRenameCancel,
   } = useGraphEditorContext();
@@ -114,8 +114,8 @@ export function TreeNode({ id, data, selected }: NodeProps<CanvasNode>) {
   const title = typeof data.title === "string" ? data.title : id;
   // The title text takes the rename gestures; the rest of the header keeps its double-tap.
   const titleGestures = useNodeTitleGestures(id);
-  const renameValue = useRenameValue(title);
-  const renaming = renamingNodeId === id;
+  const renameValue = useRenameValue(id, title);
+  const renaming = useNodeRename(id).renaming;
   const kind = typeof data.kind === "string" ? data.kind : "task";
   const sortIndex = typeof data.sortIndex === "number" ? data.sortIndex : 0;
   const protectedNode = data.__protected === true;

@@ -65,6 +65,37 @@ function compareConnections(
   return 0;
 }
 
+/** The box around a set of pin centres (non-finite ones left out); null for none. */
+export type PinBox = { minX: number; minY: number; maxX: number; maxY: number };
+
+export function pinBox(pins: readonly ProximityPin[]): PinBox | null {
+  let box: PinBox | null = null;
+  for (const { x, y } of pins) {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    if (!box) box = { minX: x, minY: y, maxX: x, maxY: y };
+    else {
+      box.minX = Math.min(box.minX, x);
+      box.minY = Math.min(box.minY, y);
+      box.maxX = Math.max(box.maxX, x);
+      box.maxY = Math.max(box.maxY, y);
+    }
+  }
+  return box;
+}
+
+/**
+ * Whether pins inside `box` can be within `maxDistance` of a pin inside
+ * `reach` (the moving pins' box). Pins it rules out can join no suggestion:
+ * `findProximityConnections` pairs, and after resolving re-checks, only a
+ * moving and a stationary pin at most `maxDistance` apart, so leaving them
+ * out of its `pins` changes nothing it returns.
+ */
+export function pinBoxWithinReach(box: PinBox | null, reach: PinBox, maxDistance: number): boolean {
+  if (!box) return false;
+  return !(box.maxX < reach.minX - maxDistance || box.minX > reach.maxX + maxDistance ||
+    box.maxY < reach.minY - maxDistance || box.minY > reach.maxY + maxDistance);
+}
+
 /** Suggest nearby, facing, unused pins without changing existing topology. */
 export function findProximityConnections({
   pins,

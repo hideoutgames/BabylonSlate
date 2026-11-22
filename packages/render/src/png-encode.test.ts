@@ -1,6 +1,6 @@
 import { crc32, inflateSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
-import { encodeRgbaPng, PNG_SIGNATURE } from "./png-encode";
+import { encodeRgbaPng, encodeRgbaPngCompressed, PNG_SIGNATURE } from "./png-encode";
 
 function readChunks(png: Uint8Array) {
   const view = new DataView(png.buffer, png.byteOffset, png.byteLength);
@@ -50,5 +50,62 @@ describe("encodeRgbaPng", () => {
       expected.set(rgba.subarray(y * width * 4, (y + 1) * width * 4), y * (1 + width * 4) + 1);
     }
     expect(rows.equals(expected)).toBe(true);
+  });
+});
+
+/** A reference PNG row decoder (RGBA8): undoes each row's filter, per the PNG specification. */
+function unfilter(rows: Uint8Array, width: number, height: number): Uint8Array {
+  const stride = width * 4;
+  const out = new Uint8Array(height * stride);
+  for (let y = 0; y < height; y++) {
+    const filter = rows[y * (stride + 1)]!;
+    for (let i = 0; i < stride; i++) {
+      const value = rows[y * (stride + 1) + 1 + i]!;
+      const a = i >= 4 ? out[y * stride + i - 4]! : 0;
+      const b = y > 0 ? out[(y - 1) * stride + i]! : 0;
+      const c = i >= 4 && y > 0 ? out[(y - 1) * stride + i - 4]! : 0;
+      const p = a + b - c;
+      const paeth = Math.abs(p - a) <= Math.abs(p - b) && Math.abs(p - a) <= Math.abs(p - c) ? a
+        : Math.abs(p - b) <= Math.abs(p - c) ? b : c;
+      const predicted = [0, a, b, (a + b) >> 1, paeth][filter]!;
+      out[y * stride + i] = (value + predicted) & 0xff;
+    }
+  }
+  return out;
+}
+
+describe("encodeRgbaPngCompressed", () => {
+  it("decodes to the same pixels as the store-only PNG, several times smaller for a thumbnail", async () => {
+    // A 128×128 thumbnail: a shaded disc on a transparent background.
+    const size = 128;
+    const rgba = new Uint8Array(size * size * 4);
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        if ((x - 64) ** 2 + (y - 64) ** 2 > 50 ** 2) continue;
+        rgba.set([x * 2, y * 2, 128, 255], (y * size + x) * 4);
+      }
+    }
+    const stored = encodeRgbaPng(size, size, rgba);
+    const compressed = await encodeRgbaPngCompressed(size, size, rgba);
+    const storedChunks = readChunks(stored);
+    const compressedChunks = readChunks(compressed);
+    expect(compressedChunks.map((chunk) => chunk.type)).toEqual(["IHDR", "IDAT", "IEND"]);
+    for (const chunk of compressedChunks) expect(chunk.crc).toBe(crc32(chunk.typeAndData));
+    expect(compressedChunks[0]!.data).toEqual(storedChunks[0]!.data);
+    const rows = inflateSync(compressedChunks[1]!.data);
+    // Each row names one of the five filters, and the rows decode to the input pixels.
+    for (let y = 0; y < size; y++) expect(rows[y * (size * 4 + 1)]).toBeLessThanOrEqual(4);
+    expect(unfilter(rows, size, size)).toEqual(rgba);
+    expect(unfilter(inflateSync(storedChunks[1]!.data), size, size)).toEqual(rgba);
+    expect(stored.byteLength).toBeGreaterThan(65_000);
+    expect(compressed.byteLength).toBeLessThan(stored.byteLength / 4);
+  });
+
+  it("falls back to the store-only encoding without CompressionStream", async ({ onTestFinished }) => {
+    const original = globalThis.CompressionStream;
+    onTestFinished(() => { globalThis.CompressionStream = original; });
+    Reflect.deleteProperty(globalThis, "CompressionStream");
+    const rgba = new Uint8Array([1, 2, 3, 4]);
+    expect(await encodeRgbaPngCompressed(1, 1, rgba)).toEqual(encodeRgbaPng(1, 1, rgba));
   });
 });

@@ -45,10 +45,7 @@ type CatalogPin = { name: string; kind?: string; direction?: string; type: PinTy
 type GraphEditorContextValue = Parameters<typeof GraphEditorProvider>[0]["value"];
 
 const context: GraphEditorContextValue = {
-  pendingPin: null,
   onPinTap: () => {},
-  nodeErrorCount: () => 0,
-  pinHasError: () => false,
   pinDisplayType: () => undefined,
   connectEndMode: "default",
 };

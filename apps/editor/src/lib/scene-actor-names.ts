@@ -14,6 +14,26 @@ export function sceneActorDisplayNames(scene: SerializedScene): Map<string, stri
   ]));
 }
 
+/**
+ * `sceneActorDisplayNames` for a component (`useState(createActorDisplayNamesSelector)`): the map
+ * it returned last while the Scene's actors keep the same ids and names in the same order, which
+ * is all the names read, so an edit that only moves or changes components keeps it. No Scene: an
+ * empty map.
+ */
+export function createActorDisplayNamesSelector(): (scene: SerializedScene | null) => Map<string, string> {
+  let last: { actors: SerializedScene["actors"]; names: Map<string, string> } | null = null;
+  return (scene) => {
+    const actors = scene?.actors ?? [];
+    if (last && (last.actors === actors || (last.actors.length === actors.length &&
+      actors.every((actor, index) => actor.id === last!.actors[index]!.id && actor.name === last!.actors[index]!.name)))) {
+      if (last.actors !== actors) last = { actors, names: last.names };
+      return last.names;
+    }
+    last = { actors, names: scene ? sceneActorDisplayNames(scene) : new Map<string, string>() };
+    return last.names;
+  };
+}
+
 export function uniqueSceneActorName(scene: SerializedScene, preferred: string): string {
   const names = new Set(scene.actors.map((actor) => actor.name));
   let name = preferred;

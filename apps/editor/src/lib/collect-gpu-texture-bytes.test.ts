@@ -116,30 +116,29 @@ describe("collectGpuTextureBytes", () => {
     expect([...bytes.values()].map((value) => value[0])).toEqual(guids.map((_, index) => index));
   });
 
-  it("downsamples source bytes when editor LOD wants a smaller edge", async () => {
+  it.each(["list", "lookup"] as const)("downsamples source bytes when editor LOD wants a smaller edge (assets as a %s)", async (form) => {
     const png = new Uint8Array([1, 2, 3]);
     const downsampled = new Uint8Array([4, 5]);
     const downsampleSource = vi.fn(async () => downsampled);
     const onMissingKtx2 = vi.fn();
+    const hero = {
+      path: "assets/Hero.texture.hasset",
+      header: textureHeader(
+        [
+          {
+            id: "pixels",
+            kind: "pixels",
+            mime: "image/png",
+            sha256: "aa",
+            byteLength: 3, locator: { inline: { offset: 0, length: 3 } },
+          },
+        ],
+        { usage: "albedo", width: 4096, height: 4096 },
+      ),
+    };
     const bytes = await collectGpuTextureBytes({
-      assets: [
-        {
-          path: "assets/Hero.texture.hasset",
-          header: textureHeader(
-            [
-              {
-                id: "pixels",
-                kind: "pixels",
-                mime: "image/png",
-                sha256: "aa",
-                byteLength: 3, locator: { inline: { offset: 0, length: 3 } },
-              },
-            ],
-            { usage: "albedo", width: 4096, height: 4096 },
-          ),
-        },
-      ],
-      guids: ["tex-1"],
+      assets: form === "list" ? [hero] : (guid) => (guid === hero.header.guid ? hero : undefined),
+      guids: ["tex-1", "tex-missing"],
       readChunk: async () => png,
       editorLod: { enabled: true, quality: 0.5 },
       downsampleSource,

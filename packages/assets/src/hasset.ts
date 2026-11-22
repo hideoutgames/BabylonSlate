@@ -179,11 +179,14 @@ function parseHassetHeader(raw: unknown): HassetHeader {
   return hassetHeaderSchema.parse(raw);
 }
 
+/** Shared: a non-streaming `decode` keeps no state between calls. */
+const headerDecoder = new TextDecoder();
+
 export function readHassetHeader(bytes: Uint8Array): HassetHeader {
   const headerLen = readHassetHeaderLength(bytes);
   if (bytes.byteLength < HASSET_PREFIX_BYTES + headerLen) throw new Error("Truncated .hasset header");
   const headerBytes = bytes.subarray(HASSET_PREFIX_BYTES, HASSET_PREFIX_BYTES + headerLen);
-  const json = new TextDecoder().decode(headerBytes);
+  const json = headerDecoder.decode(headerBytes);
   return parseHassetHeader(JSON.parse(json));
 }
 
