@@ -3,7 +3,7 @@ import { createActor } from "@haptic/core";
 import { ClassRegistry, EngineObject, World } from "@haptic/object-model";
 import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
 import { compileClassScript, graphNode, startGraphScenario, wire, type GraphScenario } from "./testing/graph-scenario";
-import { RuntimeObjectLifetime } from "./object-lifetime";
+import { GARBAGE_COLLECTION_SLICE_WORK, RuntimeObjectLifetime } from "./object-lifetime";
 
 const registry = createDefaultNodeRegistry();
 const variable = (name: string) => ({ variableName: name, typeId: "object", typeClassId: "Object", implicitSelf: true });
@@ -159,5 +159,104 @@ describe("object lifetime across script hot reload", () => {
     lifetime.request();
     lifetime.afterTick(1);
     expect(held.destroyed).toBe(false);
+  });
+});
+
+const COMPONENT_PROPERTIES: Array<[string, Record<string, unknown>]> = [
+  ["MeshComponent", { meshKind: "box", assetGuid: null, materialGuid: null, collisionMode: "none", layer: 1, mask: 0xffffffff }],
+  ["PointLightComponent", { color: [1, 0.9, 0.8], intensity: 2, range: 10, castShadows: false }],
+  ["ColliderComponent", { shape: { kind: "box", size: [1, 1, 1] }, isTrigger: false, friction: 0.5 }],
+  ["RigidBodyComponent", { motionType: "dynamic", mass: 1, lockRotation: [false, false, false] }],
+];
+/** No owner in `largeWorld` holds more values than this, so a slice can pass the budget by at most this much. */
+const LARGEST_OWNER_WORK = 16;
+
+/** `count` actors with two to four engine components each, listed as Play lists its roots. */
+function largeWorld(count: number, intervalTicks = 60, now: () => number = () => 0) {
+  const world = new World({ seed: 1, dt: 1 / 60, classRegistry: new ClassRegistry() });
+  for (let index = 0; index < count; index++) {
+    const actor = world.spawnActorNow(world.createActor({ classId: "Actor", guid: `actor-${index}`, variables: { Health: 100, Tags: ["enemy"] } }));
+    for (let slot = 0; slot < 2 + (index % 3); slot++) {
+      const [classId, properties] = COMPONENT_PROPERTIES[(index + slot) % COMPONENT_PROPERTIES.length]!;
+      actor.attachComponent(world.createComponent({ classId, guid: `actor-${index}:${slot}`, variables: structuredClone(properties) }));
+    }
+  }
+  const roots = () => world.getActors().flatMap((actor) => [actor, ...actor.components]);
+  const lifetime = new RuntimeObjectLifetime({ world: () => world, roots, intervalTicks: () => intervalTicks, now });
+  return { world, roots, lifetime };
+}
+
+/** Runs ticks from `first` until the cycle started there has finished; returns each tick's work units. */
+function runCycle(lifetime: RuntimeObjectLifetime, first: number): number[] {
+  const work: number[] = [];
+  for (let tick = first; tick === first || lifetime.collector.collecting; tick++) {
+    const before = lifetime.collector.workDone;
+    lifetime.afterTick(tick);
+    work.push(lifetime.collector.workDone - before);
+  }
+  return work;
+}
+
+describe("object lifetime collection slices", () => {
+  it("spreads a cycle over ticks within the slice budget at 3,000 actors", () => {
+    const { world, lifetime } = largeWorld(3000);
+    const doomed = world.findActor("actor-0")!;
+    const holder = world.findActor("actor-1")!;
+    holder.setVariable("Target", doomed);
+    world.destroyActorInstance(doomed);
+    world.flushPending();
+
+    const work = runCycle(lifetime, 60);
+
+    expect(work.length).toBeGreaterThan(10);
+    expect(Math.max(...work)).toBeLessThanOrEqual(GARBAGE_COLLECTION_SLICE_WORK + LARGEST_OWNER_WORK);
+    expect(lifetime.lastPass).toMatchObject({ tickIndex: 60 + work.length - 1, ticks: work.length, collected: 0 });
+    expect(holder.getVariable("Target")).toBeNull();
+  });
+
+  it("collects an unreachable object at 3,000 actors with only the finishing tick over budget, below a full pass", () => {
+    const { roots, lifetime } = largeWorld(3000);
+    const before = lifetime.collector.workDone;
+    lifetime.collector.collect(roots());
+    const fullPass = lifetime.collector.workDone - before;
+    const orphan = new EngineObject({ classId: "Object", guid: "orphan" });
+    lifetime.collector.register(orphan);
+
+    const work = runCycle(lifetime, 60);
+
+    expect(Math.max(...work.slice(0, -1))).toBeLessThanOrEqual(GARBAGE_COLLECTION_SLICE_WORK + LARGEST_OWNER_WORK);
+    // The finishing tick rechecks roots, owners and containers instead of marking again.
+    expect(work.at(-1)!).toBeLessThan(fullPass);
+    expect(orphan.destroyed).toBe(true);
+  });
+
+  it("collects the same objects on the same ticks in every run, whatever the wall clock says", () => {
+    function run(clockStep: number): string[] {
+      let clock = 0;
+      const { world, lifetime } = largeWorld(400, 10, () => (clock += clockStep));
+      const collected: string[] = [];
+      let tick = 0;
+      lifetime.collector.onRelease((object) => collected.push(`${tick}:${object.guid}`));
+      let longestCycle = 0;
+      for (tick = 1; tick <= 120; tick++) {
+        const created = new EngineObject({ classId: "Object", guid: `object-${tick}` });
+        lifetime.collector.register(created);
+        // Every third object is held until a later tick lets go of it; the rest are dropped at once.
+        if (tick % 3 === 0) world.findActor(`actor-${tick % 20}`)!.setVariable("Held", [created]);
+        if (tick % 7 === 0) world.findActor(`actor-${(tick * 3) % 20}`)!.setVariable("Held", null);
+        if (tick % 11 === 0) {
+          world.destroyActorInstance(world.findActor(`actor-${100 + tick}`)!);
+          world.flushPending();
+        }
+        lifetime.afterTick(tick);
+        longestCycle = Math.max(longestCycle, lifetime.lastPass?.ticks ?? 0);
+      }
+      expect(longestCycle).toBeGreaterThan(1);
+      return collected;
+    }
+
+    const first = run(0.001);
+    expect(first.length).toBeGreaterThan(40);
+    expect(run(250)).toEqual(first);
   });
 });
