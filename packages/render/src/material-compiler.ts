@@ -1188,12 +1188,12 @@ export function compileMaterialPlan(
     });
   }
   // Custom GLSL keeps its own readiness probe; everything else in Material mode may reuse a byte-identical program
-  // compiled for another material, whatever its name. Particle programs share only under one name: Babylon names a
-  // particle Effect after its material.
+  // compiled for another material, whatever its name. Particle and post-process programs share only under one name:
+  // Babylon names their Effect after the material and its build id.
   if (material.mode === NodeMaterialModes.Material && plan.cost.customBlocks === 0) {
     shareCompiledProgram(material, JSON.stringify([options.surfaceVariant ?? null, options.overlay === true, material.shaderLanguage]), () => ownRebuilds > 0);
-  } else if (material.mode === NodeMaterialModes.Particle && plan.cost.customBlocks === 0) {
-    shareParticleProgram(material, JSON.stringify([options.name, material.shaderLanguage]));
+  } else if ((material.mode === NodeMaterialModes.Particle || material.mode === NodeMaterialModes.PostProcess) && plan.cost.customBlocks === 0) {
+    shareNamedProgram(material, JSON.stringify([options.name, material.mode, material.shaderLanguage]), material.mode === NodeMaterialModes.PostProcess);
   }
   try {
     if (plan.operations.some((operation) => operation.nodeType === "input.environmentSample")) {
@@ -1486,30 +1486,33 @@ export function shareCompiledProgram(material: NodeMaterial, key: string, ownReb
   material.onDisposeObservable.addOnce(leave);
 }
 
-/** Particle programs an Engine remembers for adoption (`shareParticleProgram`), least recently used first out. */
-export const PARTICLE_PROGRAM_CACHE_SIZE = 256;
-/** A remembered particle program: its generated code, the equality check behind its digest, and its build id. */
-type ParticleProgram = { shaders: string; buildId: number };
-/** Per Engine, particle programs by key and digest of their generated code, least recently used first. */
-const particlePrograms = new WeakMap<AbstractEngine, Map<string, ParticleProgram>>();
+/** Particle and post-process programs an Engine remembers for adoption (`shareNamedProgram`), least recently used first out. */
+export const NAMED_PROGRAM_CACHE_SIZE = 256;
+/** A remembered program: its generated code, the equality check behind its digest, and its build id. */
+type NamedProgram = { shaders: string; buildId: number };
+/** Per Engine, named programs by key and digest of their generated code, least recently used first. */
+const namedPrograms = new WeakMap<AbstractEngine, Map<string, NamedProgram>>();
 
 /**
- * A particle NodeMaterial names its Effect after the material and its build id (`name + buildId + "_" +
- * blendMode`), and the Engine's Effect cache keys on that name, so every build compiles its own program even when
- * its code is the same, as it is for each emitter's instance of one particle Material. After the first build, adopt
- * the id an earlier build under the same key and byte-identical code took, so they share one Effect. Ids outlive
- * their materials: a later Play's emitters then name the Effect the last one kept (`keepPlayEffects`). The Engine
- * remembers the last `PARTICLE_PROGRAM_CACHE_SIZE` programs, keyed by a digest of their code and checked against the
- * code itself, so a digest collision adopts nothing; forgetting one only means a later build compiles its own program
- * (no Effect is disposed: they belong to the Engine's cache and the materials using them). Particle
- * Materials never rebuild, and every particle Effect is created right after its source is registered. Post-process
- * Materials do not share: Babylon creates a pass's Effect a tick after registering its source, and a pass's cleanup
- * (`OwnedPostProcess`) or a rebuild deletes the sources by that name, which another Material's pass would still read.
+ * A particle or post-process NodeMaterial names its Effect after the material and its build id (`name + buildId`,
+ * plus `"_" + blendMode` for particles), and the Engine's Effect cache keys on that name, so every build compiles its
+ * own program even when its code is the same: each emitter's instance of one particle Material, and each world graph
+ * build's pass of a post-process stack entry (every build acquires the Material anew), which linked one more program
+ * at every settings change and restore. Adopt the id an earlier build under the same key and byte-identical code
+ * took, so they share one Effect. Ids outlive their materials: a later build or Play then names the Effect the Play
+ * keep (`keepPlayEffects`) or a live pass still holds. The Engine remembers the last `NAMED_PROGRAM_CACHE_SIZE`
+ * programs, keyed by a digest of their code and checked against the code itself, so a digest collision adopts
+ * nothing; forgetting one only means a later build compiles its own program (no Effect is disposed: they belong to the
+ * Engine's cache and the materials using them). Particle Materials adopt at their first build only (they never
+ * rebuild); a post-process Material adopts at every build (`everyBuild`), its own texture-driven rebuilds included, as
+ * its owner (`AuthoredPostProcessTask`) makes a new pass for each build. Sharing a pass's source name is safe:
+ * `OwnedPostProcess` removes a source with the last live pass that registered it, not the first to retire, and a
+ * retired pass's Babylon apply callback (which deletes its build's sources after a rebuild) never runs again.
  */
-function shareParticleProgram(material: NodeMaterial, key: string): void {
+function shareNamedProgram(material: NodeMaterial, key: string, everyBuild: boolean): void {
   const engine = material.getScene().getEngine();
-  let programs = particlePrograms.get(engine);
-  if (!programs) particlePrograms.set(engine, (programs = new Map()));
+  let programs = namedPrograms.get(engine);
+  if (!programs) namedPrograms.set(engine, (programs = new Map()));
   const registry = programs;
   let entry: string | undefined;
   sharedProgramForgetters.set(material, () => {
@@ -1520,7 +1523,7 @@ function shareParticleProgram(material: NodeMaterial, key: string): void {
   material.onBuildObservable.add(() => {
     if (adopted !== undefined && material.buildId === adopted) material.buildId = freshBuildId();
     adopted = undefined;
-    if (!firstBuild) {
+    if (!firstBuild && !everyBuild) {
       entry = undefined;
       return;
     }
@@ -1537,7 +1540,7 @@ function shareParticleProgram(material: NodeMaterial, key: string): void {
     }
     // Unknown code, or other code under the same digest: this build's program takes the slot.
     registry.set(entry, { shaders, buildId: material.buildId });
-    if (registry.size > PARTICLE_PROGRAM_CACHE_SIZE) registry.delete(registry.keys().next().value!);
+    if (registry.size > NAMED_PROGRAM_CACHE_SIZE) registry.delete(registry.keys().next().value!);
   }, undefined, true);
 }
 

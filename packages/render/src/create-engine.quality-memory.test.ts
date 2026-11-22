@@ -8,8 +8,9 @@ import type { InternalTexture } from "@babylonjs/core/Materials/Textures/interna
 import { SNAPSHOT_FLAG_VISIBLE, snapshotFloatCount, writeActorSlot, writeSnapshotHeader } from "@haptic/bridge";
 import {
   applyProjectQualityPatch, createDefaultScene, DEFAULT_RENDER_EFFECTS, normalizeRenderingQuality, normalizeRenderProjectSettings,
-  qualityPresetPatch, QUALITY_GROUPS, ScalabilitySession, type QualityGroup, type RenderProjectSettings,
+  qualityPresetPatch, QUALITY_GROUPS, ScalabilitySession, type QualityGroup, type RenderProjectSettings, type WorldDebugPart,
 } from "@haptic/core";
+import { createDefaultMaterialDocument } from "@haptic/shader-graph";
 import { createEngine } from "./editor-engine";
 import { keptEffectCount, releaseBridgedEffects, releaseKeptEffects } from "./effect-bridge";
 import { managedRenderReservations } from "./managed-render-resources";
@@ -92,16 +93,21 @@ describe("Play quality changes", () => {
     return { textures: textures.length, bytes: textures.reduce((sum, texture) => sum + estimateTextureBytes(texture), 0) };
   };
 
+  /** An authored Post Process Material in the stack, as the Feature Test main scene has one. */
+  const POST_STACK = [{ id: "grade", materialGuid: "grade", enabled: true }];
+
   /** A Play session at High: a lit crate under a shadowed sun, its view prepared and drawing. */
-  async function startPlay(engine = sharedEngine()) {
+  async function startPlay(engine = sharedEngine(), postProcess = false) {
     // The session submits to the view and the view acknowledges to the session, as Play wires them.
     const session = new ScalabilitySession(HIGH, FRAME_CAP, {}, (transaction) => play.applyCommand({ type: "setScalability", transaction }));
     const play = createEngine(new FakeCanvas() as unknown as HTMLCanvasElement, {
       sharedEngine: engine, playMode: true, renderSettings: HIGH, frameCap: FRAME_CAP,
       onScalabilityApplied: (acknowledgement) => session.acknowledge(acknowledgement),
+      ...(postProcess ? { materialDocuments: new Map([["grade", createDefaultMaterialDocument("Grade", "postProcess")]]), postProcessStack: POST_STACK } : {}),
     });
     handles.push(play);
     const scene = createDefaultScene();
+    if (postProcess) scene.settings.postProcessStack = POST_STACK;
     play.loadScene(scene, { sceneAssetGuid: "scene" });
     play.applySceneEnvironment(scene);
     const part = (componentId: string, meshKind: string) => ({ componentId, meshKind,
@@ -144,6 +150,10 @@ describe("Play quality changes", () => {
       const [name, ...words] = line.split(" ");
       if (name === "postprocessing") {
         play.applyCommand({ type: "setPostProcessingDebug", enabled: words[0] === "on" });
+        return;
+      }
+      if (name === "worlddebug") {
+        play.applyCommand({ type: "setWorldDebug", part: words[0] as WorldDebugPart, enabled: words[1] === "on" });
         return;
       }
       const group = QUALITY_GROUPS.includes(words[0] as QualityGroup) ? words.shift() as QualityGroup : undefined;
@@ -220,6 +230,36 @@ describe("Play quality changes", () => {
     // The Screen-Space Shadows stage, which Medium does not draw; a hold that never ended keeps it. The surfaces draw
     // the variant they drew at High: whether a tier has screen shadows is bound, not compiled.
     expect([...before.keys()].filter((key) => !medium.has(key))).toHaveLength(1);
+  });
+
+  // The Feature Test Check's Profile switches a setting on, then restores it with `quality reset` and its own off
+  // command before each baseline. Every switch builds the world graph again, and each build makes the stack entry's
+  // pass anew; back in a state already drawn, the view links nothing and holds the programs it held.
+  it("links no program again when a step and its restore build the graph again, round after round", async () => {
+    const { engine, frames, run, work } = await startPlay(sharedEngine(), true);
+    const compiled = () => new Set(Object.values((engine as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects));
+    const rounds: Array<{ programs: number; linked: number; graphBuilds: number }> = [];
+    let known = compiled();
+    for (let round = 0; round < 4; round++) {
+      const builds = work().graphBuilds;
+      for (const [step, restore] of [
+        [["worlddebug mergedmarches on"], ["quality reset", "worlddebug mergedmarches off"]],
+        [["quality shadows medium"], ["quality reset"]],
+        [["postprocessing off"], ["quality reset", "postprocessing on"]],
+      ]) {
+        for (const line of step) run(line);
+        await frames(15);
+        for (const line of restore) run(line);
+        await frames(15);
+      }
+      const now = compiled();
+      rounds.push({ programs: now.size, linked: [...now].filter((effect) => !known.has(effect)).length, graphBuilds: work().graphBuilds - builds });
+      known = now;
+    }
+    // The first round compiles each step's own programs; later rounds draw them from the Effect cache.
+    const [, ...later] = rounds;
+    for (const round of rounds) expect(round.graphBuilds).toBeGreaterThanOrEqual(3);
+    for (const round of later) expect({ programs: round.programs, linked: round.linked }).toEqual({ programs: rounds[0]!.programs, linked: 0 });
   });
 
   it("never holds more textures than the larger of the states before and after a step or its restore", async () => {
