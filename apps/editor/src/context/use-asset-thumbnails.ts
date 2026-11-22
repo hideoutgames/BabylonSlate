@@ -9,6 +9,7 @@ import {
 } from "react";
 import type { ProjectDocument, ProjectStorage } from "@haptic/core";
 import { readThumbnail, ThumbnailDecodeLru, writeThumbnail } from "@haptic/assets";
+import { createThumbnailVersionStore } from "@haptic/editor-kit";
 import {
   createAssetThumbnailRevisionIndex,
   type AssetThumbnailWriteIdentity,
@@ -31,8 +32,9 @@ export interface AssetThumbnailDeps {
 /**
  * Asset thumbnails: the decoded thumbnail cache, the saved revision each
  * asset's thumbnail was read for (a new revision bumps its version), and the
- * Thumbnails engine setting. Every callback keeps its identity for the
- * provider's lifetime.
+ * Thumbnails engine setting. Every callback, and the version store, keeps its
+ * identity for the provider's lifetime: a rewritten thumbnail renders only the
+ * views subscribed to that asset, never the provider.
  */
 export function useAssetThumbnails({
   projectService,
@@ -47,7 +49,7 @@ export function useAssetThumbnails({
   const thumbnailLruRef = useRef(new ThumbnailDecodeLru(THUMBNAIL_DECODE_LRU_ENTRIES));
   const requestedThumbnailRevisionsRef = useRef(new Map<string, string>());
   const thumbnailsEnabledRef = useRef(true);
-  const [thumbnailVersions, setThumbnailVersions] = useState<Record<string, number>>({});
+  const [thumbnailVersions] = useState(createThumbnailVersionStore);
   const previousThumbnailIndexRef = useRef<ReturnType<typeof createAssetThumbnailRevisionIndex> | null>(null);
   const thumbnailRevisionIndex = useMemo(
     () => {
@@ -76,20 +78,16 @@ export function useAssetThumbnails({
       else requestedThumbnailRevisionsRef.current.set(guid, next);
       changed.push(guid);
     }
-    if (changed.length) setThumbnailVersions((versions) => {
-      const next = { ...versions };
-      for (const guid of changed) next[guid] = (next[guid] ?? 0) + 1;
-      return next;
-    });
-  }, [thumbnailRevisionIndex]);
+    if (changed.length) thumbnailVersions.bump(changed);
+  }, [thumbnailRevisionIndex, thumbnailVersions]);
   const [thumbnailsEnabled, setThumbnailsEnabled] = useState(true);
 
   /** Project open: the previous project's decoded and requested thumbnails go. */
   const resetThumbnails = useCallback(() => {
     thumbnailLruRef.current = new ThumbnailDecodeLru(THUMBNAIL_DECODE_LRU_ENTRIES);
     requestedThumbnailRevisionsRef.current.clear();
-    setThumbnailVersions({});
-  }, []);
+    thumbnailVersions.reset();
+  }, [thumbnailVersions]);
 
   /** The Thumbnails engine setting, read when the provider mounts. */
   const applyThumbnailsEnabled = useCallback((enabled: boolean) => {
@@ -145,12 +143,9 @@ export function useAssetThumbnails({
       await writeThumbnail(derived, guid, key, bytes);
       if (projectService.guid !== guid || thumbnailLruRef.current !== lru) return;
       lru.delete(key);
-      setThumbnailVersions((versions) => ({
-        ...versions,
-        [assetGuid]: (versions[assetGuid] ?? 0) + 1,
-      }));
+      thumbnailVersions.bump([assetGuid]);
     },
-    [ensureDerived, projectService, projectDocumentRef],
+    [ensureDerived, projectService, projectDocumentRef, thumbnailVersions],
   );
 
   const actions = useMemo(

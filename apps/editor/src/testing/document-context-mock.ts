@@ -34,6 +34,7 @@
  */
 import { useSyncExternalStore, type ReactNode } from "react";
 import { ASSET_DOCUMENT_KINDS, type DocumentKind } from "@haptic/core";
+import { createThumbnailVersionStore } from "@haptic/editor-kit";
 import type { DocumentContextValue } from "../context/document-context-types";
 import { documentKindsRevision, type DocumentRevisions, type OpenDocument } from "../services/document-service";
 import type { ExtensionSnapshot } from "../services/editor-extension-service";
@@ -258,7 +259,7 @@ function inertDocuments(current: () => DocumentsValue | undefined): DocumentsVal
     toggleLayoutFocus: noop,
     loadAssetThumbnail: async () => null,
     writeAssetThumbnail: resolved,
-    thumbnailVersions: {},
+    thumbnailVersions: createThumbnailVersionStore(),
     thumbnailsEnabled: false,
     collectPlayPreviewScripts: async () => ({ bundles: [], diagnostics: [] }),
     collectEditorUtilityScripts: async () => [],
