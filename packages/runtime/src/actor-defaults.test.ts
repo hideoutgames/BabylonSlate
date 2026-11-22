@@ -180,3 +180,107 @@ describe("Actor Defaults Tick Interval", () => {
     }
   });
 });
+
+/** A Class with a 4-step Tick Interval whose Event Tick logs as `intervalTicker`'s, then runs `body`; `extra` declares `functions`. */
+function scriptedTicker(classId: string, body: string, extra = "", isAsync = false, functions: string[] = []): CompiledScript {
+  return {
+    assetGuid: classId.toLowerCase(), classId, parentClassId: "Actor", anchors: [], actorDefaults: { tickInterval: 1 },
+    entryPoints: [{ name: "onTick", event: "onTick", isAsync }, ...functions.map(name => ({ name, isAsync: false }))],
+    source: `export ${isAsync ? "async " : ""}function onTick(ctx) {
+        const log = ctx.self.getVariable("log") ?? [];
+        log.push([ctx.tickIndex, ctx.deltaSeconds, ctx.getDeltaSeconds()]);
+        ctx.self.setVariable("log", log);
+        ${body}
+      }
+${extra}`,
+  };
+}
+
+const settle = async () => { for (let index = 0; index < 8; index++) await Promise.resolve(); };
+
+describe("Get Delta Seconds around a Tick Interval Event Tick", () => {
+  it("reads the world step again in a Delay that resumes after the tick that started it", async () => {
+    const runtime = await intervalRuntime([scriptedTicker("Waiter", `
+        if (ctx.tickIndex !== 4) return;
+        await ctx.delay(0.5);
+        ctx.self.setVariable("resumed", ctx.getDeltaSeconds());`, "", true)]);
+    try {
+      const waiter = runtime.spawnScriptedActor({ classId: "Waiter" })!;
+      for (let step = 0; step < 8; step++) { runtime.tick(); await settle(); }
+      expect(logOf(waiter)[1]).toEqual([4, 1, 1]);
+      // The Delay started in the tick that read 1 s resumes on a later step, which reads one step.
+      expect(waiter.getVariable("resumed")).toBe(0.25);
+    } finally {
+      runtime.stop();
+    }
+  });
+
+  it("stops reading an Event Tick's delta once it throws or trips the infinite loop guard", async () => {
+    const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, dt: STEP, loopCount: 5 });
+    await runtime.loadScripts([
+      scriptedTicker("Faulty", `
+        if (ctx.tickIndex === 4) throw new Error("tick failed");
+        if (ctx.tickIndex === 8) for (;;) ctx.checkInfiniteLoop();`),
+      intervalTicker("Steady"),
+    ]);
+    runtime.start();
+    try {
+      const faulty = runtime.spawnScriptedActor({ classId: "Faulty" })!;
+      const steady = runtime.spawnScriptedActor({ classId: "Steady" })!;
+      for (let step = 0; step < 10; step++) runtime.tick();
+      expect(tickIndices(faulty)).toEqual([0, 4, 8]);
+      expect(logOf(faulty)[1]).toEqual([4, 1, 1]);
+      // Later in the step whose Event Tick threw, and on the step after the loop aborted step 8's actors.
+      expect(logOf(steady).filter(([tickIndex]) => tickIndex === 4 || tickIndex === 9)).toEqual([[4, 0.25, 0.25], [9, 0.25, 0.25]]);
+    } finally {
+      runtime.stop();
+    }
+  });
+
+  it("gives a function called from the Event Tick the caller's delta, and Begin Play of an actor it spawns one step", async () => {
+    const runtime = await intervalRuntime([
+      scriptedTicker("Caller", `
+        if (ctx.tickIndex !== 4) return;
+        ctx.invokeFunction(ctx.self.getVariable("callee"), "Probe", {});
+        ctx.spawnActor("Spawned");`),
+      scriptedTicker("Callee", "", `export function Probe(ctx) { ctx.self.setVariable("probed", ctx.getDeltaSeconds()); }`, false, ["Probe"]),
+      {
+        assetGuid: "spawned", classId: "Spawned", parentClassId: "Actor", anchors: [],
+        entryPoints: [{ name: "begin", event: "onBeginPlay", isAsync: false }],
+        source: `export function begin(ctx) { ctx.self.setVariable("began", ctx.getDeltaSeconds()); }`,
+      },
+    ]);
+    try {
+      const caller = runtime.spawnScriptedActor({ classId: "Caller" })!;
+      // Spawn order 1 puts the callee's own Event Ticks on steps 3 and 7, never on step 4.
+      const callee = runtime.spawnScriptedActor({ classId: "Callee" })!;
+      caller.setVariable("callee", callee);
+      for (let step = 0; step < 5; step++) runtime.tick();
+      expect(tickIndices(callee)).toEqual([3]);
+      // Called synchronously from the caller's 1 s Event Tick, the function runs as part of that tick.
+      expect(callee.getVariable("probed")).toBe(1);
+      // A spawn made mid-tick begins play after the actors phase, outside the Event Tick.
+      const spawned = runtime.getWorld().getActors().filter(actor => actor.classId === "Spawned");
+      expect(spawned.map(actor => actor.getVariable("began"))).toEqual([0.25]);
+    } finally {
+      runtime.stop();
+    }
+  });
+
+  it("runs only the input events of a Class with a Tick Interval and no Event Tick", async () => {
+    const runtime = await intervalRuntime([{
+      assetGuid: "listener", classId: "Listener", parentClassId: "Actor", anchors: [], actorDefaults: { tickInterval: 1 },
+      entryPoints: [{ name: "onInput", event: "onInput", isAsync: false }],
+      source: `export function onInput(ctx) { ctx.self.setVariable("inputs", (ctx.self.getVariable("inputs") ?? 0) + 1); }`,
+    }]);
+    try {
+      const listener = runtime.spawnScriptedActor({ classId: "Listener" })!;
+      for (let step = 0; step < 6; step++) runtime.tick();
+      expect(listener.getVariable("inputs")).toBe(6);
+      expect(listener.tickStride).toBe(4);
+      expect(listener.eventTickElapsed).toBe(0);
+    } finally {
+      runtime.stop();
+    }
+  });
+});
