@@ -60,7 +60,7 @@ Pausing Play also pauses its sounds.
 | --- | --- |
 | Audio Memory Budget | Releases unused clips when audio memory reaches the budget. On by default. |
 | Audio Budget (MB) | The budget, from 32 to 2048 MB. Default 256. |
-| Max Concurrent Voices | How many sounds can play at once, from 8 to 128. Default 32. The oldest sound stops when the limit is reached. |
+| Max Concurrent Voices | How many sounds can play at once, from 8 to 128. Default 32. At the limit the least audible sound stops, which can be the new one: 3D sounds go before 2D sounds such as music and UI, quieter before louder (counting distance), one-shots before loops, then the oldest first. |
 
 To see what is playing, type `showaudiodebug` in the Play [console](../debugging/console.md).
 

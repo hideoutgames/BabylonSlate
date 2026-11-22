@@ -128,7 +128,7 @@ function componentBytes(componentType: number): number {
     case FLOAT:
       return 4;
     default:
-      return 4;
+      return 0;
   }
 }
 
@@ -154,21 +154,102 @@ function readComponent(
   }
 }
 
-/** A non-negative safe integer from an optional glTF field, or `fallback` when absent; anything else throws. */
+/** A `normalized` accessor's integer component as glTF reads it; signed types clamp at -1. */
+function normalizeComponent(value: number, componentType: number): number {
+  switch (componentType) {
+    case BYTE: return Math.max(value / 127, -1);
+    case UNSIGNED_BYTE: return value / 255;
+    case SHORT: return Math.max(value / 32767, -1);
+    case UNSIGNED_SHORT: return value / 65535;
+    default: return value;
+  }
+}
+
+/** Geometry that cannot be read: compressed with a codec the reader does not decode, or malformed. */
+export class GltfGeometryUnreadableError extends Error {
+  override readonly name = "GltfGeometryUnreadableError";
+}
+
+const DRACO = "KHR_draco_mesh_compression";
+const MESHOPT = "EXT_meshopt_compression";
+const DRACO_UNREADABLE =
+  "its geometry is Draco-compressed (KHR_draco_mesh_compression), which collision cooking cannot decode; export the model without mesh compression and import it again";
+const MESHOPT_UNREADABLE =
+  "its geometry is meshopt-compressed (EXT_meshopt_compression), which collision cooking cannot decode; export the model without mesh compression and import it again";
+const MALFORMED_GEOMETRY = "its geometry is malformed: an accessor reads outside its buffer";
+
+/** Malformed geometry, saying what is wrong. */
+function malformed(detail: string): GltfGeometryUnreadableError {
+  return new GltfGeometryUnreadableError(`its geometry is malformed: ${detail}`);
+}
+
+/** A non-negative safe integer from an optional glTF field, or `fallback` when absent; anything else is malformed. */
 function gltfIndexField(value: unknown, fallback: number, describe: () => string): number {
   if (value === undefined) return fallback;
   if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) return value;
-  throw new Error(`${describe()} must be a whole number of at least 0, not ${String(value)}.`);
+  throw malformed(`${describe()} must be a whole number of at least 0, not ${String(value)}`);
 }
 
 /**
- * An accessor's values, `components` per element, as stored (integer types are not normalized).
- *
- * The accessor and its buffer view are checked before anything is read: offsets and the count are non-negative
- * whole numbers, a stride is whole and at least one element long, the count is at most `maxCount`, and the last
- * element ends inside the view and the view inside the BIN. So a malformed file fails at once instead of reading
- * past its data or looping over a count its bytes do not hold. An accessor with no buffer view (sparse-only, which
- * nothing here reads) yields no values.
+ * `count` elements of `components` values from a buffer view, tightly packed or (`strided`) `byteStride` apart.
+ * Everything that sizes the loop is checked first: offsets are whole and non-negative, a stride is whole and at
+ * least one element long, and the last element ends inside the view and the view inside the BIN. So a malformed
+ * file fails at once instead of reading past its data or looping over a count its bytes do not hold.
+ */
+function readElements(
+  json: Record<string, unknown>,
+  bin: Uint8Array,
+  viewIndex: number,
+  byteOffset: unknown,
+  count: number,
+  components: number,
+  componentType: number,
+  strided: boolean,
+): number[] {
+  const bufferViews = Array.isArray(json.bufferViews) ? json.bufferViews : [];
+  const view = bufferViews[viewIndex];
+  const size = componentBytes(componentType);
+  if (!view || typeof view !== "object" || size === 0) throw new GltfGeometryUnreadableError(MALFORMED_GEOMETRY);
+  const record = view as Record<string, unknown>;
+  // Only buffer 0, the GLB's binary chunk, holds data. A meshopt view names its fallback buffer, which holds none.
+  if ((record.buffer ?? 0) !== 0) {
+    throw new GltfGeometryUnreadableError(asRecord(record.extensions)[MESHOPT] ? MESHOPT_UNREADABLE : MALFORMED_GEOMETRY);
+  }
+  const viewLabel = `glTF buffer view ${viewIndex}`;
+  const viewOffset = gltfIndexField(record.byteOffset, 0, () => `${viewLabel}'s byteOffset`);
+  const viewLength = gltfIndexField(record.byteLength, 0, () => `${viewLabel}'s byteLength`);
+  if (viewOffset + viewLength > bin.byteLength) {
+    throw malformed(
+      `${viewLabel} ends at byte ${formatImportCount(viewOffset + viewLength)}, past the end of the ${formatImportCount(bin.byteLength)}-byte binary buffer`,
+    );
+  }
+  const offset = gltfIndexField(byteOffset, 0, () => "an accessor's byteOffset");
+  const elementBytes = size * components;
+  // No stride (or 0) packs elements tightly; a stride shorter than an element would overlap them.
+  const declaredStride = strided ? record.byteStride : undefined;
+  const stride = declaredStride === undefined || declaredStride === 0 ? elementBytes : declaredStride;
+  if (typeof stride !== "number" || !Number.isSafeInteger(stride) || stride < elementBytes) {
+    throw malformed(`${viewLabel}'s byteStride must be a whole number of at least ${elementBytes} bytes, not ${String(declaredStride)}`);
+  }
+  // Checked once, before the loop: the last element ends inside the view.
+  if (count > 0 && offset + (count - 1) * stride + elementBytes > viewLength) {
+    throw malformed(`an accessor reads ${formatImportCount(count)} elements, which run past the end of ${viewLabel}`);
+  }
+  const start = viewOffset + offset;
+  const data = new DataView(bin.buffer, bin.byteOffset, bin.byteLength);
+  const out = new Array<number>(count * components);
+  for (let i = 0, at = 0; i < count; i++) {
+    const element = start + i * stride;
+    for (let c = 0; c < components; c++) out[at++] = readComponent(data, element + c * size, componentType);
+  }
+  return out;
+}
+
+/**
+ * An accessor's values, `components` per element, as glTF defines them: `byteStride` honoured, sparse substitutions
+ * applied, zeros without a buffer view, and `normalized` integer components mapped to [0, 1] or [-1, 1]
+ * (KHR_mesh_quantization). Throws `GltfGeometryUnreadableError` for compressed or malformed data (`readElements`),
+ * and `ImportLimitError` for a count or sparse count above `maxCount`, before anything is read or allocated.
  */
 export function accessorValues(
   json: Record<string, unknown>,
@@ -178,63 +259,61 @@ export function accessorValues(
   maxCount: number = GLTF_MAX_PRIMITIVE_INDICES,
 ): number[] {
   const accessors = Array.isArray(json.accessors) ? json.accessors : [];
-  const bufferViews = Array.isArray(json.bufferViews) ? json.bufferViews : [];
   const accessor = asRecord(accessors[accessorIndex]);
   const label = `glTF accessor ${accessorIndex}`;
   const count = gltfIndexField(accessor.count, 0, () => `${label}'s count`);
-  if (count > maxCount) {
-    throw importLimitError(
-      `The element count of ${label}`,
-      formatImportCount(count),
-      formatImportCount(maxCount),
-      "Split the mesh into smaller parts before importing.",
-    );
-  }
-  if (count === 0 || typeof accessor.bufferView !== "number") return [];
-  const componentType =
-    typeof accessor.componentType === "number" ? accessor.componentType : FLOAT;
-  const componentSize = componentBytes(componentType);
-  const elementBytes = componentSize * components;
-  const viewIndex = accessor.bufferView;
-  const view = bufferViews[viewIndex];
-  if (!view || typeof view !== "object") {
-    throw new Error(`${label} names buffer view ${viewIndex}, which the file does not have.`);
-  }
-  const viewRecord = view as Record<string, unknown>;
-  const viewLabel = `glTF buffer view ${viewIndex}`;
-  const viewOffset = gltfIndexField(viewRecord.byteOffset, 0, () => `${viewLabel}'s byteOffset`);
-  const viewLength = gltfIndexField(viewRecord.byteLength, Math.max(0, bin.byteLength - viewOffset), () => `${viewLabel}'s byteLength`);
-  if (viewOffset + viewLength > bin.byteLength) {
-    throw new Error(
-      `${viewLabel} ends at byte ${formatImportCount(viewOffset + viewLength)}, past the end of the ${formatImportCount(bin.byteLength)}-byte binary buffer.`,
-    );
-  }
-  const accessorOffset = gltfIndexField(accessor.byteOffset, 0, () => `${label}'s byteOffset`);
-  // No stride (or 0) packs elements tightly; a stride shorter than an element would overlap them.
-  const declaredStride = viewRecord.byteStride;
-  const stride = declaredStride === undefined || declaredStride === 0 ? elementBytes : declaredStride;
-  if (typeof stride !== "number" || !Number.isSafeInteger(stride) || stride < elementBytes) {
-    throw new Error(
-      `${viewLabel}'s byteStride must be a whole number of at least ${elementBytes} bytes, not ${String(declaredStride)}.`,
-    );
-  }
-  // Checked once, before the loop: the last element ends inside the view.
-  if (accessorOffset + (count - 1) * stride + elementBytes > viewLength) {
-    throw new Error(`${label} reads ${formatImportCount(count)} elements, which run past the end of ${viewLabel}.`);
-  }
-  const start = viewOffset + accessorOffset;
-  const data = new DataView(bin.buffer, bin.byteOffset, bin.byteLength);
-  const out = new Array<number>(count * components);
-  for (let i = 0, at = 0; i < count; i++) {
-    const offset = start + i * stride;
-    for (let c = 0; c < components; c++) {
-      out[at++] = readComponent(data, offset + c * componentSize, componentType);
+  const sparse = asRecord(accessor.sparse);
+  const sparseCount = gltfIndexField(sparse.count, 0, () => `${label}'s sparse count`);
+  // Before the zeros of a view-less accessor or any read are allocated.
+  for (const [what, value] of [["element count", count], ["sparse element count", sparseCount]] as const) {
+    if (value > maxCount) {
+      throw importLimitError(
+        `The ${what} of ${label}`,
+        formatImportCount(value),
+        formatImportCount(maxCount),
+        "Split the mesh into smaller parts before importing.",
+      );
     }
   }
-  return out;
+  const componentType = typeof accessor.componentType === "number" ? accessor.componentType : FLOAT;
+  const values = typeof accessor.bufferView === "number"
+    ? readElements(json, bin, accessor.bufferView, accessor.byteOffset, count, components, componentType, true)
+    : new Array<number>(count * components).fill(0);
+  if (sparseCount > 0) {
+    const targetsAt = asRecord(sparse.indices);
+    const valuesAt = asRecord(sparse.values);
+    if (typeof targetsAt.bufferView !== "number" || typeof valuesAt.bufferView !== "number") {
+      throw new GltfGeometryUnreadableError(MALFORMED_GEOMETRY);
+    }
+    const targets = readElements(json, bin, targetsAt.bufferView, targetsAt.byteOffset, sparseCount, 1,
+      typeof targetsAt.componentType === "number" ? targetsAt.componentType : UNSIGNED_INT, false);
+    const replacements = readElements(json, bin, valuesAt.bufferView, valuesAt.byteOffset, sparseCount,
+      components, componentType, false);
+    for (let i = 0; i < sparseCount; i++) {
+      const target = targets[i]!;
+      if (target >= count) throw new GltfGeometryUnreadableError(MALFORMED_GEOMETRY);
+      for (let c = 0; c < components; c++) values[target * components + c] = replacements[i * components + c]!;
+    }
+  }
+  if (accessor.normalized === true) {
+    for (let i = 0; i < values.length; i++) values[i] = normalizeComponent(values[i]!, componentType);
+  }
+  return values;
 }
 
-/** Appends one primitive's baked xyz triples and re-based triangle indices. */
+const TRIANGLES = 4;
+const TRIANGLE_STRIP = 5;
+const TRIANGLE_FAN = 6;
+
+/** A Draco primitive's accessors have no buffer view unless the file also ships them uncompressed. */
+function assertNotDracoOnly(json: Record<string, unknown>, primitive: Record<string, unknown>, accessorIndex: unknown): void {
+  if (!asRecord(primitive.extensions)[DRACO] || typeof accessorIndex !== "number") return;
+  const accessors = Array.isArray(json.accessors) ? json.accessors : [];
+  const accessor = asRecord(accessors[accessorIndex]);
+  if (typeof accessor.bufferView !== "number" && !accessor.sparse) throw new GltfGeometryUnreadableError(DRACO_UNREADABLE);
+}
+
+/** Appends one primitive's baked xyz triples and re-based triangle-list indices; points and lines add nothing. */
 function appendPrimitive(
   json: Record<string, unknown>,
   bin: Uint8Array,
@@ -244,10 +323,14 @@ function appendPrimitive(
   positions: number[],
   indices: number[],
 ): void {
+  const mode = typeof primitive.mode === "number" ? primitive.mode : TRIANGLES;
+  if (mode !== TRIANGLES && mode !== TRIANGLE_STRIP && mode !== TRIANGLE_FAN) return;
   const attributes = asRecord(primitive.attributes);
   const positionIndex =
     typeof attributes.POSITION === "number" ? attributes.POSITION : -1;
   if (positionIndex < 0) return;
+  assertNotDracoOnly(json, primitive, positionIndex);
+  assertNotDracoOnly(json, primitive, primitive.indices);
   const raw = accessorValues(json, bin, positionIndex, 3, GLTF_MAX_PRIMITIVE_VERTICES);
   const base = positions.length / 3;
   let count = 0;
@@ -259,10 +342,18 @@ function appendPrimitive(
       (world[2]! * x + world[6]! * y + world[10]! * z + world[14]!) * scale,
     );
   }
-  if (typeof primitive.indices === "number") {
-    for (const value of accessorValues(json, bin, primitive.indices, 1)) indices.push(base + value);
+  const order = typeof primitive.indices === "number"
+    ? accessorValues(json, bin, primitive.indices, 1, GLTF_MAX_PRIMITIVE_INDICES)
+    : Array.from({ length: count }, (_, i) => i);
+  if (mode === TRIANGLES) {
+    for (let i = 0; i + 2 < order.length; i += 3) indices.push(base + order[i]!, base + order[i + 1]!, base + order[i + 2]!);
+  } else if (mode === TRIANGLE_STRIP) {
+    // Strip triangle i is (i, i + 1 + i % 2, i + 2 - i % 2), so every triangle keeps the strip's winding.
+    for (let i = 0; i + 2 < order.length; i++) {
+      indices.push(base + order[i]!, base + order[i + 1 + (i % 2)]!, base + order[i + 2 - (i % 2)]!);
+    }
   } else {
-    for (let i = 0; i < count; i++) indices.push(base + i);
+    for (let i = 0; i + 2 < order.length; i++) indices.push(base + order[i + 1]!, base + order[i + 2]!, base + order[0]!);
   }
 }
 
@@ -337,16 +428,19 @@ export function extractGltfPositions(
   }));
 }
 
-/** Rest-pose triangles with node transforms and Import Scale baked, packed for transfer. */
-export function extractGltfCollisionMesh(
+/**
+ * Rest-pose triangles with node transforms and Import Scale baked, packed for transfer; `mesh` is null when the model
+ * has no triangles or its geometry cannot be read, and `problem` then says why for the latter.
+ */
+export function readGltfCollisionMesh(
   bytes: Uint8Array,
   importScale = 1,
-): CollisionTriangleMesh | null {
-  const triangles = readGltfTriangles(bytes, importScale);
-  return triangles ? packGltfTriangles(triangles) : null;
+): { mesh: CollisionTriangleMesh | null; problem: string | null } {
+  const { triangles, problem } = collectGltfTriangles(bytes, importScale);
+  return { mesh: triangles ? packGltfTriangles(triangles) : null, problem };
 }
 
-/** {@link readGltfTriangles}'s result packed as {@link extractGltfCollisionMesh} returns it. */
+/** {@link readGltfTriangles}'s result packed as {@link readGltfCollisionMesh} returns its mesh. */
 export function packGltfTriangles(triangles: GltfTriangles): CollisionTriangleMesh {
   const { positions, indices } = triangles;
   const vertexCount = positions.length / 3;
@@ -358,6 +452,14 @@ export function packGltfTriangles(triangles: GltfTriangles): CollisionTriangleMe
   };
 }
 
+/** `readGltfCollisionMesh` without the reason. */
+export function extractGltfCollisionMesh(
+  bytes: Uint8Array,
+  importScale = 1,
+): CollisionTriangleMesh | null {
+  return readGltfCollisionMesh(bytes, importScale).mesh;
+}
+
 /** Rest-pose triangles: xyz per vertex and three indices per triangle. */
 export interface GltfTriangles {
   positions: number[];
@@ -365,17 +467,45 @@ export interface GltfTriangles {
 }
 
 /**
- * A glTF or GLB file's rest-pose triangles with node transforms and Import
- * Scale baked, or null when it has none. Parse once and share the result when
- * both a collider and an occluder are cooked from it.
+ * A glTF or GLB file's rest-pose triangles with node transforms and Import Scale baked, or null when it has none or
+ * its geometry cannot be read (compressed or malformed). Parse once and share the result when both a collider and
+ * an occluder are cooked from it.
  */
 export function readGltfTriangles(
   bytes: Uint8Array,
   importScale: number,
 ): GltfTriangles | null {
+  return collectGltfTriangles(bytes, importScale).triangles;
+}
+
+/**
+ * Every triangle of the default scene, or none with the reason when any of its geometry cannot be read: part of a
+ * model would collide wrongly, so a compressed or malformed model yields nothing. Import limits (vertex and index
+ * caps, node depth) are not caught: they fail the import by name.
+ */
+function collectGltfTriangles(
+  bytes: Uint8Array,
+  importScale: number,
+): { triangles: GltfTriangles | null; problem: string | null } {
   const parsed = parseGltfJsonBin(bytes);
-  if (!parsed) return null;
+  if (!parsed) return { triangles: null, problem: null };
   const { json, bin } = parsed;
+  const required: unknown[] = Array.isArray(json.extensionsRequired) ? json.extensionsRequired : [];
+  if (required.includes(DRACO)) return { triangles: null, problem: DRACO_UNREADABLE };
+  if (required.includes(MESHOPT)) return { triangles: null, problem: MESHOPT_UNREADABLE };
+  try {
+    return { triangles: collectSceneTriangles(json, bin, importScale), problem: null };
+  } catch (error) {
+    if (error instanceof GltfGeometryUnreadableError) return { triangles: null, problem: error.message };
+    throw error;
+  }
+}
+
+function collectSceneTriangles(
+  json: Record<string, unknown>,
+  bin: Uint8Array,
+  importScale: number,
+): { positions: number[]; indices: number[] } | null {
   const scale =
     typeof importScale === "number" && Number.isFinite(importScale) && importScale > 0
       ? importScale

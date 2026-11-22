@@ -412,6 +412,13 @@ export function editorSceneToSceneLayer(
   });
 }
 
+/**
+ * The editor's preview background behind a Scene Layer: a neutral mid grey, so Translucent, Additive and Multiply
+ * visuals each show what they do (over black a Multiply would only show black). Play draws layers over the world and
+ * never reads it; Save does not keep it.
+ */
+export const SCENE_LAYER_PREVIEW_BACKGROUND: readonly [number, number, number] = [0.5, 0.5, 0.5];
+
 /** Editor / Play viewport host a SceneLayer as a locked 2D SerializedScene. */
 export function sceneLayerToEditorScene(
   layer: SerializedSceneLayer,
@@ -423,7 +430,7 @@ export function sceneLayerToEditorScene(
     overlayEditor: true,
     settings: {
       ...settings,
-      environmentColor: [0, 0, 0],
+      environmentColor: [...SCENE_LAYER_PREVIEW_BACKGROUND],
       gravity: layer.settings.gravity,
       fixedTimestepMs: layer.settings.fixedTimestepMs,
       cameraLocation2D: [...layer.settings.cameraLocation],

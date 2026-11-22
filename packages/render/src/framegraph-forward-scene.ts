@@ -1,3 +1,6 @@
+// Its FrameGraph work needs Babylon's engine extensions on any Engine, including one a caller made without createEngine.
+import "./babylon-registrations";
+import type { Material } from "@babylonjs/core/Materials/material";
 import { isEditorHelperMesh } from "./helper-mesh";
 import { rewriteRenderList } from "./observed-render-list";
 import { activeRenderFrameCapture } from "./render-frame-report";
@@ -257,8 +260,20 @@ function countEffectRequests(engine: object, run: () => void, named?: string[]):
   }
   return { requests: count, idle };
 }
-/** What a spatial geometry pass draws of a view's culled meshes: everything but editor and Play helper visuals. */
-const isWorldMesh = (mesh: AbstractMesh): boolean => !isEditorHelperMesh(mesh);
+/**
+ * Whether `material` is a Text or User Interface Material: its fragment output writes the colour alone, never the
+ * geometry targets, so a multi-target geometry pass drawing it leaves active draw buffers without an output (a GL error).
+ */
+const writesColourOnly = (material: Material | null): boolean => {
+  const domain = (material?.metadata as { materialDomain?: unknown } | null | undefined)?.materialDomain;
+  return domain === "text" || domain === "ui" ||
+    ((material as { subMaterials?: (Material | null)[] } | null)?.subMaterials?.some(writesColourOnly) ?? false);
+};
+/**
+ * What a spatial geometry pass draws of a view's culled meshes: everything but editor and Play helper visuals, and the
+ * Scene Layer visuals of a layer's editor view (Text and User Interface Materials), which write no geometry targets.
+ */
+const isWorldMesh = (mesh: AbstractMesh): boolean => !isEditorHelperMesh(mesh) && !writesColourOnly(mesh.material);
 /** What a spatial geometry pass seeded from the scene's depth draws of them: the meshes that depth lacks. */
 const isWorldMeshSceneDepthLacks = (mesh: AbstractMesh): boolean => isWorldMesh(mesh) && !writesSceneDepth(mesh);
 const isShown = (mesh: AbstractMesh): boolean => !isRevealPending(mesh);
@@ -792,11 +807,12 @@ export class ForwardSceneFrameGraph {
       return water.has(task) ? "water" : "other";
     };
     // The frame's tail starts where the view's output is first written at its full size: the FSR upscale (its sharpening
-    // writes the output), else the task that writes the output (the chain's last stage, or the output copy).
+    // writes the output), else the task that writes the output (the chain's stage that draws into it, which the outline
+    // composition may follow, or the output copy).
     const effectTasks = this.effectsGraph?.tasks ?? [];
     const tail = effectTasks.find((task) => task instanceof FrameGraphFsr1UpscaleTask)
       ?? this.outputCopy
-      ?? (this.effectsGraph?.rendersToOutput ? effectTasks.at(-1) : undefined);
+      ?? this.effectsGraph?.outputWriter;
     for (const task of this.graph!.tasks) observeTaskDrawPass(task, engine, pass(task), task === tail);
   }
 
@@ -1691,6 +1707,8 @@ export class ForwardSceneFrameGraph {
             outputHeight: chainAtView ? viewSize.height : output.height,
             samples,
             geometryOverSceneDepth: this.seedsFromSceneDepth ? { authoredDepthTexture: this.postProcessGraph?.depthTexture ?? undefined } : undefined,
+            // The outlines blend onto the chain's display image before antialiasing: onto the view's output itself when
+            // no FXAA or FSR follows and the stage before them can draw into it (`SceneEffectsGraph.outputWriter`).
             beforeAntialiasing: this.preparedOutlineView ? composeOutline : undefined,
             // Ending at the view's size, the chain never writes the larger output: the output copy below fills it.
             outputTarget: chainAtView ? undefined : color,

@@ -166,3 +166,30 @@ describe("Add Node from a dragged Vector3 wire", () => {
     expect([mul.type("a"), mul.type("b"), mul.type("out")]).toEqual(["vec3", "vec3", "vec3"]);
   });
 });
+
+describe("Math Expression input types follow their wires", () => {
+  it("types a wired input and its output by the wire, through hydration and validation, and an Inspector type wins", () => {
+    const graph: SerializedGraph = {
+      nodes: [vec3Source(), intSource(), node("mx", "math.expression", { formula: "y = p * n" })],
+      edges: [wire("wp", "vec.out", "mx.in_p"), wire("wn", "int.out", "mx.in_n")],
+    };
+    const mx = hydrated(graph, "mx");
+    expect([mx.type("in_p"), mx.type("in_n"), mx.type("out_y")]).toEqual(["vec3", "float", "vec3"]);
+    expect(mx.data.wiredInputTypes).toEqual({ p: "vec3", n: "float" });
+    expect(validateSerializedGraph(graph, { assetGuid: "g", graphId: "g" }).filter((d) => d.severity === "error")).toEqual([]);
+    const pinned: SerializedGraph = {
+      ...graph,
+      nodes: graph.nodes.map((entry) => entry.id === "mx" ? { ...entry, data: { ...entry.data, inputTypes: { p: "vec2" } } } : entry),
+    };
+    expect(hydrated(pinned, "mx").type("in_p")).toBe("vec2");
+  });
+
+  it("keeps a wired type after the wire is removed, as operands do", () => {
+    const graph: SerializedGraph = {
+      nodes: [node("mx", "math.expression", { formula: "y = p", wiredInputTypes: { p: "vec3" } })],
+      edges: [],
+    };
+    expect(hydrated(graph, "mx").type("out_y")).toBe("vec3");
+    expect(retypeNumericOperatorNodes(graph.nodes, graph.edges, registry)).toBe(graph.nodes);
+  });
+});

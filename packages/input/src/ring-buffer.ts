@@ -306,6 +306,11 @@ function controlKey(event: RawInputEvent): string | undefined {
   }
 }
 
+/** A whole control's state (a pad, a touch axis), which its writer sends only when it changes: the newest one must arrive. */
+function isStateSample(event: RawInputEvent): boolean {
+  return event.kind === "gamepad" || event.kind === "touchAxis";
+}
+
 /** Resolver thresholds: zero (input started/released) and 0.5 (actions and pressed keys). */
 function level(value: number): number {
   const magnitude = Math.abs(value);
@@ -318,8 +323,14 @@ function supersededBy(sample: RawInputEvent, next: RawInputEvent): boolean {
   if (sample.kind === "touchAxis" && next.kind === "touchAxis") return level(sample.value) === level(next.value);
   if (sample.kind === "motion") return next.kind === "motion";
   if (sample.kind !== "gamepad" || next.kind !== "gamepad") return false;
-  const levels = (event: typeof sample) => [...event.axes, ...event.buttons].map(level).join();
-  return sample.axes.length === next.axes.length && levels(sample) === levels(next);
+  return sameLevels(sample.axes, next.axes) && sameLevels(sample.buttons, next.buttons);
+}
+
+/** Same control count and every control at the same `level`; compared in place, since a saturated push runs it per queued pair. */
+function sameLevels(a: readonly number[], b: readonly number[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (level(a[i]!) !== level(b[i]!)) return false;
+  return true;
 }
 
 /** What a release lets go of; a later release with the same key repeats it. Disconnects never repeat. */
@@ -338,9 +349,13 @@ function releasedControl(event: RawInputEvent): string | undefined {
  * touch-axis sample) that the next event for the same control supersedes
  * without changing a threshold edge. A queue of edges may grow to four times
  * `capacity`; beyond that the oldest press or sample is dropped, so a release
- * can arrive without its press but is never lost itself. A queue holding only
- * releases drops only a release that a later release of the same control
- * repeats, so it grows at most by one release per control.
+ * can arrive without its press but is never lost itself. A control's newest
+ * state sample (pad, touch axis) is never dropped either: writers send state
+ * only when it changes, so a lost newest sample would leave a stick deflected
+ * or a button held. An incoming state sample replaces an older one of its
+ * control instead. A queue holding only releases and newest state drops only
+ * a release that a later release of the same control repeats, so it grows at
+ * most by one release and one state sample per control.
  */
 export class InputRingBuffer {
   private readonly capacity: number;
@@ -358,10 +373,12 @@ export class InputRingBuffer {
     if (this.events.length >= this.capacity) {
       let victim = this.supersededIndex(event, key);
       if (victim < 0 && this.events.length >= this.capacity * 4) {
-        victim = this.events.findIndex(queued => !isInputReleaseEvent(queued));
+        victim = this.droppablePressIndex(event, key);
         if (victim < 0) {
-          if (!isInputReleaseEvent(event)) return;
-          victim = this.repeatedReleaseIndex(event);
+          // A state sample is the control's latest state: it takes an older sample's place, or joins the queue.
+          if (isStateSample(event)) victim = this.olderSampleIndex(event, key!);
+          else if (!isInputReleaseEvent(event)) return;
+          else victim = this.repeatedReleaseIndex(event);
         }
       }
       if (victim >= 0) {
@@ -376,6 +393,35 @@ export class InputRingBuffer {
   drain(): RawInputEvent[] {
     this.keys.length = 0;
     return this.events.splice(0, this.events.length);
+  }
+
+  /**
+   * Oldest queued press or sample that may go, or -1: never a release, and
+   * never a control's newest state sample (no later event for its control is
+   * queued or incoming), since writers send pad and touch-axis state only
+   * when it changes and would not send it again.
+   */
+  private droppablePressIndex(incoming: RawInputEvent, incomingKey: string | undefined): number {
+    const later = this.nextScratch;
+    later.clear();
+    if (incomingKey) later.set(incomingKey, incoming);
+    let victim = -1;
+    for (let index = this.events.length - 1; index >= 0; index--) {
+      const event = this.events[index]!;
+      const key = this.keys[index];
+      const newestState = isStateSample(event) && !later.has(key!);
+      if (key) later.set(key, event);
+      if (!newestState && !isInputReleaseEvent(event)) victim = index;
+    }
+    return victim;
+  }
+
+  /** Oldest queued sample of the same kind for the incoming state sample's control, or -1. */
+  private olderSampleIndex(incoming: RawInputEvent, key: string): number {
+    for (let index = 0; index < this.events.length; index++) {
+      if (this.keys[index] === key && this.events[index]!.kind === incoming.kind) return index;
+    }
+    return -1;
   }
 
   /** Oldest queued release whose control is released again later, or -1. */

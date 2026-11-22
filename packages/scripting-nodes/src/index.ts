@@ -3,6 +3,7 @@ import { waterNodes } from "./water";
 import { EVENT_BY_TYPE_ID, NodeRegistry, type NodeDefinition } from "@haptic/scripting";
 import { catalogEventDefinitions, flowNodes } from "./flow";
 import { mathNodes } from "./math";
+import { mathExpressionNode, registerMathExpressionValidationRules } from "./math-expression";
 import { registerNumericOperatorValidationRules } from "./numeric-operators";
 import { vectorNodes } from "./vector";
 import { stringNodes } from "./string";
@@ -132,11 +133,14 @@ export * from "./tags";
 export * from "./dispatchers";
 export * from "./objects";
 export * from "./curves-ranges";
+export * from "./math-expression";
+export * from "./math-expression-nodes";
 
 export function allNodeDefinitions(): NodeDefinition[] {
   return withNodeDescriptions([
     ...flowNodes,
     ...mathNodes,
+    mathExpressionNode,
     ...vectorNodes,
     ...stringNodes,
     ...utilityHelperNodes,
@@ -212,6 +216,7 @@ export function createDefaultNodeRegistry(): NodeRegistry {
   registerPhysicsValidationRules();
   registerMaterialPinDomainValidationRules();
   registerNumericOperatorValidationRules();
+  registerMathExpressionValidationRules();
   const registry = new NodeRegistry();
   registry.registerAll(allNodeDefinitions());
   return registry;

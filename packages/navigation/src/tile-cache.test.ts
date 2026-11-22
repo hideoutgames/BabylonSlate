@@ -1,8 +1,8 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { Crowd, NavMeshQuery, Raw, TileCache } from "@recast-navigation/core";
+import { generateNavMesh } from "./bake";
 import {
   createNavigationBackend,
-  generateNavMesh,
   initNavigation,
 } from "./recast-backend";
 import { mergeNavBakeMeshes } from "./geometry";

@@ -16,14 +16,16 @@ export type GameSourceContent = {
   scripts: ScriptBundleEntry[];
   scenes: Map<string, SerializedScene>;
   sceneLayers: Map<string, SerializedSceneLayer>;
-  textureBytes: Map<string, Uint8Array>;
+  /** Raw bytes, or an installed Blob that owns them (the exported player installs Textures, Models and MSDF atlases as it loads them). */
+  textureBytes: Map<string, Uint8Array | Blob>;
   areaEmissions: Map<string, AreaEmissionPixels>;
-  modelBytes: Map<string, Uint8Array>;
+  /** Each Model's GLB source, raw or installed (see `textureBytes`). */
+  modelBytes: Map<string, Uint8Array | Blob>;
   modelPayloads: Map<string, ModelPayload>;
   fontBytes: Map<string, Uint8Array>;
   fontFacetypeBytes: Map<string, Uint8Array>;
   fontMsdfJson: Map<string, Uint8Array>;
-  fontMsdfPng: Map<string, Uint8Array>;
+  fontMsdfPng: Map<string, Uint8Array | Blob>;
   fontFamilies: Map<string, string>;
   audioBytes: Map<string, Uint8Array>;
   audioPayloads: Map<string, AudioPayload>;

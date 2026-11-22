@@ -31,7 +31,13 @@ export type AudioPlayRequest = {
   /** Sniffed MIME type when creating a Blob URL from encoded bytes. */
   mimeType?: string;
   gain: number;
+  /**
+   * A spatial voice's starting distance gain (`computeAttenuationGain` at its pose and the listener's), applied with
+   * `gain` from its first sample; 1 when absent. `setVoiceAttenuation` changes it afterwards.
+   */
+  attenuation?: number;
   loop: boolean;
+  /** Pans the voice; its distance falloff is `attenuation`, never the browser panner's distance model. */
   spatial?: AudioSpatialPlayOptions | null;
   reverbSend: boolean;
   clipChunkId?: string;
@@ -63,6 +69,8 @@ export interface AudioPlaybackBackend {
     damping: number;
   }): boolean;
   setVoiceMuffle(voiceId: string, factor: number): boolean;
+  /** A spatial voice's distance gain (0..1), multiplied with its gain; false when there is no such voice yet. */
+  setVoiceAttenuation(voiceId: string, gain: number): boolean;
   /** Pause or resume live voices without stopping them. */
   setPaused(paused: boolean): void;
   /**
@@ -90,6 +98,8 @@ export class FakeAudioPlaybackBackend implements AudioPlaybackBackend {
   gains = new Map<string, number>();
   playbackRates = new Map<string, number>();
   muffles = new Map<string, number>();
+  /** Each voice's distance gain: its play request's, then each `setVoiceAttenuation`. */
+  attenuations = new Map<string, number>();
   listener: AudioPose = { x: 0, y: 0, z: 0 };
   wet = 0;
   decay = 0.4;
@@ -115,6 +125,7 @@ export class FakeAudioPlaybackBackend implements AudioPlaybackBackend {
 
   async play(request: AudioPlayRequest): Promise<void> {
     this.plays.push(request);
+    if (request.attenuation !== undefined) this.attenuations.set(request.voiceId, request.attenuation);
   }
 
   stop(voiceId: string): void {
@@ -157,6 +168,11 @@ export class FakeAudioPlaybackBackend implements AudioPlaybackBackend {
 
   setVoiceMuffle(voiceId: string, factor: number): boolean {
     this.muffles.set(voiceId, factor);
+    return true;
+  }
+
+  setVoiceAttenuation(voiceId: string, gain: number): boolean {
+    this.attenuations.set(voiceId, gain);
     return true;
   }
 

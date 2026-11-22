@@ -1,16 +1,36 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  createActor,
   createDefaultScene,
   createDefaultSceneLayer,
   DEFAULT_RENDER_PROJECT_SETTINGS,
+  normalizeScene,
+  normalizeSceneLayer,
 } from "@haptic/core";
 import { exportGame, GAME_MANIFEST_FILE, AREA_EMISSION_EXPORT_TYPE, areaEmissionExportGuid, FONT_FACETYPE_EXPORT_TYPE, FONT_MSDF_EXPORT_TYPE, FONT_MSDF_ATLAS_EXPORT_TYPE, fontFacetypeExportGuid, fontMsdfExportGuid, fontMsdfAtlasExportGuid } from "@haptic/exporter";
-import { AREA_EMISSION_EDGE, encodeAreaEmission } from "@haptic/assets";
+import { AREA_EMISSION_EDGE, encodeAreaEmission, installedAssetIdentity } from "@haptic/assets";
+import { createInProcessRuntime } from "@haptic/runtime";
 import { loadGameFromFiles, loadGameFromHttp } from "./artifact";
+
+// Counts the passes over Scene and Scene Layer documents; the real normalization still runs.
+vi.mock("@haptic/core", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@haptic/core")>();
+  return { ...actual, normalizeScene: vi.fn(actual.normalizeScene), normalizeSceneLayer: vi.fn(actual.normalizeSceneLayer) };
+});
+
+function deepFreeze<T>(value: T): T {
+  if (value && typeof value === "object" && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const child of Object.values(value)) deepFreeze(child);
+  }
+  return value;
+}
 
 const encoder = new TextEncoder();
 /** Response bodies need ArrayBuffer-backed views; exported bytes never use SharedArrayBuffer. */
 const body = (bytes: Uint8Array | undefined) => bytes as Uint8Array<ArrayBuffer> | undefined;
+/** The bytes an installed source Blob owns. */
+const bytesOf = async (source: Blob | undefined) => source ? new Uint8Array(await source.arrayBuffer()) : undefined;
 
 describe("loadGameFromFiles", () => {
   it("uses a valid native fetch receiver for default HTTP source loading", async () => {
@@ -145,7 +165,7 @@ describe("loadGameFromFiles", () => {
       return new Response(body(match ? bytes.subarray(Number(match[1]), Number(match[2]) + 1) : bytes), { status: match ? 206 : 200 });
     });
     expect(game.textureBytes.size).toBe(15);
-    expect(game.textureBytes.get("texture-14")).toEqual(new Uint8Array([14]));
+    expect(await bytesOf(game.textureBytes.get("texture-14"))).toEqual(new Uint8Array([14]));
     expect(peak).toBeGreaterThan(1);
     expect(peak).toBeLessThanOrEqual(6);
   });
@@ -180,12 +200,38 @@ describe("loadGameFromFiles", () => {
     ] });
     if (!exported.ok) throw new Error(exported.error);
     const game = await loadGameFromFiles(exported.value.files);
-    expect(game.textureBytes.get("texture")).toEqual(new Uint8Array([1, 2, 3]));
+    expect(await bytesOf(game.textureBytes.get("texture"))).toEqual(new Uint8Array([1, 2, 3]));
+    // The installed Blob is the bytes' only owner, identified by the revision the load verified (never hashed again).
+    const revision = exported.value.manifest.assets.find((entry) => entry.guid === "texture")!.revision!;
+    expect(installedAssetIdentity(game.textureBytes.get("texture")!)).toBe(revision);
+    expect(game.payloads.get("texture")?.byteLength).toBe(0);
     expect(game.areaEmissions.get("texture")?.rgba.every((value) => value === 200)).toBe(true);
     emission[emission.length - 1] = 0;
     const corrupted = await exportGame({ platform: "web", bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [{ guid: areaEmissionExportGuid("texture"), type: AREA_EMISSION_EXPORT_TYPE, bytes: emission, startupRequired: true, sceneGuid: "scene" }] });
     if (!corrupted.ok) throw new Error(corrupted.error);
     await expect(loadGameFromFiles(corrupted.value.files)).rejects.toThrow(/corrupt/i);
+  });
+  it("loads a Class from its compiled script alone, with no file for the Class itself", async () => {
+    const exported = await exportGame({ platform: "web", bundleDebugger: false, startupSceneGuid: "scene", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
+      scripts: [{ assetGuid: "hero", classId: "Hero", source: "return {};", anchors: [], entryPoints: [] }],
+      assets: [
+        { guid: "scene", type: "Scene", sceneGuid: "scene", requiredDependencies: ["hero"], bytes: encoder.encode(JSON.stringify(createDefaultScene())) },
+        { guid: "hero", type: "Class", sceneGuid: "scene", requiredDependencies: [], bytes: encoder.encode(JSON.stringify({ nodes: [{ id: "tick" }] })) },
+      ] });
+    if (!exported.ok) throw new Error(exported.error);
+    const reads: string[] = [];
+    const game = await loadGameFromHttp("https://game.example/", async input => {
+      const path = new URL(String(input)).pathname.slice(1);
+      reads.push(path);
+      return new Response(body(exported.value.files.get(path)));
+    });
+    try {
+      expect(game.scripts.map((script) => script.classId)).toEqual(["Hero"]);
+      expect(game.payloads.get("hero")?.byteLength).toBe(0);
+      const classEntry = exported.value.manifest.assets.find((entry) => entry.guid === "hero")!;
+      expect(classEntry.path).toBeUndefined();
+      expect(reads).toHaveLength(exported.value.manifest.assets.filter((entry) => entry.path).length + 1);
+    } finally { game.dispose?.(); }
   });
   it("boots the packed startup scene guid, not a path", async () => {
     const scene = {
@@ -314,7 +360,7 @@ describe("loadGameFromFiles", () => {
     if (!packed.ok) return;
     const loaded = await loadGameFromFiles(packed.value.files);
     expect(loaded.fontMsdfJson.get("font-1")).toEqual(new Uint8Array([9]));
-    expect(loaded.fontMsdfPng.get("font-1")).toEqual(new Uint8Array([8]));
+    expect(await bytesOf(loaded.fontMsdfPng.get("font-1"))).toEqual(new Uint8Array([8]));
   });
 
   it("peels packed Model payload so importScale reaches the player", async () => {
@@ -357,7 +403,11 @@ describe("loadGameFromFiles", () => {
     expect(packed.ok).toBe(true);
     if (!packed.ok) return;
     const loaded = await loadGameFromFiles(packed.value.files);
-    expect(loaded.modelBytes.get("hero-model")).toEqual(glb);
+    expect(await bytesOf(loaded.modelBytes.get("hero-model"))).toEqual(glb);
+    // The GLB is part of the verified packed payload: its identity derives from that revision, and only its Blob holds it.
+    const revision = packed.value.manifest.assets.find((entry) => entry.guid === "hero-model")!.revision!;
+    expect(installedAssetIdentity(loaded.modelBytes.get("hero-model")!)).toBe(`${revision}:source`);
+    expect(loaded.payloads.get("hero-model")?.byteLength).toBe(0);
     expect(loaded.modelPayloads.get("hero-model")?.importScale).toBe(4);
   });
 
@@ -451,7 +501,7 @@ describe("demand-driven exported sources", () => {
       expect(reads.filter(path => path === "assets/data-1.bin")).toHaveLength(1);
       expect(reads.filter(path => path === "assets/data-2.bin")).toHaveLength(1);
       first.release();
-      expect(game.textureBytes.get("texture")).toEqual(new Uint8Array([1, 2, 3]));
+      expect(await bytesOf(game.textureBytes.get("texture"))).toEqual(new Uint8Array([1, 2, 3]));
       second.release();
       game.assets!.trim({ force: true });
       expect(game.scenes.has("b")).toBe(false);
@@ -482,6 +532,66 @@ describe("demand-driven exported sources", () => {
       const source = await game.acquireScene!("b", request);
       expect(game.scenes.has("b")).toBe(true);
       source.release();
+    } finally { game.dispose?.(); }
+  });
+
+  it("keeps a released Scene's documents: entering it again reads, hashes, parses and normalizes none of them, and finds them pristine", async () => {
+    const level = createDefaultScene();
+    const sceneB = { ...level, name: "B", actors: [createActor("hero", "Hero")], settings: { ...level.settings, sceneLayers: [{ assetGuid: "hud", zOrder: 0, enabled: true }] } };
+    // As stored: a plain Actor class and a world-only component, which the player repairs as it reads the layer.
+    const hud = { name: "HUD", actors: [{ id: "banner", name: "Banner", classId: "Actor", components: [{ id: "save", classId: "SaveGameComponent", properties: {} }] }] };
+    const json = (value: unknown) => encoder.encode(JSON.stringify(value));
+    const exported = await exportGame({ platform: "web", bundleDebugger: false, startupSceneGuid: "a", renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, scripts: [], assets: [
+      { guid: "a", type: "Scene", sceneGuid: "a", bytes: json(createDefaultScene()), requiredDependencies: [] },
+      { guid: "b", type: "Scene", sceneGuid: "b", bytes: json(sceneB), requiredDependencies: ["hud", "texture"] },
+      { guid: "hud", type: "SceneLayer", sceneGuid: "b", bytes: json(hud), requiredDependencies: [] },
+      { guid: "texture", type: "Texture", sceneGuid: "b", bytes: new Uint8Array([1, 2, 3]), requiredDependencies: [] },
+    ] });
+    if (!exported.ok) throw new Error(exported.error);
+    const files = exported.value.files;
+    const pathOf = (guid: string) => exported.value.manifest.assets.find(entry => entry.guid === guid)!.path!;
+    const reads: string[] = [];
+    const game = await loadGameFromFiles(new Map([[GAME_MANIFEST_FILE, files.get(GAME_MANIFEST_FILE)!]]), {
+      readFile: async path => { reads.push(path); return files.get(path)!; },
+    });
+    let pristine: unknown;
+    const visit = async () => {
+      const source = await game.acquireScene!("b", { consumer: "level", signal: new AbortController().signal });
+      const visited = { scene: source.scene, layer: game.sceneLayers.get("hud")! };
+      pristine ??= structuredClone(visited);
+      // A write to a kept document throws: the runtime plays from the published objects as they are, as the
+      // in-process player does (a worker gets a structured clone).
+      deepFreeze(visited);
+      const runtime = createInProcessRuntime({ seed: 1, preferSoftwarePhysics: true, playScene: visited.scene, playSceneGuid: "b", sceneLayerLibrary: { hud: visited.layer } });
+      runtime.realizePlayWorld();
+      runtime.createSceneLayer("hud", 1);
+      runtime.start();
+      for (let tick = 0; tick < 5; tick++) runtime.tick();
+      expect(runtime.getWorld().getSceneLayers()).toHaveLength(2);
+      runtime.stop();
+      source.release();
+      // Past the loader's retention: the released Scene's sources leave the loaded set.
+      game.assets.trim({ force: true });
+      expect(game.scenes.has("b")).toBe(false);
+      expect(game.sceneLayers.has("hud")).toBe(false);
+      return visited;
+    };
+    try {
+      vi.mocked(normalizeScene).mockClear();
+      vi.mocked(normalizeSceneLayer).mockClear();
+      const first = await visit();
+      expect(first.layer.actors).toMatchObject([{ id: "banner", classId: "SceneLayerActor", components: [] }]);
+      expect(vi.mocked(normalizeScene).mock.calls).toHaveLength(1);
+      expect(vi.mocked(normalizeSceneLayer).mock.calls).toHaveLength(1);
+      const readsBefore = reads.length;
+      const second = await visit();
+      expect(second.scene).toBe(first.scene);
+      expect(second.layer).toBe(first.layer);
+      expect(second).toEqual(pristine);
+      // Binary payloads are not kept: only the Texture is read (and verified) again.
+      expect(reads.slice(readsBefore)).toEqual([pathOf("texture")]);
+      expect(vi.mocked(normalizeScene).mock.calls).toHaveLength(1);
+      expect(vi.mocked(normalizeSceneLayer).mock.calls).toHaveLength(1);
     } finally { game.dispose?.(); }
   });
 });
@@ -515,7 +625,7 @@ it("cancels a cold offline scene before publication and ignores its late storage
     delayed = false;
     finish(new Uint8Array([7]));
     const current = await game.acquireScene!("b", { consumer: "replacement instance", signal: new AbortController().signal });
-    expect(game.textureBytes.get("texture")).toEqual(new Uint8Array([7]));
+    expect(await bytesOf(game.textureBytes.get("texture"))).toEqual(new Uint8Array([7]));
     current.release();
     game.assets!.trim({ force: true });
     expect(game.payloads.has("b")).toBe(false);

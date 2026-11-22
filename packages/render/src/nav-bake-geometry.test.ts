@@ -6,7 +6,7 @@ import {
   identitySerializedTransform,
   type SerializedScene,
 } from "@haptic/core";
-import { generateNavMesh } from "@haptic/navigation";
+import { generateNavMesh } from "@haptic/navigation/bake";
 import { createTestEngine } from "./test-support/test-engine";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { collectNavBakeGeometry } from "./nav-bake-geometry";

@@ -19,6 +19,12 @@ const bundledPackages = bundledPackagesReport({
 });
 /** Platform modules of this build's page and worker, each in its own file that packaging can leave out. */
 const platformModuleState = createPlatformModules();
+/** npm packages only the iOS and Android games load (through the `vfs` platform modules): web and desktop games leave them out. */
+const PLATFORM_PACKAGES = {
+  "@capacitor/core": "WITH_MOBILE",
+  "@capacitor/filesystem": "WITH_MOBILE",
+  "@capacitor/synapse": "WITH_MOBILE",
+};
 
 /** The player cannot run without these tracked editor assets, so a missing one fails the build. */
 function copyRequired(name: string, dest: string): void {
@@ -87,7 +93,7 @@ export default defineConfig({
     bundledPackages.main,
     writePlayerFileList(),
     leaveOutUnusedBabylonModules(),
-    platformModules(platformModuleState, { writeList: true }),
+    platformModules(platformModuleState, { writeList: true, packages: PLATFORM_PACKAGES }),
   ],
   build: {
     target: "es2022",
@@ -122,7 +128,7 @@ export default defineConfig({
     plugins: () => [
       havokHostedWasmVitePlugin(), rapierHostedWasmVitePlugin(), recastHostedWasmVitePlugin(), bundledPackages.worker(),
       leaveOutUnusedBabylonModules(),
-      platformModules(platformModuleState, { writeList: false }),
+      platformModules(platformModuleState, { writeList: false, packages: PLATFORM_PACKAGES }),
     ],
     rolldownOptions: {
       output: {

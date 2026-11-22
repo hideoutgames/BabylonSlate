@@ -2,9 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render } from "@testing-library/react";
 import {
   AssetRegistry,
-  encodeHasset,
   projectContentRoot,
 } from "@haptic/assets";
+import { encodeHasset } from "@haptic/assets/hasset";
 import { useAssetCreate, type AssetCreateApi } from "@haptic/editor-kit";
 import { MemoryStorageAdapter } from "@haptic/vfs";
 import { AssetCreateDocumentsProvider } from "./asset-create-provider";

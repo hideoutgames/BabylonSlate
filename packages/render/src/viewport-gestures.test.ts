@@ -796,4 +796,119 @@ describe("attachViewportGestures", () => {
 
     expect(marquees).toHaveLength(1);
   });
+
+  /** An event target that counts its listeners. */
+  class PageTarget extends EventTarget {
+    listeners = 0;
+    override addEventListener(...args: Parameters<EventTarget["addEventListener"]>): void {
+      this.listeners++;
+      super.addEventListener(...args);
+    }
+    override removeEventListener(...args: Parameters<EventTarget["removeEventListener"]>): void {
+      this.listeners--;
+      super.removeEventListener(...args);
+    }
+  }
+
+  /** The canvas's own window and document, which a gesture listens to for focus and visibility. */
+  function page() {
+    const view = new PageTarget();
+    const document = Object.assign(new PageTarget(), { visibilityState: "visible" as DocumentVisibilityState, defaultView: view });
+    Object.assign(canvas, { ownerDocument: document });
+    const released: number[] = [];
+    Object.assign(canvas, { releasePointerCapture: (id: number) => { released.push(id); } });
+    const hide = (state: DocumentVisibilityState) => {
+      document.visibilityState = state;
+      document.dispatchEvent(new Event("visibilitychange"));
+    };
+    return { view, document, released, hide };
+  }
+
+  /** Whether a held lease keeps the view drawing once the frame that marked it dirty has drawn. */
+  function leaseHeld(): boolean {
+    scheduler.noteRendered();
+    return scheduler.shouldRender();
+  }
+
+  it("ends a look drag as a cancel when the window loses focus, and the next drag takes the render lease again", () => {
+    const { view, released } = page();
+    const taps = vi.fn();
+    const { controller } = attach("3d", { onTap: taps });
+    canvas.emit("pointerdown", pointer(1, 100, 100));
+    canvas.emit("pointermove", pointer(1, 160, 100));
+    expect(leaseHeld()).toBe(true);
+    view.dispatchEvent(new Event("blur"));
+    expect(leaseHeld()).toBe(false);
+    expect(released).toEqual([1]);
+    // The finger's later moves and lift belong to no gesture.
+    controller.camera.getViewMatrix();
+    const alpha = controller.camera.alpha;
+    canvas.emit("pointermove", pointer(1, 200, 100));
+    canvas.emit("pointerup", pointer(1, 200, 100));
+    expect(controller.camera.alpha).toBe(alpha);
+    expect(taps).not.toHaveBeenCalled();
+    canvas.emit("pointerdown", pointer(2, 100, 100));
+    canvas.emit("pointermove", pointer(2, 160, 100));
+    expect(leaseHeld()).toBe(true);
+    canvas.emit("pointerup", pointer(2, 160, 100));
+    expect(leaseHeld()).toBe(false);
+  });
+
+  it("cancels a pinch over a gizmo drag when the page is hidden: the drag gets its up and the lease goes", () => {
+    const { hide } = page();
+    const gizmo = fakeGizmo();
+    attach("2d", { onPointer: gizmo.onPointer, blockLook: () => gizmo.isDragging() });
+    canvas.emit("pointerdown", pointer(1, 100, 100));
+    canvas.emit("pointerdown", pointer(2, 300, 300));
+    expect(leaseHeld()).toBe(true);
+    hide("visible");
+    expect(gizmo.isDragging()).toBe(true);
+    hide("hidden");
+    expect(gizmo.isDragging()).toBe(false);
+    expect(gizmo.forwarded.filter(([type]) => type === "up")).toEqual([["up", 1]]);
+    expect(leaseHeld()).toBe(false);
+  });
+
+  it("ends a gesture under way on dispose: marquee overlay cleared, gizmo up forwarded, captures and lease released, page listeners removed", () => {
+    const { view, document, released } = page();
+    const gizmo = fakeGizmo();
+    const overlay: unknown[] = [];
+    const marquees: unknown[] = [];
+    const ends = vi.fn();
+    const { handle } = attach("2d", {
+      onPointer: gizmo.onPointer,
+      dragSelectActive: () => true,
+      onMarquee: (rect) => marquees.push(rect),
+      onMarqueeMove: (rect) => overlay.push(rect),
+      onDragSelectEnd: ends,
+    });
+    canvas.emit("pointerdown", pointer(1, 100, 100));
+    canvas.emit("pointermove", pointer(1, 160, 140));
+    expect(overlay.at(-1)).not.toBeNull();
+    handle.dispose();
+    expect(overlay.at(-1)).toBeNull();
+    expect(marquees).toEqual([]);
+    expect(ends).toHaveBeenCalledTimes(1);
+    expect(gizmo.isDragging()).toBe(false);
+    expect(released).toEqual([1]);
+    // Two fingers hold the lease, which dispose lets go of.
+    const second = attach("3d");
+    canvas.emit("pointerdown", pointer(3, 100, 100));
+    canvas.emit("pointerdown", pointer(4, 300, 300));
+    expect(leaseHeld()).toBe(true);
+    second.handle.dispose();
+    expect(leaseHeld()).toBe(false);
+    expect(canvas.listenerCount() + view.listeners + document.listeners).toBe(0);
+  });
+
+  it("leaves the editor camera's framing alone during a pinch in Game Camera preview", () => {
+    const { controller } = attach("3d", { editorCameraActive: () => false });
+    canvas.emit("pointerdown", pointer(1, 300, 300));
+    canvas.emit("pointerdown", pointer(2, 500, 300));
+    // Something else frames the editor camera while the preview shows (Frame Selection).
+    controller.frame(new Vector3(5, 6, 7), 20);
+    const framed = controller.captureFraming();
+    canvas.emit("pointermove", pointer(2, 600, 300));
+    expect(controller.captureFraming()).toEqual(framed);
+  });
 });

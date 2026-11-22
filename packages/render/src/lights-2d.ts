@@ -127,10 +127,15 @@ type ShadowMap = {
   rows: ({ record: Light2DRecord; x: number; y: number; radius: number } | null)[];
 };
 const ring = new Float32Array(SHADOW_2D_BINS);
+/** Every caster's world outlines for the shadow write in progress (`drawShadows`), emptied after it. */
+const shadowCasters: WorldOccluder2D[] = [];
 
 const scenes = new WeakMap<Scene, SceneLights2D>();
 const lightWords = new Float32Array(LIGHT_2D_MAXIMUM * RECORD_VEC4S * 4);
-const candidates: { record: Light2DRecord; score: number }[] = [];
+type Candidate = { record: Light2DRecord | null; score: number };
+const candidates: Candidate[] = [];
+const candidatePool: Candidate[] = [];
+const byScore = (a: Candidate, b: Candidate) => a.score - b.score;
 
 function sceneLights2D(scene: Scene): SceneLights2D {
   let state = scenes.get(scene);
@@ -224,9 +229,10 @@ export function bind2DLights(scene: Scene, effect: Effect): void {
 
 /**
  * What `pack2DLights` packed: the Point lights it holds, the ambient, the enabled Point lights past its maximum, and the
- * shadowed lights by shadow map row.
+ * shadowed lights by shadow map row. The same object, arrays included, is rewritten by the next call.
  */
 export type Packed2DLights = { count: number; ambient: [number, number, number]; limited: Light2DRecord[]; shadowed: Light2DRecord[] };
+const packed: Packed2DLights = { count: 0, ambient: [0, 0, 0], limited: [], shadowed: [] };
 
 /**
  * Packs `records` into `words` (the block's light records, `LIGHT_2D_MAXIMUM` × 3 vec4s): the Global lights summed into
@@ -241,11 +247,16 @@ export function pack2DLights(
   options: { lightsEnabled: boolean; camera: { x: number; y: number } | null; origin: { x: number; y: number }; shadows?: boolean },
   words: Float32Array,
 ): Packed2DLights {
-  const ambient: [number, number, number] = [0, 0, 0];
-  const limited: Light2DRecord[] = [];
-  const shadowed: Light2DRecord[] = [];
+  const { ambient, limited, shadowed } = packed;
+  limited.length = 0;
+  shadowed.length = 0;
+  packed.count = 0;
   words.fill(0);
-  if (!options.lightsEnabled) return { count: 0, ambient: [1, 1, 1], limited, shadowed };
+  if (!options.lightsEnabled) {
+    ambient.fill(1);
+    return packed;
+  }
+  ambient.fill(0);
   const camera = options.camera;
   candidates.length = 0;
   for (const record of records) {
@@ -255,27 +266,35 @@ export function pack2DLights(
       for (let channel = 0; channel < 3; channel++) ambient[channel]! += properties.color[channel]! * properties.intensity;
       continue;
     }
-    const score = camera ? Math.hypot(record.x - camera.x, record.y - camera.y) - properties.radius : 0;
-    candidates.push({ record, score });
+    const candidate = candidatePool[candidates.length] ?? (candidatePool[candidates.length] = { record: null, score: 0 });
+    candidate.record = record;
+    candidate.score = camera ? Math.hypot(record.x - camera.x, record.y - camera.y) - properties.radius : 0;
+    candidates.push(candidate);
   }
   // Stable: equal scores keep record order.
-  candidates.sort((a, b) => a.score - b.score);
+  candidates.sort(byScore);
   const count = Math.min(LIGHT_2D_MAXIMUM, candidates.length);
   for (let index = 0; index < candidates.length; index++) {
-    const record = candidates[index]!.record;
+    const record = candidates[index]!.record!;
     if (index >= count) { limited.push(record); continue; }
     const properties = record.properties;
     const cone = properties.outerAngle < 360 || properties.innerAngle < 360;
     const row = options.shadows && properties.castShadows && shadowed.length < SHADOWED_2D_MAXIMUM ? shadowed.push(record) - 1 : -1;
-    words.set([
-      record.x - options.origin.x, record.y - options.origin.y, properties.radius, properties.innerRadius,
-      properties.color[0] * properties.intensity, properties.color[1] * properties.intensity, properties.color[2] * properties.intensity, cone ? 1 : 0,
-      record.directionX, record.directionY, Math.cos(properties.outerAngle * Math.PI / 360), Math.cos(properties.innerAngle * Math.PI / 360),
-      row < 0 ? 0 : (row + 0.5) / SHADOWED_2D_MAXIMUM, row < 0 ? 0 : 1, 0, 0,
-    ], index * RECORD_VEC4S * 4);
+    // Written word by word into the zeroed record (its last two words stay 0).
+    const at = index * RECORD_VEC4S * 4;
+    words[at] = record.x - options.origin.x; words[at + 1] = record.y - options.origin.y;
+    words[at + 2] = properties.radius; words[at + 3] = properties.innerRadius;
+    words[at + 4] = properties.color[0] * properties.intensity; words[at + 5] = properties.color[1] * properties.intensity;
+    words[at + 6] = properties.color[2] * properties.intensity; words[at + 7] = cone ? 1 : 0;
+    words[at + 8] = record.directionX; words[at + 9] = record.directionY;
+    words[at + 10] = Math.cos(properties.outerAngle * Math.PI / 360); words[at + 11] = Math.cos(properties.innerAngle * Math.PI / 360);
+    words[at + 12] = row < 0 ? 0 : (row + 0.5) / SHADOWED_2D_MAXIMUM; words[at + 13] = row < 0 ? 0 : 1;
   }
+  // Pooled candidates hold no light past the call.
+  for (const candidate of candidates) candidate.record = null;
   candidates.length = 0;
-  return { count, ambient, limited, shadowed };
+  packed.count = count;
+  return packed;
 }
 
 /** Writes the block from the Scene's 2D lights (`pack2DLights`), seen from its active camera. */
@@ -326,14 +345,26 @@ function pushBounds(state: SceneLights2D, record: Occluder2DRecord): void {
   for (const occluder of record.world) state.changedBounds.push(occluder.minX, occluder.minY, occluder.maxX, occluder.maxY);
 }
 
-/** Builds a dirty record's world outlines and records the bounds it left and entered. */
+/**
+ * Builds a dirty record's world outlines and records the bounds it left and entered. Outlines are rewritten in place:
+ * one whose point count is unchanged keeps its object and its points array.
+ */
 function refreshOccluder(state: SceneLights2D, record: Occluder2DRecord): void {
   if (!record.dirty) return;
   record.dirty = false;
   pushBounds(state, record);
   const cos = Math.cos(record.angle), sin = Math.sin(record.angle);
-  record.world = record.shapes.map((shape) => {
-    const points = new Float64Array(shape.points.length);
+  const shapes = record.shapes;
+  const world = record.world;
+  if (world.length > shapes.length) world.length = shapes.length;
+  for (let at = 0; at < shapes.length; at++) {
+    const shape = shapes[at]!;
+    let occluder = world[at];
+    if (!occluder || occluder.points.length !== shape.points.length) {
+      occluder = { closed: shape.closed, points: new Float64Array(shape.points.length), minX: 0, minY: 0, maxX: 0, maxY: 0 };
+      world[at] = occluder;
+    }
+    const points = occluder.points;
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (let index = 0; index < points.length; index += 2) {
       const px = shape.points[index]!, py = shape.points[index + 1]!;
@@ -341,8 +372,9 @@ function refreshOccluder(state: SceneLights2D, record: Occluder2DRecord): void {
       points[index] = x; points[index + 1] = y;
       minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y);
     }
-    return { closed: shape.closed, points, minX, minY, maxX, maxY };
-  });
+    occluder.closed = shape.closed;
+    occluder.minX = minX; occluder.minY = minY; occluder.maxX = maxX; occluder.maxY = maxY;
+  }
   pushBounds(state, record);
 }
 
@@ -379,12 +411,7 @@ function drawShadows(scene: Scene, state: SceneLights2D, shadowed: readonly Ligh
     state.dirtyOccluders.clear();
   }
   const changed = state.changedBounds;
-  const reached = (x: number, y: number, radius: number) => {
-    for (let index = 0; index < changed.length; index += 4)
-      if (changed[index + 2]! >= x - radius && changed[index]! <= x + radius && changed[index + 3]! >= y - radius && changed[index + 1]! <= y + radius) return true;
-    return false;
-  };
-  let casters: WorldOccluder2D[] | null = null;
+  let gathered = false;
   let upload = false;
   for (let row = 0; row < SHADOWED_2D_MAXIMUM; row++) {
     const record = shadowed[row];
@@ -394,15 +421,28 @@ function drawShadows(scene: Scene, state: SceneLights2D, shadowed: readonly Ligh
       continue;
     }
     const radius = record.properties.radius;
-    if (drawn?.record === record && drawn.x === record.x && drawn.y === record.y && drawn.radius === radius && !reached(record.x, record.y, radius)) continue;
-    casters ??= [...state.occluders].flatMap((occluder) => occluder.world);
-    polarShadow2D(record.x, record.y, radius, casters, ring);
+    if (drawn?.record === record && drawn.x === record.x && drawn.y === record.y && drawn.radius === radius && !boundsReach(changed, record.x, record.y, radius)) continue;
+    if (!gathered) {
+      // In the Scene's caster order, then each caster's outline order: the ring depends on it.
+      for (const occluder of state.occluders) for (const outline of occluder.world) shadowCasters.push(outline);
+      gathered = true;
+    }
+    polarShadow2D(record.x, record.y, radius, shadowCasters, ring);
     for (let bin = 0; bin < SHADOW_2D_BINS; bin++) map.data[row * SHADOW_2D_BINS + bin] = ToHalfFloat(ring[bin]!);
-    map.rows[row] = { record, x: record.x, y: record.y, radius };
+    if (drawn) { drawn.record = record; drawn.x = record.x; drawn.y = record.y; drawn.radius = radius; }
+    else map.rows[row] = { record, x: record.x, y: record.y, radius };
     upload = true;
   }
+  shadowCasters.length = 0;
   changed.length = 0;
   if (upload) map.texture.update(map.data);
+}
+
+/** Whether any bounds in `changed` (minX, minY, maxX, maxY each) reach the square of `radius` round (x, y). */
+function boundsReach(changed: readonly number[], x: number, y: number, radius: number): boolean {
+  for (let index = 0; index < changed.length; index += 4)
+    if (changed[index + 2]! >= x - radius && changed[index]! <= x + radius && changed[index + 3]! >= y - radius && changed[index + 1]! <= y + radius) return true;
+  return false;
 }
 
 /** Bind the 2D shadow map for a draw with `effect`; always bound, as every 2D-lit program declares it. */
