@@ -1,0 +1,7 @@
+{
+  "root": "apps/player/dist",
+  "entries": {
+    "player.js": { "gzip": 2042000 },
+    "worker-worker-entry.js": { "gzip": 402000 }
+  }
+}

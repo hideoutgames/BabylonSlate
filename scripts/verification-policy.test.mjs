@@ -121,13 +121,13 @@ test("the browser cache is keyed on the installed Playwright release, not the wh
 test("static restores ESLint's cache only for the same lockfile and saves it only from main", async () => {
   const { steps } = (await verifyWorkflow()).jobs.static;
   const lint = steps.findIndex((step) => step.run === "pnpm lint");
-  const restore = steps.findIndex((step) => step.uses?.startsWith("actions/cache/restore@"));
-  const save = steps.findIndex((step) => step.uses?.startsWith("actions/cache/save@"));
+  const cacheStep = (action) =>
+    steps.findIndex((step) => step.uses?.startsWith(`actions/cache/${action}@`) && step.with?.path === ".cache/eslint");
+  const restore = cacheStep("restore");
+  const save = cacheStep("save");
   assert.ok(restore >= 0 && restore < lint && lint < save, "restore, lint, then save");
   const lockfile = "${{ hashFiles('pnpm-lock.yaml') }}";
   for (const step of [steps[restore], steps[save]]) {
-    // The directory the lint runner passes as --cache-location.
-    assert.equal(step.with.path, ".cache/eslint");
     // ESLint's per-file check covers the config but not plugin code, so a dependency change must miss.
     assert.ok(step.with.key.includes(lockfile), step.with.key);
     assert.ok(step.with.key.includes("${{ hashFiles('eslint.config.js') }}"), step.with.key);
@@ -135,4 +135,32 @@ test("static restores ESLint's cache only for the same lockfile and saves it onl
   assert.equal(steps[save].with.key, steps[restore].with.key);
   assert.equal(steps[restore].with["restore-keys"], `eslint-\${{ runner.os }}-${lockfile}-`);
   assert.equal(steps[save].if, "github.event_name == 'push'");
+});
+
+test("static restores tsc's build info before the workspace typecheck and saves it only from main", async () => {
+  const { steps } = (await verifyWorkflow()).jobs.static;
+  const typecheck = steps.findIndex((step) => step.run === "pnpm typecheck");
+  // The directory scripts/typecheck-incremental.mjs writes build info to.
+  const cacheStep = (action) =>
+    steps.findIndex((step) => step.uses?.startsWith(`actions/cache/${action}@`) && step.with?.path === ".cache/typecheck");
+  const restore = cacheStep("restore");
+  const save = cacheStep("save");
+  assert.ok(restore >= 0 && restore < typecheck && typecheck < save, "restore, typecheck, then save");
+  assert.equal(steps[save].with.key, steps[restore].with.key);
+  // A pull request never writes build info that later runs trust.
+  assert.equal(steps[save].if, "github.event_name == 'push'");
+  assert.equal(steps[restore].if, undefined);
+});
+
+test("the first browser shard checks the player bundle budget on its own build before its tests", async () => {
+  const { steps, strategy } = (await verifyWorkflow()).jobs.e2e;
+  const build = steps.findIndex((step) => step.run === "pnpm test:build");
+  const budget = steps.findIndex((step) => step.run === "node scripts/bundle-report.mjs --budget scripts/bundle-budget.json");
+  const tests = steps.findIndex((step) => step.run?.startsWith("pnpm test:e2e --partition="));
+  assert.ok(build >= 0 && build < budget && budget < tests, "build, budget, then tests");
+  // The same bundle mode as the tests, so test:e2e reuses the build the budget measured.
+  assert.deepEqual(steps[build].env, steps[tests].env);
+  assert.equal(steps[build].if, "matrix.shard == 1");
+  assert.equal(steps[budget].if, "matrix.shard == 1");
+  assert.ok(strategy.matrix.shard.includes(1));
 });

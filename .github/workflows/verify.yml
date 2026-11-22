@@ -52,7 +52,24 @@ jobs:
       - run: pnpm install
       - run: pnpm test:tooling
       - run: pnpm test:distribution
+      # tsc's incremental build info (scripts/typecheck-incremental.mjs): tsc compares every source file's content hash
+      # with it and rechecks whatever changed, so an older entry costs time, never a missed error. Build info decides
+      # which diagnostics are reused, so only main saves it.
+      - name: Restore the typecheck cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .cache/typecheck
+          key: typecheck-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: |
+            typecheck-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-
+            typecheck-${{ runner.os }}-
       - run: pnpm typecheck
+      - name: Save the typecheck cache
+        if: github.event_name == 'push'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .cache/typecheck
+          key: typecheck-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
       # ESLint's per-file cache: an entry is reused only for the same file content, ESLint and Node versions and
       # computed config. Plugin code is not part of it, so the lockfile hash is in every key. Only main saves it.
       - name: Restore the ESLint cache
@@ -149,6 +166,16 @@ jobs:
       # screenshot baselines that need those fonts.
       # Bundle on this runner; static remains independently required for merge.
       # The immutable build is verified before this shard executes its tests.
+      # Shard 1 builds first so the player's bundle budget fails before its tests run; its test:e2e then finds that
+      # build by its identity and reuses it (or builds again if it does not match).
+      - name: Build the browser test bundle
+        if: matrix.shard == 1
+        run: pnpm test:build
+        env:
+          HAPTIC_TEST_BUILD_MODE: ci-bundle
+      - name: Check the player bundle budget
+        if: matrix.shard == 1
+        run: node scripts/bundle-report.mjs --budget scripts/bundle-budget.json
       - run: pnpm test:e2e --partition=${{ matrix.shard }}/5
         env:
           HAPTIC_TEST_BUILD_MODE: ci-bundle
