@@ -255,15 +255,3 @@ export function scaledAnimationRootMotion(motion: AnimationRootMotion, scale: nu
   const { track } = motion;
   return { bone: motion.bone, track: { ...track, x: track.x.map((value) => value * factor), z: track.z.map((value) => value * factor) } };
 }
-
-/** The track at `ms` into it, linear between samples; the last sample past its end. */
-export function rootMotionAt(track: AnimationRootMotionTrack, ms: number): { x: number; z: number; yaw: number } {
-  const last = track.x.length - 1;
-  const at = Math.min(track.durationMs, Math.max(0, ms));
-  const position = Math.min(last, at / track.stepMs);
-  const low = Math.floor(position);
-  const high = Math.min(last, low + 1);
-  const t = high > low ? position - low : 0;
-  const lerp = (values: number[]) => values[low]! + (values[high]! - values[low]!) * t;
-  return { x: lerp(track.x), z: lerp(track.z), yaw: lerp(track.yaw) };
-}

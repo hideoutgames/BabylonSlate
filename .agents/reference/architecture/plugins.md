@@ -20,8 +20,8 @@ Content plugins: PluginSettings identity, discovery and enablement, mounted cont
 | PluginSettings schema and defaults | [`plugin-settings.ts`](../../../packages/assets/src/plugin-settings.ts) |
 | Discovery, shadowing, dependency graph, mounting, placeholders, diagnostics | [`plugin-host.ts`](../../../packages/assets/src/plugin-host.ts) |
 | `.hplugin` export, inspect, import planning, engine library install | [`plugin-package.ts`](../../../packages/assets/src/plugin-package.ts) |
-| Starter Content generator | [`starter-content.ts`](../../../packages/assets/src/starter-content.ts), committed tree [`engine-plugins/starter-content/`](../../../engine-plugins/starter-content/) |
-| EditorPrimitives generator | [`editor-primitives.ts`](../../../packages/assets/src/editor-primitives.ts) (Models, GLB, colliders), [`editor-primitive-geometry.ts`](../../../packages/assets/src/editor-primitive-geometry.ts) (meshes), committed tree [`engine-plugins/editor-primitives/`](../../../engine-plugins/editor-primitives/) |
+| Starter Content generator | [`test-support/starter-content.ts`](../../../packages/assets/src/test-support/starter-content.ts), committed tree [`engine-plugins/starter-content/`](../../../engine-plugins/starter-content/) |
+| EditorPrimitives generator | [`test-support/editor-primitives.ts`](../../../packages/assets/src/test-support/editor-primitives.ts) (Models, GLB, colliders), [`test-support/editor-primitive-geometry.ts`](../../../packages/assets/src/test-support/editor-primitive-geometry.ts) (meshes), committed tree [`engine-plugins/editor-primitives/`](../../../engine-plugins/editor-primitives/) |
 | Engine plugin catalog build | [`apps/editor/vite-engine-plugins.ts`](../../../apps/editor/vite-engine-plugins.ts) |
 | Read-only and HTTP catalog storage | [`read-only-storage.ts`](../../../packages/vfs/src/read-only-storage.ts), [`http-catalog-storage.ts`](../../../packages/vfs/src/http-catalog-storage.ts) |
 | Editor utility merge, Project Settings rows | [`apps/editor/src/lib/plugin-ui.ts`](../../../apps/editor/src/lib/plugin-ui.ts) |

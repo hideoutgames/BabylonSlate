@@ -50,7 +50,6 @@ export function gameFile(rawUrl: string, root: string): string {
  * the editor's window, its preload bridge or its storage.
  */
 export const PREVIEW_HOST = "preview";
-export const PREVIEW_ORIGIN = `app://${PREVIEW_HOST}`;
 export const EDITOR_ORIGIN = "app://babylonslate";
 
 /** The bundled player's file for an `app://preview/player/` URL; nothing else of the renderer is served there. */

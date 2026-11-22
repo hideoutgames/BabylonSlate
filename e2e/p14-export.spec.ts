@@ -5,9 +5,9 @@ import {
   exportGame,
   GAME_MANIFEST_FILE,
   parseGameManifest,
-  unzipExport,
   zipExport,
 } from "../packages/exporter/src/index.ts";
+import { unzipExport } from "../packages/exporter/src/test-support/unzip-export";
 import { serveExportFiles } from "./export-static-server";
 import { WEBKIT_SMOKE_TAG } from "./ipad-tag";
 import {

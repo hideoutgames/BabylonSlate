@@ -18,7 +18,6 @@ export {
   SetActorsTransformsCommand,
   SetSceneNameCommand,
   SetViewportModeCommand,
-  SCENE_COMMAND_TYPES,
   type ActorFlags,
   type ActorTransformEntry,
   type SceneEditCommand,

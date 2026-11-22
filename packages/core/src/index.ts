@@ -92,7 +92,6 @@ export * from "./particle-settings";
 
 export * from "./render-quality";
 export * from "./scalability";
-export * from "./render-setting-ownership";
 export * from "./environment-lighting";
 export * from "./render-effects";
 

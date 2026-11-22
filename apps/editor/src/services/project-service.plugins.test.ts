@@ -7,11 +7,13 @@ import {
   encodePluginSettingsDocument,
   inspectHplugin,
   writeProjectPlugin,
-  buildStarterContentFiles,
   encodeProjectZip,
+} from "@haptic/assets";
+import {
+  buildStarterContentFiles,
   STARTER_ACTOR_GUID,
   STARTER_CONTENT_PLUGIN_GUID,
-} from "@haptic/assets";
+} from "@haptic/assets/test-support/starter-content";
 import { encodeHasset } from "@haptic/assets/hasset";
 import { unpackEnginePluginZip } from "@haptic/assets/test-support/engine-plugins";
 import { createEmptyProjectFiles } from "@haptic/assets/test-support/project-files";
