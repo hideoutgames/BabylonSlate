@@ -29,6 +29,7 @@ import {
   normalizeMaterialFunctionDocument,
   normalizeMaterialInstanceDocument,
 } from "@haptic/shader-graph";
+import { propertyFieldsForClassId } from "@haptic/behaviour-tree/catalog";
 import { animationAssetGuids } from "./animation-payload";
 import { blendSpaceAssetGuids, spriteBlendSpaceAssetGuids } from "./blend-space-payload";
 import { audioAssetDependencies } from "./audio-payload";
@@ -572,7 +573,13 @@ export function collectAssetDependencyMetadata(assetType: string, payload: Row, 
   } else if (assetType === "BehaviourTree") {
     add(payload.blackboardGuid);
     for (const node of rows(payload.nodes)) for (const entry of [node, ...rows(node.decorators), ...rows(node.services)]) {
-      addClass(entry.classId); instanceProperties(entry.classId, row(entry.properties));
+      const properties = row(entry.properties);
+      addClass(entry.classId); instanceProperties(entry.classId, properties);
+      // A built-in node's assets (Play Animation's clip, Play Sound's Audio) are authored on the tree and played the
+      // moment the node runs, so they load with the tree, as an Animation Graph's clips do.
+      if (typeof entry.classId === "string") {
+        for (const field of propertyFieldsForClassId(entry.classId, properties)) if (field.kind === "asset") add(properties[field.key]);
+      }
     }
   } else if (assetType === "Blackboard") for (const key of rows(payload.keys)) typeValue(key.type, key.defaultValue);
   else if (assetType === "SaveGame") {
