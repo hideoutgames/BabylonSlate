@@ -1,51 +1,39 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { afterEach, expect, it } from "vitest";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
 import { Scene } from "@babylonjs/core/scene";
-import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
-import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { createDefaultWaterDefinition, normalizeWaterBody } from "@haptic/core";
 import { waterVariantBase } from "./material-compiler";
 import { createWaterMesh, isBuiltInWaterMesh } from "./water-mesh";
-import { meshWaterNodeSurface } from "./water-node-blocks";
-import { builtInWaterMaterial } from "./water-template";
+import { builtInWaterMaterial, recompileBuiltInWaterMaterial } from "./water-template";
+import { setSceneWorldDebug } from "./world-debug";
 
 const disposers: Array<() => void> = [];
-afterEach(() => { while (disposers.length) disposers.pop()!(); vi.restoreAllMocks(); });
+afterEach(() => { while (disposers.length) disposers.pop()!(); });
 
-function host() {
+it("compiles built-in water again when the Material record is switched and moves its water meshes to the new build", async () => {
   const engine = new NullEngine();
   const scene = new Scene(engine);
-  new FreeCamera("camera", new Vector3(0, 6, -12), scene);
   disposers.push(() => { scene.dispose(); engine.dispose(); });
-  return { scene };
-}
+  const previous = builtInWaterMaterial(scene);
+  const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 30, length: 30 }), createDefaultWaterDefinition(), previous);
+  expect(waterVariantBase(lake.material)).toBe(previous);
 
-describe("Built-in water's graph Material", () => {
-  it("is one water starter Material per Scene, shared by every body as built-in water", async () => {
-    const { scene } = host();
-    const material = builtInWaterMaterial(scene);
-    expect(builtInWaterMaterial(scene)).toBe(material);
-    const body = normalizeWaterBody({ resolution: 8 });
-    const lake = createWaterMesh(scene, "lake", body, createDefaultWaterDefinition(), material);
-    const river = createWaterMesh(scene, "river", normalizeWaterBody({ resolution: 8 }, "river"), { ...createDefaultWaterDefinition(), roughness: 0.3 }, material);
-    // Every body draws the starter's one water variant (the cut and coverage), never the starter itself.
-    const drawn = lake.material!;
-    expect(drawn).not.toBe(material);
-    expect(river.material).toBe(drawn);
-    expect(waterVariantBase(drawn)).toBe(material);
-    // Each body reads its own asset through its own surface.
-    expect(meshWaterNodeSurface(lake)!.water.roughness).not.toBe(meshWaterNodeSurface(river)!.water.roughness);
-    // It is built-in water, which the view's graph warms under the pass that draws it; a Custom Material is not.
-    const custom = createWaterMesh(scene, "custom", body, createDefaultWaterDefinition(), new StandardMaterial("custom", scene));
-    expect([isBuiltInWaterMesh(lake), isBuiltInWaterMesh(river), isBuiltInWaterMesh(custom)]).toEqual([true, true, false]);
-    // A body's disposal leaves the shared Material and its water variant to the others; the Scene's disposes them.
-    lake.dispose();
-    expect(river.material).toBe(drawn);
-    expect(scene.materials).toContain(drawn);
-    expect(material.getScene().materials).toContain(material);
-    const dispose = vi.spyOn(material, "dispose");
-    scene.dispose();
-    expect(dispose).toHaveBeenCalled();
-  });
+  setSceneWorldDebug(scene, "materialrecords", true);
+  const switching = recompileBuiltInWaterMaterial(scene);
+  // Until the new build is ready, the old one draws.
+  expect(builtInWaterMaterial(scene)).toBe(previous);
+  await switching;
+  const recorded = builtInWaterMaterial(scene);
+  expect(recorded).not.toBe(previous);
+  expect(waterVariantBase(lake.material)).toBe(recorded);
+  expect(isBuiltInWaterMesh(lake)).toBe(true);
+  expect(scene.materials.includes(previous)).toBe(false);
+  expect((recorded as NodeMaterial).compiledShaders).toContain("uniform HapticMaterial");
+
+  setSceneWorldDebug(scene, "materialrecords", false);
+  await recompileBuiltInWaterMaterial(scene);
+  const plain = builtInWaterMaterial(scene);
+  expect([plain === recorded, waterVariantBase(lake.material) === plain, scene.materials.includes(recorded)]).toEqual([false, true, false]);
+  expect(plain.compiledShaders).not.toContain("HapticMaterial");
 });
