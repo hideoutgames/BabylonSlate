@@ -59,7 +59,9 @@ describe("nativeHttp", () => {
       method: "GET",
       url: "https://example.test/locks",
       headers: { Accept: "application/vnd.git-lfs+json" },
+      disableRedirects: true,
     });
+    // The desktop app refuses every redirect, so the flag is not sent.
     expect(fetch).toHaveBeenCalledWith({
       method: "GET",
       url: "https://example.test/locks",

@@ -38,6 +38,7 @@ import { installEngineDefaultMaterial } from "./default-material";
 import { flushSceneImagePages, sceneDrawBatchWork, setSceneDrawBatching, type OverlayBatchWork } from "./overlay-draw-batcher";
 import { uploadSceneGlyphPages } from "./text2d-glyph-atlas";
 import { countLayerPhase, emptyLayerFrameStats, installLayerFrameCounters, type LayerFrameStats } from "./layer-frame-stats";
+import { backbufferDepthTracker, setBackbufferDepthStencilFold, type BackbufferDepthTracker } from "./backbuffer-depth-tracker";
 import { keepLayerDrawableMeshes, layerDrawableMeshWork, type LayerDrawableMeshWork } from "./layer-drawable-meshes";
 import { keepLayerDrawList, layerDrawListWork, type LayerDrawListWork } from "./layer-draw-list";
 import { isSceneFrameReady } from "./scene-perf";
@@ -46,6 +47,7 @@ import { SCENE_PREPARATION_CEILING_MS } from "./stall-deadline";
 import { PostProcessRetirement } from "./post-process-retirement";
 import { configureCutoutSorting } from "./sorting";
 import { setUnlitMaterial, type UnlitMaterialKey } from "./unlit-material";
+import { beginPremultipliedLayerContent, endPremultipliedLayerContent, setTargetedLayerScene } from "./layer-composite";
 import { createDepthTextureTarget } from "./depth-texture-target";
 import { isPostProcessPanelResult, POST_PROCESS_PANEL_ENTRY_ID, ScenePostProcessPanels, type PostProcessPanelView } from "./post-process-panels";
 import type { TargetCamera } from "@babylonjs/core/Cameras/targetCamera";
@@ -225,6 +227,8 @@ export class SceneLayerCompositor {
     this.screen = options.screen ?? (() => null);
     this.onLayerView = options.onLayerView;
     this.slotRoot = options.slotRoot ?? (() => null);
+    // First: the layer counters, wrapped around it, count the clears Babylon asks for.
+    this.backbuffer = backbufferDepthTracker(this.engine);
     installLayerFrameCounters(this.engine);
   }
 
@@ -328,6 +332,18 @@ export class SceneLayerCompositor {
    * picture may differ: a measurement switch, never a default.
    */
   depthClears = true;
+
+  /**
+   * Debug (`layerdebug skipclears`): while on, a frame whose layers draw straight over the world clears the backbuffer's
+   * depth and stencil in the world output pass's own clear, and a layer's depth-stencil clear is left out while the
+   * backbuffer still holds cleared depth and stencil everywhere (`backbuffer-depth-tracker.ts`): the picture is the
+   * same, with fewer clears. Off, every layer clears as `depthClears` says.
+   */
+  skipClears = true;
+  /** `engine`'s backbuffer depth tracker. */
+  private readonly backbuffer: BackbufferDepthTracker;
+  /** The backbuffer's clear counts as this frame's layer work started (`LayerFrameStats.backbuffer`). */
+  private backbufferStart: { clears: number; depthClears: number; elided: number } | null = null;
 
   clear(): void {
     for (const layerId of [...this.byId.keys()]) {
@@ -637,6 +653,21 @@ export class SceneLayerCompositor {
       }
     });
     counts.ms = performance.now() - start;
+    this.startBackbufferCount();
+    // Layers straight over the world: its output pass clears the backbuffer's depth and stencil with its colour, so
+    // the first layer's own clear finds them cleared (`foldsBackbufferDepthStencil`).
+    setBackbufferDepthStencilFold(this.engine, this.skipsClears() && this.byId.size > 0);
+  }
+
+  /** Whether layers drawn straight over the world leave out a depth-stencil clear the backbuffer already holds. */
+  private skipsClears(): boolean {
+    return this.skipClears && this.depthClears && !this.stack;
+  }
+
+  /** The backbuffer's clear counts as this frame's layer work starts: before the world, else at the layer pass. */
+  private startBackbufferCount(): void {
+    const tracker = this.backbuffer;
+    this.backbufferStart = { clears: tracker.clears, depthClears: tracker.depthClears, elided: tracker.elided };
   }
 
   render(presentingLayers: ReadonlySet<string> = new Set(), draw: (layerId: string, render: () => boolean, fallback: () => void) => void = (_id, render) => render()): void {
@@ -648,14 +679,30 @@ export class SceneLayerCompositor {
     stats.depthClears = 0;
     stats.targetSwitches = 0;
     stats.uploads = 0;
-    countLayerPhase(this.engine, stats, () => {
-      this.resize();
-      this.heldDrawn = false;
-      // With no layer left, an ended stack's last composite has nothing to stand in for.
-      if (this.byId.size === 0) this.releaseHeld();
-      if (this.stack) this.renderThroughStack(this.stack, presentingLayers, draw);
-      else this.renderDirect(presentingLayers, draw);
-    });
+    if (!this.backbufferStart) this.startBackbufferCount();
+    const tracker = this.backbuffer;
+    try {
+      countLayerPhase(this.engine, stats, () => {
+        this.resize();
+        this.heldDrawn = false;
+        // With no layer left, an ended stack's last composite has nothing to stand in for.
+        if (this.byId.size === 0) this.releaseHeld();
+        if (this.stack) this.renderThroughStack(this.stack, presentingLayers, draw);
+        else {
+          // Its draws are followed only while it runs and leaves clears out: the world frame's own draws are untouched.
+          if (this.skipsClears()) tracker.beginLayerPass();
+          this.renderDirect(presentingLayers, draw);
+        }
+      });
+    } finally {
+      tracker.endLayerPass();
+      setBackbufferDepthStencilFold(this.engine, false);
+    }
+    const from = this.backbufferStart;
+    this.backbufferStart = null;
+    stats.backbuffer.clears = from ? tracker.clears - from.clears : 0;
+    stats.backbuffer.depthClears = from ? tracker.depthClears - from.depthClears : 0;
+    stats.backbuffer.elided = from ? tracker.elided - from.elided : 0;
     stats.ms = performance.now() - start;
   }
 
@@ -703,7 +750,10 @@ export class SceneLayerCompositor {
       draw(record.layerId, () => {
         record.scene.autoClear = !cleared;
         record.scene.autoClearDepthAndStencil = !cleared || this.depthClears;
-        const result = this.renderLayer(record, this.validates(presentingLayers, record.layerId));
+        // The shared target holds premultiplied colour and coverage, which the blit composites as such.
+        beginPremultipliedLayerContent(this.engine);
+        let result: ReturnType<SceneRenderCoordinator["render"]>;
+        try { result = this.renderLayer(record, this.validates(presentingLayers, record.layerId)); } finally { endPremultipliedLayerContent(this.engine); }
         if (!result.rendered) {
           failed = true;
           return false;
@@ -1192,6 +1242,8 @@ export class SceneLayerCompositor {
     else {
       layer.scene.autoClear = false;
       layer.scene.autoClearDepthAndStencil = true;
+      // Straight over the world again: its Multiply visuals multiply by their colour (`layerMultiplyAlphaMode`).
+      setTargetedLayerScene(layer.scene, false);
     }
   }
 
@@ -1233,6 +1285,8 @@ export class SceneLayerCompositor {
     view.hasAlpha = true;
     layer.view = view;
     layer.camera.outputRenderTarget = view;
+    // Before any of its Multiply visuals draws: they darken the shared target by their grey from now on.
+    setTargetedLayerScene(layer.scene, true);
   }
 
   private createBlitScene(texture: RenderTargetTexture): Scene {
@@ -1243,10 +1297,12 @@ export class SceneLayerCompositor {
     blitScene.lightsEnabled = false;
     fullScreenCamera("sceneLayerBlitCamera", blitScene);
     const plane = MeshBuilder.CreatePlane("sceneLayerBlitPlane", { size: 2 }, blitScene);
-    // The passes' colour over the world, blended by its alpha.
-    setUnlitMaterial(plane, SCENE_LAYER_BLIT, {
+    // The passes' premultiplied colour over the world, which shows through by one minus its coverage. The held
+    // composite redraws this Scene, so it composites the same way. Only this Scene uses this instance.
+    const blit = setUnlitMaterial(plane, SCENE_LAYER_BLIT, {
       texture, color: [1, 1, 1], alpha: 1, cutoff: 0, blend: true, textureAlpha: true, twoSided: false,
     });
+    blit.alphaMode = Constants.ALPHA_PREMULTIPLIED;
     return blitScene;
   }
 

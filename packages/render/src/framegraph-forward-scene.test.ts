@@ -2258,6 +2258,23 @@ it.each([
   graph.dispose();
 });
 
+// A Text or User Interface Material writes its colour alone, never the geometry targets: drawn into the multi-target
+// geometry pass (a Scene Layer's editor view under the project's ambient occlusion), its draw is a GL error on ANGLE.
+it("leaves meshes drawing a Text or User Interface Material out of the spatial geometry pass", async () => {
+  const { graph, skipped } = await fogHost({ ambientOcclusion: { ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true } }, undefined, (scene) => {
+    opaqueAndBlended(scene);
+    for (const domain of ["text", "ui"]) {
+      const overlay = MeshBuilder.CreatePlane(domain, {}, scene);
+      overlay.material = new StandardMaterial(`${domain} material`, scene);
+      overlay.material.metadata = { materialDomain: domain };
+      overlay.material.alpha = 0.5;
+    }
+  });
+  skipped();
+  expect(spatialGeometry(graph).objectList.meshes.map((mesh) => mesh.name)).toEqual(["opaque", "blended"]);
+  graph.dispose();
+});
+
 /** A world view with Screen-Space Shadows at High and no Fog Volume: a sun (shadowed as `shadowed` says) over a plane. */
 async function screenShadowsHost(shadowed: boolean, effects: Partial<typeof DEFAULT_RENDER_EFFECTS> = {}, nullEngine?: NullEngine,
   quality?: ReturnType<typeof normalizeRenderingQuality>, mergedMarches = false) {

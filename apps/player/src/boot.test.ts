@@ -188,7 +188,8 @@ describe("player startup and Stop ownership", () => {
     acknowledge(true);
     await suppress;
     expect(handle.setGameInputEnabled).toHaveBeenLastCalledWith(false);
-    expect(input().ring.drain()).toContainEqual({ kind: "gamepad", tick: 0, gamepadIndex: 0, axes: [0], buttons: [0] });
+    // The pad first appeared while paused: the game never saw it, so nothing of it is sent, its held values least of all.
+    expect(input().ring.drain().filter(event => event.kind === "gamepad")).toEqual([]);
     const restore = session.previewDiagnostics!.setEditorInputSuppressed(false);
     acknowledge(false);
     await restore;
@@ -289,6 +290,24 @@ describe("player startup and Stop ownership", () => {
     // The console's pause is a different message, so a hold never resumes it nor it the hold.
     worker.command({ channel: "command", payload: { type: "sessionPaused", paused: true } });
     expect(pauses().at(-1)).toEqual({ type: "setPaused", paused: true });
+  });
+
+  it("sends an exported player's held stick again when its Pause ends, with the held button still released", async () => {
+    const { game, canvas, input } = await fixture();
+    const session = startPlayer({ game, canvas });
+    sessions.push(session);
+    const worker = TestWorker.instances[0]!;
+    await vi.waitFor(() => expect(frames.size).toBeGreaterThan(0));
+    vi.stubGlobal("navigator", { getGamepads: () => [{ index: 0, axes: [1], buttons: [{ value: 1 }] }] });
+    input().pollGamepads();
+    input().ring.drain();
+    // The runtime resets its input when the Pause starts; the steady pad has nothing new to send.
+    worker.command({ channel: "command", payload: { type: "sessionPaused", paused: true } });
+    input().pollGamepads();
+    expect(input().ring.drain()).toEqual([]);
+    worker.command({ channel: "command", payload: { type: "sessionPaused", paused: false } });
+    input().pollGamepads();
+    expect(input().ring.drain()).toEqual([{ kind: "gamepad", tick: 0, gamepadIndex: 0, axes: [1], buttons: [0] }]);
   });
 
   it("reopens a packed player's checkpoint through the real in-process fallback", async () => {

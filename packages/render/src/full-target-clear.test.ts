@@ -12,6 +12,7 @@ import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { fragmentDiscards, fullTargetClear, startFullScreenPassesWithClear } from "./full-target-clear";
 import { FrameGraphBloomBlurTask } from "./bloom-blur-task";
 import { FrameGraphDisplayColorTask } from "./display-color-task";
+import { setBackbufferDepthStencilFold } from "./backbuffer-depth-tracker";
 
 const dispose: Array<() => void> = [];
 afterEach(() => {
@@ -171,4 +172,30 @@ it("reads a fragment shader that may discard, and an unprocessed one, as one tha
   expect(fragmentDiscards(effect("void main(void) { gl_FragColor = vec4(discarded); }"))).toBe(false);
   expect(fragmentDiscards(effect(""))).toBe(true);
   expect(fragmentDiscards(null)).toBe(true);
+});
+
+it("clears the backbuffer's depth and stencil with its colour only in a frame Scene Layers fold their first clear into", async () => {
+  const { engine, graph, events } = host();
+  await graph.buildAsync();
+  startFullScreenPassesWithClear(graph.tasks);
+  setBackbufferDepthStencilFold(engine, true);
+  // The depth writes each clear of depth met: a depth clear honours them.
+  const writes: boolean[] = [];
+  const clear = engine.clear;
+  engine.clear = (...args: Parameters<typeof engine.clear>) => {
+    if (args[2]) writes.push(engine.getDepthWrite());
+    clear.apply(engine, args);
+  };
+  engine.setDepthWrite(false);
+  try { graph.execute(); } finally { setBackbufferDepthStencilFold(engine, false); }
+  // Offscreen passes keep clearing colour alone; the backbuffer's clear takes depth and stencil, with depth writes on
+  // for it and put back after.
+  expect(events).toEqual([
+    ...Array.from({ length: 5 }, () => ["clear target colour", "draw target"]).flat(),
+    "clear backbuffer colour depth", "draw backbuffer",
+  ]);
+  expect(writes).toEqual([true]);
+  events.length = 0;
+  graph.execute();
+  expect(events.at(-2)).toBe("clear backbuffer colour");
 });

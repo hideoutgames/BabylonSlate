@@ -174,6 +174,7 @@ function fingerprintAfter(
   let layers = true;
   let fsrOutput = "view";
   let layerClears = "on";
+  let layerSkipClears = "on";
   let heldImage = "on";
   let backbufferDepth = "kept";
   const waterOff = new Set<string>();
@@ -190,7 +191,7 @@ function fingerprintAfter(
     else if (name === "discardsamples") discard = first === "on";
     else if (name === "scenelayers") layers = first === "on";
     else if (name === "fsrdebug") fsrOutput = second!;
-    else if (name === "layerdebug") layerClears = second!;
+    else if (name === "layerdebug") { if (first === "skipclears") layerSkipClears = second!; else layerClears = second!; }
     else if (name === "heldimage") heldImage = first!;
     else if (name === "backbufferdiscard") backbufferDepth = first === "on" ? "discarded" : "kept";
     else if (name === "waterdebug") { if (second === "off") waterOff.add(first!); else waterOff.delete(first!); }
@@ -211,6 +212,7 @@ function fingerprintAfter(
     layers: layers ? "shown" : "hidden",
     "upscale.output": fsrOutput,
     "layers.clears": layerClears,
+    "layers.skipclears": layerSkipClears,
     "presentation.held": heldImage,
     "backbuffer.depth": backbufferDepth,
   };

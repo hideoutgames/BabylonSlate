@@ -18,6 +18,7 @@ import type { EditorExtensionCommandDescriptor } from "../lib/editor-extension-h
 import { resolvePluginIcon } from "../lib/plugin-icons";
 import { ExtensionCommandDialog, ExtensionEditorDialog, ExtensionExportDialog } from "./project-extension-dialogs";
 import { SettingsSection } from "./settings-section";
+import { ProjectTrustField } from "./project-trust-field";
 
 export function ProjectExtensionsSettings() {
   const { updateProjectSettings } = useDocumentActions();
@@ -63,6 +64,7 @@ export function ProjectExtensionsSettings() {
     <SettingsSection id="installed" title="Installed Extensions">
       <div className="settings-row flex flex-col gap-2">
       <FieldDescription>TypeScript or JavaScript tools for the editor. An extension with Editor Only off also adds a game library and content to Play and packaged games.</FieldDescription>
+      {snapshot.entries.some((entry) => entry.source === "project") ? <ProjectTrustField id="settings-extension-trust" className="" held={snapshot.untrusted} /> : null}
       {pending ? <p role="status">{pending}…</p> : null}
       {error ? <Alert variant="destructive"><AlertTitle>Extension Action Failed</AlertTitle><AlertDescription>{error.message}<Button variant="outline" size="sm" disabled={Boolean(pending)} onClick={error.retry}>Retry</Button></AlertDescription></Alert> : null}
       {snapshot.diagnostics.length > 0 ? <Alert><AlertTitle>Extension Diagnostics</AlertTitle><AlertDescription><ul className="list-disc pl-4">{snapshot.diagnostics.map((message, index) => <li key={`${index}:${message}`}>{message}</li>)}</ul></AlertDescription></Alert> : null}

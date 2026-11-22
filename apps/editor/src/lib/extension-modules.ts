@@ -1,7 +1,9 @@
 import type { ExtensionCodeFile } from "@haptic/assets";
 import { applyPlatformDirectives, EXTENSION_HOST_MODULE, type ExtensionModule, type ExtensionModuleBundle, type PlatformSymbol } from "@haptic/core";
 
-type TypeScript = typeof import("typescript");
+type Sucrase = typeof import("sucrase");
+type Acorn = typeof import("acorn");
+type AcornNode = import("acorn").Node & Record<string, unknown>;
 
 function directoryOf(path: string): string {
   const slash = path.lastIndexOf("/");
@@ -38,63 +40,68 @@ function resolveImport(from: string, specifier: string, sources: ReadonlyMap<str
   return found;
 }
 
-/** Value imports of one file. Type-only imports are erased, so they may name anything. */
-function valueImports(ts: TypeScript, path: string, source: string): string[] {
-  const file = ts.createSourceFile(path, source, ts.ScriptTarget.ES2022, true);
-  const specifiers: string[] = [];
-  const literal = (node: import("typescript").Expression | undefined): string => {
-    if (!node || !ts.isStringLiteralLike(node)) throw new Error(`${path}: Import paths must be string literals.`);
-    return node.text;
-  };
-  const visit = (node: import("typescript").Node): void => {
-    if (ts.isImportDeclaration(node)) {
-      const clause = node.importClause;
-      const typeOnly = clause?.isTypeOnly || (clause && !clause.name && clause.namedBindings
-        && ts.isNamedImports(clause.namedBindings) && clause.namedBindings.elements.length > 0
-        && clause.namedBindings.elements.every((element) => element.isTypeOnly));
-      if (!typeOnly) specifiers.push(literal(node.moduleSpecifier));
-    } else if (ts.isImportEqualsDeclaration(node)) {
-      if (!node.isTypeOnly && ts.isExternalModuleReference(node.moduleReference)) {
-        specifiers.push(literal(node.moduleReference.expression));
-      }
-    } else if (ts.isExportDeclaration(node)) {
-      if (node.moduleSpecifier && !node.isTypeOnly) specifiers.push(literal(node.moduleSpecifier));
-    } else if (ts.isCallExpression(node)) {
-      if (node.expression.kind === ts.SyntaxKind.ImportKeyword) {
-        throw new Error(`${path}: Dynamic import() is not supported. Use a static import.`);
-      }
-      if (ts.isIdentifier(node.expression) && node.expression.text === "require") {
-        if (node.arguments.length !== 1) throw new Error(`${path}: require() takes one path.`);
-        specifiers.push(literal(node.arguments[0]));
-      }
-    }
-    ts.forEachChild(node, visit);
-  };
-  visit(file);
-  return specifiers;
+/**
+ * Strips TypeScript types and turns ES modules into CommonJS with Sucrase,
+ * without type checking. Output keeps the source's line numbers. Imports used
+ * only as types are removed; dynamic `import()` is kept so the linker can
+ * refuse it.
+ */
+function transpile(sucrase: Sucrase, path: string, source: string): string {
+  try {
+    return sucrase.transform(source, {
+      transforms: path.endsWith(".ts") ? ["typescript", "imports"] : ["imports"],
+      filePath: path,
+      disableESTransforms: true,
+      preserveDynamicImport: true,
+    }).code;
+  } catch (error) {
+    const loc = (error as { loc?: { line: number; column: number } }).loc;
+    const message = (error instanceof Error ? error.message : String(error))
+      .replace(/^Error transforming [^:]*: /, "")
+      .replace(/ \(\d+:\d+\)$/, "");
+    throw new Error(loc ? `${path}:${loc.line}:${loc.column + 1}: ${message}` : `${path}: ${message}`, { cause: error });
+  }
 }
 
-function transpile(ts: TypeScript, path: string, source: string): string {
-  const result = ts.transpileModule(source, {
-    fileName: path,
-    reportDiagnostics: true,
-    compilerOptions: {
-      target: ts.ScriptTarget.ES2022,
-      module: ts.ModuleKind.CommonJS,
-      moduleDetection: ts.ModuleDetectionKind.Force,
-      isolatedModules: true,
-    },
-  });
-  const errors = result.diagnostics?.filter((diagnostic) => diagnostic.category === ts.DiagnosticCategory.Error) ?? [];
-  if (errors.length > 0) {
-    throw new Error(errors.map((diagnostic) => {
-      const position = diagnostic.file && diagnostic.start !== undefined
-        ? diagnostic.file.getLineAndCharacterOfPosition(diagnostic.start) : null;
-      const location = position ? `${path}:${position.line + 1}:${position.character + 1}` : path;
-      return `${location}: ${ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n")}`;
-    }).join("\n"));
+/**
+ * The relative files one transpiled module requires. Every static import,
+ * re-export and import-equals is a literal `require` once Sucrase has run;
+ * a `require` the author wrote must name one literal path, and dynamic
+ * `import()` is refused.
+ */
+function requiredSpecifiers(acorn: Acorn, path: string, code: string): string[] {
+  let program: AcornNode;
+  try {
+    program = acorn.parse(code, { ecmaVersion: "latest", sourceType: "script", allowReturnOutsideFunction: true, allowHashBang: true }) as unknown as AcornNode;
+  } catch (error) {
+    const loc = (error as { loc?: { line: number; column: number } }).loc;
+    const message = (error instanceof Error ? error.message : String(error)).replace(/ \(\d+:\d+\)$/, "");
+    throw new Error(loc ? `${path}:${loc.line}:${loc.column + 1}: ${message}` : `${path}: ${message}`, { cause: error });
   }
-  return result.outputText;
+  const specifiers: string[] = [];
+  const visit = (node: AcornNode): void => {
+    if (node.type === "ImportExpression") throw new Error(`${path}: Dynamic import() is not supported. Use a static import.`);
+    if (node.type === "CallExpression") {
+      const callee = node.callee as AcornNode;
+      if (callee.type === "Identifier" && callee.name === "require") {
+        const args = node.arguments as AcornNode[];
+        if (args.length !== 1) throw new Error(`${path}: require() takes one path.`);
+        const [argument] = args;
+        if (argument!.type !== "Literal" || typeof argument!.value !== "string") throw new Error(`${path}: Import paths must be string literals.`);
+        specifiers.push(argument!.value);
+      }
+    }
+    for (const key of Object.keys(node)) {
+      const value = node[key];
+      if (Array.isArray(value)) {
+        for (const child of value) if (child && typeof (child as AcornNode).type === "string") visit(child as AcornNode);
+      } else if (value && typeof value === "object" && typeof (value as AcornNode).type === "string") {
+        visit(value as AcornNode);
+      }
+    }
+  };
+  visit(program);
+  return specifiers;
 }
 
 /**
@@ -109,7 +116,7 @@ export async function linkExtensionModules(
   symbols: ReadonlySet<PlatformSymbol>,
 ): Promise<ExtensionModuleBundle> {
   // Loaded only when extension code is linked, never with the editor route.
-  const ts = await import("typescript");
+  const [sucrase, acorn] = await Promise.all([import("sucrase"), import("acorn")]);
   const sources = new Map(files.map((file) => [file.path, file.source]));
   if (!/\.(?:ts|js)$/.test(entry)) throw new Error("Extension entries must be JavaScript (.js) or TypeScript (.ts) files.");
   if (!sources.has(entry)) throw new Error(`Extension entry is missing: ${entry}`);
@@ -120,14 +127,14 @@ export async function linkExtensionModules(
     const path = queue.shift()!;
     if (linked.has(path)) continue;
     linked.add(path);
-    const source = applyPlatformDirectives(sources.get(path)!, symbols, path);
+    const code = transpile(sucrase, path, applyPlatformDirectives(sources.get(path)!, symbols, path));
     const imports: Record<string, string> = {};
-    for (const specifier of valueImports(ts, path, source)) {
+    for (const specifier of requiredSpecifiers(acorn, path, code)) {
       const target = resolveImport(path, specifier, sources);
       imports[specifier] = target;
       if (target !== EXTENSION_HOST_MODULE) queue.push(target);
     }
-    modules.push({ path, code: transpile(ts, path, source), imports });
+    modules.push({ path, code, imports });
   }
   return { entry, modules };
 }

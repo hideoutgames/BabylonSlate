@@ -1,4 +1,6 @@
 import { Constants } from "@babylonjs/core/Engines/constants";
+import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
+import { foldsBackbufferDepthStencil, noteFoldedBackbufferClear } from "./backbuffer-depth-tracker";
 import type { Effect } from "@babylonjs/core/Materials/effect";
 import { Color4 } from "@babylonjs/core/Maths/math.color";
 import type { FrameGraphRenderContext } from "@babylonjs/core/FrameGraph/frameGraphRenderContext";
@@ -33,10 +35,25 @@ const CLEAR_COLOR = new Color4(0, 0, 0, 0);
 
 /** The clear itself. A member, so a proof's reference run can put the load back. */
 export const fullTargetClear = {
-  /** Binds the pass's target and clears its colour at its full viewport (the viewport only names the cleared rect). */
+  /**
+   * Binds the pass's target and clears its colour at its full viewport (the viewport only names the cleared rect). On
+   * the backbuffer, in a frame whose Scene Layers draw straight over it (`foldsBackbufferDepthStencil`), the same clear
+   * also clears depth and stencil, which a full-screen pass neither tests nor writes, so the first layer's own
+   * depth-stencil clear finds them cleared and is left out (`backbuffer-depth-tracker.ts`).
+   */
   clear(context: FrameGraphRenderContext): void {
     context._applyRenderTarget();
     context.setViewport(FULL_VIEWPORT);
+    const engine = (context as unknown as { _engine: AbstractEngine })._engine;
+    if (engine._currentRenderTarget === null && foldsBackbufferDepthStencil(engine)) {
+      // A depth clear honours the depth write mask, as the layer's own clear sets it.
+      const depthWrites = engine.getDepthWrite();
+      engine.setDepthWrite(true);
+      context.clear(CLEAR_COLOR, true, true, true);
+      engine.setDepthWrite(depthWrites);
+      noteFoldedBackbufferClear(engine);
+      return;
+    }
     context.clear(CLEAR_COLOR, true, false, false);
   },
 };

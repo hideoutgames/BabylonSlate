@@ -120,10 +120,13 @@ vi.mock("../context/document-context", async () => {
     if (projectGeneral.current) Object.assign(projectDocument.settings, projectGeneral.current);
     projectDocument.settings.extensionOverrides = extensionState.overrides;
     projectDocument.settings.extensionSettings = extensionState.values;
-    const snapshot = { entries: extensionState.entries, commands: [], assetTypes: [], diagnostics: [] };
+    const snapshot = { entries: extensionState.entries, commands: [], assetTypes: [], diagnostics: [], trusted: true, untrusted: [] };
     return {
     projectDocument,
-    extensionService: { subscribe: () => () => {}, getSnapshot: () => snapshot } as never,
+    extensionService: {
+      subscribe: () => () => {}, getSnapshot: () => snapshot,
+      projectTrustKey: (guid: string) => guid, createdHere: () => false, forgetCreatedProject: () => {},
+    } as never,
     projectGuid: "test-project",
     activeDocumentId: "active-scene",
     exportProject,

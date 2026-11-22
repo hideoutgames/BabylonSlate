@@ -9,6 +9,7 @@ export type DesktopHttpImageUpload = {
   base64: string;
 };
 
+/** A request from the renderer. Redirects are always refused (`redirect: "error"`), so credentials never reach another host. */
 export type DesktopHttpRequest = {
   method?: string;
   url: string;
