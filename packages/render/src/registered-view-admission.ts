@@ -127,9 +127,14 @@ function retainPresentation(engine: AbstractEngine, view: EngineView, presentati
       if (keepImage) freeze(current);
       direct.placement.vacate();
     };
+    /** Each view's read sync (`freeze`), made once rather than on every frame it is shown. */
+    const syncs = new WeakMap<EngineView, () => void>();
     /** Cover the view; a canvas that cannot be covered gets its held image instead. */
     const show = (current: EngineView) => {
-      if (direct && !direct.placement.show(current, () => freeze(current))) freeze(current);
+      if (!direct) return;
+      let sync = syncs.get(current);
+      if (!sync) syncs.set(current, (sync = () => freeze(current)));
+      if (!direct.placement.show(current, sync)) freeze(current);
     };
     const leaveDirect = () => {
       if (!direct?.active) return;
@@ -144,12 +149,14 @@ function retainPresentation(engine: AbstractEngine, view: EngineView, presentati
       const host = views.get(current);
       if (!host) return original.call(this, current);
       const canvas = current.target;
-      const context = canvas.getContext("2d", VIEW_CANVAS_2D_ATTRIBUTES);
       const source = this.getRenderingCanvas();
-      if (!context || !source) return true;
+      if (!source) return true;
       // A popout window's view copies: the Engine canvas cannot leave its document.
       const presentDirectly = direct !== null && directViewPresentationEnabled() && host.allowDirect?.() !== false &&
         soleShownView(this) === current && direct.placement.canCover(current);
+      // Only a copy writes into the view canvas: a directly presented frame never asks for its 2D context.
+      const context = presentDirectly ? null : canvas.getContext("2d", VIEW_CANVAS_2D_ATTRIBUTES);
+      if (!presentDirectly && !context) return true;
       if (!presentDirectly) leaveDirect();
       else {
         // The previous sole view keeps its last frame in its own canvas.
@@ -213,8 +220,8 @@ function retainPresentation(engine: AbstractEngine, view: EngineView, presentati
         this.flushFramebuffer();
         if (canvas.width !== source.width) canvas.width = source.width;
         if (canvas.height !== source.height) canvas.height = source.height;
-        if (current.clearBeforeCopy) context.clearRect(0, 0, source.width, source.height);
-        context.drawImage(source, 0, 0);
+        if (current.clearBeforeCopy) context!.clearRect(0, 0, source.width, source.height);
+        context!.drawImage(source, 0, 0);
         host.copied(performance.now() - started);
         return true;
       } finally {

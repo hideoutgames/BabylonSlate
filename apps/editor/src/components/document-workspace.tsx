@@ -53,6 +53,7 @@ import { ContentBrowserWorkspace } from "./content-browser-workspace";
 import { DocumentLockBanner } from "./document-lock-banner";
 import { SourceControlLockPrompt } from "./source-control-lock-prompt";
 import { SourceControlSignInBanner } from "./source-control-sign-in-banner";
+import { ProjectTrustBanner } from "./project-trust-banner";
 import { SourceControlPublishNotice } from "./source-control-publish-notice";
 import { UndoHistoryNotice } from "./undo-history-notice";
 import { WorkspaceErrorBoundary } from "./workspace-error-boundary";
@@ -296,6 +297,7 @@ export function DocumentWorkspace() {
   return (
     <AudioReverbBakeProvider>
     <div className="flex min-h-0 flex-1 flex-col">
+      <ProjectTrustBanner />
       <SourceControlSignInBanner />
       <SourceControlLockPrompt />
       <SourceControlPublishNotice />

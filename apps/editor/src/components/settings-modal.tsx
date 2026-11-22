@@ -74,6 +74,7 @@ import {
   ProjectSourceControlSettings,
 } from "./project-source-control-settings";
 import { useProjectExport } from "./use-project-export";
+import { ProjectTrustField } from "./project-trust-field";
 import {
   SettingsCategoryHeader,
   SettingsSection,
@@ -528,6 +529,7 @@ export function SettingsModal({
             </Field>
           </SettingsSection>
           <SettingsSection id="editorUtilityObjects" title="Editor Utility Objects">
+            <ProjectTrustField id="settings-editor-utility-trust" />
             <Field className="settings-row">
               <FieldLabel className="sr-only">Editor Utility Objects</FieldLabel>
               <NamedListEditor

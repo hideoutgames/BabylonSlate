@@ -33,6 +33,7 @@ contextBridge.exposeInMainWorld("haptic", {
     set: (key: string, value: string) =>
       ipcRenderer.invoke("secrets:set", key, value),
     delete: (key: string) => ipcRenderer.invoke("secrets:delete", key),
+    persistent: () => ipcRenderer.invoke("secrets:persistent"),
   },
   accountSecrets: {
     get: (key: string) => ipcRenderer.invoke("account-secrets:get", key),

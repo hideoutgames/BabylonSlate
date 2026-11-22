@@ -46,6 +46,10 @@ When you stop a preview that reported errors or warnings, the **Preview Session 
 
 Preview Build packs textures uncompressed, while Packaging uses compressed textures where they exist. Texture memory and loading times can therefore differ from the exported game.
 
+## Kept apart from the editor
+
+The game runs in a frame that cannot leave the preview, open dialogs or submit forms, and its saves are kept with the other preview saves. In the desktop app the game also runs at its own address, apart from the editor: it cannot reach the editor, your projects or the app's settings, and cannot open windows or links. As in an exported desktop game, it can connect to HTTPS and secure WebSocket servers but cannot load scripts or pages from the network.
+
 ## Related
 
 - [Publishing](index.md)

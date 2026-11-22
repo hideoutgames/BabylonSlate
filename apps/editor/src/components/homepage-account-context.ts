@@ -7,6 +7,8 @@ import type {
 
 export type NativeHomepageAccount = {
   session: NativeClerkSession;
+  /** Signed in without reaching Clerk: the cached user, or the last check could not connect. */
+  offline?: boolean;
   signOut: () => Promise<void>;
   profile: NativeProfileActions;
 };

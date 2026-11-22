@@ -91,6 +91,7 @@ import { MultiplyBlendFactorBlock, MultiplyFactorOutputBlock } from "./multiply-
 import { createHeldThreadBound, SCENE_SHADER_WARM_TIMEOUT_MS } from "./stall-deadline";
 import { DriverCompileWatch, renewOnCompileProgress } from "./driver-compile";
 import { noteAdoptedProgram, noteMaterialBuild, noteSameShaderRebuild } from "./material-program-census";
+import { isLayerDepthVisual } from "./layer-depth-visuals";
 
 /** Custom GLSL's hidden probe effect, from when the effect exists to its compile. */
 const CUSTOM_GLSL_COMPILE_TIMEOUT_MS = 15_000;
@@ -394,6 +395,7 @@ export function compileMaterialPlan(
   // `plannedStockVertexStage`: its plan's vertex stage is Babylon's own (identity World Position Offset, no custom
   // blocks), known before the build that `hasStockVertexStage` waits for (`instance-pool.ts` groups by it at once).
   material.metadata = { boundsPadding: plan.boundsPadding ?? 0, materialDomain: plan.domain, plannedStockVertexStage: cacheableShadowShape };
+  if (!auxiliary && options.overlay) drawsLayer3DWithDepth(material, plan);
   const configureSurface = () => {
     if (auxiliary) {
       material.backFaceCulling = plan.twoSided !== true;
@@ -403,6 +405,9 @@ export function compileMaterialPlan(
       applyAuthoredSurfaceBlend(material, plan);
       if (plan.blendMode === "masked" && !options.water && !options.overlay && plan.domain !== "text" && plan.domain !== "ui") registerAlphaToCoverage(material);
       if (options.overlay) {
+        // Scene Layer content sorts back to front by Z-Order in the blended list, and an actor's Opacity fades any
+        // Material: every draw blends (no depth writes), except a 3D visual's with an Opaque or Masked Material
+        // (`drawsLayer3DWithDepth`).
         material.transparencyMode = Material.MATERIAL_ALPHABLEND; material.needDepthPrePass = false;
         // A Multiply surface on a Scene Layer draws as Translucent (`attachSurfaceShading`).
         if (plan.blendMode === "multiply") material.alphaMode = Constants.ALPHA_COMBINE;
@@ -1136,7 +1141,7 @@ export function compileMaterialPlan(
   // compiled for another material, whatever its name. Particle programs share only under one name: Babylon names a
   // particle Effect after its material.
   if (material.mode === NodeMaterialModes.Material && plan.cost.customBlocks === 0) {
-    shareCompiledProgram(material, JSON.stringify([options.surfaceVariant ?? null, options.overlay === true, material.shaderLanguage]));
+    shareCompiledProgram(material, JSON.stringify([options.surfaceVariant ?? null, options.overlay === true, material.shaderLanguage]), () => ownRebuilds > 0);
   } else if (material.mode === NodeMaterialModes.Particle && plan.cost.customBlocks === 0) {
     shareParticleProgram(material, JSON.stringify([options.name, material.shaderLanguage]));
   }
@@ -1378,7 +1383,7 @@ function freshBuildId(): number {
  * differ. Source equality is the test, so a changed graph or a texture-dependent variant never reuses a mismatched
  * program.
  */
-export function shareCompiledProgram(material: NodeMaterial, key: string): void {
+export function shareCompiledProgram(material: NodeMaterial, key: string, ownRebuild: () => boolean = () => false): void {
   const engine = material.getScene().getEngine();
   let byKey = sharedPrograms.get(engine);
   if (!byKey) sharedPrograms.set(engine, (byKey = new Map()));
@@ -1404,11 +1409,18 @@ export function shareCompiledProgram(material: NodeMaterial, key: string): void 
     // A rebuild that kept an adopted id may no longer match that program.
     if (adopted !== undefined && material.buildId === adopted) material.buildId = freshBuildId();
     adopted = undefined;
-    leave();
     const shaders = material.compiledShaders;
+    // The compiler's own rebuild (a texture arriving) whose code did not change keeps the program it had: Babylon gave
+    // the build a new id, which would link the same program again. Any other rebuild keeps its new id.
+    const kept = !firstBuild && ownRebuild() && registered === shaders ? registry.get(registered) : undefined;
+    if (kept?.users.has(material)) {
+      material.buildId = adopted = kept.buildId;
+      return;
+    }
+    leave();
     const known = registry.get(shaders);
-    // Only the compiler's own first build adopts: any later rebuild keeps a
-    // new id so policies that trust a compiled build id still see the change.
+    // Only the compiler's own first build adopts another material's program: a rebuild whose code changed keeps its
+    // new id, so policies that trust a compiled build id see the change.
     if (firstBuild && known) {
       firstBuild = false;
       material.buildId = adopted = known.buildId;
@@ -1531,6 +1543,25 @@ function nodeMaterialBuildInProgress(material: NodeMaterial): boolean {
   return (material as unknown as { _buildIsInProgress?: boolean })._buildIsInProgress === true;
 }
 
+interface PlanIndex {
+  operations: ReadonlyMap<string, MaterialOperation>;
+  /** The first binding of each operation, as `textures.find` answered. */
+  textures: ReadonlyMap<string, MaterialBuildPlan["textures"][number]>;
+}
+/** Plans are shared and never changed, so each is indexed once for every compile of it. */
+const planIndices = new WeakMap<MaterialBuildPlan, PlanIndex>();
+
+function planIndex(plan: MaterialBuildPlan): PlanIndex {
+  let index = planIndices.get(plan);
+  if (index) return index;
+  const operations = new Map<string, MaterialOperation>();
+  for (const operation of plan.operations) if (!operations.has(operation.id)) operations.set(operation.id, operation);
+  const textures = new Map<string, MaterialBuildPlan["textures"][number]>();
+  for (const binding of plan.textures) if (!textures.has(binding.operationId)) textures.set(binding.operationId, binding);
+  planIndices.set(plan, (index = { operations, textures }));
+  return index;
+}
+
 /**
  * The value `operand` always holds when it is one: a literal, or a Float Constant node's value with no conversion on
  * the way (not a Parameter, which a Material Instance can change). Null otherwise.
@@ -1539,7 +1570,7 @@ function constantScalar(plan: MaterialBuildPlan, operand: MaterialOperand | null
   if (!operand) return null;
   if (operand.kind === "constant") return operand.value.length === 1 ? operand.value[0]! : null;
   if (operand.conversions?.length) return null;
-  const operation = plan.operations.find((entry) => entry.id === operand.operationId);
+  const operation = planIndex(plan).operations.get(operand.operationId);
   const value = operation?.nodeType === "const.float" ? operation.properties.value : null;
   return Array.isArray(value) && value.length === 1 && typeof value[0] === "number" ? value[0] : null;
 }
@@ -1602,6 +1633,23 @@ function applyAuthoredSurfaceBlend(
   }
 }
 
+/**
+ * A Scene Layer Material (`overlay`) of the surface domain with an Opaque or Masked blend mode draws a 3D visual
+ * (`isLayerDepthVisual`: a MeshComponent's primitive or model, Text3D) as the world draws it: in its rendering group's
+ * opaque or alpha-tested list, so the draw writes depth and 3D meshes in the layer occlude each other, as in the editor's
+ * Scene Layer tab. Every other mesh it draws (2D layer content) keeps the blended list and its Z-Order sort. A mesh that
+ * fades (`visibility`, vertex alpha, or an actor's Opacity through `overlay-visual-style.ts`) still blends. Installed
+ * once, outside the surface setup a rebuild repeats, so the overlay style's wrapper around it stays.
+ */
+export function drawsLayer3DWithDepth(material: Material, plan: Pick<MaterialBuildPlan, "domain" | "blendMode">): void {
+  if (plan.domain !== "surface" || (plan.blendMode !== "opaque" && plan.blendMode !== "masked")) return;
+  const masked = plan.blendMode === "masked";
+  const blends = material.needAlphaBlendingForMesh.bind(material);
+  const tests = material.needAlphaTestingForMesh.bind(material);
+  material.needAlphaBlendingForMesh = (mesh) => isLayerDepthVisual(mesh) ? mesh.visibility < 1 || mesh.hasVertexAlpha : blends(mesh);
+  material.needAlphaTestingForMesh = (mesh) => isLayerDepthVisual(mesh) ? masked && !material.needAlphaBlendingForMesh(mesh) : tests(mesh);
+}
+
 /** Bind the shared sampler source for a parameter or an inline sample. */
 function bindTexture(
   operation: MaterialOperation,
@@ -1614,9 +1662,8 @@ function bindTexture(
   const operand = operation.inputs.texture;
   const producerId =
     operand?.kind === "operation" ? operand.operationId : undefined;
-  const binding =
-    plan.textures.find((entry) => entry.operationId === producerId) ??
-    plan.textures.find((entry) => entry.operationId === operation.id);
+  const { textures } = planIndex(plan);
+  const binding = (producerId === undefined ? undefined : textures.get(producerId)) ?? textures.get(operation.id);
   if (!binding) return true;
   const texture = options.resolveTexture?.(binding.textureGuid, binding.filter) ?? null;
   if (!texture || isDisposedGpuTexture(texture)) {
@@ -1663,13 +1710,12 @@ function collectWorldPositionOffsetOperationIds(
   plan: MaterialBuildPlan,
 ): Set<string> {
   const ids = new Set<string>();
+  const { operations } = planIndex(plan);
   const visit = (operand: MaterialOperand | null | undefined): void => {
     if (!operand || operand.kind !== "operation") return;
     if (ids.has(operand.operationId)) return;
     ids.add(operand.operationId);
-    const operation = plan.operations.find(
-      (entry) => entry.id === operand.operationId,
-    );
+    const operation = operations.get(operand.operationId);
     if (!operation) return;
     for (const input of Object.values(operation.inputs)) {
       visit(input);

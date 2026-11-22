@@ -34,6 +34,7 @@
  */
 import { useSyncExternalStore, type ReactNode } from "react";
 import { ASSET_DOCUMENT_KINDS, type DocumentKind } from "@haptic/core";
+import { createThumbnailVersionStore } from "@haptic/editor-kit";
 import type { DocumentContextValue } from "../context/document-context-types";
 import { documentKindsRevision, type DocumentRevisions, type OpenDocument } from "../services/document-service";
 import type { ExtensionSnapshot } from "../services/editor-extension-service";
@@ -62,12 +63,16 @@ const resolved = async () => {};
 const unsubscribe = () => noop;
 
 function inertExtensionService(): DocumentsValue["extensionService"] {
-  const snapshot: ExtensionSnapshot = { entries: [], commands: [], assetTypes: [], diagnostics: [] };
+  const snapshot: ExtensionSnapshot = { entries: [], commands: [], assetTypes: [], diagnostics: [], trusted: false, untrusted: [] };
   const service: { [K in keyof DocumentsValue["extensionService"]]: DocumentsValue["extensionService"][K] } = {
     subscribe: unsubscribe,
     getSnapshot: () => snapshot,
     setEngineStorage: noop,
     setAssetWriteGuard: noop,
+    projectTrustKey: () => null,
+    noteCreatedProject: noop,
+    createdHere: () => false,
+    forgetCreatedProject: noop,
     refresh: resolved,
     close: resolved,
     create: unavailable("extensionService.create"),
@@ -262,7 +267,7 @@ function inertDocuments(current: () => DocumentsValue | undefined): DocumentsVal
     toggleLayoutFocus: noop,
     loadAssetThumbnail: async () => null,
     writeAssetThumbnail: resolved,
-    thumbnailVersions: {},
+    thumbnailVersions: createThumbnailVersionStore(),
     thumbnailsEnabled: false,
     collectPlayPreviewScripts: async () => ({ bundles: [], diagnostics: [] }),
     collectEditorUtilityScripts: async () => [],

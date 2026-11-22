@@ -65,8 +65,14 @@ export function keepsDrawingOutsideView(mesh: AbstractMesh): boolean {
   return posedBeyondBounds(source);
 }
 
-/** Per culled Scene, the meshes already settled (each is settled once). */
-const cullings = new WeakMap<Scene, WeakSet<AbstractMesh>>();
+/**
+ * Per culled Scene, the meshes already settled (each is settled once), and what its list was when last walked: its
+ * length and last mesh, and how many removals the Scene had announced. Babylon appends a mesh to `scene.meshes`
+ * (`addMesh`) and takes one out only in `removeMesh`, which announces it at once (`onMeshRemovedObservable`), so a mesh
+ * added since the last walk changes the length, or is the last mesh, or shares the interval with an announced removal.
+ */
+type Culling = { settled: WeakSet<AbstractMesh>; removed: number; walked: { length: number; last: AbstractMesh | undefined; removed: number } | null };
+const cullings = new WeakMap<Scene, Culling>();
 
 /**
  * Whether `mesh` is marked drawn whatever the view on purpose. In a Scene Play culls, Babylon's mark alone says
@@ -79,21 +85,29 @@ export function drawnWhateverTheViewOnPurpose(mesh: AbstractMesh): boolean {
 
 /** Culls `scene`'s meshes by view from its next cull on; returns the release. */
 export function installPlayViewCulling(scene: Scene): () => void {
-  const settled = new WeakSet<AbstractMesh>();
-  cullings.set(scene, settled);
+  const culling: Culling = { settled: new WeakSet<AbstractMesh>(), removed: 0, walked: null };
+  cullings.set(scene, culling);
+  const removals = scene.onMeshRemovedObservable.add(() => { culling.removed++; });
   return () => {
-    if (cullings.get(scene) === settled) cullings.delete(scene);
+    scene.onMeshRemovedObservable.remove(removals);
+    if (cullings.get(scene) === culling) cullings.delete(scene);
   };
 }
 
 /**
  * Clears Intermediate's always-drawn mark on `scene`'s meshes not settled yet; a no-op elsewhere. Babylon announces
- * some new meshes only on a later task, so this walks the Scene's list, as the cull does after it.
+ * new meshes only on a later task, so this walks the Scene's list, as the cull does after it, but only when the list
+ * can hold a mesh added since the last walk (`Culling`): a steady frame reads three values instead.
  */
 export function settlePlayViewCulling(scene: Scene): void {
-  const settled = cullings.get(scene);
-  if (!settled) return;
-  for (const mesh of scene.meshes) {
+  const culling = cullings.get(scene);
+  if (!culling) return;
+  const meshes = scene.meshes;
+  const walked = culling.walked;
+  if (walked && walked.length === meshes.length && walked.last === meshes.at(-1) && walked.removed === culling.removed) return;
+  culling.walked = { length: meshes.length, last: meshes.at(-1), removed: culling.removed };
+  const settled = culling.settled;
+  for (const mesh of meshes) {
     if (settled.has(mesh)) continue;
     settled.add(mesh);
     // A skinned mesh's bounds follow its skeleton from here on, where they can: the cull may then trust them.

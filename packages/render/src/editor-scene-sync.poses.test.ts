@@ -58,6 +58,28 @@ describe("EditorSceneSync.applyPoses", () => {
     expect(fast.meshForActor("child")!.getAbsolutePosition().asArray()).toEqual([7, 2, 0]);
   });
 
+  it("counts a moved component as its actor's move, and equal numbers in a new document as none", () => {
+    const lamp = box("lamp");
+    const other = box("other");
+    // Not moved, so never looked at: a change of its visual, which a moved actor hands to the full apply, goes
+    // unnoticed on this path (the caller sends only transform edits here).
+    const reshaped: SerializedActor = structuredClone(other);
+    reshaped.components[0]!.properties = { ...reshaped.components[0]!.properties, meshKind: "sphere" };
+    const sync = createSync();
+    sync.apply(sceneOf([lamp, other]));
+    const otherMesh = sync.meshForActor("other");
+    expect(sync.applyPoses(sceneOf([at(lamp, [0, 0, 2]), reshaped]))).toBe(true);
+    expect(sync.meshForActor("other")).toBe(otherMesh);
+    expect(sync.meshForActor("lamp")!.getAbsolutePosition().asArray()).toEqual([0, 0, 2]);
+
+    // A component moved off its actor's origin changes how the actor is realized: the full apply's work.
+    const [mesh] = lamp.components;
+    const component: SerializedActor = { ...lamp, components: [{ ...mesh!, transform: { position: [0, 4, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] } }] };
+    const second = createSync();
+    second.apply(sceneOf([lamp, other]));
+    expect(second.applyPoses(sceneOf([component, other]))).toBe(false);
+  });
+
   it("leaves an edit whose visual depends on the pose to the full apply", () => {
     const panel = createActor("panel", "Panel", {
       components: [{ id: "p", classId: "2DPanelComponent", properties: { source: "color" } }],

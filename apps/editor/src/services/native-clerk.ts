@@ -23,6 +23,20 @@ export interface NativeClerkSession {
   deleteSelfEnabled?: boolean;
 }
 
+/**
+ * What a session check found. `signed-out` is definitive: Clerk answered 401
+ * or 403 with its own JSON, or returned a client without an active session.
+ * `offline` is every other outcome (no connection, a timeout, a 5xx or 429, a
+ * captive portal's page): the stored credentials stay, and `session` is the
+ * last verified user when one is cached. `deferred` means a background check
+ * skipped itself because an interactive sign-in owns the client token.
+ */
+export type NativeClerkRestore =
+  | { status: "signed-in"; session: NativeClerkSession }
+  | { status: "signed-out" }
+  | { status: "offline"; session: NativeClerkSession | null }
+  | { status: "deferred" };
+
 /** A pending session reverification: an emailed code that proves who is at the device. */
 export interface NativeClerkReverification {
   sessionId: string;
@@ -195,19 +209,128 @@ function activeSession(
   };
 }
 
+/** Text fields of a cached user. The cache holds `NativeClerkSession` fields only, never a token. */
+const CACHED_USER_TEXT = [
+  "name",
+  "firstName",
+  "lastName",
+  "username",
+  "imageUrl",
+] as const;
+
+function cachedSession(json: string | null): NativeClerkSession | null {
+  if (!json) return null;
+  let value: Record<string, unknown>;
+  try {
+    value = record(JSON.parse(json));
+  } catch {
+    return null;
+  }
+  if (
+    typeof value.id !== "string" ||
+    typeof value.userId !== "string" ||
+    typeof value.email !== "string"
+  )
+    return null;
+  const session: NativeClerkSession = {
+    id: value.id,
+    userId: value.userId,
+    email: value.email,
+  };
+  for (const field of CACHED_USER_TEXT) {
+    const text = value[field];
+    if (typeof text === "string" && text) session[field] = text;
+  }
+  if (value.deleteSelfEnabled === true) session.deleteSelfEnabled = true;
+  return session;
+}
+
+/** A 401, 403 or 404 counts as Clerk's answer only when Clerk wrote the body. */
+function clerkErrorBody(bodyText: string): boolean {
+  try {
+    return Array.isArray(record(JSON.parse(bodyText)).errors);
+  } catch {
+    return false;
+  }
+}
+
+interface FapiOptions {
+  /** Path under `/v1`, such as `/client/sign_ins` or `/me`. */
+  path: string;
+  method?: "GET" | "POST" | "PATCH" | "DELETE";
+  body?: Record<string, string>;
+  upload?: NativeHttpImageUpload;
+  /** Picks one session of the client for `/me` calls. */
+  sessionId?: string;
+  /** The error code that unknown server errors read as. */
+  failure?: string;
+  /** Server error codes that this request reports under other codes. */
+  errors?: Record<string, string>;
+  /** Drops the client token on success instead of keeping the rotated one. */
+  endsSession?: boolean;
+  /**
+   * A 403 from Clerk also means the token is no longer accepted. Only the
+   * session check sets this: elsewhere 403 carries other refusals, such as
+   * `session_reverification_required`.
+   */
+  signsOutOn403?: boolean;
+  /** Extra query parameters, such as the OAuth `rotating_token_nonce`. */
+  query?: Record<string, string>;
+  /** Returns the whole payload, for endpoints (`/environment`) without a `response` envelope. */
+  raw?: boolean;
+}
+
+/**
+ * How long an interactive sign-in holds off background session checks. Clerk
+ * expires sign-in attempts and email codes well within this, so a flow the UI
+ * never finished or cancelled cannot disable the checks for good.
+ */
+export const SIGN_IN_HOLD_MS = 15 * 60 * 1000;
+
 /** Native email-code flow over Clerk's versioned public Frontend API. */
 export class NativeClerkClient {
   private readonly origin: string;
   private readonly tokenKey: string;
+  /** The last verified user, beside the token, so the mobile apps open offline. */
+  private readonly userKey: string;
   private requests: Promise<unknown> = Promise.resolve();
   private readonly http: NativeHttp;
   private readonly secrets: SecretStore;
+  /** When the interactive sign-in in progress started or last moved on; null when none. */
+  private signInSince: number | null = null;
 
   constructor(publishableKey: string, http: NativeHttp, secrets: SecretStore) {
     this.origin = frontendOrigin(publishableKey);
     this.tokenKey = `slate-clerk-client:${publishableKey}`;
+    this.userKey = `slate-clerk-user:${publishableKey}`;
     this.http = http;
     this.secrets = secrets;
+  }
+
+  /**
+   * True from `beginEmail` / `beginOAuth` until the sign-in completes, fails
+   * for good, is cancelled, or `SIGN_IN_HOLD_MS` passes without progress.
+   */
+  get signInInProgress(): boolean {
+    if (this.signInSince !== null && Date.now() - this.signInSince > SIGN_IN_HOLD_MS)
+      this.signInSince = null;
+    return this.signInSince !== null;
+  }
+
+  /** The UI abandoned the sign-in: the browser closed, the form went back or unmounted. */
+  cancelSignIn(): void {
+    this.signInSince = null;
+  }
+
+  private markSignIn(): void {
+    this.signInSince = Date.now();
+  }
+
+  /** Runs `operation` in the request queue, after every earlier request and its token write. */
+  private serial<T>(operation: () => Promise<T>): Promise<T> {
+    const next = this.requests.then(operation);
+    this.requests = next.catch(() => undefined);
+    return next;
   }
 
   private async storedToken(): Promise<string | null> {
@@ -218,107 +341,127 @@ export class NativeClerkClient {
     }
   }
 
+  /** Clearing the token also forgets the cached user. */
   private async saveToken(token: string | null): Promise<void> {
     try {
-      if (token) await this.secrets.set(this.tokenKey, token);
-      else await this.secrets.delete(this.tokenKey);
+      if (token) {
+        await this.secrets.set(this.tokenKey, token);
+      } else {
+        await this.secrets.delete(this.tokenKey);
+        await this.secrets.delete(this.userKey);
+      }
     } catch {
       throw new NativeClerkError("secure_storage_unavailable");
     }
   }
 
+  /** Caches the verified user; a storage failure only costs offline access. */
+  private async rememberUser(session: NativeClerkSession): Promise<void> {
+    try {
+      await this.secrets.set(this.userKey, JSON.stringify(session));
+    } catch {
+      /* The next online check caches it again. */
+    }
+  }
+
+  private async forgetUser(): Promise<void> {
+    try {
+      await this.secrets.delete(this.userKey);
+    } catch {
+      throw new NativeClerkError("secure_storage_unavailable");
+    }
+  }
+
+  private async cachedUser(): Promise<NativeClerkSession | null> {
+    try {
+      return cachedSession(await this.secrets.get(this.userKey));
+    } catch {
+      return null;
+    }
+  }
+
   /** `PATCH` and `DELETE` go out as POST with `_method`, as clerk-js sends them. */
-  private fapi(options: {
-    /** Path under `/v1`, such as `/client/sign_ins` or `/me`. */
-    path: string;
-    method?: "GET" | "POST" | "PATCH" | "DELETE";
-    body?: Record<string, string>;
-    upload?: NativeHttpImageUpload;
-    /** Picks one session of the client for `/me` calls. */
-    sessionId?: string;
-    /** The error code that unknown server errors read as. */
-    failure?: string;
-    /** Server error codes that this request reports under other codes. */
-    errors?: Record<string, string>;
-    /** Drops the client token on success instead of keeping the rotated one. */
-    endsSession?: boolean;
-    /** Extra query parameters, such as the OAuth `rotating_token_nonce`. */
-    query?: Record<string, string>;
-    /** Returns the whole payload, for endpoints (`/environment`) without a `response` envelope. */
-    raw?: boolean;
-  }): Promise<Record<string, unknown>> {
+  private fapi(options: FapiOptions): Promise<Record<string, unknown>> {
+    // Clerk rotates the client JWT. Serialize transport and persistence together.
+    return this.serial(() => this.send(options));
+  }
+
+  /** One Frontend API request; only ever called inside the request queue. */
+  private async send(options: FapiOptions): Promise<Record<string, unknown>> {
     const { path, body, upload, failure = "authentication_failed" } = options;
     const method = options.method ?? (body || upload ? "POST" : "GET");
-    // Clerk rotates the client JWT. Serialize transport and persistence together.
-    const operation = this.requests.then(async () => {
-      const token = await this.storedToken();
-      const url = new URL(`/v1${path}`, this.origin);
-      url.searchParams.set("_is_native", "1");
-      url.searchParams.set("__clerk_api_version", "2025-11-10");
-      if (method === "PATCH" || method === "DELETE")
-        url.searchParams.set("_method", method);
-      if (options.sessionId)
-        url.searchParams.set("_clerk_session_id", options.sessionId);
-      for (const [name, value] of Object.entries(options.query ?? {}))
-        url.searchParams.set(name, value);
-      let response;
-      try {
-        response = await this.http({
-          method: method === "GET" ? "GET" : "POST",
-          url: url.href,
-          headers: {
-            Accept: "application/json",
-            // An upload's transport writes its own multipart Content-Type.
-            ...(upload
-              ? {}
-              : { "Content-Type": "application/x-www-form-urlencoded" }),
-            "X-Mobile": "1",
-            ...(token ? { Authorization: token } : {}),
-          },
-          ...(body ? { body: new URLSearchParams(body).toString() } : {}),
-          ...(upload ? { upload } : {}),
-        });
-      } catch {
+    const token = await this.storedToken();
+    const url = new URL(`/v1${path}`, this.origin);
+    url.searchParams.set("_is_native", "1");
+    url.searchParams.set("__clerk_api_version", "2025-11-10");
+    if (method === "PATCH" || method === "DELETE")
+      url.searchParams.set("_method", method);
+    if (options.sessionId)
+      url.searchParams.set("_clerk_session_id", options.sessionId);
+    for (const [name, value] of Object.entries(options.query ?? {}))
+      url.searchParams.set(name, value);
+    let response;
+    try {
+      response = await this.http({
+        method: method === "GET" ? "GET" : "POST",
+        url: url.href,
+        headers: {
+          Accept: "application/json",
+          // An upload's transport writes its own multipart Content-Type.
+          ...(upload
+            ? {}
+            : { "Content-Type": "application/x-www-form-urlencoded" }),
+          "X-Mobile": "1",
+          ...(token ? { Authorization: token } : {}),
+        },
+        ...(body ? { body: new URLSearchParams(body).toString() } : {}),
+        ...(upload ? { upload } : {}),
+      });
+    } catch {
+      throw new NativeClerkError("network_error");
+    }
+    const rotated = Object.entries(response.headers ?? {}).find(
+      ([name]) => name.toLowerCase() === "authorization",
+    )?.[1];
+    if (typeof rotated === "string" && rotated) await this.saveToken(rotated);
+    const endsSession =
+      response.status === 401 ||
+      (response.status === 403 && options.signsOutOn403 === true) ||
+      (response.status === 404 && path.startsWith("/client/sessions/"));
+    if (endsSession) {
+      // A captive portal or proxy can answer 401 or 403 too; only Clerk's own
+      // error body ends the session, anything else reads as no connection.
+      if (!clerkErrorBody(response.bodyText))
         throw new NativeClerkError("network_error");
-      }
-      const rotated = Object.entries(response.headers ?? {}).find(
-        ([name]) => name.toLowerCase() === "authorization",
-      )?.[1];
-      if (typeof rotated === "string" && rotated) await this.saveToken(rotated);
-      if (
-        response.status === 401 ||
-        (response.status === 404 && path.startsWith("/client/sessions/"))
-      ) {
-        await this.saveToken(null);
-        throw new NativeClerkError("session_unavailable");
-      }
-      let payload: Record<string, unknown>;
-      try {
-        payload = record(
-          response.status === 204 ? {} : JSON.parse(response.bodyText),
-        );
-      } catch {
-        throw new NativeClerkError(failure, failure);
-      }
-      if (response.status < 200 || response.status >= 300) {
-        const error = Array.isArray(payload.errors)
-          ? record(payload.errors[0])
-          : {};
-        const code = String(error.code ?? failure);
-        throw new NativeClerkError(
-          response.status === 429
-            ? "too_many_requests"
-            : options.errors && Object.hasOwn(options.errors, code)
-              ? options.errors[code]!
-              : code,
-          failure,
-        );
-      }
-      if (options.endsSession) await this.saveToken(null);
-      return record(options.raw ? payload : payload.response);
-    });
-    this.requests = operation.catch(() => undefined);
-    return operation;
+      await this.saveToken(null);
+      throw new NativeClerkError("session_unavailable");
+    }
+    const succeeded = response.status >= 200 && response.status < 300;
+    let payload: Record<string, unknown>;
+    try {
+      payload = record(
+        response.status === 204 ? {} : JSON.parse(response.bodyText),
+      );
+    } catch {
+      // A success that is not JSON came from a captive portal, not Clerk.
+      throw new NativeClerkError(succeeded ? "network_error" : failure, failure);
+    }
+    if (!succeeded) {
+      const error = Array.isArray(payload.errors)
+        ? record(payload.errors[0])
+        : {};
+      const code = String(error.code ?? failure);
+      throw new NativeClerkError(
+        response.status === 429
+          ? "too_many_requests"
+          : options.errors && Object.hasOwn(options.errors, code)
+            ? options.errors[code]!
+            : code,
+        failure,
+      );
+    }
+    if (options.endsSession) await this.saveToken(null);
+    return record(options.raw ? payload : payload.response);
   }
 
   private request(
@@ -328,20 +471,52 @@ export class NativeClerkClient {
     return this.fapi({ path: `/client${path}`, body });
   }
 
-  async restoreSession(): Promise<NativeClerkSession | null> {
-    if (!(await this.storedToken())) return null;
-    try {
-      const session = activeSession(await this.request(""));
-      if (!session) await this.saveToken(null);
-      return session;
-    } catch (error) {
-      if (
-        error instanceof NativeClerkError &&
-        error.code === "session_unavailable"
-      )
-        return null;
-      throw error;
-    }
+  /**
+   * Checks the stored client with Clerk; see `NativeClerkRestore` for what
+   * each outcome means. Runs in the request queue, so it never interleaves
+   * with a sign-in's requests and token writes. A `background` check skips
+   * itself while an interactive sign-in is in progress. No check clears the
+   * token while a sign-in is in progress or Clerk reports a pending sign-in
+   * or sign-up on the client: that token is the sign-in's.
+   */
+  restore(
+    options: { background?: boolean } = {},
+  ): Promise<NativeClerkRestore> {
+    return this.serial(async (): Promise<NativeClerkRestore> => {
+      if (options.background && this.signInInProgress)
+        return { status: "deferred" };
+      if (!(await this.storedToken())) {
+        // A user cached without a token is left over from an interrupted clear.
+        await this.saveToken(null);
+        return { status: "signed-out" };
+      }
+      let payload: Record<string, unknown>;
+      try {
+        payload = await this.send({ path: "/client", raw: true, signsOutOn403: true });
+      } catch (error) {
+        if (!(error instanceof NativeClerkError)) throw error;
+        if (error.code === "session_unavailable") return { status: "signed-out" };
+        if (error.code === "secure_storage_unavailable") throw error;
+        return { status: "offline", session: await this.cachedUser() };
+      }
+      const value = payload.response;
+      const client = record(value);
+      // Clerk answers `response: null` when the token names no client.
+      if (value !== null && (client.object !== "client" || !Array.isArray(client.sessions)))
+        return { status: "offline", session: await this.cachedUser() };
+      const session = value === null ? null : activeSession(client);
+      if (session) {
+        await this.rememberUser(session);
+        return { status: "signed-in", session };
+      }
+      const pending =
+        this.signInInProgress ||
+        Object.keys(record(client.sign_in)).length > 0 ||
+        Object.keys(record(client.sign_up)).length > 0;
+      if (pending) await this.forgetUser();
+      else await this.saveToken(null);
+      return { status: "signed-out" };
+    });
   }
 
   /** Sign-in attempts need a client; the first request creates one and its token. */
@@ -376,16 +551,22 @@ export class NativeClerkClient {
   ): Promise<NativeClerkOAuth> {
     if (!OAUTH_STRATEGY.test(strategy))
       throw new NativeClerkError("authentication_failed");
-    await this.ensureClient();
-    const attempt = await this.request("/sign_ins", {
-      strategy,
-      redirect_url: redirectUrl,
-    });
-    const url = record(attempt.first_factor_verification)
-      .external_verification_redirect_url;
-    if (typeof url !== "string" || !url.startsWith("https://"))
-      throw new NativeClerkError("oauth_callback_failed");
-    return { signInId: resourceId(attempt.id), url, redirectUrl };
+    this.markSignIn();
+    try {
+      await this.ensureClient();
+      const attempt = await this.request("/sign_ins", {
+        strategy,
+        redirect_url: redirectUrl,
+      });
+      const url = record(attempt.first_factor_verification)
+        .external_verification_redirect_url;
+      if (typeof url !== "string" || !url.startsWith("https://"))
+        throw new NativeClerkError("oauth_callback_failed");
+      return { signInId: resourceId(attempt.id), url, redirectUrl };
+    } catch (error) {
+      this.cancelSignIn();
+      throw error;
+    }
   }
 
   /**
@@ -393,6 +574,18 @@ export class NativeClerkClient {
    * account comes back transferable and becomes a sign-up, as in Clerk's SDKs.
    */
   async completeOAuth(
+    oauth: NativeClerkOAuth,
+    callbackUrl: string,
+  ): Promise<NativeClerkSession> {
+    // The browser came back, so this sign-in ends here whatever the outcome.
+    try {
+      return await this.finishOAuth(oauth, callbackUrl);
+    } finally {
+      this.cancelSignIn();
+    }
+  }
+
+  private async finishOAuth(
     oauth: NativeClerkOAuth,
     callbackUrl: string,
   ): Promise<NativeClerkSession> {
@@ -449,6 +642,7 @@ export class NativeClerkClient {
       resourceId(createdSessionId),
     );
     if (!session) throw new NativeClerkError("session_unavailable");
+    await this.rememberUser(session);
     return session;
   }
 
@@ -459,32 +653,41 @@ export class NativeClerkClient {
     const address = email.trim();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address))
       throw new NativeClerkError("invalid_email");
-    await this.ensureClient();
-    const attempt = await this.request(
-      kind === "sign-in" ? "/sign_ins" : "/sign_ups",
-      kind === "sign-in" ? { identifier: address } : { email_address: address },
-    );
-    const challenge: NativeClerkChallenge = {
-      id: resourceId(attempt.id),
-      kind,
-      email: address,
-    };
-    if (kind === "sign-in") {
-      const factors = Array.isArray(attempt.supported_first_factors)
-        ? attempt.supported_first_factors.map(record)
-        : [];
-      const emailFactor = factors.find(
-        (factor) => factor.strategy === "email_code",
+    this.markSignIn();
+    try {
+      await this.ensureClient();
+      const attempt = await this.request(
+        kind === "sign-in" ? "/sign_ins" : "/sign_ups",
+        kind === "sign-in" ? { identifier: address } : { email_address: address },
       );
-      if (!emailFactor) throw new NativeClerkError("email_code_unavailable");
-      challenge.emailAddressId = resourceId(emailFactor.email_address_id);
+      const challenge: NativeClerkChallenge = {
+        id: resourceId(attempt.id),
+        kind,
+        email: address,
+      };
+      if (kind === "sign-in") {
+        const factors = Array.isArray(attempt.supported_first_factors)
+          ? attempt.supported_first_factors.map(record)
+          : [];
+        const emailFactor = factors.find(
+          (factor) => factor.strategy === "email_code",
+        );
+        if (!emailFactor) throw new NativeClerkError("email_code_unavailable");
+        challenge.emailAddressId = resourceId(emailFactor.email_address_id);
+      }
+      return await this.resendCode(challenge);
+    } catch (error) {
+      // No code was sent, so the form stays on the email step.
+      this.cancelSignIn();
+      throw error;
     }
-    return this.resendCode(challenge);
   }
 
+  /** Emails the code again; the sign-in stays in progress while the person waits for it. */
   async resendCode(
     challenge: NativeClerkChallenge,
   ): Promise<NativeClerkChallenge> {
+    this.markSignIn();
     const id = resourceId(challenge.id);
     if (challenge.kind === "sign-in") {
       await this.request(`/sign_ins/${id}/prepare_first_factor`, {
@@ -499,36 +702,60 @@ export class NativeClerkClient {
     return challenge;
   }
 
+  /**
+   * Checks the emailed code. A wrong or expired code keeps the sign-in in
+   * progress (the form stays on the code step for another try or a resend);
+   * success and a lost client end it.
+   */
   async verifyCode(
     challenge: NativeClerkChallenge,
     code: string,
   ): Promise<NativeClerkSession> {
-    const id = resourceId(challenge.id);
-    const attempt = await this.request(
-      challenge.kind === "sign-in"
-        ? `/sign_ins/${id}/attempt_first_factor`
-        : `/sign_ups/${id}/attempt_verification`,
-      { strategy: "email_code", code: code.trim() },
-    );
-    if (attempt.status !== "complete")
-      throw new NativeClerkError("additional_verification_required");
-    const createdId = resourceId(attempt.created_session_id);
-    const session = activeSession(await this.request(""), createdId);
-    if (!session) throw new NativeClerkError("session_unavailable");
-    return session;
-  }
-
-  async signOut(session: NativeClerkSession): Promise<void> {
     try {
-      await this.request(`/sessions/${resourceId(session.id)}/remove`, {});
+      const id = resourceId(challenge.id);
+      const attempt = await this.request(
+        challenge.kind === "sign-in"
+          ? `/sign_ins/${id}/attempt_first_factor`
+          : `/sign_ups/${id}/attempt_verification`,
+        { strategy: "email_code", code: code.trim() },
+      );
+      if (attempt.status !== "complete")
+        throw new NativeClerkError("additional_verification_required");
+      const createdId = resourceId(attempt.created_session_id);
+      const session = activeSession(await this.request(""), createdId);
+      if (!session) throw new NativeClerkError("session_unavailable");
+      this.cancelSignIn();
+      await this.rememberUser(session);
+      return session;
     } catch (error) {
       if (
-        !(error instanceof NativeClerkError) ||
-        error.code !== "session_unavailable"
+        error instanceof NativeClerkError &&
+        error.code === "session_unavailable"
       )
-        throw error;
+        this.cancelSignIn();
+      throw error;
     }
-    await this.saveToken(null);
+  }
+
+  /**
+   * Revokes the session when Clerk can be reached, and always forgets the
+   * local token and cached user, so an offline device can still sign out.
+   * Only a secure storage failure rejects.
+   */
+  signOut(session: NativeClerkSession): Promise<void> {
+    this.cancelSignIn();
+    return this.serial(async () => {
+      try {
+        await this.send({
+          path: `/client/sessions/${resourceId(session.id)}/remove`,
+          body: {},
+        });
+      } catch {
+        /* Unreachable or already removed: the local sign-out still happens. */
+      } finally {
+        await this.saveToken(null);
+      }
+    });
   }
 
   /** The signed-in user as the server now has it. */
@@ -542,6 +769,7 @@ export class NativeClerkClient {
       id,
     );
     if (!next) throw new NativeClerkError("session_unavailable");
+    await this.rememberUser(next);
     return next;
   }
 
@@ -722,16 +950,28 @@ async function profileImageUpload(file: Blob): Promise<NativeHttpImageUpload> {
   };
 }
 
+const clients = new Map<string, NativeClerkClient>();
+
+/**
+ * The one client for this publishable key. Every account owner (the desktop
+ * account row, its sign-in dialog, the mobile gate) shares it, so all their
+ * requests and token writes go through one queue and a background session
+ * check sees an interactive sign-in in progress.
+ */
 export function createNativeClerkClient(
   publishableKey: string,
 ): NativeClerkClient {
+  const existing = clients.get(publishableKey);
+  if (existing) return existing;
   const host = getHostPlatform();
   const http = createNativeHttp();
   if ((host !== "ios" && host !== "android" && host !== "electron") || !http)
     throw new NativeClerkError("configuration_error");
-  return new NativeClerkClient(
+  const client = new NativeClerkClient(
     publishableKey,
     http,
     createAccountSecretStore(),
   );
+  clients.set(publishableKey, client);
+  return client;
 }

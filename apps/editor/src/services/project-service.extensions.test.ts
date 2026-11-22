@@ -19,7 +19,8 @@ async function setup() {
   const service = new ProjectService(storage);
   service.setEngineExtensionStorage(await ensureEngineExtensionStorage());
   await service.loadCurrentProject();
-  await service.extensions.refresh();
+  // This computer trusts the test project.
+  await service.extensions.refresh(undefined, true);
   const entries = service.extensions.getSnapshot().entries;
   return {
     storage,

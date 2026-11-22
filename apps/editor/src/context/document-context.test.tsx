@@ -1,5 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useThumbnailVersion } from "@haptic/editor-kit";
 import {
   ASSET_DOCUMENT_KINDS,
   MAIN_CLASS_FILE,
@@ -1704,30 +1705,42 @@ describe("DocumentProvider actions and route", () => {
     expect(seen.classDocuments).toBe(classDocuments);
   });
 
-  it("bumps a written thumbnail's version for its readers without re-rendering the shell slice's readers", async () => {
+  it("bumps a written thumbnail's version for its readers alone, without re-rendering other assets' readers or the shell slice's", async () => {
     const shell = { renders: 0, value: null as EditorShellState | null };
-    const thumbnails = { renders: 0, value: null as Readonly<Record<string, number>> | null };
+    const written = { renders: 0, version: -1 };
+    const other = { renders: 0, version: -1 };
     function ShellReader() {
       shell.value = useEditorShellState();
       shell.renders += 1;
       return null;
     }
-    function ThumbnailReader() {
-      thumbnails.value = useThumbnailVersions();
-      thumbnails.renders += 1;
+    function ThumbnailReader({ guid, into }: { guid: string | undefined; into: typeof written }) {
+      into.version = useThumbnailVersion(useThumbnailVersions(), guid);
+      into.renders += 1;
       return null;
     }
-    const actions = await openProject(<><ShellReader /><ThumbnailReader /></>);
+    function Readers() {
+      const { assetRegistry } = useRegistryState();
+      const assets = assetRegistry?.list() ?? [];
+      const scene = assetRegistry?.getByPath(MAIN_SCENE_FILE)?.header.guid;
+      return (
+        <>
+          <ThumbnailReader guid={scene} into={written} />
+          <ThumbnailReader guid={assets.find((asset) => asset.header.guid !== scene)?.header.guid} into={other} />
+        </>
+      );
+    }
+    const actions = await openProject(<><ShellReader /><Readers /></>);
     const guid = documents().assetRegistry!.getByPath(MAIN_SCENE_FILE)!.header.guid;
     await act(async () => {});
     const shellBefore = { ...shell };
-    const thumbnailRenders = thumbnails.renders;
-    const version = thumbnails.value![guid] ?? 0;
+    const before = { written: { ...written }, other: { ...other } };
 
     await act(() => actions.writeAssetThumbnail(guid, new Uint8Array([1, 2, 3])));
 
-    expect(thumbnails.value![guid]).toBe(version + 1);
-    expect(thumbnails.renders).toBeGreaterThan(thumbnailRenders);
+    expect(written.version).toBe(before.written.version + 1);
+    expect(written.renders).toBeGreaterThan(before.written.renders);
+    expect(other.renders).toBe(before.other.renders);
     expect(shell.value).toBe(shellBefore.value);
     expect(shell.renders).toBe(shellBefore.renders);
   });

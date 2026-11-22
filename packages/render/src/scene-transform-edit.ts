@@ -1,4 +1,30 @@
-import type { SerializedActor, SerializedComponent, SerializedScene } from "@haptic/core";
+import type { SerializedActor, SerializedComponent, SerializedScene, SerializedTransform } from "@haptic/core";
+
+/** Equal numbers, NaN matching NaN. */
+const sameNumber = (a: number, b: number): boolean => a === b || (a !== a && b !== b);
+
+function sameNumbers(a: readonly number[], b: readonly number[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let index = 0; index < a.length; index++) if (!sameNumber(a[index]!, b[index]!)) return false;
+  return true;
+}
+
+function sameTransform(a: SerializedTransform | undefined, b: SerializedTransform | undefined): boolean {
+  if (!a || !b) return !a && !b;
+  return sameNumbers(a.position, b.position) && sameNumbers(a.rotation, b.rotation) && sameNumbers(a.scale, b.scale);
+}
+
+/**
+ * Whether two versions of an actor stand where they did: its transform and each of its components', compared number
+ * by number without serializing either.
+ */
+export function samePose(actor: SerializedActor, before: SerializedActor): boolean {
+  if (!sameTransform(actor.transform, before.transform) || actor.components.length !== before.components.length) return false;
+  for (let index = 0; index < actor.components.length; index++) {
+    if (!sameTransform(actor.components[index]!.transform, before.components[index]!.transform)) return false;
+  }
+  return true;
+}
 
 /** Pose changes retain asset references and rendering topology. Parent edits
  * and component properties still take the structural reconciliation path.
@@ -12,15 +38,13 @@ export function isTransformOnlySceneEdit(previous: SerializedScene | null, next:
     ...actor, transform: undefined,
     components: actor.components.map((component) => ({ ...component, transform: undefined })),
   });
-  const pose = (actor: SerializedActor) => JSON.stringify(
-    [actor.transform, actor.components.map((component) => component.transform)]);
   let posed = false;
   for (let index = 0; index < next.actors.length; index++) {
     const before = previous.actors[index]!;
     const after = next.actors[index]!;
     if (before === after) continue;
     if (topology(before) !== topology(after)) return false;
-    posed ||= pose(before) !== pose(after);
+    posed ||= !samePose(after, before);
   }
   // The placeholder keeps the actors key in place.
   const otherState = (scene: SerializedScene) => JSON.stringify({ ...scene, actors: null });

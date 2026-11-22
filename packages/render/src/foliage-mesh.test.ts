@@ -8,7 +8,7 @@ import { installAssetBytes, normalizeModelPayload } from "@haptic/assets";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { createTestEngine } from "./test-support/test-engine";
 import { fragmentCanDiscard, preprocessedFragment } from "./test-support/preprocessed-glsl";
-import { encodeTriangleGlb } from "./glb-test-fixtures";
+import { encodeTranslatedTetrahedronGlb, encodeTriangleGlb } from "./glb-test-fixtures";
 import { createFoliageMesh, foliagePreparation, refreshFoliageMaterials } from "./foliage-mesh";
 import { glbContainerLoadCount } from "./glb-anim";
 import { keepsDrawingOutsideView } from "./play-view-culling";
@@ -363,6 +363,69 @@ it("swaps pre-built per-cell LOD geometries while sharing thin-instance matrix b
   });
   updateFoliageDistances(scene, camera, true);
   expect(mid.geometry).toBe(midLod0Geometry);
+});
+
+it("draws every cell of a primitive and of each level of detail from one index buffer, until the last cell goes", async () => {
+  const { FreeCamera } = await import("@babylonjs/core/Cameras/freeCamera");
+  const { RENDER_QUALITY_PROFILES } = await import("@haptic/core");
+  const { updateSceneRenderingSettings } = await import("./render-settings");
+  const { attachFoliageLodSet } = await import("./foliage-mesh");
+  const { engine, scene } = createTestEngine();
+  disposers.push(() => { scene.dispose(); engine.dispose(); });
+  const camera = new FreeCamera("cam", new Vector3(0, 2, 0), scene);
+  scene.activeCamera = camera;
+  updateSceneRenderingSettings(scene, {
+    quality: { ...RENDER_QUALITY_PROFILES.medium, geometry: { ...RENDER_QUALITY_PROFILES.medium.geometry, lodDistanceScale: 1, autoLod: true } },
+  });
+  // An indexed primitive: four vertices, four triangles.
+  const assets = { modelSources: new Map([["tree", installAssetBytes(encodeTranslatedTetrahedronGlb([0, 0, 0]), "model/gltf-binary")]]) };
+  // Three 32 m cells; with a 200 m Cull Distance the two far ones (past 94.5 m) draw the level of detail.
+  const grove = () => createFoliageMesh(scene, "grove", {
+    batches: [{
+      modelGuid: "tree", materialGuid: null, cullDistance: 200, fadeRange: 0, shadowDistance: 200,
+      transforms: packFoliageTransforms([5, 100, 140].map((x) => ({ ...identitySerializedTransform(), position: [x, 0, 0] as [number, number, number] }))),
+    }],
+  }, assets);
+  const root = grove();
+  await foliagePreparation(root);
+  const cells = root.getChildMeshes().filter((mesh): mesh is Mesh => mesh instanceof Mesh && mesh.hasThinInstances);
+  const at = (x: number) => cells.find((cell) => Math.abs(cell.getBoundingInfo().boundingSphere.centerWorld.x - x) < 5)!;
+  const [near, far, farther] = [at(5), at(100), at(140)];
+  const full = near.geometry!.getIndexBuffer()!;
+  expect([far, farther].map((cell) => cell.geometry!.getIndexBuffer())).toEqual([full, full]);
+  expect(full.references).toBe(3);
+  expect(near.getIndices()).toEqual(far.getIndices());
+
+  const indices = new Uint16Array([0, 1, 2]);
+  attachFoliageLodSet(scene, {
+    levelsFor: () => [{
+      data: { coverage: 0.25, indices, subMeshes: [{ materialIndex: 0, verticesStart: 0, verticesCount: 3, indexStart: 0, indexCount: 3 }], triangles: 1 },
+    }],
+    indexBytes: 6,
+    dispose: () => {},
+  });
+  expect([near, far, farther].map((cell) => cell.geometry!.id.endsWith(":lod1"))).toEqual([false, true, true]);
+  const reduced = far.geometry!.getIndexBuffer()!;
+  expect(reduced).not.toBe(full);
+  expect(farther.geometry!.getIndexBuffer()).toBe(reduced);
+  expect(reduced.references).toBe(2);
+  // Picking reads each cell's own CPU indices.
+  expect(Array.from(farther.getIndices()!)).toEqual([0, 1, 2]);
+
+  far.dispose();
+  expect(reduced.references).toBe(1);
+  expect(farther.geometry!.getIndexBuffer()).toBe(reduced);
+  // The farther cell's full-detail geometry still holds the full buffer, as the near cell's does.
+  expect(full.references).toBe(2);
+  farther.dispose();
+  expect([reduced.references, full.references]).toEqual([0, 1]);
+
+  // A restored context's buffers are new: a later foliage does not draw the lost one.
+  engine.onContextRestoredObservable.notifyObservers(engine);
+  const later = grove();
+  await foliagePreparation(later);
+  const laterCell = later.getChildMeshes().find((mesh): mesh is Mesh => mesh instanceof Mesh && mesh.hasThinInstances)!;
+  expect(laterCell.geometry!.getIndexBuffer()).not.toBe(full);
 });
 
 /** The fragment source a mesh's first sub-mesh draws with, after Babylon's preprocessor: whether it can discard. */

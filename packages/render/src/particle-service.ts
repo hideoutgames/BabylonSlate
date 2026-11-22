@@ -296,9 +296,28 @@ type LiveComponent = {
 type LibraryChange = { tier: ParticleEmitterChangeTier; bundle: boolean };
 let nextServiceId = 0;
 const emptyLibrary = (): ParticleLibrary => ({ emitters: new Map(), systems: new Map() });
-/** Every record of an entry: its bundle's, then its ghosts', then its spawned emitters'. */
-const allRecords = (entry: LiveComponent): SlotRecord[] => [...entry.systems, ...entry.ghosts.flatMap((ghost) => ghost.records),
-  ...entry.spawned.flatMap((spawned) => spawned.records)];
+/**
+ * Calls `visit` on every record of an entry, without collecting them: its bundle's, then its ghosts', then its spawned
+ * emitters'. `visit` must not add or remove records.
+ */
+function visitRecords<T>(entry: LiveComponent, state: T, visit: (record: SlotRecord, state: T) => void): void {
+  for (const record of entry.systems) visit(record, state);
+  for (const ghost of entry.ghosts) for (const record of ghost.records) visit(record, state);
+  for (const spawned of entry.spawned) for (const record of spawned.records) visit(record, state);
+}
+
+type RecordTally = { systems: number; gpu: number; cpu: number; graph: number; active: number; capacity: number };
+const tallyRecord = (record: SlotRecord, tally: RecordTally): void => {
+  tally.systems += 1;
+  if (record.gpu) tally.gpu += 1;
+  if (record.kind === "graph") tally.graph += 1;
+};
+const tallyActive = (record: SlotRecord, tally: RecordTally): void => {
+  tally.active += record.system.getActiveCount();
+  tally.capacity += record.system.getCapacity();
+  if (record.gpu) tally.gpu += 1;
+  else tally.cpu += 1;
+};
 /**
  * Whether stopped slots have no particles left. A claimed GPU ring always reports its capacity,
  * so GPU slots wait the lifetime bound; CPU slots (the Basic fallback and every Particle Graph)
@@ -373,6 +392,9 @@ export class ParticleService {
   private readonly waitingToStart = new Set<LiveComponent>();
   /** What `particleStats` reads for this service. */
   private readonly readStats = () => this.stats();
+  /** Counts `stats` and `previewStats` add up in place. */
+  private readonly tally: RecordTally = { systems: 0, gpu: 0, cpu: 0, graph: 0, active: 0, capacity: 0 };
+  private static readonly applyRecordSpeed = (record: SlotRecord, service: ParticleService): void => service.applySpeed(record);
   /** Programs of the systems the load prepared for its starting-state draw, kept compiled (`releaseSpawnableSystems`). */
   private readonly retainedPrograms: Effect[] = [];
   /** Systems a starting-state draw drew unstarted (`drawingUnstartedSystems`). */
@@ -534,7 +556,7 @@ export class ParticleService {
   private updateHalt(change: () => void): void {
     const wasHalted = this.halted;
     change();
-    for (const entry of this.live.values()) for (const record of allRecords(entry)) this.applySpeed(record);
+    for (const entry of this.live.values()) visitRecords(entry, this, ParticleService.applyRecordSpeed);
     if (this.halted || !wasHalted) return;
     // Speeds and the graph flag are restored first: CPU prewarm runs inside `start()`
     // (and skips a paused system), GPU prewarm on the first render.
@@ -613,36 +635,25 @@ export class ParticleService {
   }
 
   stats(): ParticleStats {
-    let systems = 0;
+    const tally = this.tally;
+    tally.systems = tally.gpu = tally.graph = 0;
     let playing = 0;
-    let gpuSystems = 0;
-    let graphSystems = 0;
     for (const entry of this.live.values()) {
       if (entry.warm) continue;
-      const records = allRecords(entry);
-      systems += records.length;
-      for (const record of records) {
-        if (record.gpu) gpuSystems += 1;
-        if (record.kind === "graph") graphSystems += 1;
-      }
+      visitRecords(entry, tally, tallyRecord);
       if (entry.desiredPlaying && (entry.state === "preparing" || entry.state === "playing")) playing += 1;
     }
+    const { systems, gpu: gpuSystems, graph: graphSystems } = tally;
     const gpu = gpuSystems > 0 || gpuParticlesSupported(this.scene.getEngine(), this.gpuRequested);
     return { systems, playing, gpu, gpuSystems, graphSystems };
   }
 
   /** Preview badges: CPU live counts (Basic fallback and every Particle Graph) plus GPU claimed rings (approximate). */
   previewStats(): ParticlePreviewStats {
-    let active = 0;
-    let capacity = 0;
-    let gpu = 0;
-    let cpu = 0;
-    for (const entry of this.live.values()) for (const record of allRecords(entry)) {
-      active += record.system.getActiveCount();
-      capacity += record.system.getCapacity();
-      if (record.gpu) gpu += 1;
-      else cpu += 1;
-    }
+    const tally = this.tally;
+    tally.active = tally.capacity = tally.gpu = tally.cpu = 0;
+    for (const entry of this.live.values()) visitRecords(entry, tally, tallyActive);
+    const { active, capacity, gpu, cpu } = tally;
     const backend = gpu && cpu ? "mixed" : gpu ? "gpu" : cpu ? "cpu" : "none";
     return { active, capacity, backend, approximate: gpu > 0 };
   }

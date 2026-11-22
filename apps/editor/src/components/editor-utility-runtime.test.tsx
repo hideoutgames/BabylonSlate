@@ -1,17 +1,24 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, waitFor } from "@testing-library/react";
-import { EditorUtilityRuntime } from "./editor-utility-runtime";
+import { EditorUtilityRuntime, UNTRUSTED_EDITOR_UTILITIES_MESSAGE } from "./editor-utility-runtime";
 import {
   EDITOR_UTILITY_EVENTS,
   EDITOR_UTILITY_LIFECYCLE_EVENT,
 } from "../lib/editor-utility-scripts";
 
-const { invokeEvent, load, hostServices, docs } = vi.hoisted(() => ({
+const { invokeEvent, load, hostServices, docs, trust } = vi.hoisted(() => ({
+  trust: { trusted: true, appendLog: vi.fn() },
   invokeEvent: vi.fn(),
   load: vi.fn(async () => {}),
   hostServices: [] as Array<{ getAssetCatalog?: () => { getAssetsByPath(folder: string, recursive: boolean): Array<{ Path: string }> } | null }>,
   docs: {
     projectName: "Demo" as string | null,
+    projectGuid: "project-guid",
+    extensionService: {
+      projectTrustKey: (guid: string) => `key:${guid}`,
+      createdHere: () => false,
+      forgetCreatedProject: () => {},
+    },
     projectDocument: {
       settings: { editorUtilityObjects: ["Tools"] },
     } as { settings: { editorUtilityObjects: string[] } } | null,
@@ -48,13 +55,28 @@ vi.mock("@haptic/runtime", async (importOriginal) => ({
 }));
 
 vi.mock("../context/play-context", () => ({
-  usePlayDiagnosticsActions: () => ({ appendLog: vi.fn() }),
+  usePlayDiagnosticsActions: () => ({ appendLog: trust.appendLog }),
 }));
 
 vi.mock("../context/document-context", async () => (await import("../testing/document-context-mock")).documentContextMock(() => docs));
 
+vi.mock("../context/app-settings-context", async () => {
+  const { defaultEngineSettings } = await import("@haptic/vfs");
+  return {
+    useAppSettings: () => ({
+      settings: { ...defaultEngineSettings(), trustedProjects: trust.trusted ? ["key:project-guid"] : [] },
+      version: 1,
+      hydrated: true,
+      updateSettings: async () => {},
+      updateDebuggerDefaults: async () => {},
+    }),
+  };
+});
+
 afterEach(() => {
   cleanup();
+  trust.trusted = true;
+  trust.appendLog.mockClear();
   invokeEvent.mockReset();
   load.mockClear();
   docs.projectName = "Demo";
@@ -71,6 +93,39 @@ afterEach(() => {
 });
 
 describe("EditorUtilityRuntime", () => {
+  it("runs no Editor Utility graph in an untrusted project and says why in the Output Log", async () => {
+    trust.trusted = false;
+    render(<EditorUtilityRuntime />);
+    await act(async () => { await Promise.resolve(); });
+    expect(docs.collectEditorUtilityScripts).not.toHaveBeenCalled();
+    expect(load).not.toHaveBeenCalled();
+    expect(invokeEvent).not.toHaveBeenCalled();
+    expect(hostServices).toHaveLength(0);
+    expect(trust.appendLog).toHaveBeenCalledWith(UNTRUSTED_EDITOR_UTILITIES_MESSAGE);
+    expect(UNTRUSTED_EDITOR_UTILITIES_MESSAGE).toContain("Trust This Project");
+    // Lifecycle events reach no host either.
+    act(() => {
+      window.dispatchEvent(new CustomEvent(EDITOR_UTILITY_LIFECYCLE_EVENT, { detail: { event: EDITOR_UTILITY_EVENTS.sceneSaved } }));
+    });
+    expect(invokeEvent).not.toHaveBeenCalled();
+  });
+
+  it("starts the registered utilities once the project is trusted", async () => {
+    trust.trusted = false;
+    const view = render(<EditorUtilityRuntime />);
+    expect(invokeEvent).not.toHaveBeenCalled();
+    trust.trusted = true;
+    view.rerender(<EditorUtilityRuntime />);
+    await waitFor(() => expect(invokeEvent).toHaveBeenCalledWith("Tools", EDITOR_UTILITY_EVENTS.startup));
+  });
+
+  it("stays quiet in an untrusted project with no registered utilities", async () => {
+    trust.trusted = false;
+    docs.projectDocument = { settings: { editorUtilityObjects: [] } };
+    render(<EditorUtilityRuntime />);
+    expect(trust.appendLog).not.toHaveBeenCalled();
+  });
+
   it("shuts down plugin utilities when their root becomes blocked despite staying enabled", async () => {
     docs.projectDocument = { settings: { editorUtilityObjects: [] } };
     docs.collectEditorUtilityScripts

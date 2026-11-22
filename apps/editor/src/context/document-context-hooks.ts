@@ -1,5 +1,6 @@
 import { createContext, useContext, useSyncExternalStore, type Context } from "react";
 import type { DocumentKind } from "@haptic/core";
+import type { ThumbnailVersions } from "@haptic/editor-kit";
 import type { OpenDocument } from "../services/document-service";
 import type { SourceControlSyncService, SyncSnapshot } from "../services/source-control-sync";
 import type { DocumentSubscriptions } from "./document-subscriptions";
@@ -29,8 +30,8 @@ export const ActiveDocumentStateContext = createContext<ActiveDocumentState | nu
 export const SaveStateContext = createContext<SaveState | null>(null);
 export const CompileStateContext = createContext<CompileState | null>(null);
 export const EditorShellStateContext = createContext<EditorShellState | null>(null);
-/** Replaced on every thumbnail write, so only views that show thumbnails read it. */
-export const ThumbnailVersionsContext = createContext<Readonly<Record<string, number>> | null>(null);
+/** One store for the provider's lifetime: readers subscribe to the assets they show. */
+export const ThumbnailVersionsContext = createContext<ThumbnailVersions | null>(null);
 export const SourceControlStateContext = createContext<SourceControlState | null>(null);
 /** The Integrated sync service; one instance for the provider's lifetime. */
 export const SourceControlSyncContext = createContext<SourceControlSyncService | null>(null);
@@ -110,11 +111,12 @@ export function useEditorShellState(): EditorShellState {
 
 /**
  * Each asset's thumbnail version, bumped when its thumbnail is written or its
- * saved revision changes; key thumbnail reloads on it. A new record on every
- * write, so the shell slice and its readers stay still while thumbnails are
- * captured.
+ * saved revision changes; key thumbnail reloads on it. The store keeps its
+ * identity, so reading it renders nothing: read one asset's version with
+ * `useThumbnailVersion`, or a list's with `useThumbnailVersionsKey`, and only
+ * a rewrite of those assets renders the reader.
  */
-export function useThumbnailVersions(): Readonly<Record<string, number>> {
+export function useThumbnailVersions(): ThumbnailVersions {
   return useSlice(ThumbnailVersionsContext, "useThumbnailVersions");
 }
 

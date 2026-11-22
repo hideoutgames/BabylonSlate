@@ -222,9 +222,10 @@ describe("createCommandRegistry", () => {
     const release = createCommandRegistry({ includeDebug: false });
     expect(debug.execute("layerdebug clears off", host)).toEqual({ success: true, output: "layerdebug clears off" });
     expect(debug.execute("layerdebug clears on", host)).toEqual({ success: true, output: "layerdebug clears on" });
+    expect(debug.execute("layerdebug skipclears off", host)).toEqual({ success: true, output: "layerdebug skipclears off" });
     expect(debug.execute("layerdebug depth off", host).success).toBe(false);
     expect(release.execute("layerdebug clears off", host).success).toBe(false);
-    expect(host.calls).toEqual(["layer:clears:false", "layer:clears:true"]);
+    expect(host.calls).toEqual(["layer:clears:false", "layer:clears:true", "layer:skipclears:false"]);
   });
 
   it("resets one part of Play's rendering by name, in debug registries only", () => {

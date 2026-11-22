@@ -110,11 +110,11 @@ This file describes what is built; scope decisions and the benchmark evidence ar
 | Host | SecretStore | HTTP |
 | --- | --- | --- |
 | iOS / Android | Keychain / Keystore via the first-party `BabylonSlateSecrets` plugin (not Preferences); the Swift file must be in the App target and `packageClassList` | `CapacitorHttp` |
-| Electron | IPC `secrets:get/set/delete` to a serialized, versioned owner-only file, each value tagged plaintext or `safeStorage` ciphertext; read failures reject rather than reset | IPC `lfs:fetch` → `net.fetch` |
+| Electron | IPC `secrets:get/set/delete` to a serialized, versioned owner-only file of `safeStorage` ciphertext only; read failures reject rather than reset | IPC `lfs:fetch` → `net.fetch` |
 | Web | Unavailable; Source Control hidden | Unused |
 | Test mode | `MemorySecrets` (nothing kept) | `FakeGitHost` |
 
-Linux without a keyring stores new values with an explicit plaintext tag (accepted).
+Secrets are never written in plain text. Without secure OS encryption (`safeStorage` unavailable, or Linux's `basic_text` / `unknown` backend: no keyring) `DesktopSecretStore` keeps them in memory until the app quits and writes nothing; `secrets:persistent` reports that, and `SessionSecretsNotice` says so in Engine Settings → Source Control and → Packaging → Android. Non-ciphertext entries in the file are ignored and dropped on the next write.
 
 ## Device sign-in
 
