@@ -3,9 +3,9 @@ import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { isLibraryFolder } from "@haptic/vfs/library-folders";
 import { isValidAppId } from "@haptic/core/app-identity";
 import { isRuntimeFileName, MAX_RUNTIME_FILES } from "./game-runtime";
-import { ANDROID_ICON_SIZES, MAX_ANDROID_VERSION_CODE } from "../../../packages/exporter/src/native-android";
-import { isValidTeamId } from "../../../packages/exporter/src/native-ios";
-import { packages as thirdPartyPackages } from "../../editor/src/lib/third-party-notices.json";
+import { ANDROID_ICON_SIZES, MAX_ANDROID_VERSION_CODE } from "@haptic/exporter/native-android";
+import { isValidTeamId } from "@haptic/exporter/native-ios";
+import thirdPartySourceLinks from "./third-party-source-links.json";
 
 /** Largest payload one project IPC call may move through the main process. */
 export const MAX_IPC_BYTES = 512 * 1024 * 1024;
@@ -51,7 +51,6 @@ export function gameFile(rawUrl: string, root: string): string {
  * the editor's window, its preload bridge or its storage.
  */
 export const PREVIEW_HOST = "preview";
-export const PREVIEW_ORIGIN = `app://${PREVIEW_HOST}`;
 export const EDITOR_ORIGIN = "app://babylonslate";
 
 /** The bundled player's file for an `app://preview/player/` URL; nothing else of the renderer is served there. */
@@ -151,16 +150,7 @@ const DOCS_SITE = { origin: "https://hideoutgames.github.io", path: "/BabylonSla
 /** The Homepage's Discord invite (HAPTIC_DISCORD_URL in apps/editor/src/components/homepage-discord-badge.tsx). */
 const COMMUNITY_LINKS = new Set(["https://discord.gg/7uPR4JK5q3"]);
 /** Each bundled package's source link, which Third-Party Notices offers: these exact pages and no others. */
-const NOTICE_SOURCE_LINKS = new Set(
-  thirdPartyPackages.flatMap(({ source }) => {
-    try {
-      const url = new URL(source);
-      return url.protocol === "https:" ? [url.href] : [];
-    } catch {
-      return [];
-    }
-  }),
-);
+const NOTICE_SOURCE_LINKS = new Set<string>(thirdPartySourceLinks);
 
 /**
  * Links the editor hands to the system browser or mail client: Haptic's site and documentation,

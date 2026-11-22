@@ -3,9 +3,9 @@ import { WATER_DEBUG_PARTS, type WaterDebugPart } from "@haptic/core";
 import { renderSettingsOwner } from "./render-settings";
 
 /** Water nodes' define for `waves` off: the Water Waves node samples no spectrum per pixel. */
-export const WATER_DEBUG_NO_WAVES_DEFINE = "SLATE_WATER_DEBUG_NO_WAVES";
+export const WATER_DEBUG_NO_WAVES_DEFINE = "HAPTIC_WATER_DEBUG_NO_WAVES";
 /** Water nodes' define for `foam` off: the Water Foam node draws no shore, contact or edge foam. */
-export const WATER_DEBUG_NO_FOAM_DEFINE = "SLATE_WATER_DEBUG_NO_FOAM";
+export const WATER_DEBUG_NO_FOAM_DEFINE = "HAPTIC_WATER_DEBUG_NO_FOAM";
 
 /** Per settings owner, the parts (`WATER_DEBUG_PARTS`) a Play session's `waterdebug` switched off; never saved. */
 const off = new WeakMap<Scene, ReadonlySet<WaterDebugPart>>();

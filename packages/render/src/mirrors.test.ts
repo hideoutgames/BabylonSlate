@@ -573,9 +573,9 @@ it("compiles a Mirror Reflection Material that reads the reflection on a Mirror 
     return { defines: subMesh.materialDefines!.toString(), textures: textures.mock.calls.map(([, texture]) => texture) };
   };
   const onSurface = sampled(surface), elsewhere = sampled(box);
-  expect(onSurface.defines).toContain("SLATE_MIRROR_REFLECTION");
+  expect(onSurface.defines).toContain("HAPTIC_MIRROR_REFLECTION");
   expect(onSurface.textures).toContain(reflection);
-  expect(elsewhere.defines).not.toContain("SLATE_MIRROR_REFLECTION");
+  expect(elsewhere.defines).not.toContain("HAPTIC_MIRROR_REFLECTION");
   expect(elsewhere.textures).not.toContain(reflection);
   compiled.dispose();
 });
@@ -690,28 +690,28 @@ it("compiles the environment into a surface that does not reflect everything, an
     return { defines: subMesh.materialDefines!.toString(), values, sampled };
   };
   const moving = bound(surface), everything = bound(plain);
-  expect(moving.defines).toContain("SLATE_MIRROR_ENVIRONMENT");
-  expect(everything.defines).toContain("SLATE_MIRROR_REFLECTION");
-  expect(everything.defines).not.toContain("SLATE_MIRROR_ENVIRONMENT");
+  expect(moving.defines).toContain("HAPTIC_MIRROR_ENVIRONMENT");
+  expect(everything.defines).toContain("HAPTIC_MIRROR_REFLECTION");
+  expect(everything.defines).not.toContain("HAPTIC_MIRROR_ENVIRONMENT");
   // The eye (with a cube to read), the plane's normal, and the probe's box with the cube's sharpest level.
-  expect(moving.values.get("slateMirrorEye")).toEqual([0, 1, 0, 1]);
-  expect(moving.values.get("slateMirrorNormal")).toEqual([0, 0, -1]);
-  expect(moving.values.get("slateMirrorEnvironmentBoxPosition")).toEqual([0, 1.5, 2, 0]);
-  expect(moving.values.get("slateMirrorEnvironmentBoxSize")).toEqual([4, 3, 4]);
-  expect(moving.values.get("slateMirrorEnvironmentForm")![0]).toBe(1);
-  expect(moving.sampled.get("slateMirrorEnvironmentSampler")).toBe(probe);
+  expect(moving.values.get("hapticMirrorEye")).toEqual([0, 1, 0, 1]);
+  expect(moving.values.get("hapticMirrorNormal")).toEqual([0, 0, -1]);
+  expect(moving.values.get("hapticMirrorEnvironmentBoxPosition")).toEqual([0, 1.5, 2, 0]);
+  expect(moving.values.get("hapticMirrorEnvironmentBoxSize")).toEqual([4, 3, 4]);
+  expect(moving.values.get("hapticMirrorEnvironmentForm")![0]).toBe(1);
+  expect(moving.sampled.get("hapticMirrorEnvironmentSampler")).toBe(probe);
   // A surface that reflects everything binds none of it.
-  expect(everything.values.has("slateMirrorEye")).toBe(false);
-  expect(everything.sampled.has("slateMirrorEnvironmentSampler")).toBe(false);
+  expect(everything.values.has("hapticMirrorEye")).toBe(false);
+  expect(everything.sampled.has("hapticMirrorEnvironmentSampler")).toBe(false);
   // The Scene's own environment has no box to project onto.
   probe.boundingBoxSize = undefined as never;
-  expect(bound(surface).values.get("slateMirrorEnvironmentForm")![0]).toBe(0);
+  expect(bound(surface).values.get("hapticMirrorEnvironmentForm")![0]).toBe(0);
   // Without any environment the surface shows the Scene's clear colour, and binds a placeholder cube.
   scene.environmentTexture = null;
   const bare = bound(surface);
-  expect(bare.values.get("slateMirrorEye")).toEqual([0, 1, 0, 0]);
-  expect(bare.values.get("slateMirrorBackdrop")!.map((value) => Math.round(value * 10) / 10)).toEqual([0.2, 0.3, 0.4]);
-  expect((bare.sampled.get("slateMirrorEnvironmentSampler") as unknown as { name: string }).name).toBe("haptic:environmentPlaceholder");
+  expect(bare.values.get("hapticMirrorEye")).toEqual([0, 1, 0, 0]);
+  expect(bare.values.get("hapticMirrorBackdrop")!.map((value) => Math.round(value * 10) / 10)).toEqual([0.2, 0.3, 0.4]);
+  expect((bare.sampled.get("hapticMirrorEnvironmentSampler") as unknown as { name: string }).name).toBe("haptic:environmentPlaceholder");
 });
 
 it("draws no more into a Mirror than the quality level allows, and what the Mirror asks for when that is less", () => {

@@ -3,8 +3,8 @@ import { Ray } from "@babylonjs/core/Culling/ray";
 import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { Scene } from "@babylonjs/core/scene";
-import { sceneShadowController } from "../../../../packages/render/src/shadow-controller";
-import type { ShadowParticipation } from "../../../../packages/render/src/shadow-mesh-policy";
+import { sceneShadowController } from "@haptic/render/editor-proofs";
+import type { ShadowParticipation } from "@haptic/render/editor-proofs";
 
 const names = new Set(["head", "torso", "arm-left", "arm-right", "leg-left", "leg-right"]);
 const originals = new WeakMap<Scene, Map<AbstractMesh, ShadowParticipation | undefined>>();
@@ -18,10 +18,10 @@ export function mannequinShadowProbe(scene: Scene, modelOnly = false) {
   if (!saved) { saved = new Map(); originals.set(scene, saved); }
   const controller = sceneShadowController(scene);
   for (const mesh of scene.meshes) {
-    if (!saved.has(mesh)) saved.set(mesh, mesh.metadata?.slateShadowParticipation);
+    if (!saved.has(mesh)) saved.set(mesh, mesh.metadata?.hapticShadowParticipation);
     const original = saved.get(mesh);
     controller.setParticipation(mesh, modelOnly ? { ...original, castShadows: names.has(mesh.name) } : original ?? {});
-    if (!modelOnly && !original && mesh.metadata) delete mesh.metadata.slateShadowParticipation;
+    if (!modelOnly && !original && mesh.metadata) delete mesh.metadata.hapticShadowParticipation;
   }
   return meshes.map(mesh => {
     const world = mesh.computeWorldMatrix(true);

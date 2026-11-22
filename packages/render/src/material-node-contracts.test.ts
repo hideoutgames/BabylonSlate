@@ -152,7 +152,7 @@ describe("material node contracts", () => {
     node(doc, "coordinate", `landscape.${kind}`);
     wire(doc, "coordinate", kind, "output", "emissive");
     const result = await compile(doc, false, true);
-    const origin = result.material.getBlockByName("slateFloatingOrigin") as InputBlock;
+    const origin = result.material.getBlockByName("hapticFloatingOrigin") as InputBlock;
     expect(origin).toBeDefined();
     expect(origin.output.endpoints.length).toBeGreaterThan(0);
     expect(result.material.compiledShaders).toContain(origin.associatedVariableName);

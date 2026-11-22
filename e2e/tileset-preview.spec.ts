@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { encodeAssetDocument } from "../packages/assets/src/asset-document";
 import { minimalProjectFiles } from "../packages/assets/src/test-support/minimal-project";
-import { createNodeBasisEncodeFn } from "../packages/assets/src/node-basis-encode";
+import { createNodeBasisEncodeFn } from "../packages/assets/src/test-support/node-basis-encode";
 import {
   DEFAULT_TEXTURE_ENCODE_SETTINGS,
   encodeSettingsHash,

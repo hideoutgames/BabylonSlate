@@ -127,7 +127,7 @@ describe("desktop sign-in with the shared account client", () => {
     await returnToApp();
 
     expect(sessionChecks()).toBe(checksBefore);
-    expect(server.secrets.get(`slate-clerk-client:${key}`)).toBe(`client-${server.token}`);
+    expect(server.secrets.get(`haptic-clerk-client:${key}`)).toBe(`client-${server.token}`);
     fireEvent.change(code, { target: { value: "123456" } });
     fireEvent.click(screen.getByRole("button", { name: "Verify & Continue" }));
     expect(await screen.findByRole("button", { name: "Ada Lovelace, ada@example.test" })).toBeTruthy();

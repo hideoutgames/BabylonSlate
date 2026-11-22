@@ -77,7 +77,7 @@ export function createGameWorkerHost(): GameWorkerHost {
 function spawnGameWorkerHost(): GameWorkerHost {
   const worker = new Worker(
     new URL(
-      "../../../../packages/runtime/src/worker-entry.ts",
+      "@haptic/runtime/worker-entry",
       import.meta.url,
     ),
     { type: "module" },

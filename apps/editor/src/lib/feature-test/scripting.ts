@@ -99,6 +99,7 @@ const CLASS = {
   spawned: "FT_ScriptSpawned",
   spinner: "FT_ScriptSpinner",
   spinnerFast: "FT_ScriptSpinnerFast",
+  spinnerStepped: "FT_ScriptSpinnerStepped",
   interfaceProbe: "FT_ScriptInterfaceProbe",
   touchProbe: "FT_ScriptTouchProbe",
   statsCommand: "FT_ScriptStatsCommand",
@@ -404,6 +405,7 @@ export async function buildFeatureTestScripting(ctx: FeatureTestContext): Promis
   await saveSpawned(ctx, materials.emissive ?? null);
   const spinner = await saveSpinner(ctx, types, materials.surface ?? null);
   await saveSpinnerFast(ctx, types);
+  await saveSpinnerStepped(ctx);
   await saveSceneWatcher(ctx);
   await saveGameInstance(ctx);
   const interfaceProbe = await saveInterfaceProbe(ctx, types, font, materials.surfaceInstance ?? null);
@@ -1111,6 +1113,14 @@ async function saveSpinnerFast(ctx: FeatureTestContext, types: ScriptingTypes): 
   await saveClass(ctx, CLASS.spinnerFast, CLASS.spinner, graph);
 }
 
+/**
+ * Child Class with a Tick Interval of 0.25 s: the inherited Event Tick runs four times a second with the time since
+ * the last one, so it turns as fast as a Spinner on average, in visible steps.
+ */
+async function saveSpinnerStepped(ctx: FeatureTestContext): Promise<void> {
+  await saveClass(ctx, CLASS.spinnerStepped, CLASS.spinner, classGraph({ actorDefaults: { tickInterval: 0.25 } }));
+}
+
 /** Scene Subsystem: counts spawned scene actors, names Spawn Actor results, reports streaming. */
 async function saveSceneWatcher(ctx: FeatureTestContext): Promise<void> {
   const spawnedActors = varMember("ft-game-var-spawned-actors", "SpawnedActors", "int", 0);
@@ -1712,7 +1722,14 @@ async function saveDataProbe(
       gNode("fields", "struct.break", 460, 160, { structGuid: types.itemStats, fields: ITEM_FIELDS }),
       gNode("children", "data.getChildren", 220, 400, { "default:tree": types.itemsTree, "default:entryPath": "Weapons" }),
       gNode("child-count", "array.length", 460, 400),
-      format("text", 700, 160, "{label}: {damage} dmg, {weight} kg (found {found}, {weapons} weapons)"),
+      format("text", 700, 160, "{label}: {damage} dmg, {weight} kg (found {found}, {weapons} weapons, Math Expression {length})"),
+      // A Math Expression node: Length = |(A, B, 0)|, 5 for its inline 3 and 4, asserted and printed.
+      gNode("math-expression", "math.expression", 13420, -560, {
+        formula: "Length = length(vec3(A, B, 0))",
+        "default:in_A": 3,
+        "default:in_B": 4,
+      }),
+      gNode("assert-math-expression", "debug.assertEqual", 13420, -200, { "default:expected": 5, "default:message": "Math Expression computed the wrong Length" }),
       gNode("assert-found", "debug.assert", 700, 0, { "default:message": "Data Probe could not read Weapons/Sword" }),
       gNode("assert-weapons", "debug.assertEqual", 700, 400, { "default:expected": 2, "default:message": "Data Probe expected two Weapons" }),
       printText("print", 2380, 0, "ft-data-probe", undefined, 8),
@@ -1727,7 +1744,7 @@ async function saveDataProbe(
       gWire("assert-loot-step", "execOut", "call-rewind-loot", "exec"),
       gWire("call-rewind-loot", "then", "assert-loot-rewound", "execIn"),
       ...gChain("assert-loot-rewound", "set-global-seed", "assert-global-roll", "assert-global-step", "assert-weighted", "assert-shuffled",
-        "assert-own-tag", "assert-class-tag", "assert-tagged-found", "assert-not-hidden", "assert-mesh-visible", "assert-is-actor", "assert-mesh-at-origin", "print"),
+        "assert-own-tag", "assert-class-tag", "assert-tagged-found", "assert-not-hidden", "assert-mesh-visible", "assert-is-actor", "assert-mesh-at-origin", "assert-math-expression", "print"),
       gWire("own-tag", "out", "assert-own-tag", "condition"),
       gWire("class-tag", "out", "assert-class-tag", "condition"),
       gWire("tagged", "actors", "tagged-count", "array"),
@@ -1803,6 +1820,8 @@ async function saveDataProbe(
       gWire("children", "paths", "child-count", "array"),
       gWire("child-count", "out", "text", fmtArg("weapons")),
       gWire("text", "out", "print", "inString"),
+      gWire("math-expression", "out_Length", "assert-math-expression", "actual"),
+      gWire("math-expression", "out_Length", "text", fmtArg("length")),
     ],
   });
   const ref = await saveClass(ctx, CLASS.dataProbe, "Actor", graph, DATA_FOLDER);
@@ -2303,6 +2322,11 @@ function placeScriptingZone(ctx: FeatureTestContext, refs: ScriptingRefs, types:
     classId: CLASS.spinnerFast,
     properties: { SpeedMode: "Fast" },
     overrides: emissive ? { "prefab-mesh": { materialGuid: emissive } } : {},
+  });
+
+  placeClass("ft-scripting-spinner-stepped", "Stepped Spinner", refs.spinner, zone.at(2, 1.2, -6), spinnersFolder, {
+    classId: CLASS.spinnerStepped,
+    properties: { SpeedMode: "Fast" },
   });
 
   placeClass("ft-scripting-interface-probe", "Interface Probe", refs.interfaceProbe, zone.at(4.5, 0.6, -9), probesFolder);

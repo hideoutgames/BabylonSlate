@@ -40,6 +40,7 @@ The **Inspector** shows the class settings while nothing is selected, and when y
 | Generate Hit Events | Turn off to stop **Event On Hit** for this actor. Physics still simulates. |
 | Generate Overlap Events | Turn off to stop the overlap events for this actor. |
 | Event Tick | **Inherit**, **Enabled** or **Disabled**. Disabled stops the actor's [Event Tick](../scripting/class/event-tick.md); its components keep ticking. |
+| Tick Interval | Seconds between the actor's **Event Ticks**. 0, the default, ticks every simulation step. Input events still run every step. Available while **Event Tick** is enabled; see [Tick Interval](../scripting/class/event-tick.md#tick-interval). |
 | Tick On Pause | Off by default. Turn on to keep the actor, its components, Delays, tweens and sounds running while the game is paused by [Set Game Paused](../scripting/class/set-game-paused.md). |
 | Tags | The [Tags](../scripting/tags.md#actor-tags) every actor of this class starts with. A child class inherits them until it sets its own, and a placed actor can change its own in the **Inspector**. |
 

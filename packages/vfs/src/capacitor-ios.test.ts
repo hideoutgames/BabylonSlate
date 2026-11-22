@@ -287,6 +287,25 @@ describe("Capacitor 8 iOS host", () => {
     for (const method of methods) expect(scopedStoragePlugin).toContain(`@objc func ${method}(_ call: CAPPluginCall)`);
   });
 
+  // The Swift cannot be compiled here; these are the wiring contracts a device would show only at runtime.
+  it("serves the binary transport from a scheme handler registered before the web view exists", () => {
+    const storyboard = readFileSync(join(repoRoot, "apps/editor/ios/App/App/Base.lproj/Main.storyboard"), "utf8");
+    const sceneDelegate = readFileSync(join(repoRoot, "apps/editor/ios/App/App/SceneDelegate.swift"), "utf8");
+    const transport = readFileSync(join(vfsDir, "native-binary-bridge.ts"), "utf8");
+    expect(storyboard).toContain('customClass="BabylonSlateBridgeViewController" customModule="App"');
+    expect(sceneDelegate).toContain("BabylonSlateBridgeViewController()");
+    expect(scopedStoragePlugin).toMatch(
+      /class BabylonSlateBridgeViewController: CAPBridgeViewController \{[\s\S]*?super\.webViewConfiguration\(for: instanceConfiguration\)[\s\S]*?setURLSchemeHandler\(/,
+    );
+    for (const header of ["X-Haptic-Revision", "X-Haptic-Total-Bytes", "X-Haptic-Actual-Bytes", "X-Haptic-Error", "BODY_MISSING"]) {
+      expect(transport).toContain(`"${header}"`);
+      expect(scopedStoragePlugin).toContain(`"${header}"`);
+    }
+    // File work runs on a bounded queue, and released folders give back their security-scoped access.
+    expect(scopedStoragePlugin).toContain("queue.maxConcurrentOperationCount = 4");
+    expect(scopedStoragePlugin).toMatch(/func releaseFolder[\s\S]*?stopAccessingSecurityScopedResource\(\)/);
+  });
+
   it("streams Git LFS transfers over HTTPS only, following no redirect and keeping no cookie or cache", () => {
     expect(scopedStoragePlugin).toContain('url.scheme?.lowercased() == "https"');
     expect(scopedStoragePlugin).toMatch(/willPerformHTTPRedirection[\s\S]*?completionHandler\(nil\)/);
@@ -296,7 +315,7 @@ describe("Capacitor 8 iOS host", () => {
     expect(scopedStoragePlugin).toContain("uploadTask(with: request, fromFile: file)");
     expect(scopedStoragePlugin).toContain("downloadTask(with: request)");
     // App storage only: a chosen folder never gets a transfer.
-    expect(scopedStoragePlugin).toMatch(/func documentsFile[\s\S]*?hasPrefix\("Haptic\/projects\/"\)/);
+    expect(scopedStoragePlugin).toMatch(/func documentsFile[\s\S]*?hasPrefix\("Projects\/"\)/);
   });
 
   it("exports through the share sheet with an iPad popover source and a bounded temporary file", () => {

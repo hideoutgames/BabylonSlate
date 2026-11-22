@@ -10,7 +10,8 @@
     ".": "./src/index.ts",
     "./chunk": "./src/chunk.ts",
     "./settings": "./src/settings.ts",
-    "./bake": "./src/bake.ts"
+    "./bake": "./src/bake.ts",
+    "./bake-worker": "./src/bake-worker.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -21,6 +22,8 @@
     "@recast-navigation/generators": "^0.43.1"
   },
   "devDependencies": {
-    "typescript": "~6.0.3"
+    "fast-check": "^4.3.0",
+    "typescript": "~6.0.3",
+    "vitest": "^4.1.12"
   }
 }

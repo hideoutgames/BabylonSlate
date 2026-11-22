@@ -14,7 +14,7 @@ import { ViewportToolbar } from "./viewport-toolbar";
 import { KeybindProvider } from "../context/keybind-context";
 import { AppSettingsProvider } from "../context/app-settings-context";
 import { defaultEngineSettings } from "@haptic/vfs";
-import { MemoryAppSettingsStore } from "../../../../packages/vfs/src/test-support/memory-app-settings";
+import { MemoryAppSettingsStore } from "@haptic/vfs/test-support/memory-app-settings";
 
 if (
   typeof window !== "undefined" &&

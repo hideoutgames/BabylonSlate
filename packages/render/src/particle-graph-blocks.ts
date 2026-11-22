@@ -85,9 +85,9 @@ import {
   type ParticleNumericType,
   type ParticleOperation,
 } from "@haptic/particle-graph";
-import { SlateMeshShapeBlock, type ParticleMeshShapeSource } from "./particle-mesh-shape";
-import { SlateSpriteAnimateBlock, SlateSpriteCellBlock, SlateSpriteSheetBlock } from "./particle-sprite-sheet";
-import { SlateSpawnBlock, type ParticleSpawnSink } from "./particle-spawn";
+import { HapticMeshShapeBlock, type ParticleMeshShapeSource } from "./particle-mesh-shape";
+import { HapticSpriteAnimateBlock, HapticSpriteCellBlock, HapticSpriteSheetBlock } from "./particle-sprite-sheet";
+import { HapticSpawnBlock, type ParticleSpawnSink } from "./particle-spawn";
 import { BUILTIN_PARTICLE_NOISE, type ParticleNoiseSource } from "./particle-noise";
 import { PARTICLE_BILLBOARD_MODES, PARTICLE_BLEND_MODES } from "./particle-render-modes";
 
@@ -97,7 +97,7 @@ import { PARTICLE_BILLBOARD_MODES, PARTICLE_BLEND_MODES } from "./particle-rende
  * node reached by N consumers runs `_build` N times. Seeding a finite id before
  * `createSystem` makes every block build once per system (.agents/reference/architecture/particles.md).
  */
-export class SlateSystemBlock extends SystemBlock {
+export class HapticSystemBlock extends SystemBlock {
   seedBuildId(id: number): void {
     this._buildId = id;
   }
@@ -109,7 +109,7 @@ export class SlateSystemBlock extends SystemBlock {
  * per particle, a value tagged with the particle's id (a reset gives the particle a new id), and
  * in Loop scope only the current frame's value. Read outside a particle, Particle scope acts as Loop.
  */
-export class SlateLocalVariableBlock extends ParticleLocalVariableBlock {
+export class HapticLocalVariableBlock extends ParticleLocalVariableBlock {
   private readonly particleValues = new WeakMap<object, { id: number; value: unknown }>();
   private loopValue: { frame: number; value: unknown } | null = null;
 
@@ -166,7 +166,7 @@ type QueueSystem = ParticleSystem & { _updateQueueStart: QueueItem | null; _temp
  * back from the GPU every frame; this one samples CPU pixels its source caches once, and pushes
  * nothing until they are there.
  */
-export class SlateNoiseBlock extends NodeParticleBlock {
+export class HapticNoiseBlock extends NodeParticleBlock {
   source: ParticleNoiseSource = BUILTIN_PARTICLE_NOISE;
 
   constructor(name: string) {
@@ -177,7 +177,7 @@ export class SlateNoiseBlock extends NodeParticleBlock {
   }
 
   override getClassName(): string {
-    return "SlateNoiseBlock";
+    return "HapticNoiseBlock";
   }
 
   get particle(): NodeParticleConnectionPoint {
@@ -204,10 +204,10 @@ export class SlateNoiseBlock extends NodeParticleBlock {
         state.systemContext = system;
         const strength = this.strength.getConnectedValue(state) as Vector3;
         const properties = (particle as NoiseParticle)._properties;
-        let coordinates = properties.slateNoise as NoiseCoordinates | undefined;
+        let coordinates = properties.hapticNoise as NoiseCoordinates | undefined;
         if (!coordinates) {
           coordinates = { a: new Vector3(Math.random(), Math.random(), Math.random()), b: new Vector3(Math.random(), Math.random(), Math.random()) };
-          properties.slateNoise = coordinates;
+          properties.hapticNoise = coordinates;
         }
         const fetch = (u: number, v: number) => system._fetchR(u, v, pixels.width, pixels.height, pixels.data);
         force.copyFromFloats(
@@ -242,7 +242,7 @@ export interface ParticleBlockRealization {
   /** Pins connected without Babylon's type check (Emit Rate: an Int port fed by a Float). */
   coerce?: ReadonlySet<string>;
   /** The terminal's SystemBlock. */
-  system?: SlateSystemBlock;
+  system?: HapticSystemBlock;
 }
 
 export interface ParticleBlockAdapterContext {
@@ -529,7 +529,7 @@ const applyVelocityAdapter: ParticleBlockAdapter = ({ name, space }) => {
  * readiness texture.
  */
 const outputAdapter: ParticleBlockAdapter = ({ name }) => {
-  const system = new SlateSystemBlock(name);
+  const system = new HapticSystemBlock(name);
   const texture = new ParticleTextureSourceBlock(`${name}/texture`);
   texture.textureOutput.connectTo(system.texture, true);
   return {
@@ -593,26 +593,26 @@ export const PARTICLE_BLOCK_ADAPTERS: Readonly<Record<string, ParticleBlockAdapt
   "force.gravity": gravityAdapter,
   "force.attractor": spine((name) => new UpdateAttractorBlock(name), (block) => ({ position: block.attractor, strength: block.strength })),
   "shape.mesh": ({ name, operation, meshShape }) => {
-    const block = new SlateMeshShapeBlock(name);
+    const block = new HapticMeshShapeBlock(name);
     block.useMeshNormals = operation.properties.useMeshNormals !== false;
     block.useMeshColor = operation.properties.useMeshColor === true;
     if (meshShape) block.source = meshShape(operation.properties);
     return { blocks: [block], inputs: { particle: block.particle, direction1: block.direction1, direction2: block.direction2 }, outputs: { out: block.output } };
   },
   "sprite.setup": ({ name, operation }) => {
-    const block = new SlateSpriteSheetBlock(name);
+    const block = new HapticSpriteSheetBlock(name);
     block.sheet = particleSpriteSheetSettings(operation.properties);
     return { blocks: [block], inputs: { particle: block.particle }, outputs: { out: block.output } };
   },
-  "update.basicSprite": spine((name) => new SlateSpriteAnimateBlock(name)),
-  "update.spriteCell": spine((name) => new SlateSpriteCellBlock(name), (block) => ({ cell: block.cell })),
+  "update.basicSprite": spine((name) => new HapticSpriteAnimateBlock(name)),
+  "update.spriteCell": spine((name) => new HapticSpriteCellBlock(name), (block) => ({ cell: block.cell })),
   "trigger.spawn": ({ name, operation, spawn }) => {
-    const block = new SlateSpawnBlock(name);
+    const block = new HapticSpawnBlock(name);
     block.sink = spawn?.(operation.properties) ?? null;
     return { blocks: [block], inputs: { particle: block.particle, condition: block.condition }, outputs: { out: block.output } };
   },
   "update.noise": ({ name, operation, noise }) => {
-    const block = new SlateNoiseBlock(name);
+    const block = new HapticNoiseBlock(name);
     const textureGuid = typeof operation.properties.textureGuid === "string" && operation.properties.textureGuid ? operation.properties.textureGuid : null;
     block.source = noise?.(textureGuid) ?? BUILTIN_PARTICLE_NOISE;
     return { blocks: [block], inputs: { particle: block.particle, strength: block.strength }, outputs: { out: block.output } };
@@ -680,7 +680,7 @@ export const PARTICLE_BLOCK_ADAPTERS: Readonly<Record<string, ParticleBlockAdapt
     return { blocks: [block], inputs: { a: block.left, b: block.right, alpha: block.gradient }, outputs: { out: block.output } };
   },
   "utility.localVariable": ({ name, operation }) => {
-    const block = new SlateLocalVariableBlock(name);
+    const block = new HapticLocalVariableBlock(name);
     block.scope = operation.properties.scope === "loop" ? ParticleLocalVariableBlockScope.Loop : ParticleLocalVariableBlockScope.Particle;
     return { blocks: [block], inputs: { value: block.input }, outputs: { out: block.output } };
   },
@@ -769,7 +769,7 @@ export function particleBlockAdapterFor(nodeType: string): ParticleBlockAdapter 
  * simulate on the CPU and only warn above 512.
  */
 export function configureParticleSystemBlock(
-  block: SlateSystemBlock,
+  block: HapticSystemBlock,
   settings: ParticleGraphSettings,
   options: { name: string; emitter: AbstractMesh; space: ParticleSpace },
 ): void {

@@ -1226,7 +1226,7 @@ describe("Play createEngine view", () => {
     await handle.prewarmSceneMaterials();
     const afterLoad = compiled();
     expect(afterLoad.length).toBeGreaterThan(0);
-    for (const defines of afterLoad) expect(defines).toMatch(/^#define SLATE_WATER_BLEND$/m);
+    for (const defines of afterLoad) expect(defines).toMatch(/^#define HAPTIC_WATER_BLEND$/m);
     // The first frame's update finds nothing left to change, so no pass compiles a second variant.
     for (let index = 0; index < 2; index++) { engine.beginFrame(); renderViews(engine); engine.endFrame(); }
     expect(compiled()).toEqual(afterLoad);
@@ -1252,7 +1252,7 @@ describe("Play createEngine view", () => {
   /** The defines of every built-in water graph effect (`builtInWaterMaterial`) the Engine has compiled so far. */
   function compiledGraphWater(engine: NullEngine): string[] {
     return Object.values((engine as unknown as { _compiledEffects: Record<string, { defines?: string }> })._compiledEffects)
-      .map((effect) => effect.defines ?? "").filter((defines) => /^#define SLATE_WATER_SURFACE$/m.test(defines));
+      .map((effect) => effect.defines ?? "").filter((defines) => /^#define HAPTIC_WATER_SURFACE$/m.test(defines));
   }
 
   /**
@@ -1266,7 +1266,7 @@ describe("Play createEngine view", () => {
     const create = engine.createEffect.bind(engine) as unknown as (...args: unknown[]) => Effect;
     const spy = vi.spyOn(engine, "createEffect").mockImplementation(((...args: unknown[]) => {
       const effect = create(...args);
-      if (!seen.has(effect) && /^#define SLATE_WATER_SURFACE$/m.test(effect.defines)) compiles.push({ defines: effect.defines, pass: engine.currentRenderPassId });
+      if (!seen.has(effect) && /^#define HAPTIC_WATER_SURFACE$/m.test(effect.defines)) compiles.push({ defines: effect.defines, pass: engine.currentRenderPassId });
       seen.add(effect);
       return effect;
     }) as unknown as typeof engine.createEffect);
@@ -1280,7 +1280,7 @@ describe("Play createEngine view", () => {
    */
   function expectEveryCompileBlends(compiles: readonly { defines: string; pass: number }[]): void {
     expect(compiles.length).toBeGreaterThan(0);
-    expect(compiles.filter(({ defines }) => !/^#define SLATE_WATER_BLEND$/m.test(defines)).map(({ pass }) => pass)).toEqual([]);
+    expect(compiles.filter(({ defines }) => !/^#define HAPTIC_WATER_BLEND$/m.test(defines)).map(({ pass }) => pass)).toEqual([]);
   }
 
   it("compiles a water body added beside another once, with Blend, though no prewarm runs", async () => {
@@ -4361,8 +4361,9 @@ describe("Play createEngine view", () => {
     });
     handle.scene.onBeforeRenderObservable.notifyObservers(handle.scene);
     await handle.prewarmSceneMaterials();
-    expect(handle.renderTaskNames()).toContain("Scene Effects Bloom");
-    expect(handle.postProcessPassCount()).toBe(1);
+    // Display Space bloom alone: its blurs, then its merge as a pass of its own.
+    expect(handle.renderTaskNames()).toEqual(expect.arrayContaining(["Scene Effects Bloom", "Scene Effects Bloom Merge"]));
+    expect(handle.postProcessPassCount()).toBe(2);
   });
 
   it("keeps overlay 2DMaterial assignMaterial as an overlay unlit compile of a User Interface Material", () => {

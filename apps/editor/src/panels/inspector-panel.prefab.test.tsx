@@ -67,7 +67,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
     {
       id: "graph:assets/Quiet.class.hasset",
       ref: { kind: "graph", path: "assets/Quiet.class.hasset", label: "Quiet Class" },
-      content: { nodes: [], edges: [], actorDefaults: { generateHitEvents: false, eventTick: "disabled" } },
+      content: { nodes: [], edges: [], actorDefaults: { generateHitEvents: false, eventTick: "disabled", tickInterval: 0.5 } },
       layout: null,
       dirty: false,
     },
@@ -313,6 +313,23 @@ describe("Inspector prefab component details", () => {
     await waitFor(() =>
       expect(applyGraphChange.mock.calls.at(-1)![1].actorDefaults).toEqual({ eventTick: "enabled" }),
     );
+  });
+
+  it("edits Tick Interval as an override of the inherited one, disabled while Event Tick is", async () => {
+    classState.parentClass = "Quiet";
+    renderInspector({ selectedComponentId: PREFAB_ROOT_ID });
+    const interval = () => screen.getByTestId("property-tickInterval") as HTMLInputElement;
+    // Quiet disables Event Tick, so the inherited interval shows but cannot change.
+    await waitFor(() => expect(interval().value).toBe("0.5 s"));
+    expect(interval().disabled).toBe(true);
+    cleanup();
+    classState.parentClass = "Actor";
+    renderInspector({ selectedComponentId: PREFAB_ROOT_ID });
+    expect(interval().disabled).toBe(false);
+    expect(interval().value).toBe("0 s");
+    fireEvent.change(interval(), { target: { value: "0.25" } });
+    fireEvent.blur(interval());
+    expect(applyGraphChange.mock.calls.at(-1)![1].actorDefaults).toEqual({ tickInterval: 0.25 });
   });
 
   it("shows the Details two selected components share, with Mixed Values where they differ", () => {

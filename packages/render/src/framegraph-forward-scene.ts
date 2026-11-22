@@ -807,11 +807,12 @@ export class ForwardSceneFrameGraph {
       return water.has(task) ? "water" : "other";
     };
     // The frame's tail starts where the view's output is first written at its full size: the FSR upscale (its sharpening
-    // writes the output), else the task that writes the output (the chain's last stage, or the output copy).
+    // writes the output), else the task that writes the output (the chain's stage that draws into it, which the outline
+    // composition may follow, or the output copy).
     const effectTasks = this.effectsGraph?.tasks ?? [];
     const tail = effectTasks.find((task) => task instanceof FrameGraphFsr1UpscaleTask)
       ?? this.outputCopy
-      ?? (this.effectsGraph?.rendersToOutput ? effectTasks.at(-1) : undefined);
+      ?? this.effectsGraph?.outputWriter;
     for (const task of this.graph!.tasks) observeTaskDrawPass(task, engine, pass(task), task === tail);
   }
 
@@ -1706,6 +1707,8 @@ export class ForwardSceneFrameGraph {
             outputHeight: chainAtView ? viewSize.height : output.height,
             samples,
             geometryOverSceneDepth: this.seedsFromSceneDepth ? { authoredDepthTexture: this.postProcessGraph?.depthTexture ?? undefined } : undefined,
+            // The outlines blend onto the chain's display image before antialiasing: onto the view's output itself when
+            // no FXAA or FSR follows and the stage before them can draw into it (`SceneEffectsGraph.outputWriter`).
             beforeAntialiasing: this.preparedOutlineView ? composeOutline : undefined,
             // Ending at the view's size, the chain never writes the larger output: the output copy below fills it.
             outputTarget: chainAtView ? undefined : color,

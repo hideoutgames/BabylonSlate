@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { useState } from "react";
 import type { Text2DAppearModeEntry } from "@haptic/core";
 import { RichTextAppearModesField } from "./rich-text-appear-modes-field";
-import { dispatchPointerEvent } from "../../../../packages/editor-kit/src/test-support/pointer-events";
+import { dispatchPointerEvent } from "@haptic/editor-kit/test-support/pointer-events";
 
 afterEach(cleanup);
 

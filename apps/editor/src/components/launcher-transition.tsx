@@ -222,7 +222,7 @@ export function LauncherTransitionProvider({
   return (
     <TransitionContext.Provider value={value}>
       <div
-        className="slate-route-surface"
+        className="haptic-route-surface"
         style={{ height: "100%" }}
         inert={Boolean(transition)}
       >
@@ -234,7 +234,7 @@ export function LauncherTransitionProvider({
           <>
             <style>{loadingStyles}</style>
             <div
-              className="slate-loading"
+              className="haptic-loading"
               data-leaving={transition.leaving}
               onTransitionEnd={(event) => {
                 if (
@@ -250,36 +250,36 @@ export function LauncherTransitionProvider({
               aria-live="polite"
               aria-label={label}
             >
-              <section className="slate-splash">
-                <span className="slate-splash-wordmark" aria-hidden="true">
-                  <span className="slate-splash-wordmark-ca slate-splash-wordmark-red">
+              <section className="haptic-splash">
+                <span className="haptic-splash-wordmark" aria-hidden="true">
+                  <span className="haptic-splash-wordmark-ca haptic-splash-wordmark-red">
                     HAPTIC
                   </span>
-                  <span className="slate-splash-wordmark-ca slate-splash-wordmark-amber">
+                  <span className="haptic-splash-wordmark-ca haptic-splash-wordmark-amber">
                     HAPTIC
                   </span>
-                  <span className="slate-splash-wordmark-ink">HAPTIC</span>
+                  <span className="haptic-splash-wordmark-ink">HAPTIC</span>
                 </span>
-                <div className="slate-splash-bottom">
+                <div className="haptic-splash-bottom">
                   <span
-                    className="slate-loading-track"
+                    className="haptic-loading-track"
                     aria-hidden="true"
                     data-ready={transition.mounted && transition.settled}
                   >
                     <span />
                   </span>
-                  <div className="slate-splash-footer">
-                    <div className="slate-splash-text">
+                  <div className="haptic-splash-footer">
+                    <div className="haptic-splash-text">
                       {transition.target !== "home" && (
-                        <span className="slate-loading-label">
+                        <span className="haptic-loading-label">
                           {transition.label}
                         </span>
                       )}
-                      <span className="slate-splash-status">
+                      <span className="haptic-splash-status">
                         {status}
                       </span>
                     </div>
-                    <span className="slate-splash-version">{version}</span>
+                    <span className="haptic-splash-version">{version}</span>
                   </div>
                 </div>
               </section>

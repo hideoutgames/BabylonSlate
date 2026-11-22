@@ -8,12 +8,14 @@ The Homepage status bar names the default location for your platform.
 
 | Platform | Location | Notes |
 | --- | --- | --- |
-| iPad and iPhone | **App Documents** | The app's own folder. It also appears in the Files app as **Haptic** under On My iPad (or On My iPhone). |
+| iPad and iPhone | **App Documents** | The app's own folder. It also appears in the Files app as **Haptic** under On My iPad (or On My iPhone), with your projects in its **Projects** folder. |
 | Android | **App Documents** | Private to the app. Other apps cannot see it, and Android's cloud backup does not include it. |
 | Mac, Windows and Linux | **Projects Folder** | A folder inside the app's data folder. |
 | Web | **Browser Storage** | Kept by this browser on this device. Clearing the browser's site data removes it. |
 
 Projects in default storage reopen from the Homepage without asking for a folder.
+
+Haptic's own working data, such as thumbnails and crash recovery, is kept separately from your projects. On iPad and iPhone it does not appear in the Files app, and on iPad, iPhone and Android it is not included in device backups.
 
 ::: warning
 On Android and the web, nothing else holds a copy of your project. Use **Project Settings > Export > Export Project** regularly to keep a backup. See [Projects](index.md).

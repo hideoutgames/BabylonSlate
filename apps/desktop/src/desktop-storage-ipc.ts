@@ -1,6 +1,7 @@
 import { realpath } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { isStorageNotFound, SourceRevisionChangedError, type ProjectFolderHandle } from "@haptic/core";
+import { ipcArrayBuffer } from "@haptic/vfs/ipc-bytes";
 import { isLibraryFolder, type LibraryFolder } from "@haptic/vfs/library-folders";
 import { NodeStorageAdapter } from "@haptic/vfs/node";
 import { LIBRARY_FILE_OPERATIONS, MAX_IPC_BYTES } from "./packaged-security";
@@ -17,13 +18,13 @@ export const STORAGE_OPERATIONS: Record<FileOperation, StorageOperation> = {
     // Whole-file reads share the ranged-read and write cap; larger files use ranges.
     const { size } = await storage.stat(String(path));
     if (size !== null && size > MAX_IPC_BYTES) throw new Error(`File is too large to read at once: ${String(path)}`);
-    const bytes = await storage.readBinary(String(path));
-    return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+    // Node's reads allocate exactly the file's bytes, so IPC clones that buffer without another copy.
+    return ipcArrayBuffer(await storage.readBinary(String(path)));
   },
   async readBinaryRange(storage, path, offset, length, revision) {
     try {
       const result = await storage.readBinaryRange(String(path), Number(offset), Number(length), revision as string | undefined);
-      return { ...result, bytes: result.bytes.buffer.slice(result.bytes.byteOffset, result.bytes.byteOffset + result.bytes.byteLength) };
+      return { ...result, bytes: ipcArrayBuffer(result.bytes) };
     } catch (error) {
       // Electron only transports Error.message for rejected invokes. Return a
       // structured failure so reads discarded by revision checks remain visible.

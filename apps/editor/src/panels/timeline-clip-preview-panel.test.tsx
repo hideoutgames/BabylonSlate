@@ -7,7 +7,7 @@ import { createDefaultTimelineClipAsset, defaultTimelineProxyPreview, type Seria
 import { TIMELINE_PROXY_SHAPE_CLASS_ID } from "@haptic/render";
 import { SceneToolsProvider, useSceneTools } from "../context/scene-tools-context";
 import { selectProxies, useSelectedProxies } from "../components/timeline-clip-asset-editor";
-import { dispatchPointerEvent } from "../../../../packages/editor-kit/src/test-support/pointer-events";
+import { dispatchPointerEvent } from "@haptic/editor-kit/test-support/pointer-events";
 import { TimelineClipPreviewPanel } from "./timeline-clip-preview-panel";
 
 const DOC = "timeline-clip-3d:assets/Swing.timelineclip3d.hasset";

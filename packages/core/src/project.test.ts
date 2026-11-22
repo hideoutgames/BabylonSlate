@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  actorTickStride,
   resolveActorDefaults,
   resolveActorTags,
   resolveGameInstanceDefaults,
@@ -229,6 +230,29 @@ describe("project schema", () => {
     expect(resolveGameInstanceDefaults([]).tickOnPause).toBe(false);
     expect(resolveGameInstanceDefaults([undefined, { tickOnPause: true }]).tickOnPause).toBe(true);
     expect(resolveGameInstanceDefaults([{ tickOnPause: false }, { tickOnPause: true }]).tickOnPause).toBe(false);
+  });
+
+  it("resolves Tick Interval to 0 by default and from the nearest Class with a valid value, clamped to an hour", () => {
+    expect(resolveActorDefaults([]).tickInterval).toBe(0);
+    expect(resolveActorDefaults([{ eventTick: "enabled" }, { tickInterval: 0.5 }]).tickInterval).toBe(0.5);
+    // An explicit 0 is a choice: it stops a parent's interval.
+    expect(resolveActorDefaults([{ tickInterval: 0 }, { tickInterval: 0.5 }]).tickInterval).toBe(0);
+    // A value that is not a finite number is unset, so the parent's applies.
+    for (const tickInterval of [NaN, Infinity, "2" as unknown as number])
+      expect(resolveActorDefaults([{ tickInterval }, { tickInterval: 0.5 }]).tickInterval).toBe(0.5);
+    expect(resolveActorDefaults([{ tickInterval: -1 }, { tickInterval: 0.5 }]).tickInterval).toBe(0);
+    expect(resolveActorDefaults([{ tickInterval: 5000 }]).tickInterval).toBe(3600);
+  });
+
+  it("turns a Tick Interval into whole fixed steps, rounding to the nearest and never below one", () => {
+    expect(actorTickStride(0, 0.25)).toBe(1);
+    expect(actorTickStride(0.1, 0.25)).toBe(1);
+    expect(actorTickStride(0.374, 0.25)).toBe(1);
+    expect(actorTickStride(0.375, 0.25)).toBe(2);
+    expect(actorTickStride(1, 0.25)).toBe(4);
+    expect(actorTickStride(0.1, 1 / 60)).toBe(6);
+    expect(actorTickStride(0.25, 1 / 60)).toBe(15);
+    expect(actorTickStride(1, 0)).toBe(1);
   });
 
   it("gives actors the Tags of the nearest Class that sets them, an empty set being a choice", () => {

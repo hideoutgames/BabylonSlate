@@ -4,6 +4,7 @@ import {
   AUDIO_DEFAULT_SOURCE_CHUNK,
   AUDIO_STREAMED_VOICE_ESTIMATE_BYTES,
   clampAudioGain,
+  computeAttenuationGain,
   computeDopplerPlaybackRate,
   createDefaultAudioPayload,
   decodeAudioReverbChunk,
@@ -37,6 +38,8 @@ import type {
 } from "./audio-playback-backend";
 
 const EMPTY_AUDIO_BYTES = new Uint8Array(0);
+/** Where a spatial voice's panner sits until a pose lands on it. */
+const ORIGIN_POSE: Readonly<AudioPose> = { x: 0, y: 0, z: 0 };
 
 export type AudioDiagnostic = {
   code: string;
@@ -113,6 +116,11 @@ type LiveVoice = {
   emitterActorGuid: string | null;
   spatial: AudioSpatialPlayOptions | null;
   gain: number;
+  /**
+   * The distance gain playback applies (`computeAttenuationGain` from where the voice's panner is to the listener);
+   * 1 for a non-spatial voice.
+   */
+  attenuation: number;
   /** The Audio asset's pitch draw times the play call's multiplier (Set Sound Pitch); Doppler composes on top. */
   pitch: number;
   /** The Audio asset's pitch draw alone. */
@@ -132,6 +140,7 @@ type LiveVoice = {
   sentPose: AudioPose | null;
   sentMuffle: number | null;
   sentRate: number | null;
+  sentAttenuation: number | null;
   /** The emitter, listener and occupancy grid the voice's last occlusion factor was traced for. */
   occlusion: {
     ex: number; ey: number; ez: number; lx: number; ly: number; lz: number;
@@ -187,6 +196,18 @@ function clampPitchMultiplier(value: unknown): number {
 function finitePose(location: PlaySoundCommand["location"]): AudioPose | null {
   if (!location || ![location.x, location.y, location.z].every(Number.isFinite)) return null;
   return { x: location.x, y: location.y, z: location.z };
+}
+
+/**
+ * Whether the voice cap cuts `newer` before `older` (`newer` started later): spatial before non-spatial, then lower
+ * gain × distance gain, then a one-shot before a looping voice. A full tie keeps `older` as the one cut.
+ */
+function cutsBefore(newer: LiveVoice, older: LiveVoice): boolean {
+  if ((newer.spatial === null) !== (older.spatial === null)) return newer.spatial !== null;
+  const newerLevel = newer.gain * newer.attenuation;
+  const olderLevel = older.gain * older.attenuation;
+  if (newerLevel !== olderLevel) return newerLevel < olderLevel;
+  return !newer.loop && older.loop;
 }
 
 /** A runtime draw as the random source of one choice; without one the host draws. */
@@ -542,10 +563,24 @@ export class AudioService {
 
   private stealToCap(): void {
     while (this.voices.size > this.maxVoices) {
-      const oldest = this.voices.keys().next().value;
-      if (!oldest) break;
-      this.stealVoice(oldest);
+      const victim = this.leastAudibleVoice();
+      if (!victim) break;
+      this.stealVoice(victim.voiceId);
     }
+  }
+
+  /**
+   * The voice the voice cap cuts first. Every spatial voice goes before any non-spatial one (music, UI and other 2D
+   * sound are kept); within each group the lowest gain × distance gain (the attenuation playback applies at the
+   * current listener) goes first, then a one-shot before a looping voice (a stolen loop never comes back), then the
+   * oldest (the voices map is in start order, so the newest, an incoming voice included, wins a full tie).
+   */
+  private leastAudibleVoice(): LiveVoice | null {
+    let victim: LiveVoice | null = null;
+    for (const voice of this.voices.values()) {
+      if (!victim || cutsBefore(voice, victim)) victim = voice;
+    }
+    return victim;
   }
 
   /** Wait until in-flight play/stop work has settled (tests). */
@@ -597,6 +632,23 @@ export class AudioService {
   private sendVoiceRate(voice: LiveVoice, rate: number): void {
     if (voice.sentRate === rate) return;
     voice.sentRate = this.backend.setVoicePlaybackRate(voice.voiceId, rate) ? rate : null;
+  }
+
+  /** Records and sends a spatial voice's distance gain for `position`, where its panner is. */
+  private sendVoiceAttenuation(voice: LiveVoice, spatial: AudioSpatialPlayOptions, position: AudioPose): void {
+    const gain = this.distanceGain(spatial, position);
+    voice.attenuation = gain;
+    if (voice.sentAttenuation === gain) return;
+    voice.sentAttenuation = this.backend.setVoiceAttenuation(voice.voiceId, gain) ? gain : null;
+  }
+
+  /** `computeAttenuationGain` from `position` to the listener: the one distance falloff playback has. */
+  private distanceGain(spatial: AudioSpatialPlayOptions, position: AudioPose): number {
+    const listener = this.listener;
+    return computeAttenuationGain(
+      Math.hypot(position.x - listener.x, position.y - listener.y, position.z - listener.z),
+      spatial,
+    );
   }
 
   syncListener(pose: AudioPose): void {
@@ -996,10 +1048,6 @@ export class AudioService {
 
     const voiceId = command.voiceId?.trim() || `voice-${++this.voiceSeq}`;
     this.stopVoice(voiceId);
-    if (this.voices.size >= this.maxVoices) {
-      const oldest = this.voices.keys().next().value;
-      if (oldest) this.stealVoice(oldest);
-    }
     const attenuation = payload.soundAttenuationGuid
       ? (this.library.attenuations.get(payload.soundAttenuationGuid) ?? null)
       : null;
@@ -1024,21 +1072,8 @@ export class AudioService {
         assetGuid,
       });
     }
-    const request: AudioPlayRequest = {
-      voiceId,
-      assetGuid,
-      source: decoded,
-      playbackMode: resolved.playbackMode,
-      ...(streamSourceUrl ? { sourceUrl: streamSourceUrl } : {}),
-      ...(streamMimeType ? { mimeType: streamMimeType } : {}),
-      cacheKey,
-      gain: resolved.gain,
-      loop: command.loop === true || payload.loop === true,
-      spatial,
-      reverbSend: resolved.environmentReverb,
-      clipChunkId: clip.chunkId,
-    };
-    this.voices.set(voiceId, {
+    const loop = command.loop === true || payload.loop === true;
+    const voice: LiveVoice = {
       voiceId,
       assetGuid,
       cacheKey,
@@ -1049,6 +1084,7 @@ export class AudioService {
       emitterActorGuid: emitter,
       spatial,
       gain: resolved.gain,
+      attenuation: 1,
       pitch,
       assetPitch,
       fixedPose,
@@ -1056,13 +1092,44 @@ export class AudioService {
       muffleThroughWalls: resolved.muffleThroughWalls,
       previousPose: null,
       clipName: clip.name.trim() === "" ? null : clip.name,
-      loop: request.loop,
+      loop,
       sentPose: null,
       sentMuffle: null,
       sentRate: null,
+      sentAttenuation: null,
       occlusion: null,
-    });
+    };
+    this.adoptEmitterPose(voice);
+    // The voice starts at the distance gain its first placement gives it, never at full volume for a frame.
+    if (spatial) voice.attenuation = this.distanceGain(spatial, this.voiceEmitterPose(voice) ?? ORIGIN_POSE);
+    const request: AudioPlayRequest = {
+      voiceId,
+      assetGuid,
+      source: decoded,
+      playbackMode: resolved.playbackMode,
+      ...(streamSourceUrl ? { sourceUrl: streamSourceUrl } : {}),
+      ...(streamMimeType ? { mimeType: streamMimeType } : {}),
+      cacheKey,
+      gain: resolved.gain,
+      ...(spatial ? { attenuation: voice.attenuation } : {}),
+      loop,
+      spatial,
+      reverbSend: resolved.environmentReverb,
+      clipChunkId: clip.chunkId,
+    };
+    this.voices.set(voiceId, voice);
     if (sourceOwner) sourceOwner.transferred = true;
+    // Over the cap the least audible voice goes, the incoming one included: dropped before it starts, it releases
+    // what it holds, and `settlePlay` reports a named voice as dropped, as for any voice that never starts.
+    while (this.voices.size > this.maxVoices) {
+      const victim = this.leastAudibleVoice();
+      if (!victim) break;
+      if (victim === voice) {
+        this.stopVoice(voiceId);
+        return;
+      }
+      this.stealVoice(victim.voiceId);
+    }
     this.lastGain = resolved.gain;
     try {
       await this.backend.play(request);
@@ -1073,6 +1140,7 @@ export class AudioService {
       if (started) {
         started.sentPose = null;
         started.sentMuffle = null;
+        started.sentAttenuation = request.attenuation ?? null;
         started.sentRate = this.backend.setVoicePlaybackRate(voiceId, pitch) ? pitch : null;
       } else {
         this.backend.setVoicePlaybackRate(voiceId, pitch);
@@ -1087,8 +1155,6 @@ export class AudioService {
       });
       return;
     }
-    const started = this.voices.get(voiceId);
-    if (started) this.adoptEmitterPose(started);
     this.refreshSpatialVoices(false);
     this.refreshReverbWet();
     this.publishStats();
@@ -1226,6 +1292,8 @@ export class AudioService {
       if (!pose) {
         this.lastDistance = null;
         this.sendVoiceMuffle(voice, 0);
+        // The panner stays where the last pose that landed put it (at the origin before any did).
+        this.sendVoiceAttenuation(voice, voice.spatial, voice.sentPose ?? ORIGIN_POSE);
         // A pose-less emitter holds its last position, so it stops shifting
         // pitch, and its next pose must not read as a jump from the stale one.
         if (voice.previousPose) {
@@ -1238,6 +1306,7 @@ export class AudioService {
       }
       this.sendVoicePose(voice, pose);
       this.refreshVoiceMuffle(voice, pose);
+      this.sendVoiceAttenuation(voice, voice.spatial, pose);
       const dx = pose.x - this.listener.x;
       const dy = pose.y - this.listener.y;
       const dz = pose.z - this.listener.z;
@@ -1351,7 +1420,9 @@ export class AudioService {
       let innerRadius: number | null = null;
       let maxRadius: number | null = null;
       let insideRadius: boolean | null = null;
+      let attenuation: number | null = null;
       if (voice.spatial) {
+        attenuation = voice.attenuation;
         innerRadius = voice.spatial.innerRadius;
         maxRadius = voice.spatial.maxRadius;
         if (pose) {
@@ -1360,7 +1431,8 @@ export class AudioService {
             pose.y - this.listener.y,
             pose.z - this.listener.z,
           );
-          insideRadius = distance <= maxRadius;
+          // Max Radius itself is silent.
+          insideRadius = distance < maxRadius;
         }
       }
       snapshots.push({
@@ -1374,6 +1446,7 @@ export class AudioService {
         innerRadius,
         maxRadius,
         insideRadius,
+        attenuation,
       });
     }
     return snapshots;

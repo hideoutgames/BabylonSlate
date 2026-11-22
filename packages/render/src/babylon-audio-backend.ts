@@ -105,14 +105,16 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
   /** Blob URLs created directly by this backend (when callers omit sourceUrl); revoked on stop/dispose. */
   private readonly ownedStreamUrls = new Map<string, string>();
   private readonly muffleSends = new Map<string, GainNode>();
-  /** Requested gain and applied muffle per live voice; both set its volume. */
-  private readonly voiceLevels = new Map<string, { gain: number; muffle: number }>();
+  /** Requested gain, distance gain and applied muffle per live voice; all three set its volume. */
+  private readonly voiceLevels = new Map<string, { gain: number; attenuation: number; muffle: number }>();
   private muffleFilter: BiquadFilterNode | null = null;
   private paused = false;
   /** Voices a game pause holds; they stay paused when the whole backend resumes. */
   private readonly pausedVoices = new Set<string>();
   private disposed = false;
   private readonly pendingVoices = new Map<string, symbol>();
+  /** Live voices created with a panner; only these take poses. */
+  private readonly spatialVoices = new Set<string>();
   onVoiceEnded: ((voiceId: string) => void) | null = null;
 
   async warmAsync(): Promise<void> {
@@ -158,26 +160,33 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
   private async startVoice(request: AudioPlayRequest, isCurrent: () => boolean): Promise<void> {
     const engine = await this.ensureEngine();
     if (!isCurrent()) return;
-    const spatial = request.spatial;
+    const spatial = request.spatial?.enabled ? request.spatial : null;
+    const attenuation = request.attenuation ?? 1;
+    // AudioV2 gives a sound a panner when any spatial option is defined, so a non-spatial voice (music, UI) gets none.
+    const spatialOptions = spatial
+      ? {
+          spatialEnabled: true,
+          // No per-voice requestAnimationFrame loop: `setVoicePose` writes the pose and pushes it with `spatial.update()`.
+          spatialAutoUpdate: false,
+          // The panner only pans: with rolloff 0 every distance model is 1, and the service applies
+          // `computeAttenuationGain` (silent at Max Radius) through `setVoiceAttenuation`.
+          spatialDistanceModel: "linear" as DistanceModelType,
+          spatialRolloffFactor: 0,
+          spatialPanningModel: (spatial.spatialisation === "hrtf" ? "HRTF" : "equalpower") as PanningModelType,
+          ...(spatial.cone
+            ? {
+                spatialConeInnerAngle: degreesToRadians(spatial.cone.innerAngle),
+                spatialConeOuterAngle: degreesToRadians(spatial.cone.outerAngle),
+                spatialConeOuterVolume: spatial.cone.outerGain,
+              }
+            : {}),
+        }
+      : {};
     const commonOptions = {
-      volume: request.gain,
+      volume: request.gain * attenuation,
       loop: request.loop,
       maxInstances: 1,
-      spatialEnabled: spatial?.enabled === true,
-      spatialMinDistance: spatial?.innerRadius,
-      spatialMaxDistance: spatial?.maxRadius,
-      spatialDistanceModel: spatial?.distanceModel,
-      spatialRolloffFactor: spatial?.rolloff,
-      spatialPanningModel: (
-        spatial?.spatialisation === "hrtf" ? "HRTF" : "equalpower"
-      ) as PanningModelType,
-      spatialConeInnerAngle: spatial?.cone
-        ? degreesToRadians(spatial.cone.innerAngle)
-        : undefined,
-      spatialConeOuterAngle: spatial?.cone
-        ? degreesToRadians(spatial.cone.outerAngle)
-        : undefined,
-      spatialConeOuterVolume: spatial?.cone?.outerGain,
+      ...spatialOptions,
       outBus: request.reverbSend ? this.reverbBus : null,
     };
 
@@ -218,9 +227,10 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
       }
       this.pendingVoices.delete(request.voiceId);
       this.voices.set(request.voiceId, sound);
+      if (spatial) this.spatialVoices.add(request.voiceId);
       this.streamedElements.set(request.voiceId, element);
       if (ownedUrl) this.ownedStreamUrls.set(request.voiceId, ownedUrl);
-      this.voiceLevels.set(request.voiceId, { gain: request.gain, muffle: 0 });
+      this.voiceLevels.set(request.voiceId, { gain: request.gain, attenuation, muffle: 0 });
       sound.onEndedObservable.addOnce(() => {
         this.onVoiceEnded?.(request.voiceId);
       });
@@ -256,7 +266,8 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
     }
     this.pendingVoices.delete(request.voiceId);
     this.voices.set(request.voiceId, sound);
-    this.voiceLevels.set(request.voiceId, { gain: request.gain, muffle: 0 });
+    if (spatial) this.spatialVoices.add(request.voiceId);
+    this.voiceLevels.set(request.voiceId, { gain: request.gain, attenuation, muffle: 0 });
     sound.onEndedObservable.addOnce(() => {
       this.onVoiceEnded?.(request.voiceId);
     });
@@ -275,6 +286,7 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
     this.pendingVoices.delete(voiceId);
     this.disposeMuffleSend(voiceId);
     this.voiceLevels.delete(voiceId);
+    this.spatialVoices.delete(voiceId);
     const element = this.streamedElements.get(voiceId);
     if (element) this.streamedElements.delete(voiceId);
     const ownedUrl = this.ownedStreamUrls.get(voiceId);
@@ -302,18 +314,30 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
     this.applyVoiceLevel(voiceId);
   }
 
+  setVoiceAttenuation(voiceId: string, gain: number): boolean {
+    const level = this.voiceLevels.get(voiceId);
+    if (!level) return false;
+    level.attenuation = Number.isFinite(gain) ? Math.min(1, Math.max(0, gain)) : 1;
+    this.applyVoiceLevel(voiceId);
+    return true;
+  }
+
   setVoicePose(voiceId: string, pose: AudioPose): boolean {
     const sound = this.voices.get(voiceId);
-    if (!sound) return false;
-    sound.spatial.position.set(pose.x, pose.y, pose.z);
+    // Reading `spatial` on a non-spatial sound would give it a panner.
+    if (!sound || !this.spatialVoices.has(voiceId)) return false;
+    const spatial = sound.spatial;
+    spatial.position.set(pose.x, pose.y, pose.z);
     if (
       pose.qx !== undefined &&
       pose.qy !== undefined &&
       pose.qz !== undefined &&
       pose.qw !== undefined
     ) {
-      sound.spatial.rotationQuaternion.set(pose.qx, pose.qy, pose.qz, pose.qw);
+      spatial.rotationQuaternion.set(pose.qx, pose.qy, pose.qz, pose.qw);
     }
+    // In-place writes reach the panner only through `update()` (auto-update is off).
+    spatial.update();
     return true;
   }
 
@@ -342,6 +366,8 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
     ) {
       listener.rotationQuaternion.set(pose.qx, pose.qy, pose.qz, pose.qw);
     }
+    // In-place writes reach the AudioContext listener only through `update()` (auto-update is off).
+    listener.update();
     return true;
   }
 
@@ -389,12 +415,15 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
    * The send taps the voice after its volume and AudioV2's dry route stays
    * connected, so muffling lowers the dry level (the high band) by the factor
    * while the lowpass send brings the low band back to the requested gain.
+   * The distance gain scales the voice before every route (dry, muffle send and
+   * reverb bus), as the panner's distance model did. AudioV2 ramps each volume
+   * write over its parameter ramp (10 ms), so per-snapshot changes do not click.
    */
   private applyVoiceLevel(voiceId: string): void {
     const sound = this.voices.get(voiceId);
     const level = this.voiceLevels.get(voiceId);
     if (!sound || !level) return;
-    sound.volume = level.gain * (1 - level.muffle);
+    sound.volume = level.gain * level.attenuation * (1 - level.muffle);
     const send = this.muffleSends.get(voiceId);
     if (send) send.gain.value = level.muffle / (1 - level.muffle);
   }
@@ -548,6 +577,8 @@ export class BabylonAudioPlaybackBackend implements AudioPlaybackBackend {
       resumeOnInteraction: false,
       resumeOnPause: false,
       listenerEnabled: true,
+      // `setListenerPose` pushes each pose, so the listener runs no requestAnimationFrame loop either.
+      listenerAutoUpdate: false,
     });
     if (this.disposed) {
       engine.dispose();

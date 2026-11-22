@@ -24,7 +24,8 @@ Select an actor, then choose **Add Component > Rendering > Mesh**. You can also 
 ## Notes
 
 - Works in world scenes and in Scene Layers.
-- Simple collision uses the Model's simple colliders, or the built-in shape for a primitive. Complex collision uses the visible triangles and does not follow skeletal animation.
+- Simple collision uses the Model's simple colliders, or the built-in shape for a primitive. Complex collision uses the visible triangles in the rest pose and does not follow skeletal animation. A negative (mirrored) scale collides like the mirrored mesh.
+- Complex collision cannot read a Model whose meshes are Draco- or meshopt-compressed. Such a Mesh has no collision, and Play and Preview Build show a warning. Export the model without mesh compression and import it again.
 - A Model with a skeleton starts with no simple colliders, so **Use Simple Collision** produces no collision for it. Add shapes under the Model's **Colliders**, or use **Use Complex Collision**. Compiler Results warns about this.
 - A Mesh with collision on is solid without a Rigid Body. Add a [Rigid Body](rigid-body.md) to make it move. A [Collider](collider.md) on the same actor adds its shape to the Mesh's body, for example as a trigger volume.
 - **No Collision** makes no body. A Collider on that actor then needs a Rigid Body.

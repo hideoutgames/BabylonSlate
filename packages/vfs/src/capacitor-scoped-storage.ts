@@ -1,4 +1,5 @@
 import { registerPlugin, type PluginListenerHandle } from "@capacitor/core";
+import type { NativeBinaryBridgeConfig } from "./native-binary-bridge";
 
 export interface NativeDirEntry {
   name: string;
@@ -26,6 +27,9 @@ export interface NativeRangeRead {
   actualBytesRead: number;
 }
 
+/** App storage (`directory` and its full path, as `readDocumentsRange` names it) or a chosen folder. */
+export type NativeWriteLocation = { directory: string; path: string } | { folder: string; path: string };
+
 export interface NativeRangeOptions {
   path: string;
   offset: number;
@@ -35,7 +39,7 @@ export interface NativeRangeOptions {
 
 /**
  * One streamed transfer between a URL and a file in app storage (`path`
- * under `Haptic/projects/` in `directory`, as `readDocumentsRange`
+ * under `Projects/` in `directory`, as `readDocumentsRange`
  * names it): see `NativeFileTransferRequest`. `id` names it for
  * `cancelTransfer` and its `transferProgress` events.
  */
@@ -72,6 +76,20 @@ export interface BabylonSlateScopedStoragePlugin {
   readDocumentsRange(options: NativeRangeOptions & { directory: string }): Promise<NativeRangeRead>;
   pickFolder(): Promise<{ folder: PickedFolder }>;
   openFolder(options: { id: string }): Promise<{ folder: PickedFolder }>;
+  /** Ends this session's access to a chosen folder (iOS stops its security-scoped access); the next operation resolves it again. */
+  releaseFolder(options: { folder: string }): Promise<void>;
+  /** The binary transport ([`native-binary-bridge.ts`](./native-binary-bridge.ts)); resolves without one where the host has none. */
+  getBinaryBridgeConfig(): Promise<Partial<NativeBinaryBridgeConfig>>;
+  /**
+   * Chunked writes, only on hosts whose bridge config says `writes: "chunks"` (Android): bytes are
+   * staged natively and replace the file only on `commitWrite`.
+   */
+  beginWrite?(options: NativeWriteLocation): Promise<{ writeId: string }>;
+  appendWriteChunk?(options: { writeId: string; data: string }): Promise<void>;
+  /** Appends the last chunk, checks the staged length is `size`, then renames it over the file; the session ends either way. */
+  commitWrite?(options: { writeId: string; data: string; size: number }): Promise<void>;
+  /** Removes the staged bytes; unknown ids are ignored. */
+  abortWrite?(options: { writeId: string }): Promise<void>;
   beginReadScope?(options: { folder: string }): Promise<{ readScope: string }>;
   endReadScope?(options: { readScope: string }): Promise<void>;
 

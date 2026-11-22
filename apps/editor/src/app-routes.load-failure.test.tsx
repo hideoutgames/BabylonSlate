@@ -29,7 +29,7 @@ beforeEach(() => {
   // The boot intro index.html paints outside React.
   document.body.insertAdjacentHTML(
     "afterbegin",
-    '<div id="haptic-intro" class="slate-loading" role="status"></div>',
+    '<div id="haptic-intro" class="haptic-loading" role="status"></div>',
   );
 });
 
@@ -55,7 +55,7 @@ describe("route chunk that fails to load", () => {
       );
       const button = await screen.findByRole("button", { name: "Reload" });
       // The boot intro would cover the route and disable its Reload action.
-      expect(document.querySelector(".slate-loading")).toBeNull();
+      expect(document.querySelector(".haptic-loading")).toBeNull();
       fireEvent.click(button);
       expect(reload).toHaveBeenCalledOnce();
     },

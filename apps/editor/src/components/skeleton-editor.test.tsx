@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
-import { buildMinimalGlbFixture } from "@haptic/assets";
+import { buildMinimalGlbFixture } from "@haptic/assets/test-support/glb-fixtures";
 import { DocumentWorkspaceProvider } from "../context/document-workspace-context";
 import { SkeletonEditingProvider } from "../context/skeleton-editing-context";
 import { SkeletonDetailsPanel, SkeletonPreviewPanel } from "./skeleton-editor";

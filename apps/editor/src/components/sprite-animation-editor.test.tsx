@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { AssetOpenProvider } from "@haptic/editor-kit";
-import { tapAtlasTile } from "../../../../packages/editor-kit/src/test-support/atlas-tile-grid";
+import { tapAtlasTile } from "@haptic/editor-kit/test-support/atlas-tile-grid";
 import {
   AssetRegistry,
   createDefaultSpriteAnimationPayload,

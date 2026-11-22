@@ -24,15 +24,15 @@ export const REFRACTION_FAR = [6, 60] as const;
  * grid and only the spectrum's textures change. Its block sets this define for the meshes that have a
  * `WaterVertexWaves`; water drawn by a graph without the node keeps CPU-displaced vertices.
  */
-export const WATER_GPU_WAVES_DEFINE = "SLATE_WATER_GPU_WAVES";
+export const WATER_GPU_WAVES_DEFINE = "HAPTIC_WATER_GPU_WAVES";
 /**
- * The surface blends with other water bodies (`evaluateWaterBlend`): the mesh carries `slateWaterBlend` per vertex
- * (swell height scale, Gerstner offset scale, ownership margin, colour share of partner 0) and `slateWaterBlendColors`
+ * The surface blends with other water bodies (`evaluateWaterBlend`): the mesh carries `hapticWaterBlend` per vertex
+ * (swell height scale, Gerstner offset scale, ownership margin, colour share of partner 0) and `hapticWaterBlendColors`
  * (colour shares of partners 1 and 2), its bank distance is the blended
  * union shoreline and its rest grid already holds the blended rest height. Compiled only into bodies with neighbours, so
  * water that blends with nothing pays nothing.
  */
-export const WATER_BLEND_DEFINE = "SLATE_WATER_BLEND";
+export const WATER_BLEND_DEFINE = "HAPTIC_WATER_BLEND";
 /**
  * Set in the scene effects' geometry pass (`isSpatialGeometryPass`), for any Material on water
  * (`WaterCutBlock`). Water writes no normal or reflectivity there, so ambient occlusion and Real-Time Reflections skip
@@ -40,22 +40,22 @@ export const WATER_BLEND_DEFINE = "SLATE_WATER_BLEND";
  * it in blotches that move with the view, and water draws its own reflections. A Material's geometry writes are
  * opaque, so the surface (not what lies below it) fills the buffers at every angle.
  */
-export const WATER_EFFECTS_GEOMETRY_DEFINE = "SLATE_WATER_EFFECTS_GEOMETRY";
+export const WATER_EFFECTS_GEOMETRY_DEFINE = "HAPTIC_WATER_EFFECTS_GEOMETRY";
 /**
  * The device-clamped project Water Shading Detail as a level, 0 (Low) to 3 (Ultra), which every water node block sets
- * (`#if SLATE_WATER_DETAIL >= n`). It scales only the water nodes' costliest per-pixel terms: Medium drops the four-tap
+ * (`#if HAPTIC_WATER_DETAIL >= n`). It scales only the water nodes' costliest per-pixel terms: Medium drops the four-tap
  * shoreline under the waves (Water Foam's and Water Depth Fade's) and edge foam's two finer noise octaves, Low also the
  * contact foam's tap and pattern. High and Ultra draw every term. Reflections, Refraction, Reflection Steps and FFT
  * Cascades are settings of their own, which it never overrides.
  */
-export const WATER_DETAIL_DEFINE = "SLATE_WATER_DETAIL";
+export const WATER_DETAIL_DEFINE = "HAPTIC_WATER_DETAIL";
 export const WATER_DETAIL_LEVELS: Readonly<Record<WaterShadingDetail, number>> = { low: 0, medium: 1, high: 2, ultra: 3 };
 /** A Custom Material's Water Colors node mixes toward a blending mesh's colour partners (`WaterColorsBlock`). */
-export const WATER_NODE_BLEND_DEFINE = "SLATE_WATER_NODE_BLEND";
-/** Where a water node graph reads `slateWaterBlend`: its Water Waves node's blend scaling, or its Water Colors node's shares. */
+export const WATER_NODE_BLEND_DEFINE = "HAPTIC_WATER_NODE_BLEND";
+/** Where a water node graph reads `hapticWaterBlend`: its Water Waves node's blend scaling, or its Water Colors node's shares. */
 export const WATER_BLEND_ATTRIBUTE_CONDITION = `defined(${WATER_BLEND_DEFINE}) || defined(${WATER_NODE_BLEND_DEFINE})`;
 /** The reflection march's step count define (Reflection Steps, a compile-time loop bound). */
-export const SSR_STEPS = "SLATE_WATER_SSR_STEPS";
+export const SSR_STEPS = "HAPTIC_WATER_SSR_STEPS";
 /**
  * Fresnel over which the object reflections fade in below High Water Shading Detail, where the march does not run
  * beneath the first: water mixed by its Fresnel shows at most this share of the object a reflected ray finds.
@@ -81,27 +81,27 @@ export const WATER_REFRACTION_SCALE = 0.55;
 /** Water thickness (metres) beyond which the refracted shift stops growing. */
 export const REFRACTION_DEPTH_CAP = 3;
 /**
- * The FFT spectrum's cascades (`waterFftForSurface`) every stage samples (`#if SLATE_WATER_FFT >= c`): the
+ * The FFT spectrum's cascades (`waterFftForSurface`) every stage samples (`#if HAPTIC_WATER_FFT >= c`): the
  * device-effective FFT Cascades, at least 1. The define follows quality only, never readiness: until the spectrum is
  * ready the shader samples a placeholder at gain 0, which leaves the surface flat, and a spectrum that becomes ready (or
  * is rebuilt) never recompiles the water.
  */
-export const WATER_FFT_DEFINE = "SLATE_WATER_FFT";
+export const WATER_FFT_DEFINE = "HAPTIC_WATER_FFT";
 /** The spectrum's 2D-array texture: one binding shared by the vertex stage (displacement) and the fragment (slopes). */
-export const WATER_FFT_SAMPLER = "slateWaterFftSampler";
+export const WATER_FFT_SAMPLER = "hapticWaterFftSampler";
 /** The spectrum's persistent turbulence (one layer per cascade), which the fragment's foam reads. */
-export const WATER_FOAM_SAMPLER = "slateWaterFoamSampler";
+export const WATER_FOAM_SAMPLER = "hapticWaterFoamSampler";
 /**
  * Per cascade c, (1 / patch size, uv offset x, uv offset z, 0): the uv offset is fract(R(−θ_c)·floating origin / patch
  * size) + 0.5 / N from the CPU in float64, so eye-relative rest points sample the world-anchored spectrum without large
  * coordinates.
  */
-export const FFT_CASCADE_UNIFORMS = Array.from({ length: WATER_FFT_CASCADES_MAX }, (_, c) => `slateWaterFftCascade${c}`);
+export const FFT_CASCADE_UNIFORMS = Array.from({ length: WATER_FFT_CASCADES_MAX }, (_, c) => `hapticWaterFftCascade${c}`);
 /**
- * Uniforms of the spectrum: `slateWaterFft` = (Wave Scale while the spectrum is ready, else 0; λ; grid size;
+ * Uniforms of the spectrum: `hapticWaterFft` = (Wave Scale while the spectrum is ready, else 0; λ; grid size;
  * `SPECTRUM_LOD_SCALE`) and the cascades'.
  */
-export const FFT_UNIFORMS = ["slateWaterFft", ...FFT_CASCADE_UNIFORMS];
+export const FFT_UNIFORMS = ["hapticWaterFft", ...FFT_CASCADE_UNIFORMS];
 /**
  * Aerial perspective (every look), scaled from the view's far plane so the editor's shorter one and Play's longer one
  * haze alike: water is half hazed (toward the horizon sky) at `WATER_HAZE_HALF` of the range, and a ramp from
@@ -112,7 +112,7 @@ export const FFT_UNIFORMS = ["slateWaterFft", ...FFT_CASCADE_UNIFORMS];
 const WATER_HAZE_HALF = 0.4;
 const WATER_HAZE_EDGE = [0.75, 0.97] as const;
 const WATER_HAZE_MAX_RANGE = 8000;
-/** `slateWaterHaze` for a far plane: (per-metre rate of the exponential haze, ramp start, ramp end, 0) in metres. */
+/** `hapticWaterHaze` for a far plane: (per-metre rate of the exponential haze, ramp start, ramp end, 0) in metres. */
 export function waterHazeConstants(far: number, out: Float64Array = new Float64Array(4)): Float64Array {
   const range = Math.min(WATER_HAZE_MAX_RANGE, far > 0 ? far : 1000);
   out[0] = Math.LN2 / (WATER_HAZE_HALF * range);

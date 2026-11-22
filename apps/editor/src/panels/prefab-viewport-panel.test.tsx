@@ -17,7 +17,7 @@ import {
 } from "@haptic/assets";
 import { createDefaultMaterialDocument } from "@haptic/shader-graph";
 import { PrefabViewportPanel } from "./prefab-viewport-panel";
-import { dispatchPointerEvent } from "../../../../packages/editor-kit/src/test-support/pointer-events";
+import { dispatchPointerEvent } from "@haptic/editor-kit/test-support/pointer-events";
 import { PREFAB_ROOT_ID } from "../lib/prefab-preview";
 import { playAudioLibraryFromAssets } from "../lib/play-audio";
 

@@ -26,7 +26,7 @@ Previewing in the Audio asset editor is never spatial.
 | --- | --- |
 | Inner Radius | Within this distance the sound plays at full volume. Default 10. |
 | Max Radius | Beyond this distance the sound is silent. Default 250. |
-| Distance Model | How volume falls between the two radii: **Linear** (default), **Inverse** or **Exponential**. |
+| Distance Model | How volume falls between the two radii: **Linear** (default), **Inverse** or **Exponential**. Every model reaches silence at **Max Radius**, as the plot shows. |
 | Rolloff | How steeply volume falls with the Inverse and Exponential models. Default 1. |
 | Spatialisation | **Equal Power** (default) pans between left and right. **HRTF** models how sound reaches each ear, which works best on headphones. |
 | Cone | Makes the sound directional, aimed by the actor's rotation. |
@@ -39,6 +39,7 @@ Previewing in the Audio asset editor is never spatial.
 
 - Distances are in world units, and actor scale does not change them.
 - A spatial sound with no actor to play from plays without position, and a warning is logged.
+- A looping sound beyond **Max Radius** keeps playing silently and still counts toward **Max Concurrent Voices**; it is among the first to stop when the limit is reached. See [Audio budget](index.md#audio-budget).
 - To muffle sounds behind walls, enable **Muffle Through Walls** on their channel. See [Mixing](mixing.md).
 
 ## Related

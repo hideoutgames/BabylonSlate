@@ -1,7 +1,7 @@
 import { cpSync, existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import type { Plugin } from "vite";
-import { ENGINE_BILLBOARD_FILES } from "../../packages/render/src/default-billboard/urls";
+import { ENGINE_BILLBOARD_FILES } from "@haptic/render/default-billboard-files";
 
 /** Copy engine editor billboard PNGs into an app `public/` tree. */
 export function copyEngineBillboards(
