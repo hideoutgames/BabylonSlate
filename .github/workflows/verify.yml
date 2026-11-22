@@ -52,7 +52,26 @@ jobs:
       - run: pnpm install
       - run: pnpm test:tooling
       - run: pnpm test:distribution
+      # tsc's incremental build info (scripts/typecheck-incremental.mjs): tsc compares every source file's content hash
+      # with it and rechecks whatever changed, so an older or corrupt entry costs time, never a missed error. Build info
+      # decides which diagnostics are reused, so only main saves it. A pull request also restores from its own scope,
+      # which only a workflow its author changed could have written, so a fork's pull request checks without it.
+      - name: Restore the typecheck cache
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .cache/typecheck
+          key: typecheck-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: |
+            typecheck-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-
+            typecheck-${{ runner.os }}-
       - run: pnpm typecheck
+      - name: Save the typecheck cache
+        if: github.event_name == 'push'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .cache/typecheck
+          key: typecheck-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
       # Bundles the Electron main and preload scripts as desktop packaging does, which nothing else in Verify builds.
       - run: pnpm --filter desktop build:host
       # ESLint's per-file cache: an entry is reused only for the same file content, ESLint and Node versions and
