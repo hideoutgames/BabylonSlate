@@ -709,6 +709,7 @@ export function sanitizeAudioLibrary(input: {
       });
     }
     const { customCurve: _customCurve, ...payload } = entry;
+    void _customCurve;
     attenuations.set(guid, { ...payload, curve: resolved.curve });
   }
   return { audio, channels, attenuations, diagnostics };
