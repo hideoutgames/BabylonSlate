@@ -24,6 +24,7 @@ import {
   type NativeClerkChallenge,
   type NativeClerkSession,
 } from "../services/native-clerk";
+import { endSubscriptionBilling } from "../services/subscription-billing";
 import { NativeHomepageAccountContext } from "./homepage-account-context";
 import { nativeProfileActions } from "./homepage-account-native-actions";
 import {
@@ -41,6 +42,10 @@ const SOCIAL_PROVIDERS = [
   { strategy: "oauth_discord", name: "Discord", Icon: Discord },
   { strategy: "oauth_google", name: "Google", Icon: Google },
 ] as const;
+
+/** Launched offline before this device ever cached a verified user. */
+const OFFLINE_WITHOUT_ACCOUNT =
+  "Could not connect to your account. Check your connection and try again.";
 
 function accountError(error: unknown) {
   return error instanceof Error
@@ -77,7 +82,7 @@ export default function HomepageNativeAccount({
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
-  // Holds on the foreground check (open system file pickers and open forms).
+  // Holds on the session check (open system file pickers and open forms).
   // A check that comes due while one is held is remembered; a form's hold runs
   // it once the last hold ends, a picker's leaves it to the next focus.
   const pickers = useRef(0);
@@ -86,50 +91,105 @@ export default function HomepageNativeAccount({
   const alive = useRef(true);
   const currentSession = useRef<NativeClerkSession | null>(null);
   const input = useRef<HTMLInputElement>(null);
+  /** Signed in from the cached user, or the last background check could not reach Clerk. */
+  const [offline, setOffline] = useState(false);
+
+  /**
+   * Back to the sign-in form after a sign-out, a deleted account or Clerk's
+   * definitive answer that the session ended. This unmounts the launcher
+   * (`children`), never an open project: the editor route is outside the gate.
+   */
+  const leaveSession = () => {
+    currentSession.current = null;
+    setSession(null);
+    setOffline(false);
+    setChallenge(null);
+    setCode("");
+    setError(null);
+    setStatus(null);
+    void endSubscriptionBilling();
+  };
+  const leaveSessionRef = useRef(leaveSession);
+  leaveSessionRef.current = leaveSession;
 
   useEffect(() => {
     alive.current = true;
     let cancelled = false;
     let pending = false;
-    const restore = () => {
+    const adopt = (next: NativeClerkSession | null, isOffline: boolean) => {
+      currentSession.current = next;
+      setSession(next);
+      setOffline(next !== null && isOffline);
+    };
+    // The first check decides what the gate shows, so it shows progress.
+    // Offline with a stored token and a cached user opens the app as that
+    // user; offline without a cached user asks to connect.
+    const launch = () => {
+      pending = true;
+      setRestoring(true);
+      setRestoreError(null);
+      void client.restore().then(
+        (result) => {
+          if (cancelled) return;
+          pending = false;
+          if (result.status === "signed-in") adopt(result.session, false);
+          else if (result.status === "offline" && result.session) adopt(result.session, true);
+          else if (result.status === "offline")
+            setRestoreError(OFFLINE_WITHOUT_ACCOUNT);
+          else adopt(null, false);
+          setRestoring(false);
+        },
+        (cause: unknown) => {
+          if (cancelled) return;
+          pending = false;
+          setRestoreError(accountError(cause));
+          setRestoring(false);
+        },
+      );
+    };
+    // Checks while signed in run in the background and never hide the app:
+    // only Clerk's definitive answer signs out, anything else keeps the user
+    // signed in and marks the account offline.
+    const refresh = () => {
       if (cancelled || pending || busyRef.current) return;
       if (pickers.current > 0) {
         deferredCheck.current = true;
         return;
       }
       pending = true;
-      setRestoring(true);
-      setRestoreError(null);
-      void client.restoreSession().then(
-        (restored) => {
-          if (cancelled) return;
-          currentSession.current = restored;
-          setSession(restored);
-          setRestoring(false);
+      void client.restore({ background: true }).then(
+        (result) => {
           pending = false;
+          if (cancelled || !currentSession.current) return;
+          if (result.status === "signed-in") adopt(result.session, false);
+          else if (result.status === "signed-out") leaveSessionRef.current();
+          else if (result.status === "offline") setOffline(true);
         },
-        (cause: unknown) => {
-          if (cancelled) return;
-          setRestoreError(accountError(cause));
-          setRestoring(false);
+        () => {
+          // Secure storage failed for a moment; the next check tries again.
           pending = false;
         },
       );
     };
     const resume = () => {
       if (document.visibilityState === "visible" && currentSession.current) {
-        restore();
+        refresh();
       }
     };
     runDeferredCheck.current = resume;
-    restore();
+    launch();
     window.addEventListener("focus", resume);
+    window.addEventListener("online", resume);
     document.addEventListener("visibilitychange", resume);
     return () => {
       cancelled = true;
       alive.current = false;
       runDeferredCheck.current = () => {};
+      // A sign-in left on screen (a closed desktop dialog) must not hold off
+      // the session checks of the account row that shares this client.
+      client.cancelSignIn();
       window.removeEventListener("focus", resume);
+      window.removeEventListener("online", resume);
       document.removeEventListener("visibilitychange", resume);
     };
   }, [client]);
@@ -197,23 +257,17 @@ export default function HomepageNativeAccount({
     );
   }
   if (session) {
-    const leaveSession = () => {
-      currentSession.current = null;
-      setSession(null);
-      setChallenge(null);
-      setCode("");
-      setError(null);
-      setStatus(null);
-    };
     return (
       <NativeHomepageAccountContext.Provider
         value={{
           session,
+          offline,
           profile: nativeProfileActions(client, session, {
             onSession: (next) => {
               if (!alive.current) return;
               currentSession.current = next;
               setSession(next);
+              setOffline(false);
             },
             onDeleted: () => {
               if (alive.current) leaveSession();
@@ -263,13 +317,19 @@ export default function HomepageNativeAccount({
   function signInWith(strategy: string) {
     if (!browser) return;
     void run(async () => {
-      const oauth = await client.beginOAuth(strategy, SSO_REDIRECT_URL);
-      const callback = await browser.open(oauth.url, SSO_REDIRECT_URL);
-      if (!callback || !alive.current) return;
-      const next = await client.completeOAuth(oauth, callback);
-      if (!alive.current) return;
-      currentSession.current = next;
-      setSession(next);
+      try {
+        const oauth = await client.beginOAuth(strategy, SSO_REDIRECT_URL);
+        const callback = await browser.open(oauth.url, SSO_REDIRECT_URL);
+        if (!callback || !alive.current) return;
+        const next = await client.completeOAuth(oauth, callback);
+        if (!alive.current) return;
+        currentSession.current = next;
+        setSession(next);
+        setOffline(false);
+      } finally {
+        // Closed, timed out, failed or done: background checks may run again.
+        client.cancelSignIn();
+      }
     });
   }
 
@@ -326,6 +386,7 @@ export default function HomepageNativeAccount({
               if (alive.current) {
                 currentSession.current = verified;
                 setSession(verified);
+                setOffline(false);
               }
             });
           } else if (!challenge && email.trim()) {
@@ -411,6 +472,7 @@ export default function HomepageNativeAccount({
             size="sm"
             disabled={busy}
             onClick={() => {
+              client.cancelSignIn();
               setChallenge(null);
               setCode("");
               setError(null);

@@ -23,7 +23,7 @@ export function nativeProfileActions(
   owner: {
     onSession: (next: NativeClerkSession) => void;
     onDeleted: () => void;
-    /** Only the mobile account gate hides the app during a foreground check. */
+    /** Only the mobile account gate defers its session check, which can sign out and unmount the launcher. */
     holdSessionCheck?: (options?: { checkWhenReleased?: boolean }) => () => void;
   },
 ): NativeProfileActions {

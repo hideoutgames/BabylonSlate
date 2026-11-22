@@ -29,7 +29,7 @@ Every platform opens the same project format, so you can move a project between 
 | Web and desktop | Optional. You can create and open projects as a guest, or sign in with GitHub, Discord, Google or an email code. |
 | iPad, iPhone and Android | Required before the project list appears. Sign in with GitHub, Discord or Google when they are offered, or with your email address and a verification code. |
 
-The mobile apps keep you signed in across restarts and app updates until you sign out or your session expires. Your projects stay on the device.
+The mobile apps keep you signed in across restarts and app updates until you sign out or your session expires. Your projects stay on the device. Once you have signed in, you can open your projects without a connection: your name shows **Offline** under it, and Haptic checks your account again in the background when you are back online. Signing out works offline too.
 
 Open the account menu from your name at the bottom of the Homepage sidebar. It offers **Manage Account**, **Engine Settings**, **Changelog**, **Discord Server**, and **Sign In** or **Sign Out**. **Discord Server** opens the Haptic community on Discord; above your name, **Join our Discord** does the same, except on phones. Once you are signed in, **Join our Discord** goes away after you first use it on that device.
 
