@@ -120,7 +120,7 @@ describe("EncodeQueue", () => {
 
     queue.enqueue({
       assetGuid: "a",
-      source: new Uint8Array([1, 2, 3]),
+      loadSource: () => Promise.resolve(new Uint8Array([1, 2, 3])),
       settings: {
         format: "uastc",
         quality: 2,
@@ -130,7 +130,7 @@ describe("EncodeQueue", () => {
     });
     queue.enqueue({
       assetGuid: "b",
-      source: new Uint8Array([4]),
+      loadSource: () => Promise.resolve(new Uint8Array([4])),
       settings: {
         format: "uastc",
         quality: 2,
@@ -162,7 +162,7 @@ describe("EncodeQueue", () => {
     queue.pause();
     queue.enqueue({
       assetGuid: "paused",
-      source: new Uint8Array([9]),
+      loadSource: () => Promise.resolve(new Uint8Array([9])),
       settings: {
         format: "uastc",
         quality: 2,
@@ -201,7 +201,7 @@ describe("EncodeQueue", () => {
     });
     queue.enqueue({
       assetGuid: "hang",
-      source: new Uint8Array([1]),
+      loadSource: () => Promise.resolve(new Uint8Array([1])),
       settings: {
         format: "uastc",
         quality: 2,
@@ -211,7 +211,7 @@ describe("EncodeQueue", () => {
     });
     queue.enqueue({
       assetGuid: "ok",
-      source: new Uint8Array([2]),
+      loadSource: () => Promise.resolve(new Uint8Array([2])),
       settings: {
         format: "uastc",
         quality: 2,
@@ -244,25 +244,89 @@ describe("EncodeQueue", () => {
       onComplete: (result) => { completed.push(result.assetGuid); },
       onDrop: (job) => { dropped.push(job.assetGuid); },
     });
-    queue.enqueue({ assetGuid: "running", source: new Uint8Array([1]), settings });
-    queue.enqueue({ assetGuid: "waiting", source: new Uint8Array([2]), settings });
+    queue.enqueue({ assetGuid: "running", loadSource: () => Promise.resolve(new Uint8Array([1])), settings });
+    queue.enqueue({ assetGuid: "waiting", loadSource: () => Promise.resolve(new Uint8Array([2])), settings });
     const derived = queue.enqueueDerived(async () => "derived");
     await vi.waitFor(() => expect(finish).toBeTypeOf("function"));
     queue.clear();
     expect(queue.has("running")).toBe(false);
     await expect(derived).rejects.toThrow("cancelled");
-    queue.enqueue({ assetGuid: "next", source: new Uint8Array([3]), settings });
+    queue.enqueue({ assetGuid: "next", loadSource: () => Promise.resolve(new Uint8Array([3])), settings });
     finish!();
     await vi.waitFor(() => expect(completed).toEqual(["next"]));
     expect(dropped).toEqual(["running"]);
     expect(encoded).toEqual([1, 3]);
+  });
+  it("reads each job's source only when the job starts, one at a time, and drops a job whose source is gone", async () => {
+    const settings = { format: "uastc", quality: 2, maxDimension: 2048, generateMipmaps: true } as const;
+    const events: string[] = [];
+    const finishes: Array<() => void> = [];
+    const completed: string[] = [];
+    const dropped: string[] = [];
+    const errors: string[] = [];
+    const queue = new EncodeQueue({
+      encode: async (source, encodeSettings) => {
+        events.push(`encode ${source[0]}`);
+        await new Promise<void>((resolve) => { finishes.push(resolve); });
+        return stubEncodeKtx2(source, encodeSettings);
+      },
+      onComplete: (result) => { completed.push(result.assetGuid); },
+      onDrop: (job) => { dropped.push(job.assetGuid); },
+      onError: (guid) => { errors.push(guid); },
+    });
+    const loader = (guid: string, source: Uint8Array | null | Error) => () => {
+      events.push(`load ${guid}`);
+      return source instanceof Error ? Promise.reject(source) : Promise.resolve(source);
+    };
+    queue.enqueue({ assetGuid: "a", loadSource: loader("a", new Uint8Array([1])), settings });
+    queue.enqueue({ assetGuid: "gone", loadSource: loader("gone", null), settings });
+    queue.enqueue({ assetGuid: "unreadable", loadSource: loader("unreadable", new Error("read failed")), settings });
+    queue.enqueue({ assetGuid: "b", loadSource: loader("b", new Uint8Array([2])), settings });
+    await vi.waitFor(() => expect(finishes).toHaveLength(1));
+    // The waiting jobs have read nothing: only the running job's source exists.
+    expect(events).toEqual(["load a", "encode 1"]);
+
+    finishes[0]!();
+    await vi.waitFor(() => expect(finishes).toHaveLength(2));
+    expect(events).toEqual(["load a", "encode 1", "load gone", "load unreadable", "load b", "encode 2"]);
+    finishes[1]!();
+    await vi.waitFor(() => expect(completed).toEqual(["a", "b"]));
+    expect(dropped).toEqual(["gone"]);
+    expect(errors).toEqual(["unreadable"]);
+  });
+
+  it("drops a job cleared or replaced while its source loads, without encoding it", async () => {
+    const settings = { format: "uastc", quality: 2, maxDimension: 2048, generateMipmaps: true } as const;
+    let release: (() => void) | undefined;
+    const encoded: number[] = [];
+    const dropped: string[] = [];
+    const completed: string[] = [];
+    const queue = new EncodeQueue({
+      encode: async (source, encodeSettings) => {
+        encoded.push(source[0]!);
+        return stubEncodeKtx2(source, encodeSettings);
+      },
+      onComplete: (result) => { completed.push(`${result.assetGuid}:${result.settings.quality}`); },
+      onDrop: (job) => { dropped.push(`${job.assetGuid}:${job.settings.quality}`); },
+    });
+    queue.enqueue({
+      assetGuid: "a",
+      loadSource: () => new Promise((resolve) => { release = () => resolve(new Uint8Array([1])); }),
+      settings,
+    });
+    await vi.waitFor(() => expect(release).toBeTypeOf("function"));
+    expect(queue.enqueue({ assetGuid: "a", loadSource: () => Promise.resolve(new Uint8Array([2])), settings: { ...settings, quality: 3 } })).toBe("replaced");
+    release!();
+    await vi.waitFor(() => expect(completed).toEqual(["a:3"]));
+    expect(dropped).toEqual(["a:2"]);
+    expect(encoded).toEqual([2]);
   });
 });
 
 describe("EncodeQueue requests for one asset", () => {
   const job = (assetGuid: string, quality: number, extra: Partial<EncodeJob> = {}): EncodeJob => ({
     assetGuid,
-    source: new Uint8Array([quality]),
+    loadSource: () => Promise.resolve(new Uint8Array([quality])),
     settings: { format: "uastc", quality, maxDimension: 2048, generateMipmaps: true },
     usage: "albedo",
     sourceSha256: `source-of-${assetGuid}`,
@@ -576,6 +640,54 @@ describe("registry encode pipeline", () => {
     expect(Array.from(resolved!.bytes.subarray(20, 28))).toEqual([4, 0, 0, 0, 4, 0, 0, 0]);
   });
 
+  it("reads a waiting Texture's pixels when its encode starts, and skips one deleted or replaced on disk meanwhile", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("lazy.hproject");
+    await storage.mkdir("assets", true);
+    const pixels = (marker: number, extra = 0) => new Uint8Array([...onePixelPng(), marker, ...new Array<number>(extra).fill(0)]);
+    const textureFile = (name: string, data: Uint8Array) => encodeHasset({
+      header: {
+        dependencyMetadataVersion: 1, requiredDependencies: [],
+        guid: name, type: "Texture", name, engineVersion: "0.0.0", version: 1, mode: "thin",
+        dependencies: [], parentClass: null,
+        payload: { compressionState: "pending", usage: "albedo", width: 1, height: 1 },
+      },
+      chunks: [{ id: "pixels", kind: "pixels", mime: "image/png", data }],
+    });
+    for (const [name, marker] of [["first", 1], ["gone", 2], ["changed", 3], ["kept", 4]] as const) {
+      await storage.writeBinary(`assets/${name}.hasset`, await textureFile(name, pixels(marker)));
+    }
+    const registry = new AssetRegistry(storage);
+    const encoded: number[][] = [];
+    const dropped: string[] = [];
+    const queue = new EncodeQueue({
+      encode: async (source, settings) => {
+        encoded.push([...source]);
+        return stubEncodeKtx2(source, settings);
+      },
+      onComplete: async (result) => { await registry.commitCompressedTexture(result); },
+      onDrop: (job) => { dropped.push(job.assetGuid); },
+    });
+    registry.setEncodePipeline(queue);
+    await registry.mountRoot(projectContentRoot());
+    queue.pause();
+    expect(await registry.requeueUncompressedTextures()).toBe(4);
+
+    await registry.deleteAsset("gone");
+    // Replaced on disk (a git pull) before any rescan saw it.
+    await storage.writeBinary("assets/changed.hasset", await textureFile("changed", pixels(9, 16)));
+    queue.resume();
+    await vi.waitFor(() => {
+      expect(registry.getByGuid("first")!.header.payload.compressionState).toBe("compressed");
+      expect(registry.getByGuid("kept")!.header.payload.compressionState).toBe("compressed");
+      expect(queue.depth).toBe(0);
+    });
+    // Byte-identical to the stored pixels, read when each encode started.
+    expect(encoded).toEqual([[...pixels(1)], [...pixels(4)]]);
+    expect(dropped).toEqual(["gone", "changed"]);
+    expect(readHassetHeader(await storage.readBinary("assets/changed.hasset")).payload.compressionState).toBe("pending");
+  });
+
   it("queues one encode for a retry of a Texture whose encode is already queued or running", async () => {
     const encoding = deferred();
     const { registry, settings, commits, guid } = await mountSingleTexture(
@@ -738,7 +850,7 @@ describe("registry encode pipeline", () => {
 
     queue.enqueue({
       assetGuid: "fail-tex",
-      source: new Uint8Array([9, 8, 7]),
+      loadSource: () => Promise.resolve(new Uint8Array([9, 8, 7])),
       settings: {
         format: "uastc",
         quality: 2,

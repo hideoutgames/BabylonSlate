@@ -222,10 +222,9 @@ describe("texture encode alignment", () => {
     const pulled = await storage.readBinary(path);
 
     queue.resume();
-    await vi.waitFor(() => {
-      expect(queue.depth).toBe(0);
-      expect(jobs).toHaveLength(1);
-    });
+    await vi.waitFor(() => expect(queue.depth).toBe(0));
+    // The job reads its source when it starts, finds the pixels it was queued for gone, and encodes nothing.
+    expect(jobs).toHaveLength(0);
     expect(await storage.readBinary(path)).toEqual(pulled);
   });
 
@@ -241,10 +240,9 @@ describe("texture encode alignment", () => {
     const pulled = await storage.readBinary(path);
 
     queue.resume();
-    await vi.waitFor(() => {
-      expect(queue.depth).toBe(0);
-      expect(jobs).toHaveLength(1);
-    });
+    await vi.waitFor(() => expect(queue.depth).toBe(0));
+    // The job reads its source when it starts, finds the pixels it was queued for gone, and encodes nothing.
+    expect(jobs).toHaveLength(0);
     expect(await storage.readBinary(path)).toEqual(pulled);
   });
 

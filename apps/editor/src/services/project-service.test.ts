@@ -256,7 +256,7 @@ describe("ProjectService lifecycle", () => {
       chunks: [{ id: "pixels", kind: "pixels", mime: "image/png", data: new Uint8Array([1, 2, 3]) }],
     }));
     await service.registry!.reindexPath("assets/test.hasset");
-    textureEncodeQueue(service).enqueue({ assetGuid: "encode-drain", source: new Uint8Array([1]), settings: { format: "uastc", quality: 2, maxDimension: 2048, generateMipmaps: true } });
+    textureEncodeQueue(service).enqueue({ assetGuid: "encode-drain", loadSource: () => Promise.resolve(new Uint8Array([1])), settings: { format: "uastc", quality: 2, maxDimension: 2048, generateMipmaps: true } });
     await vi.waitFor(() => expect(finishEncode).toBeTypeOf("function"));
     const lease = service.lockAuthoringWrites("Read-only baseline");
     let ready = false;
@@ -294,7 +294,7 @@ describe("ProjectService lifecycle", () => {
       return write(path, bytes);
     });
     const release = vi.spyOn(storage, "releaseFolder");
-    textureEncodeQueue(service).enqueue({ assetGuid: "encode-close", source: new Uint8Array([1]), settings: { format: "uastc", quality: 2, maxDimension: 2048, generateMipmaps: true } });
+    textureEncodeQueue(service).enqueue({ assetGuid: "encode-close", loadSource: () => Promise.resolve(new Uint8Array([1])), settings: { format: "uastc", quality: 2, maxDimension: 2048, generateMipmaps: true } });
     await vi.waitFor(() => expect(finishEncode).toBeTypeOf("function"));
     finishEncode({ ktx2: new Uint8Array([9, 8, 7]), wallMs: 1 });
     await started;
@@ -320,7 +320,7 @@ describe("ProjectService lifecycle", () => {
       chunks: [{ id: "pixels", kind: "pixels", mime: "image/png", data: new Uint8Array([1, 2, 3]) }],
     }));
     await service.registry!.reindexPath("assets/test.hasset");
-    textureEncodeQueue(service).enqueue({ assetGuid: "encode-late", source: new Uint8Array([1]), settings: { format: "uastc", quality: 2, maxDimension: 2048, generateMipmaps: true } });
+    textureEncodeQueue(service).enqueue({ assetGuid: "encode-late", loadSource: () => Promise.resolve(new Uint8Array([1])), settings: { format: "uastc", quality: 2, maxDimension: 2048, generateMipmaps: true } });
     await vi.waitFor(() => expect(finishEncode).toBeTypeOf("function"));
     await vi.waitFor(() => expect(service.textureEncodingGuids.has("encode-late")).toBe(true));
     const release = storage.releaseFolder.bind(storage);
@@ -1168,7 +1168,7 @@ describe("texture encode diagnostics", () => {
 
     textureEncodeQueue(service).enqueue({
       assetGuid: "tex-guid-1",
-      source: new Uint8Array([1, 2, 3]),
+      loadSource: () => Promise.resolve(new Uint8Array([1, 2, 3])),
       mime: "image/png",
       settings: {
         format: "uastc",

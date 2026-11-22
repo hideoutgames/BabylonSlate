@@ -64,7 +64,7 @@ export async function retryTextureEncoding(
   if (!queue) return false;
   const outcome = queue.enqueue({
     assetGuid: guid,
-    source: source.bytes,
+    loadSource: lazySourcePixels(host, guid, source.sha256),
     mime: source.mime,
     settings,
     chunkId,
@@ -126,7 +126,7 @@ export async function maybeEnqueueTextureEncode(host: RegistryHost, asset: Index
   const chunkId = await textureEncodeChunkId(settings, usage);
   host.encodeQueue()?.enqueue({
     assetGuid: asset.header.guid,
-    source: source.bytes,
+    loadSource: lazySourcePixels(host, asset.header.guid, source.sha256),
     mime: source.mime,
     settings,
     chunkId,
@@ -347,6 +347,28 @@ async function loadSourcePixels(
     const bytes = await host.readChunk(asset.header.guid, pixels.id);
     return { bytes, mime: pixels.mime, sha256: await sha256Hex(bytes) };
   });
+}
+
+/**
+ * An encode job's `loadSource`: the Texture's source pixels, read again when
+ * the job starts so a waiting job holds no bytes. Null when the Texture or its
+ * pixels are gone, or its pixels are no longer `sha256`, the source the job
+ * was queued for: its commit would be refused (`encodeJobMayWrite`), and the
+ * change that replaced them queues its own job or the next rescan does.
+ */
+function lazySourcePixels(host: RegistryHost, guid: string, sha256: string): () => Promise<Uint8Array | null> {
+  return async () => {
+    const asset = host.byGuid.get(guid);
+    if (asset?.header.chunks.find((chunk) => chunk.kind === "pixels")?.sha256 !== sha256) return null;
+    try {
+      const source = await loadSourcePixels(host, asset);
+      return source?.sha256 === sha256 ? source.bytes : null;
+    } catch (cause) {
+      // Replaced on disk meanwhile: the next rescan indexes the new file.
+      if (cause instanceof SourceRevisionChangedError) return null;
+      throw cause;
+    }
+  };
 }
 
 /**

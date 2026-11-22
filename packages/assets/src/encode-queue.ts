@@ -23,7 +23,13 @@ export interface EncodeJobGuard {
 
 export interface EncodeJob {
   assetGuid: string;
-  source: Uint8Array;
+  /**
+   * Reads the source bytes when the job starts encoding, so a waiting job
+   * holds no pixels (a bulk import queues hundreds). Null means the source is
+   * gone or no longer the one the job was queued for (`sourceSha256`): the job
+   * is dropped (`onDrop`) and writes nothing. A throw fails the job (`onError`).
+   */
+  loadSource: () => Promise<Uint8Array | null>;
   settings: TextureEncodeSettings;
   mime?: string;
   /** Chunk id to commit under (`textureEncodeChunkId`); else the settings hash. */
@@ -110,8 +116,9 @@ export interface EncodeQueueOptions {
   onError?: (assetGuid: string, error: unknown, job: EncodeJob) => void;
   /**
    * A job that writes nothing: a guarded job its guard refused at the front of
-   * the queue, a job a newer request replaced while it encoded, or the job
-   * that was encoding when `clear()` dropped the queue.
+   * the queue, a job whose `loadSource` found no source when it started, a job
+   * a newer request replaced while it encoded, or the job that was encoding
+   * when `clear()` dropped the queue.
    */
   onDrop?: (job: EncodeJob) => void;
 }
@@ -129,7 +136,7 @@ function sameEncodeRequest(existing: EncodeJob, next: EncodeJob): boolean {
     existing.mime === next.mime &&
     (existing.sourceSha256 !== undefined
       ? existing.sourceSha256 === next.sourceSha256
-      : existing.source === next.source) &&
+      : existing.loadSource === next.loadSource) &&
     a.format === b.format &&
     a.quality === b.quality &&
     a.maxDimension === b.maxDimension &&
@@ -298,14 +305,14 @@ export class EncodeQueue {
     void this.pump();
   }
 
-  private encodeWithTimeout(job: EncodeJob): Promise<{
+  private encodeWithTimeout(job: EncodeJob, source: Uint8Array): Promise<{
     ktx2: Uint8Array;
     wallMs: number;
   }> {
     const timeoutMs = this.jobTimeoutMs;
-    if (!timeoutMs || timeoutMs <= 0) return this.encode(job.source, job.settings, job.mime);
+    if (!timeoutMs || timeoutMs <= 0) return this.encode(source, job.settings, job.mime);
     const controller = new AbortController();
-    const encodePromise = this.encode(job.source, job.settings, job.mime, controller.signal);
+    const encodePromise = this.encode(source, job.settings, job.mime, controller.signal);
     return new Promise((resolve, reject) => {
       let settled = false;
       const timer = setTimeout(() => {
@@ -333,6 +340,22 @@ export class EncodeQueue {
     });
   }
 
+  /**
+   * The job's source is read only here and referenced only by this frame and
+   * the encoder, so its bytes can be collected once the encode settles, before
+   * the result is committed. Null: the source is gone or changed, or the job
+   * was superseded or cleared while it loaded.
+   */
+  private async loadAndEncode(
+    job: EncodeJob,
+    generation: number,
+  ): Promise<{ ktx2: Uint8Array; wallMs: number } | null> {
+    const source = await job.loadSource();
+    if (source === null || generation !== this.generation || this.supersededJobs.has(job)) return null;
+    this.onState?.(job.assetGuid, "encoding", job);
+    return this.encodeWithTimeout(job, source);
+  }
+
   private async pump(): Promise<void> {
     if (this.paused || this.running) return;
     let job = this.queue.shift();
@@ -351,9 +374,14 @@ export class EncodeQueue {
     }
     const generation = this.generation;
     this.encoding = job;
-    this.onState?.(job.assetGuid, "encoding", job);
     try {
-      const { ktx2, wallMs } = await this.encodeWithTimeout(job);
+      const encoded = await this.loadAndEncode(job, generation);
+      if (!encoded) {
+        this.encoding = null;
+        this.onDrop?.(job);
+        return;
+      }
+      const { ktx2, wallMs } = encoded;
       this.encoding = null;
       // A job a newer request replaced reports nothing: the request owns the Texture now.
       if (generation !== this.generation || this.supersededJobs.has(job)) {
