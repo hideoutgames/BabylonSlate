@@ -1,7 +1,9 @@
 #!/usr/bin/env node
-// Typechecks the editor's TypeScript programs, each in its own `tsc -b` process with an explicit heap: the shipped
-// app, its unit tests, the Node-side config and tests, and the Playwright specs. Each program reloads Babylon's
-// declarations and most workspace sources, so one process holding all of them peaked above 4 GB.
+// Typechecks the editor's TypeScript programs, each in its own `tsc -p --noEmit --incremental` process with an explicit
+// heap and build info under `.cache/typecheck` (scripts/typecheck-incremental.mjs says why `-p`, never `-b`): the
+// shipped app, its unit tests, the Node-side config and tests, and the Playwright specs, the projects tsconfig.json
+// references. Each program reloads Babylon's declarations and most workspace sources, so one process holding all of
+// them peaked above 4 GB.
 //
 //   node scripts/typecheck.mjs                 every program, as many at once as this machine's memory allows
 //   node scripts/typecheck.mjs app             only the shipped app (the production build)
@@ -14,13 +16,18 @@
 // after one fails, so one run reports every error; each program's output is printed whole, in program order, and
 // the exit code is nonzero when any failed. SIGINT and SIGTERM stop every running program before exiting.
 import { spawn } from "node:child_process";
+import { mkdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import os from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { typecheckCommands } from "../../../scripts/typecheck-incremental.mjs";
 
 const GIB = 1024 ** 3;
-/** Programs in report order, with each one's measured peak resident memory plus a margin, in GiB. */
+/**
+ * Programs in report order, with each one's measured peak resident memory plus a margin, in GiB: exactly the projects
+ * tsconfig.json references (scripts/editor-typecheck.test.mjs).
+ */
 export const PROGRAMS = [
   { name: "app", config: "tsconfig.app.json", peakGiB: 2.6 },
   { name: "test", config: "tsconfig.test.json", peakGiB: 3.1 },
@@ -120,7 +127,9 @@ async function main(argv) {
     new Promise((resolve) => {
       const started = Date.now();
       const output = [];
-      const child = spawn(process.execPath, [`--max-old-space-size=${HEAP_MB}`, tsc, "-b", program.config], {
+      const [args] = typecheckCommands([program.config], editorRoot);
+      mkdirSync(dirname(args.at(-1)), { recursive: true });
+      const child = spawn(process.execPath, [`--max-old-space-size=${HEAP_MB}`, tsc, ...args], {
         cwd: editorRoot,
         env,
         stdio: ["ignore", "pipe", "pipe"],
