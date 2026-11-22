@@ -23,6 +23,7 @@ export function createAdmission(rt: RuntimeComposition): OwnerAdmission {
     blocks: () => rt.blocks,
     layers: () => rt.layers,
     releaseAssets: (ownerGuid) => rt.assetPreloads.releaseOwner(ownerGuid),
+    releaseScriptState: (owner) => rt.scriptHost.releaseObject(owner),
     reportError: (error) => { rt.reportError(error); },
   });
 }
@@ -97,7 +98,12 @@ export function createSceneRealizer(rt: RuntimeComposition): SceneRealizer {
     removeActor: (actor) => rt.actors.remove(actor),
     removeSceneLayer: (layerGuid) => rt.removeSceneLayer(layerGuid),
     releaseAssets: (ownerGuid) => rt.assetPreloads.releaseOwner(ownerGuid),
-    resetForSceneLoad: () => rt.subsystems.resetForSceneLoad(),
+    resetForSceneLoad: () => {
+      rt.subsystems.resetForSceneLoad();
+      rt.boundaries.resetForSceneLoad();
+      // The departing Scene's post-process passes went with it.
+      rt.scriptHost.releaseRetiredPostProcessPreloads();
+    },
     duringSceneTeardown: (teardown) => rt.scriptRuntime.duringSceneTeardown(teardown),
     retireStreams: () => rt.streams.retireAll(),
     emitSceneDebug: () => {

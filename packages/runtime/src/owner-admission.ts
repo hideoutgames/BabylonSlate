@@ -31,6 +31,8 @@ interface OwnerAdmissionHost {
   blocks(): Pick<SimulationBlocks, "active">;
   layers(): Pick<SceneLayers, "get" | "anyReady">;
   releaseAssets(ownerGuid: string): void;
+  /** A destroyed owner's script state goes: its dispatcher bindings and flow state (`ScriptHost.releaseObject`). */
+  releaseScriptState(owner: EngineObject): void;
   reportError(error: unknown): void;
 }
 
@@ -151,12 +153,20 @@ export class OwnerAdmission {
     });
   }
 
-  /** An owner's authored destruction: dropped queued work, and On Destroyed only after its creation ran. */
+  /**
+   * An owner's authored destruction: dropped queued work, and On Destroyed only after its creation ran. Its script
+   * state goes either way, after On Destroyed (which may still Call its dispatchers): an owner destroyed before Begin
+   * Play, during a save boundary or without a script still had dispatcher bindings others made to it.
+   */
   runDestroyed(owner: EngineObject, destroy: () => void): void {
     this.host.releaseAssets(owner.guid);
     this.pending.delete(owner);
-    if (this.host.saveBoundaryActive()) return;
-    if (this.created.has(owner)) this.guard(destroy);
+    try {
+      if (this.host.saveBoundaryActive()) return;
+      if (this.created.has(owner)) this.guard(destroy);
+    } finally {
+      this.host.releaseScriptState(owner);
+    }
   }
 
   /** The owner's authored creation has run (or a checkpoint restored it). */

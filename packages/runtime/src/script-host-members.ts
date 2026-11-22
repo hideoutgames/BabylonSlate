@@ -649,6 +649,7 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
     },
     unregisterSceneLayerPostProcess: (materialGuid) => {
       services.unregisterSceneLayerPostProcess?.(String(materialGuid ?? ""));
+      host.materials.releaseRetiredPostProcessPreloads();
     },
     registerScenePostProcess: (materialGuid) => {
       const registered = services.registerScenePostProcess?.(String(materialGuid ?? ""));
@@ -656,6 +657,7 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
     },
     unregisterScenePostProcess: (materialGuid) => {
       services.unregisterScenePostProcess?.(String(materialGuid ?? ""));
+      host.materials.releaseRetiredPostProcessPreloads();
     },
     getOwningSceneLayer: (target) => services.getOwningSceneLayer?.(target instanceof EngineObject ? target : null) ?? null,
     getScalability: () => services.getScalability?.() ?? null,

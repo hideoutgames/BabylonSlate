@@ -284,6 +284,19 @@ export class ScriptHost {
     this.byClassId.clear();
     this.clearLineageCaches();
     this.orphanFlowStates.clear();
+    this.textChangeDispatches.clear();
+    this.materials.releaseAllPostProcessPreloads();
+    this.debugObject = null;
+    this.debugSink = null;
+    this.frameTraces = null;
+    this.invokingOwner = null;
+    this.finalizingOwner = null;
+    this.interfaceCaller = null;
+  }
+
+  /** Releases the preloads of post-process Material Objects whose pass is gone (`ScriptMaterialOwnership`). */
+  releaseRetiredPostProcessPreloads(): void {
+    this.materials.releaseRetiredPostProcessPreloads();
   }
 
   private clearLineageCaches(): void {

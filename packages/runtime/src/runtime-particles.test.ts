@@ -55,17 +55,20 @@ describe("RuntimeParticles", () => {
     expect(particles.ended(ended("unknown", 9))).toBe(false);
   });
 
-  it("forgets cleared components and every component when the active Scene changes", () => {
+  it("forgets cleared components and every component with each Scene load after the first", () => {
     const particles = new RuntimeParticles();
-    send(particles, { type: "activeScene", sceneAssetGuid: "boot" } as CommandMessage);
+    send(particles, { type: "activeScene", sceneAssetGuid: "boot", sceneLoadId: 1 });
     send(particles, assign("a"));
     send(particles, { ...assign("a"), particleSystemGuid: null });
     // A forgotten component's report of its last Play is no longer current.
     expect(particles.ended(ended("a", 1))).toBe(false);
     send(particles, assign("a"));
-    send(particles, { type: "activeScene", sceneAssetGuid: "boot" } as CommandMessage);
     expect(particles.isPlaying("actor")).toBe(true);
-    send(particles, { type: "activeScene", sceneAssetGuid: "next" } as CommandMessage);
+    // The same Scene loaded again (a level restart): the render host retired every system.
+    send(particles, { type: "activeScene", sceneAssetGuid: "boot", sceneLoadId: 2 });
+    expect(particles.isPlaying("actor")).toBe(false);
+    send(particles, assign("a"));
+    send(particles, { type: "activeScene", sceneAssetGuid: "next", sceneLoadId: 3 });
     expect(particles.isPlaying("actor")).toBe(false);
   });
 });
