@@ -30,7 +30,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
     tabOrder: [...tabOrder],
     activeDocumentId,
     openDocuments: state.service.getOpenDocumentsOrdered(),
-    projectDocument: { metadata: { name: "Test" } },
+    projectDocument: { metadata: { name: "Test" }, settings: { editorUtilityObjects: [] } },
     assetRegistry: null,
     sourceControl: { enabled: false, lockPrompt: [] },
     registerDockviewApi: () => {},

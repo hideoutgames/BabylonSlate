@@ -106,7 +106,7 @@ function Editor({ initialTabs, coldTabs = [] }: { initialTabs: string[]; coldTab
       content: coldTabs.includes(doc.id) ? null : doc.content,
       layout: harness.layouts.get(doc.id) ?? null,
     })),
-    projectDocument: { metadata: { name: "Test" } },
+    projectDocument: { metadata: { name: "Test" }, settings: { editorUtilityObjects: [] } },
     assetRegistry: null,
     sourceControl: { enabled: false, lockPrompt: [] },
     registerDockviewApi,
