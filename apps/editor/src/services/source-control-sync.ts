@@ -144,6 +144,12 @@ export interface SyncConfigureInput {
    * to the folder. Refused while another operation holds project writes.
    */
   exclusiveWrites: <T>(reason: string, work: (storage: ProjectStorage) => Promise<T>, signal: AbortSignal) => Promise<T>;
+  /**
+   * Resolves once the project's queued background writers are done
+   * (`ProjectService.textureEncodesIdle`: no Texture encode waits or runs);
+   * `signal` ends the wait. Publish waits for it before its commit.
+   */
+  backgroundWritesIdle: (signal: AbortSignal) => Promise<void>;
   /** Defaults to the lazily loaded Git client. */
   factory?: SyncPortFactory;
 }
@@ -158,6 +164,26 @@ export interface UnusedFiles {
 
 /** Why saves and imports are refused while unused files are removed. */
 const REMOVING_UNUSED_REASON = "Read-only while removing unused files";
+/** Why saves and imports are refused while a commit reads the changes and records them. */
+const COMMITTING_REASON = "Read-only while committing";
+const PUBLISHING_REASON = "Read-only while publishing";
+
+const STORAGE_WRITES = new Set<PropertyKey>(["writeText", "writeBinary", "mkdir", "remove"]);
+
+/** `storage`, whose writes go to `writer()` while it names one (the Git client's own writes while it holds the project's writes). */
+function writesThrough(storage: ProjectStorage, writer: () => ProjectStorage | null): ProjectStorage {
+  return new Proxy(storage, {
+    get(target, key) {
+      const value: unknown = Reflect.get(target, key, target);
+      if (typeof value !== "function") return value;
+      if (!STORAGE_WRITES.has(key)) return value.bind(target);
+      return (...args: unknown[]) => {
+        const own = writer();
+        return own ? Reflect.apply(Reflect.get(own, key, own) as (...values: unknown[]) => unknown, own, args) : Reflect.apply(value, target, args);
+      };
+    },
+  });
+}
 
 const IDLE: SyncSnapshot = {
   active: false,
@@ -179,6 +205,16 @@ const IDLE: SyncSnapshot = {
 /** What keeps a client open: the folder and repository (the branch is the working copy's own). */
 function identityOf(folderId: string, repositoryUrl: string, testMode: boolean): string {
   return [folderId, repositoryUrl, testMode ? "t" : ""].join("\n");
+}
+
+/** `wait`, rejecting as a `cancelled` `SyncError` once `signal` aborts. */
+async function waitCancellable(wait: Promise<void>, signal: AbortSignal): Promise<void> {
+  try {
+    await wait;
+  } catch (error) {
+    throwIfCancelled(signal);
+    throw error;
+  }
 }
 
 function loadFactory(): Promise<SyncPortFactory> {
@@ -245,6 +281,12 @@ export class SourceControlSyncService {
   /** A status came due while away; it runs once the editor and the app are back. */
   private statusHeld = false;
   private wake: (() => void) | null = null;
+  /**
+   * The project's only writer while an operation of `revision` commits
+   * (`settledCommit`), bound to its folder: the Git client of that revision
+   * writes `.git` through it, past the barrier that holds everyone else's writes.
+   */
+  private writer: { revision: number; storage: ProjectStorage } | null = null;
   /** Operations run one at a time, so the snapshot always follows the last one. */
   private queue: Promise<unknown> = Promise.resolve();
   /** The running operation's cancel. */
@@ -434,12 +476,16 @@ export class SourceControlSyncService {
   async commit({ rowIds, message, push }: { rowIds: ReadonlySet<string>; message: string; push: boolean }): Promise<boolean> {
     const revision = this.revision;
     let committed = false;
-    await this.run("commit", "Could Not Commit", async ({ port, input, storage }) => {
-      const status = await port.status();
-      const lookup = await withWorkingHeaders(input.lookup, status.changes, rowIds, (path) => storage.readBinary(path));
-      const paths = commitPaths(groupChanges(status.changes, lookup), rowIds, lookup);
-      if (paths.length === 0) throw new Error("Choose the assets to commit.");
-      await port.commit({ paths, message, author: await this.author(input) });
+    await this.run("commit", "Could Not Commit", async ({ port, input, storage, signal }) => {
+      const author = await this.author(input);
+      // As the project's only writer: an asset and the blobs its header names are read and committed as one version.
+      await this.settledCommit(input, revision, COMMITTING_REASON, signal, async () => {
+        const status = await port.status();
+        const lookup = await withWorkingHeaders(input.lookup, status.changes, rowIds, (path) => storage.readBinary(path));
+        const paths = commitPaths(groupChanges(status.changes, lookup), rowIds, lookup);
+        if (paths.length === 0) throw new Error("Choose the assets to commit.");
+        await port.commit({ paths, message, author });
+      });
       committed = true;
     }, revision);
     if (!committed) return false;
@@ -798,9 +844,15 @@ export class SourceControlSyncService {
     let published: boolean;
     try {
       published = await this.run("publish", "Could Not Publish", async ({ port: open, input: current, signal }) => {
-        const status = await open.status();
-        if (status.changes.length === 0) throw new Error("There is nothing to publish.");
-        await open.commit({ paths: status.changes.map((change) => change.path), message: "Publish project", author: await this.author(current) });
+        const author = await this.author(current);
+        // The project as it settles: encodes still queued or running (a new project's imports) land first, so
+        // the first commit holds them rather than leaving them as changes.
+        await waitCancellable(current.backgroundWritesIdle(signal), signal);
+        await this.settledCommit(current, revision, PUBLISHING_REASON, signal, async () => {
+          const status = await open.status();
+          if (status.changes.length === 0) throw new Error("There is nothing to publish.");
+          await open.commit({ paths: status.changes.map((change) => change.path), message: "Publish project", author });
+        });
         await open.push({ signal });
       }, revision, { rethrow: true });
     } catch (error) {
@@ -813,9 +865,38 @@ export class SourceControlSyncService {
     await this.fetchFor(revision);
   }
 
+  /**
+   * Runs `work` (a status read and the commit that follows it) as the
+   * project's only writer (`exclusiveWrites`): writes admitted before it
+   * (saves, imports, a Texture encode and its commit) finish first, later
+   * ones are refused with `reason` until it returns (auto-save tries again),
+   * and the Git client writes `.git` past that barrier meanwhile. So nothing
+   * lands between the status and the commit. Cancelled while it waits, it
+   * rejects as a `cancelled` `SyncError`.
+   */
+  private async settledCommit(input: SyncConfigureInput, revision: number, reason: string, signal: AbortSignal, work: () => Promise<void>): Promise<void> {
+    const folder = input.folder!.id;
+    let entered = false;
+    try {
+      await input.exclusiveWrites(reason, async (writer) => {
+        entered = true;
+        this.writer = { revision, storage: folderBoundStorage(writer, folder) };
+        try {
+          await work();
+        } finally {
+          this.writer = null;
+        }
+      }, signal);
+    } catch (error) {
+      // The wait for other writers ends with the signal's own reason.
+      if (!entered) throwIfCancelled(signal);
+      throw error;
+    }
+  }
+
   private request(input: SyncConfigureInput, storage: ProjectStorage, revision: number): SyncPortRequest {
     return {
-      storage,
+      storage: writesThrough(storage, () => (this.writer?.revision === revision ? this.writer.storage : null)),
       folderId: input.folder!.id,
       repositoryUrl: input.settings.repositoryUrl,
       branch: input.settings.branch,

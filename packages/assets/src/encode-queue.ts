@@ -170,6 +170,8 @@ export class EncodeQueue {
   private recycled = 0;
   /** Advanced by `clear()`: an encode started before it reports `onDrop`. */
   private generation = 0;
+  /** `whenIdle` callers, told once no job waits or runs. */
+  private readonly idleWaiters = new Set<() => void>();
 
   constructor(options: EncodeQueueOptions = {}) {
     this.encode = options.encode ?? stubEncodeKtx2;
@@ -188,6 +190,36 @@ export class EncodeQueue {
 
   get recycleCount(): number {
     return this.recycled;
+  }
+
+  /**
+   * Resolves once no job waits or runs: at once when none does, else after
+   * the last one's callbacks return (`onComplete` awaited, so its commit has
+   * landed). Jobs queued meanwhile are waited for too, and a paused queue
+   * with work waiting is not idle. `signal` rejects the wait with its reason.
+   */
+  whenIdle(signal?: AbortSignal): Promise<void> {
+    if (signal?.aborted) return Promise.reject(signal.reason);
+    if (this.depth === 0) return Promise.resolve();
+    return new Promise<void>((resolve, reject) => {
+      const onAbort = () => {
+        this.idleWaiters.delete(done);
+        reject(signal!.reason);
+      };
+      const done = () => {
+        signal?.removeEventListener("abort", onAbort);
+        resolve();
+      };
+      this.idleWaiters.add(done);
+      signal?.addEventListener("abort", onAbort, { once: true });
+    });
+  }
+
+  private notifyIdle(): void {
+    if (this.depth > 0) return;
+    const waiters = [...this.idleWaiters];
+    this.idleWaiters.clear();
+    for (const waiter of waiters) waiter();
   }
 
   /**
@@ -257,6 +289,7 @@ export class EncodeQueue {
           if (index >= 0) this.queue.splice(index, 1);
           signal?.removeEventListener("abort", cancel);
           reject(controller.signal.reason);
+          this.notifyIdle();
         }
       };
       const job: DerivedJob = { cancel: (reason) => {
@@ -294,6 +327,7 @@ export class EncodeQueue {
     for (const job of this.queue.splice(0)) {
       if ("run" in job) job.cancel(new Error("Asset processing cancelled."));
     }
+    this.notifyIdle();
   }
 
   pause(): void {
@@ -357,14 +391,22 @@ export class EncodeQueue {
   }
 
   private async pump(): Promise<void> {
-    if (this.paused || this.running) return;
+    if (this.running) return;
+    if (this.paused) {
+      // The job that just ended may have been the last one.
+      this.notifyIdle();
+      return;
+    }
     let job = this.queue.shift();
     // A guarded job its guard now refuses is dropped before any work or write.
     while (job && "assetGuid" in job && job.guard && !job.guard.canWrite(job.assetGuid)) {
       this.onDrop?.(job);
       job = this.queue.shift();
     }
-    if (!job) return;
+    if (!job) {
+      this.notifyIdle();
+      return;
+    }
 
     this.running = true;
     if ("run" in job) {

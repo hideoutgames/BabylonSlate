@@ -394,6 +394,18 @@ export class ProjectService {
   }
 
   /**
+   * Resolves once the Texture encode queue has no job waiting or running and
+   * the last result is written (`EncodeQueue.whenIdle`); a queue paused with
+   * work waiting (a Scene load, Play, the app in the background) is not idle
+   * until it resumes and finishes. `signal` ends the wait. Publish waits for
+   * it, so a project's first commit holds its encodes rather than leaving
+   * them as changes.
+   */
+  textureEncodesIdle(signal?: AbortSignal): Promise<void> {
+    return this.textures.whenIdle(signal);
+  }
+
+  /**
    * Clean Unused Project Storage: removes `assets/.blobs` files no asset
    * names (and staged write files a killed write or download left there),
    * each only once it is `minAgeMs` old by mtime. Never while Source Control

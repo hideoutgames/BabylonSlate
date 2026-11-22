@@ -262,6 +262,11 @@ export class ProjectTextureEncoding {
     while (this.textureStateWrites.size > 0) await Promise.allSettled([...this.textureStateWrites]);
   }
 
+  /** See `ProjectService.textureEncodesIdle`. */
+  whenIdle(signal?: AbortSignal): Promise<void> {
+    return this.queue.whenIdle(signal);
+  }
+
   /** A project load starts a session that has written no encodes yet. */
   forgetSessionEncodes(): void {
     this.sessionEncodes.clear();
