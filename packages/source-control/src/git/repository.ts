@@ -55,6 +55,38 @@ const CLONE_IGNORES = new Set([PROJECT_CREATION_MARKER, ".DS_Store", "Thumbs.db"
  */
 const LFS_SCRATCH = ".git/lfs/tmp";
 
+/**
+ * A staged native download (`.haptic-<uuid>.tmp` beside its `.blobs` file)
+ * at least this old is a killed app's: a running download's file is written
+ * as it streams and hashed just before its rename, and a cancelled one is
+ * removed. Younger ones are never touched, so a download in flight (another
+ * desktop window's) keeps its file.
+ */
+export const STALE_STAGED_DOWNLOAD_MS = 15 * 60_000;
+
+/** The project's own blob folder: the one `openRepository` checks, without walking the tree. */
+const PROJECT_BLOB_FOLDER = "assets/.blobs";
+
+/** Staged downloads in `folders` past `STALE_STAGED_DOWNLOAD_MS` by mtime against the wall clock `now` (one without an mtime, or from the future, stays), where storage can list them. */
+async function staleStagedDownloads(storage: ProjectStorage, folders: Iterable<string>, now: number): Promise<string[]> {
+  if (!storage.listStagedWrites) return [];
+  const stale: string[] = [];
+  for (const folder of folders) {
+    let entries;
+    try {
+      entries = await storage.listStagedWrites(folder);
+    } catch (error) {
+      if (isStorageNotFound(error)) continue;
+      throw error;
+    }
+    for (const entry of entries) {
+      const mtime = entry.mtime;
+      if (typeof mtime === "number" && mtime <= now && now - mtime >= STALE_STAGED_DOWNLOAD_MS) stale.push(`${folder}/${entry.name}`);
+    }
+  }
+  return stale.sort();
+}
+
 export interface GitRepositoryOptions {
   /** Bound to the project folder, which is the repository root (`.git` beside `assets/`). */
   storage: ProjectStorage;
@@ -190,6 +222,10 @@ export async function openRepository(options: Omit<GitRepositoryOptions, "branch
   // Objects downloaded for reading are removed once read; one is left only when the app was killed first.
   // Nothing reads the folder before an operation runs. A failure leaves it to the next open.
   if (await options.storage.exists(LFS_SCRATCH).catch(() => false)) await options.storage.remove(LFS_SCRATCH).catch(() => undefined);
+  // So are downloads a killed app staged beside the project's blobs (other blob folders go with Remove Unused Files).
+  for (const path of await staleStagedDownloads(options.storage, [PROJECT_BLOB_FOLDER], Date.now()).catch(() => [])) {
+    await options.storage.remove(path).catch(() => undefined);
+  }
   return new GitRepository({ ...options, branch });
 }
 
@@ -664,13 +700,15 @@ export class GitRepository implements SyncPort {
     return this.run(async (op) => {
       // Untracked: no HEAD entry and no index entry (a staged file has one). An untracked file is never hashed.
       const rows = (await git.statusMatrix({ ...op.git, filter: (path) => lfsObjectId(path) !== null })) as StatusRow[];
+      // Downloads a killed app staged in any blob folder: never part of the project or of Git (listings and `.gitignore` leave them out).
+      const staged = await staleStagedDownloads(this.storage, new Set([PROJECT_BLOB_FOLDER, ...rows.map(([path]) => parentOf(path))]), Date.now());
       const untracked = rows.filter(([, head, workdir, stage]) => head === 0 && workdir === 2 && stage === 0).map(([path]) => path);
-      if (untracked.length === 0) return [];
+      if (untracked.length === 0) return staged;
       const held = await this.heldByUnpushed(op, untracked, signal);
       const loose = untracked.filter((path) => !held.has(path));
-      if (loose.length === 0) return [];
+      if (loose.length === 0) return staged;
       const needed = await this.neededByCommittedAssets(op, loose, references, signal);
-      return loose.filter((path) => !needed.has(path)).sort();
+      return [...loose.filter((path) => !needed.has(path)), ...staged].sort();
     }, signal, true);
   }
 

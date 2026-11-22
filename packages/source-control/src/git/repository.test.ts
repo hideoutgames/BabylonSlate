@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ProjectStorage } from "@haptic/core";
 import * as git from "isomorphic-git";
@@ -512,6 +512,27 @@ describe("GitRepository", { timeout: 60_000 }, () => {
     await storage.writeBinary(`.git/lfs/tmp/${"c".repeat(64)}`, blobBytes(1, 4096));
     await openRepository({ storage, http: server.http, credential: server.credential(), repositoryUrl: REPOSITORY_URL, now: () => NOW });
     expect(existsSync(join(folder(storage), ".git/lfs/tmp"))).toBe(false);
+  });
+
+  it("reclaims downloads a killed app staged beside the blobs, never one young enough to be in flight", async () => {
+    server.seed({ ".gitattributes": RULE, "assets/a.hasset": "A" });
+    const storage = await server.storage();
+    const repository = await clone(storage);
+    const blobs = join(folder(storage), "assets/.blobs");
+    mkdirSync(blobs, { recursive: true });
+    const killed = ".haptic-0f8fad5b-d9cb-469f-a165-70867728950e.tmp";
+    const running = ".haptic-7c9e6679-7425-40de-944b-e07fc1f90ae7.tmp";
+    writeFileSync(join(blobs, killed), "partial");
+    writeFileSync(join(blobs, running), "streaming");
+    // The killed one was last written an hour ago; the running one moments ago.
+    const hourAgo = new Date(Date.now() - 3_600_000);
+    utimesSync(join(blobs, killed), hourAgo, hourAgo);
+
+    // Remove Unused Files offers it with the rest...
+    expect(await repository.removableLfsObjects({ references: () => [] })).toEqual([`assets/.blobs/${killed}`]);
+    // ...and opening the copy removes it.
+    await openRepository({ storage, http: server.http, credential: server.credential(), repositoryUrl: REPOSITORY_URL });
+    expect(readdirSync(blobs).sort()).toEqual([running]);
   });
 
   it("types refused credentials, missing repositories and unreachable hosts", async () => {
