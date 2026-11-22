@@ -337,6 +337,44 @@ describe("EncodeQueue", () => {
     expect(completed).toEqual(["a:3"]);
     expect(queue.depth).toBe(0);
   });
+
+  it("is idle only once no job waits, runs or is still committing, paused or not", async () => {
+    const settings = { format: "uastc", quality: 2, maxDimension: 2048, generateMipmaps: true } as const;
+    const commits: Array<() => void> = [];
+    const committed: string[] = [];
+    const queue = new EncodeQueue({
+      onComplete: async (result) => {
+        await new Promise<void>((resolve) => commits.push(resolve));
+        committed.push(result.assetGuid);
+      },
+    });
+    await expect(queue.whenIdle()).resolves.toBeUndefined();
+    // Queued behind a pause (a blocking Scene load): not idle, however long it waits.
+    queue.pause();
+    queue.enqueue({ assetGuid: "queued", loadSource: () => Promise.resolve(new Uint8Array([1])), settings });
+    let idle = false;
+    const waited = queue.whenIdle().then(() => { idle = true; });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(idle).toBe(false);
+    queue.resume();
+    await vi.waitFor(() => expect(commits).toHaveLength(1));
+    // A job queued while the first one commits is waited for too.
+    queue.enqueue({ assetGuid: "later", loadSource: () => Promise.resolve(new Uint8Array([2])), settings });
+    commits[0]!();
+    await vi.waitFor(() => expect(commits).toHaveLength(2));
+    expect(idle).toBe(false);
+    // Paused while the last job commits: idle when its commit returns.
+    queue.pause();
+    commits[1]!();
+    await waited;
+    expect(committed).toEqual(["queued", "later"]);
+    // A wait the caller gives up on rejects with its reason.
+    queue.enqueue({ assetGuid: "held", loadSource: () => Promise.resolve(new Uint8Array([3])), settings });
+    const controller = new AbortController();
+    const abandoned = queue.whenIdle(controller.signal);
+    controller.abort(new Error("Closed."));
+    await expect(abandoned).rejects.toThrow("Closed.");
+  });
 });
 
 describe("EncodeQueue requests for one asset", () => {

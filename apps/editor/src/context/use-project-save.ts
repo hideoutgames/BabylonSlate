@@ -139,7 +139,9 @@ export function useProjectSave({
     if (refuseLocked()) return Promise.resolve("authoring-locked");
     // Each await below resumes only after any editor viewport frame drawn
     // meanwhile, so the viewports hold their frames until this save settles.
-    return enqueueProjectWrite(() => withEditorViewportFramesHeld(async (): Promise<SaveAllOutcome> => {
+    // A commit holding the project's writes is waited for first, with the
+    // viewports drawing: the save then runs as soon as the commit ends.
+    return enqueueProjectWrite(async () => { await projectService.whenWritesAdmitted(); return withEditorViewportFramesHeld(async (): Promise<SaveAllOutcome> => {
     if (refusePendingRecovery()) return "recovery-pending";
     if (refuseLocked()) return "authoring-locked";
     return projectService.withBaselineSave(async (admitted): Promise<SaveAllOutcome> => {
@@ -312,7 +314,7 @@ export function useProjectSave({
         progress.finish();
       }
     });
-    }));
+    }); });
   }, [
     cancelDebouncedSave,
     enqueueProjectWrite,

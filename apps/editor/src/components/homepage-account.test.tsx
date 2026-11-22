@@ -127,6 +127,8 @@ describe("Homepage account", () => {
       within(dialog).getByRole("button", { name: "Subscribe" }),
     ).toHaveProperty("disabled", true);
     expect(within(dialog).getByRole("alert").textContent).toMatch(/not set up/i);
+    // No price to show without a store: the card names none, neither a placeholder nor a load that never ends.
+    expect(dialog.querySelector('[data-plan="pro"]')?.textContent).not.toMatch(/coming soon|loading/i);
     fireEvent.click(within(dialog).getByRole("button", { name: "Done" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });

@@ -1488,6 +1488,32 @@ describe("project documents as .hasset", () => {
     });
   });
 
+  it("saves an Animation's root motion track into its document, names its bone in the header, and exports the track", async () => {
+    const { service } = await scaffolded();
+    const registry = service.registry!;
+    // As import writes it: no root motion yet.
+    const created = await registry.createAsset("project", "Death_A.hasset", {
+      type: "Animation", name: "Death_A", guid: "death", version: 1, dependencies: [], chunks: [],
+      payload: { ...normalizeAnimationPayload({ clipName: "Death_A", modelGuid: "rig", durationMs: 1200, clipDurationMs: 1200 }) },
+    });
+    // 37 samples of a 1.2 s fall back along Z.
+    const samples = Array.from({ length: 37 }, (_, index) => index);
+    const rootMotion = {
+      bone: "hips",
+      track: { durationMs: 1200, stepMs: 1000 / 30, x: samples.map(() => 0), z: samples.map((index) => (index === 0 ? 0 : -index / 80)), yaw: samples.map(() => 0) },
+    };
+    const loaded = (await service.loadDocument("animation", created.path)) as Record<string, unknown>;
+    await service.saveDocument("animation", created.path, { ...loaded, rootMotion });
+
+    const header = registry.getByGuid("death")!.header.payload;
+    expect(header).not.toHaveProperty("rootMotion");
+    expect(header.rootMotionBone).toBe("hips");
+    expect(normalizeAnimationPayload(await service.loadDocument("animation", created.path)).rootMotion).toEqual(rootMotion);
+    const exported = await loadExportDocuments(exportLoaders(service, created.path));
+    const packed = normalizeAnimationPayload(JSON.parse(new TextDecoder().decode(exported.bytesByGuid("death")!)));
+    expect(packed.rootMotion).toEqual(rootMotion);
+  });
+
   it("reports a copied asset file hidden because its guid duplicates another asset, once", async () => {
     const { storage, service } = await scaffolded();
     await storage.mkdir("assets/Copies", true);

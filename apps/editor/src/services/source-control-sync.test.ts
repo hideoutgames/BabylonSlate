@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS, type SourceControlMode } from "@haptic/core";
+import { EncodeQueue } from "@haptic/assets";
+import { DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS, type ProjectStorage, type SourceControlMode } from "@haptic/core";
 import { GITATTRIBUTES_LFS_RULE, SyncError, type FileLock, type SyncPort } from "@haptic/source-control";
 import { FakeRemote, FakeSync } from "@haptic/source-control/fake-sync";
 import { MemoryStorageAdapter } from "@haptic/vfs";
@@ -7,6 +8,7 @@ import { setEditorQuiet } from "../lib/editor-quiet";
 import type { ChangeLookup } from "../lib/source-control-changes";
 import { testAsset } from "../testing/diff-assets";
 import { projectJsonWith } from "../testing/integrated-sync";
+import { guardProjectStorage, ProjectWriteAdmission, withExclusiveWriter } from "./project-write-admission";
 import { SourceControlSyncService, STATUS_DEBOUNCE_MS, type SyncConfigureInput, type SyncPortFactory } from "./source-control-sync";
 
 const URL = "https://github.com/team/game.git";
@@ -64,6 +66,7 @@ async function setup(options: { platform?: string; testMode?: boolean; files?: R
     lookup,
     locks,
     exclusiveWrites: (_reason, work) => work(storage),
+    backgroundWritesIdle: async () => {},
     factory,
   });
   const service = new SourceControlSyncService();
@@ -400,6 +403,7 @@ describe("SourceControlSyncService", () => {
         lookup,
         locks,
         exclusiveWrites: (_reason, work) => work(storage),
+        backgroundWritesIdle: async () => {},
         factory,
       });
       return { storage, a, b, input, locks, factory, releaseAuthor };
@@ -713,6 +717,7 @@ describe("SourceControlSyncService", () => {
         lookup,
         locks: { theirs: async () => [], releaseOwn: async () => {} },
         exclusiveWrites: (_reason, work) => work(storage),
+        backgroundWritesIdle: async () => {},
         factory,
       });
       return { remote, storage, factory, input };
@@ -739,6 +744,162 @@ describe("SourceControlSyncService", () => {
       expect(new TextDecoder().decode(head.files.get("project.json"))).toBe("{\"mode\":\"integrated\"}");
       expect(head.files.has("assets/Forest.scene.hasset")).toBe(true);
       expect(service.getSnapshot()).toMatchObject({ active: true, ahead: 0, behind: 0, rows: [], problem: null });
+    });
+
+    /**
+     * As the editor runs Publish: the sync gets the admission-guarded storage
+     * (`ProjectService.storagePort`), exclusive writes go through the real
+     * `withExclusiveWriter`, and the Git client writes `.git` through the
+     * storage its request names (as the Git core does) when it commits.
+     */
+    async function admittedPublish(options: {
+      backgroundWritesIdle?: (signal: AbortSignal) => Promise<void>;
+      /** Runs after each status read, before its result returns. */
+      afterStatus?: () => Promise<void>;
+      /** Runs as each commit starts, before the Git client reads the files. */
+      beforeGitCommit?: () => Promise<void>;
+    } = {}) {
+      const remote = new FakeRemote();
+      const raw = new MemoryStorageAdapter("documents");
+      const folder = await raw.openDocumentsProject("Game");
+      const admission = new ProjectWriteAdmission();
+      const internal = guardProjectStorage(raw, admission, true);
+      const storage = guardProjectStorage(internal, admission);
+      await storage.writeText(".gitattributes", `${GITATTRIBUTES_LFS_RULE}\n`);
+      await storage.writeText("project.json", "{}");
+      await storage.writeText("assets/Rock.texture.hasset", "pending");
+      const factory: SyncPortFactory = {
+        open: async (): Promise<SyncPort> => { throw new Error("Publish opens the client it starts."); },
+        init: async (request): Promise<SyncPort> => {
+          const port = FakeSync.init({ storage: request.storage, remote, branch: "main" });
+          const commit = port.commit.bind(port);
+          const status = port.status.bind(port);
+          vi.spyOn(port, "status").mockImplementation(async () => {
+            const read = await status();
+            await options.afterStatus?.();
+            return read;
+          });
+          vi.spyOn(port, "commit").mockImplementation(async (input) => {
+            await options.beforeGitCommit?.();
+            const result = await commit(input);
+            await request.storage.writeText(".git/COMMIT_EDITMSG", input.message);
+            return result;
+          });
+          return port;
+        },
+        author: async () => AUTHOR,
+        ...NOT_ASKED,
+      };
+      const input = (mode: SourceControlMode): SyncConfigureInput => ({
+        settings: { ...DEFAULT_SOURCE_CONTROL_PROJECT_SETTINGS, mode, repositoryUrl: URL, branch: "main" },
+        folder,
+        storage,
+        platform: "web",
+        testMode: true,
+        lookup,
+        locks: { theirs: async () => [], releaseOwn: async () => {} },
+        exclusiveWrites: (reason, work, signal, options) => withExclusiveWriter(admission, raw, reason, work, signal, options),
+        backgroundWritesIdle: options.backgroundWritesIdle ?? (async () => {}),
+        factory,
+      });
+      const service = new SourceControlSyncService();
+      await service.configure(input("off"));
+      const publish = () => service.publish({
+        input: input("off"),
+        repositoryUrl: URL,
+        branch: "main",
+        replace: false,
+        beforeCommit: async () => {
+          await storage.writeText("project.json", "{\"mode\":\"integrated\"}");
+          await service.configure(input("integrated"));
+        },
+      });
+      const pushed = (path: string) => {
+        const bytes = remote.get(remote.branches.get("main")!).files.get(path);
+        return bytes ? new TextDecoder().decode(bytes) : null;
+      };
+      return { admission, internal, raw, storage, service, publish, pushed };
+    }
+
+    /** A Texture encode's commit: its KTX2 blob, then the header naming it, through the internal (admitted) storage. */
+    async function writeEncode(storage: ProjectStorage): Promise<void> {
+      await storage.writeBinary(BLOB_PATH, new Uint8Array([7, 7]));
+      await storage.writeText("assets/Rock.texture.hasset", `compressed ${BLOB}`);
+    }
+
+    it("commits an encode that lands while it reads the changes, leaving nothing over", async () => {
+      let landed!: () => void;
+      const encodeLanded = new Promise<void>((resolve) => { landed = resolve; });
+      // The worst interleaving: the encode's write lands right after a status read, before the commit.
+      const { admission, internal, raw, service, publish, pushed } = await admittedPublish({ afterStatus: () => encodeLanded });
+      // An encode is running when Publish starts: it holds the write admission from its start until its commit.
+      const release = admission.retain();
+      setTimeout(() => {
+        void writeEncode(internal).then(() => {
+          release();
+          landed();
+        });
+      }, 20);
+      await publish();
+      expect(pushed("assets/Rock.texture.hasset")).toBe(`compressed ${BLOB}`);
+      expect(pushed(BLOB_PATH)).not.toBeNull();
+      expect(service.getSnapshot()).toMatchObject({ rows: [], ahead: 0, problem: null });
+      // The Git client wrote `.git` past the barrier, and the barrier is gone again.
+      expect(await raw.readText(".git/COMMIT_EDITMSG")).toBe("Publish project");
+      expect(admission.blocked).toBe(false);
+    });
+
+    it("waits for encodes still queued behind a Scene load, so the first commit holds them", async () => {
+      const fixture = await admittedPublish({ backgroundWritesIdle: (signal) => queue.whenIdle(signal) });
+      const releases = new Map<string, () => void>();
+      // The project's encode queue as ProjectTextureEncoding drives it: each running encode holds the write admission until its commit.
+      const queue = new EncodeQueue({
+        encode: async () => ({ ktx2: new Uint8Array([7, 7]), wallMs: 1 }),
+        onState: (guid, state) => {
+          if (state === "encoding") releases.set(guid, fixture.admission.retain());
+        },
+        onComplete: async (result) => {
+          await writeEncode(fixture.internal);
+          releases.get(result.assetGuid)!();
+        },
+      });
+      // A blocking Scene load holds the queue; it ends while Publish runs.
+      queue.pause();
+      queue.enqueue({ assetGuid: "rock", loadSource: async () => new Uint8Array([1]), settings: { format: "uastc", quality: 2, maxDimension: 2048, generateMipmaps: true } });
+      setTimeout(() => queue.resume(), 20);
+      await fixture.publish();
+      expect(fixture.pushed("assets/Rock.texture.hasset")).toBe(`compressed ${BLOB}`);
+      expect(fixture.pushed(BLOB_PATH)).not.toBeNull();
+      expect(fixture.service.getSnapshot()).toMatchObject({ rows: [], ahead: 0, problem: null });
+    });
+
+    it("commits an asset with the blob its header names when an encode rewrites it while the commit reads it", async () => {
+      let landing: Promise<void> = Promise.resolve();
+      const fixture = await admittedPublish({ beforeGitCommit: () => landing });
+      await fixture.publish();
+      const texture = (fill: number) => testAsset("Texture", "Rock", { chunks: [{ id: "payload", kind: "payload", mime: "application/octet-stream", data: new Uint8Array(70 * 1024).fill(fill) }] });
+      const [edited, encoded] = [await texture(1), await texture(2)];
+      const [editedSha, editedBlob] = [...edited.blobs][0]!;
+      const [encodedSha, encodedBlob] = [...encoded.blobs][0]!;
+      await fixture.storage.writeBinary(`assets/.blobs/${editedSha}`, editedBlob);
+      await fixture.storage.writeBinary("assets/Rock.texture.hasset", edited.bytes);
+      // An encode is running when Commit starts; its write lands after the commit has read the header (worst case).
+      const release = fixture.admission.retain();
+      let landed!: () => void;
+      landing = new Promise((resolve) => { landed = resolve; });
+      setTimeout(() => {
+        void (async () => {
+          await fixture.internal.writeBinary(`assets/.blobs/${encodedSha}`, encodedBlob);
+          await fixture.internal.writeBinary("assets/Rock.texture.hasset", encoded.bytes);
+          release();
+          landed();
+        })();
+      }, 20);
+      expect(await fixture.service.commit({ rowIds: new Set(["assets/Rock.texture.hasset"]), message: "Rock", push: true })).toBe(true);
+      // The committed header and the blob it names are one version: a teammate's pull finds the blob.
+      expect(fixture.pushed(`assets/.blobs/${encodedSha}`)).not.toBeNull();
+      expect(fixture.service.getSnapshot()).toMatchObject({ rows: [], ahead: 0, problem: null });
+      expect(fixture.admission.blocked).toBe(false);
     });
 
     it("stays idle and rethrows when the working copy cannot start", async () => {

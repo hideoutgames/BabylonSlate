@@ -154,6 +154,11 @@ export class WorldTransformComposer {
     return cyclic ? null : this.store.current();
   }
 
+  /** Drop `guid`'s pose (its actor left the World), as a full `compose` that no longer selects it does. */
+  forget(guid: string): void {
+    this.store.forget(guid);
+  }
+
   /** The currently cached world-pose map from the latest full or incremental pass. */
   current(): ActorTransformMap {
     return this.store.current();
@@ -235,6 +240,11 @@ class ReusablePoseStore implements PoseStore {
 
   current(): ActorTransformMap {
     return this.poses;
+  }
+
+  forget(guid: string): void {
+    this.entries.delete(guid);
+    this.poses.delete(guid);
   }
 
   private readonly release = (entry: PoseEntry, guid: string): void => {

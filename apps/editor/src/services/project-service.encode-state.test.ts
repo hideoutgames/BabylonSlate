@@ -11,7 +11,7 @@ import {
 import { decodeHasset, encodeHasset } from "@haptic/assets/hasset";
 import { MemoryStorageAdapter } from "@haptic/vfs";
 import { ProjectService } from "./project-service";
-import { textureEncodeQueue } from "../testing/texture-encode-queue";
+import { pauseTextureEncodes, textureEncodeQueue } from "../testing/texture-encode-queue";
 
 /** KTX2 identifier plus pixelWidth / pixelHeight. */
 function ktx2Header(width: number, height: number): Uint8Array {
@@ -292,5 +292,95 @@ describe("texture encode state writes", () => {
     calls[0]!.finish();
     await vi.waitFor(() => expect(textureEncodeQueue(service).depth).toBe(0));
     expect(service.textureEncodingGuids.size).toBe(0);
+  });
+
+  describe("an encode whose source is loading when a lock takes the project's writes", () => {
+    /**
+     * A Texture imported while encodes are paused; once they resume, its job
+     * loads its source and waits there until the test lets the load finish.
+     * `loads` counts every source load, so a held job retrying shows.
+     */
+    async function loadingEncode() {
+      const encodes: string[] = [];
+      const { storage, service } = await openService(async (source, settings, mime, signal) => {
+        encodes.push("encode");
+        return standInEncode(source, settings, mime, signal);
+      });
+      const queue = textureEncodeQueue(service);
+      const enqueue = queue.enqueue.bind(queue);
+      let loads = 0;
+      let finishLoad!: () => void;
+      const loading = new Promise<void>((resolve) => { finishLoad = resolve; });
+      vi.spyOn(queue, "enqueue").mockImplementation((job) => enqueue({
+        ...job,
+        loadSource: async () => {
+          loads += 1;
+          if (loads === 1) await loading;
+          return job.loadSource();
+        },
+      }));
+      const resume = pauseTextureEncodes(service);
+      const writes = recordTextureWrites(storage);
+      const [texture] = await service.registry!.importFile("project", "", "odd.png", pngHeader(1, 1));
+      resume();
+      await vi.waitFor(() => expect(loads).toBe(1));
+      return { service, guid: texture!.header.guid, writes, encodes, loads: () => loads, finishLoad };
+    }
+
+    /** While held: the load ran once, nothing encoded, nothing failed, and the job still waits. */
+    async function expectHeld(fixture: Awaited<ReturnType<typeof loadingEncode>>) {
+      fixture.finishLoad();
+      // Long enough for a retry loop to show itself many times over.
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      expect(fixture.loads()).toBe(1);
+      expect(fixture.encodes).toEqual([]);
+      expect(textureEncodeQueue(fixture.service).depth).toBe(1);
+      expect(fixture.writes.filter((write) => write.state === "encode_failed")).toEqual([]);
+    }
+
+    /** After the lock: encoded once, never marked failed, no failure notice. */
+    async function expectEncodedAfter(fixture: Awaited<ReturnType<typeof loadingEncode>>) {
+      await vi.waitFor(() => expect(fixture.service.registry!.getByGuid(fixture.guid)!.header.payload.compressionState).toBe("compressed"));
+      await writesSettled(fixture.service);
+      expect(fixture.loads()).toBe(2);
+      expect(fixture.encodes).toEqual(["encode"]);
+      expect(fixture.writes.map((write) => write.state)).not.toContain("encode_failed");
+      expect(fixture.service.registry!.getByGuid(fixture.guid)!.header.payload).not.toHaveProperty("encodeError");
+      expect(fixture.service.sessionDiagnostics.filter((line) => line.startsWith("Texture encode failed"))).toEqual([]);
+    }
+
+    it("is held through a commit's lock, then encodes, with no failure", async () => {
+      const fixture = await loadingEncode();
+      await fixture.service.withExclusiveWrites("Read-only while committing", async () => {
+        await expectHeld(fixture);
+      }, undefined, { queueWrites: true });
+      await expectEncodedAfter(fixture);
+    });
+
+    it("is held through Simulation's lock, then encodes, with no failure", async () => {
+      const fixture = await loadingEncode();
+      const lease = fixture.service.lockAuthoringWrites("Read-only during Simulation Play");
+      expect(await lease.ready).toBe(true);
+      try {
+        await expectHeld(fixture);
+      } finally {
+        lease.release();
+      }
+      await expectEncodedAfter(fixture);
+    });
+
+    it("is dropped, not run, when the project closes while it is held", async () => {
+      const fixture = await loadingEncode();
+      const lease = fixture.service.lockAuthoringWrites("Read-only during Simulation Play");
+      expect(await lease.ready).toBe(true);
+      await expectHeld(fixture);
+      // Simulation ends as the project closes: Close Project drops queued encodes at once, before the lock's end starts the held one again.
+      lease.release();
+      await fixture.service.closeProject();
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      expect(fixture.loads()).toBe(1);
+      expect(fixture.encodes).toEqual([]);
+      expect(textureEncodeQueue(fixture.service).depth).toBe(0);
+    });
   });
 });

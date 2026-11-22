@@ -775,6 +775,35 @@ describe("DocumentProvider actions and route", () => {
     }
   });
 
+  it("makes an explicit Save All during a commit wait for it, then save, never refusing it", async () => {
+    const actions = await openProject();
+    await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));
+    await act(() => actions.applySceneChange(MAIN_SCENE_ID, movedScene(openScene(MAIN_SCENE_ID), 7)));
+    const authored = openScene(MAIN_SCENE_ID);
+    // The provider's ProjectService, as Source Control's commit reaches it.
+    const lockSpy = vi.spyOn(ProjectService.prototype, "lockAuthoringWrites");
+    actions.lockAuthoringWrites("Finding the project service").release();
+    const service = lockSpy.mock.contexts[0] as ProjectService;
+    lockSpy.mockRestore();
+    let saving!: Promise<SaveAllOutcome>;
+    let settled = false;
+    await service.withExclusiveWrites("Read-only while committing", async () => {
+      act(() => { saving = actions.saveAll(); });
+      void saving.then(() => { settled = true; });
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      // Waiting, not refused: nothing written yet, nothing reported, and the viewports keep drawing meanwhile.
+      expect(settled).toBe(false);
+      expect(documents().dirtyDocuments).not.toEqual([]);
+      let framesHeld: boolean | null = null;
+      subscribeEditorViewportFrameHold((held) => { framesHeld = held; })();
+      expect(framesHeld).toBe(false);
+    }, undefined, { queueWrites: true });
+    await act(async () => { expect(await saving).toBe("saved"); });
+    expect(documents().dirtyDocuments).toEqual([]);
+    const stored = await actions.loadAssetDocument("scene", MAIN_SCENE_FILE) as SerializedScene;
+    expect(stored.actors[0]!.transform.position).toEqual(authored.actors[0]!.transform.position);
+  });
+
   it("preserves authored content and existing Redo when authoring rejects edits and history actions", async () => {
     const actions = await openProject();
     await act(() => actions.openDocument(sceneRef(MAIN_SCENE_FILE)));

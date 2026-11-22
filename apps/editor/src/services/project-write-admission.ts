@@ -13,6 +13,37 @@ export interface ProjectWriteLease {
 }
 
 /**
+ * A write refused because a lock holds the project's writes (Simulation, a
+ * commit, Remove Unused Files): the write was never started, so a background
+ * writer can wait for `ProjectWriteAdmission.whenUnlocked` and try again,
+ * where any other error is a real failure. Tell it apart by type
+ * (`isProjectWritesLocked`), never by message.
+ */
+export class ProjectWritesLockedError extends Error {
+  constructor(reason: string) {
+    super(reason);
+    this.name = "ProjectWritesLockedError";
+  }
+}
+
+export function isProjectWritesLocked(error: unknown): error is ProjectWritesLockedError {
+  return error instanceof ProjectWritesLockedError;
+}
+
+export interface ProjectWriteLockOptions {
+  /**
+   * Admissions that arrive once the lock holds the writes wait for its
+   * release and then run, instead of being refused: for a short lock whose
+   * end is near (a commit reading the changes and recording them), so an
+   * explicit save waits rather than fails. While the lock still waits for
+   * admitted operations to finish, new ones are admitted (one may be nested
+   * in an operation it waits for), so the wait can never close a cycle.
+   * Synchronous checks (`assertAdmission`) still refuse.
+   */
+  queueWrites?: boolean;
+}
+
+/**
  * An editor session closes new write admissions before capturing its baseline.
  * Already-admitted owner operations retain their entire async lifetime, including
  * rollback, before the storage barrier becomes active. This is not file rollback.
@@ -20,8 +51,12 @@ export interface ProjectWriteLease {
 export class ProjectWriteAdmission {
   private active = 0;
   private epoch = 0;
-  private readonly locks = new Map<symbol, { reason: string; ready: (acquired: boolean) => void }>();
+  private readonly locks = new Map<symbol, { reason: string; ready: (acquired: boolean) => void; queueWrites: boolean }>();
   private readonly listeners = new Set<() => void>();
+  /** Told on every lock release: admissions waiting for a `queueWrites` lock check again. */
+  private releaseWaiters: Array<() => void> = [];
+  /** Told once no lock holds writes locked (`whenUnlocked`). */
+  private unlockWaiters: Array<() => void> = [];
   private publishedState = "open";
 
   get blocked(): boolean { return this.locks.size > 0; }
@@ -70,40 +105,76 @@ export class ProjectWriteAdmission {
   get yieldingUnit(): Promise<void> | null { return this.yielding; }
   get locked(): boolean { return this.blocked && this.active === 0; }
   get reason(): string | null { return this.locks.values().next().value?.reason ?? null; }
+  /** Why a new admission is refused now; null when none is, or every lock lets admissions wait (`queueWrites`). */
+  get refusal(): string | null {
+    for (const lock of this.locks.values()) if (!lock.queueWrites) return lock.reason;
+    return null;
+  }
+
+  /**
+   * Resolves once no lock holds writes locked (`locked` is false): the
+   * signal a background writer refused with `ProjectWritesLockedError` waits
+   * for before it tries again, so it never retries in a loop.
+   */
+  whenUnlocked(): Promise<void> {
+    if (!this.locked) return Promise.resolve();
+    return new Promise<void>((resolve) => { this.unlockWaiters.push(resolve); });
+  }
+
+  /**
+   * Resolves once an admission would not wait: no `queueWrites` lock holds
+   * the writes (a refusing lock answers at once; the admission refuses).
+   * Lets a caller wait for a commit before work that should not overlap the
+   * wait, such as holding the viewports' frames.
+   */
+  async whenAdmitting(): Promise<void> {
+    while (this.locked && this.refusal === null) await this.whenReleased();
+  }
+
+  private whenReleased(): Promise<void> {
+    return new Promise<void>((resolve) => { this.releaseWaiters.push(resolve); });
+  }
 
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener);
     return () => { this.listeners.delete(listener); };
   }
 
-  lock(reason: string): ProjectWriteLease {
+  lock(reason: string, options: ProjectWriteLockOptions = {}): ProjectWriteLease {
     const key = Symbol();
     let ready!: (acquired: boolean) => void;
     const promise = new Promise<boolean>(resolve => { ready = resolve; });
-    this.locks.set(key, { reason: reason.trim() || "Project authoring is read-only.", ready });
+    this.locks.set(key, { reason: reason.trim() || "Project authoring is read-only.", ready, queueWrites: options.queueWrites === true });
     this.changed();
     return {
       ready: promise,
       release: () => {
         if (!this.locks.delete(key)) return;
         ready(false);
+        const waiting = this.releaseWaiters;
+        this.releaseWaiters = [];
+        for (const resume of waiting) resume();
         this.changed();
       },
     };
   }
 
   assertAdmission(): void {
-    if (this.blocked) throw new Error(this.reason!);
+    if (this.blocked) throw new ProjectWritesLockedError(this.reason!);
   }
 
   /** Last-line guard on internal storage after admitted owners have drained. */
   assertStorageWritable(): void {
-    if (this.locked) throw new Error(this.reason!);
+    if (this.locked) throw new ProjectWritesLockedError(this.reason!);
   }
 
   run<T>(operation: () => T | PromiseLike<T>): Promise<T> {
-    try { this.assertAdmission(); }
-    catch (error) { return Promise.reject(error); }
+    const refusal = this.refusal;
+    if (refusal) return Promise.reject(new ProjectWritesLockedError(refusal));
+    // Only `queueWrites` locks. Once one holds the writes, wait for a release, then ask again (a refusing
+    // lock taken meanwhile refuses). While it still drains, admit: an operation admitted then may be nested
+    // in one the lock is waiting for, and waiting would never end.
+    if (this.locked) return this.whenReleased().then(() => this.run(operation));
     // A background unit yields: this operation waits for it, then is admitted (or refused by a lock taken meanwhile).
     const yielding = this.yielding;
     if (yielding) return yielding.then(() => this.run(operation));
@@ -135,6 +206,11 @@ export class ProjectWriteAdmission {
 
   private changed(): void {
     if (this.locked) for (const { ready } of this.locks.values()) ready(true);
+    else if (this.unlockWaiters.length > 0) {
+      const waiting = this.unlockWaiters;
+      this.unlockWaiters = [];
+      for (const resume of waiting) resume();
+    }
     const state = this.locked ? "locked" : this.blocked ? "draining" : "open";
     if (state === this.publishedState) return;
     this.publishedState = state;
@@ -210,7 +286,7 @@ export function guardProjectStorage(
 
 /**
  * Runs `work` as the project's only writer: new admissions are refused with
- * `reason`, admitted owner operations (saves, imports, copies, encodes, each
+ * `reason` (or, with `queueWrites`, wait for it and run after), admitted owner operations (saves, imports, copies, encodes, each
  * admitted for its whole span) finish first, then `work` writes through
  * `storage` (unguarded) until it returns; that handle refuses writes
  * afterwards. Refused while another lock holds project writes (Simulation),
@@ -222,10 +298,11 @@ export async function withExclusiveWriter<T>(
   reason: string,
   work: (storage: ProjectStorage) => Promise<T>,
   signal?: AbortSignal,
+  options: ProjectWriteLockOptions = {},
 ): Promise<T> {
-  if (admission.blocked) throw new Error(admission.reason!);
+  if (admission.blocked) throw new ProjectWritesLockedError(admission.reason!);
   signal?.throwIfAborted();
-  return exclusively(admission.lock(reason), storage, work, signal);
+  return exclusively(admission.lock(reason, options), storage, work, signal);
 }
 
 async function exclusively<T>(

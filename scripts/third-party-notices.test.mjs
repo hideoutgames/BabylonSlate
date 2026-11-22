@@ -5,6 +5,7 @@ import {
   GAME_NOTICES_PATH,
   generateThirdPartyNotices,
   staleThirdPartyNotices,
+  webSourceUrl,
 } from "./third-party-notices.mjs";
 
 const generated = generateThirdPartyNotices();
@@ -34,4 +35,39 @@ test("the editor list marks what also ships in games", () => {
   assert.equal(byName.get("Basis Universal encoder")?.inGames, false);
   assert.equal(byName.get("@revenuecat/purchases-capacitor")?.inGames, false);
   for (const entry of packages) assert.ok(texts[entry.text]?.length > 0, entry.name);
+});
+
+test("repository addresses become the https page a browser opens", () => {
+  const cases = [
+    ["git@github.com:kaelzhang/node-ignore", "https://github.com/kaelzhang/node-ignore"],
+    ["git@github.com:kaelzhang/node-ignore.git", "https://github.com/kaelzhang/node-ignore"],
+    ["git+ssh://git@github.com/owner/repo.git", "https://github.com/owner/repo"],
+    ["ssh://git@gitlab.com:2222/group/repo.git", "https://gitlab.com/group/repo"],
+    ["git+https://github.com/owner/repo.git", "https://github.com/owner/repo"],
+    ["git+https://user:secret@github.com/owner/repo.git#main", "https://github.com/owner/repo"],
+    ["git://github.com/owner/repo.git", "https://github.com/owner/repo"],
+    ["github:owner/repo", "https://github.com/owner/repo"],
+    ["gitlab:group/repo", "https://gitlab.com/group/repo"],
+    ["bitbucket:team/repo", "https://bitbucket.org/team/repo"],
+    ["owner/repo", "https://github.com/owner/repo"],
+    ["https://github.com/owner/repo#readme", "https://github.com/owner/repo"],
+    // A real web page stays as it is.
+    ["https://github.com/BabylonJS/Assets/tree/master/core/areaLights", "https://github.com/BabylonJS/Assets/tree/master/core/areaLights"],
+    ["https://example.com/docs/", "https://example.com/docs/"],
+  ];
+  for (const [address, expected] of cases) assert.equal(webSourceUrl(address), expected, address);
+});
+
+test("an address that is no https page gives no link", () => {
+  for (const address of ["http://example.com/repo", "file:///tmp/repo", "gist:11081aaa281", "not an address", "", undefined]) {
+    assert.equal(webSourceUrl(address), null, String(address));
+  }
+});
+
+test("every generated source link is an https page", () => {
+  const { packages } = JSON.parse(generated.get(EDITOR_NOTICES_PATH));
+  for (const { name, source } of packages) {
+    if (source) assert.equal(webSourceUrl(source), source, name);
+  }
+  assert.doesNotMatch(generated.get(GAME_NOTICES_PATH), /^Source: (?!https:\/\/)/m);
 });

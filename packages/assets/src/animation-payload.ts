@@ -83,6 +83,23 @@ export function normalizeAnimationPayload(value: unknown): AnimationPayload {
   return payload;
 }
 
+/**
+ * The Animation's `.hasset` header payload: every field but its root motion, whose sampled track (30 samples a second)
+ * stays in the document chunk; `rootMotionBone` names the root motion's bone when it has one. Readers that need the
+ * track (Play, export, the Animation editor) load the document.
+ */
+export function animationHeaderSummary(payload: unknown): Record<string, unknown> {
+  const { rootMotion, ...rest } = normalizeAnimationPayload(payload);
+  return rootMotion ? { ...rest, rootMotionBone: rootMotion.bone } : { ...rest };
+}
+
+/** The root motion bone an Animation header summary names, or a full payload's; null without root motion. */
+export function animationRootMotionBone(payload: unknown): string | null {
+  const record = asRecord(payload);
+  if (typeof record.rootMotionBone === "string") return record.rootMotionBone.trim() || null;
+  return normalizeAnimationRootMotion(record.rootMotion)?.bone ?? null;
+}
+
 export function animationAssetGuids(payload: unknown): string[] {
   const animation = normalizeAnimationPayload(payload);
   const guids = new Set<string>();

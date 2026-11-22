@@ -6,6 +6,7 @@ import type { ContentRoot } from "./content-root";
 import { mergeFontAttachPayload } from "./font-payload";
 import { normalizeSkeletonPayload } from "./skeleton-payload";
 import { decodeHasset, encodeHasset, readHassetHeader, type ChunkInput } from "./hasset";
+import { animationHeaderSummary } from "./animation-payload";
 import { modelHeaderSummary } from "./model-payload";
 import { remapImportResultGuids, type ImportOptions, type ImportResult } from "./importers";
 import { joinRelative, joinRootPath, parentPath, sanitizeFileName } from "./registry-paths";
@@ -57,7 +58,8 @@ async function writeCreatedAsset(host: RegistryHost, root: ContentRoot, path: st
     dependencies.dependencies = [...new Set([...dependencies.dependencies, ...result.requiredDependencies])].sort();
   }
 
-  // A Model's collision hulls and an imported Material's graph go into the document chunk; the header keeps a summary.
+  // A Model's collision hulls, an Animation's root motion track and an imported Material's graph go into the document
+  // chunk; the header keeps a summary.
   const split = !body ? importedHeaderSplit(result.type, result.payload) : null;
   const bytes = await encodeHasset({
     header: {
@@ -268,6 +270,7 @@ async function attachToExistingAssetUnlocked(host: RegistryHost, guid: string, r
 function importedHeaderSplit(type: string, payload: Record<string, unknown>): { header: Record<string, unknown>; document: ChunkInput } | null {
   let header: Record<string, unknown>;
   if (type === "Model") header = modelHeaderSummary(payload);
+  else if (type === "Animation") header = animationHeaderSummary(payload);
   else if (type === "Material") header = { domain: typeof payload.domain === "string" ? payload.domain : "surface" };
   else return null;
   return {

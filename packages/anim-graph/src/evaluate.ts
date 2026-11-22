@@ -719,8 +719,10 @@ function addRootMotion(
   masks: readonly AnimLayerMaskRef[] | undefined,
   additive: boolean,
 ): void {
-  if (!rootMotion || additive || !(weight > 0) || maskedToBranch(masks)) return;
-  motion.push({ ...animRootMotionDelta(rootMotion, sweep), weight });
+  // A clip with only its bone (a header catalog's) holds the bone and moves nothing.
+  const track = rootMotion?.track;
+  if (!track || additive || !(weight > 0) || maskedToBranch(masks)) return;
+  motion.push({ ...animRootMotionDelta(track, sweep), weight });
 }
 
 /** Each Spring Bones node's settings, kept per node object (graphs are replaced, never mutated). */

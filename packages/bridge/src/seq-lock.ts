@@ -67,6 +67,14 @@ export class SeqLockSnapshotPair {
     return this.buffers[this.writeIndex]!.floats;
   }
 
+  /**
+   * The most recently published buffer, which `beginWrite` does not return. The
+   * writer may read it while writing the other, e.g. to carry rows forward.
+   */
+  publishedBuffer(): Float32Array {
+    return this.buffers[1 - this.writeIndex]!.floats;
+  }
+
   /** Begin a write: bump seq to odd on the active write buffer. */
   beginWrite(): Float32Array {
     const entry = this.buffers[this.writeIndex]!;

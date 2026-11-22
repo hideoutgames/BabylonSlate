@@ -273,6 +273,29 @@ describe("AnimGraphRuntime slots", () => {
     expect(control.isSlotActive("DefaultSlot")).toBe(false);
   });
 
+  it("moves the actor by a slot Animation's root motion track from the catalog, and holds the bone of one without a track", () => {
+    const track = { durationMs: 1000, stepMs: 500, x: [0, 0, 0], z: [0, 1, 2], yaw: [0, 0, 0] };
+    const { actors, applyRootMotion, emitted, runtime } = setup(slottedGraph());
+    runtime.replaceAnimClipCatalog([
+      { guid: "dodge", type: "Animation", name: "Dodge", clipName: "dodge", durationMs: 1000, rootMotion: { bone: "hips", track } },
+      { guid: "lunge", type: "Animation", name: "Lunge", clipName: "lunge", durationMs: 1000, rootMotion: { bone: "hips" } },
+    ]);
+    const control = runtime.control(actors[0]!.components[0]!)!;
+    control.playSlotAnimation({ ...request, animation: "dodge", loopCount: 0 });
+    runtime.tick(0.1);
+    runtime.tick(0.1);
+    expect(applyRootMotion.mock.lastCall?.[1].z).toBeCloseTo(0.2, 9);
+    control.stopSlotAnimation("DefaultSlot", 0);
+    runtime.tick(0.1);
+    applyRootMotion.mockClear();
+    control.playSlotAnimation({ ...request, animation: "lunge", loopCount: 0 });
+    runtime.tick(0.1);
+    runtime.tick(0.1);
+    expect(applyRootMotion).not.toHaveBeenCalled();
+    const state = [...emitted].reverse().find((command: CommandMessage) => command.type === "animState");
+    expect(state?.type === "animState" ? state.layers?.find((layer) => layer.clipAssetGuid === "lunge")?.rootMotionBone : undefined).toBe("hips");
+  });
+
   it("answers false for a stopped play's completion, and for an Animation it cannot play", () => {
     const { actors, runtime } = setup(slottedGraph());
     runtime.replaceAnimClipCatalog(catalog);
