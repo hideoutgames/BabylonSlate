@@ -124,12 +124,17 @@ export function createPlayVisualBindings({
   // Play reflection probes: authored per slot on the binding, static actors from the authored play scene.
   const runtimeProbeActorBySlot = new Map<number, string>();
   let playStaticActors = new Set<string>();
-  let probeRoots: { renderId: number; slots: Map<BabylonNode, number> } | null = null;
+  let probeRoots: { renderId: number; revision: number; slots: Map<BabylonNode, number> } | null = null;
   const playProbeStatic = (mesh: BabylonNode): boolean => {
-    // Captures ask once per mesh; map the slot roots once per frame.
-    if (probeRoots?.renderId !== scene.getRenderId()) {
-      probeRoots = { renderId: scene.getRenderId(), slots: new Map([...binding.meshes].map(([slot, root]) => [root as BabylonNode, slot])) };
-    }
+    // Captures ask once per mesh; map the slot roots at most once per frame, and only in a frame after the slots changed
+    // (`SlotRootMap.revision`): a steady frame keeps the map, which mapping them again would rebuild unchanged.
+    const renderId = scene.getRenderId();
+    if (!probeRoots || (probeRoots.renderId !== renderId && probeRoots.revision !== binding.meshes.revision)) {
+      const slots = probeRoots?.slots ?? new Map<BabylonNode, number>();
+      slots.clear();
+      for (const [slot, root] of binding.meshes) slots.set(root, slot);
+      probeRoots = { renderId, revision: binding.meshes.revision, slots };
+    } else probeRoots.renderId = renderId;
     for (let node: BabylonNode | null = mesh; node; node = node.parent) {
       const slot = probeRoots.slots.get(node);
       if (slot === undefined) continue;

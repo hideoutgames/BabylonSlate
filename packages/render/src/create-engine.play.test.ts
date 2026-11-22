@@ -5721,6 +5721,13 @@ describe("Play createEngine view", () => {
     // Scene does not name (a spawned one) may move.
     expect([isStatic(4), isStatic(5), isStatic(6)]).toEqual([true, false, false]);
     expect(findSceneReflectionProbes(handle.scene)).toBeUndefined();
+    // Later frames: a still frame answers alike, and an actor spawned since is placed by its slot in the next frame.
+    handle.scene.incrementRenderId();
+    expect([isStatic(4), isStatic(5), isStatic(6)]).toEqual([true, false, false]);
+    handle.applyCommand({ type: "spawn", slotId: 7, actorGuid: "wall", classId: "Actor" });
+    handle.applyCommand({ type: "assignMesh", slotId: 7, actorGuid: "wall", meshAssetGuid: null, meshKind: "box" });
+    handle.scene.incrementRenderId();
+    expect([isStatic(4), isStatic(7)]).toEqual([true, true]);
   });
 
   it("forgets a despawned actor's reflection probes before another actor reuses its slot", () => {
