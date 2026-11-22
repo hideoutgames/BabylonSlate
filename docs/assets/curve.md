@@ -32,6 +32,10 @@ Choose **Asset** as a variable or pin type and pick **Float Curve**, **Vector Cu
 
 A Curve Object is a read-only object reference. Pass it into functions or keep it in variables like any object. There is one object per curve asset for the whole session, and it is never collected.
 
+## Use it for sound falloff
+
+A [Sound Attenuation](sound-attenuation.md) with **Falloff** set to **Custom** follows a Float Curve as its **Falloff Curve**. There, the curve's time axis is not seconds: 0 is the attenuation's **Inner Radius** and 1 its **Max Radius**, and the value is the volume, from 0 (silent) to 1 (full). Only that part of the curve is used. **Create Curve From** on the Sound Attenuation starts one from a built-in falloff. A key whose **Interpolation** is a [custom easing curve](../scripting/curves-and-ranges.md#custom-easing-curves) falls off as Linear in that segment until scripts load in Play, and the Sound Attenuation plot draws it as the curve editor does.
+
 ## Loading
 
 A curve asset given to **Get Float Curve Object** loads with the asset that uses it, so the object is ready as soon as the script runs. If the curve asset is not loaded, **Get Float Curve Object** returns None.

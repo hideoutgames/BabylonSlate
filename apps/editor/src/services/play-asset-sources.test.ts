@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import v8 from "node:v8";
 import { runInNewContext } from "node:vm";
 import { describe, expect, it, vi } from "vitest";
@@ -11,14 +12,19 @@ import {
   buildBoxGlbFixture,
   createDefaultMigrationRegistry,
   createRegistryAssetLoadingService,
+  extractAnimationRootMotion,
   FONT_FACETYPE_CHUNK_ID,
   MATERIAL_PAYLOAD_VERSION,
+  normalizeAnimationPayload,
   projectContentRoot,
+  readAssetCatalog,
+  type AnimationRootMotion,
   type ChunkInput,
 } from "@haptic/assets";
 import { encodeHasset } from "@haptic/assets/hasset";
 import { meshoptBoxGlb } from "@haptic/assets/test-support/meshopt-gltf";
-import { acquirePlayAssetSources, acquirePlayStartupSources, createMergedPlaySourceControls, emptyPlaySourceControls, mergePreparedPlaySources, playDocumentOverrides, requiredProjectAssets, type PlayAssetSourceHost } from "./play-asset-sources";
+import { acquirePlayAssetSources, acquirePlayStartupSources, createMergedPlaySourceControls, emptyPlaySourceControls, mergePreparedPlaySources, playDocumentOverrides, playRootMotionTracks, requiredProjectAssets, type PlayAssetSourceHost } from "./play-asset-sources";
+import { playAnimClipCatalog } from "../lib/anim-clip-catalog";
 import type { OpenDocument } from "./document-service";
 import { PlayRequiredAssetError } from "./play-asset-problems";
 
@@ -788,6 +794,73 @@ describe("Play source ownership", () => {
     loading.dispose();
   });
 
+  it("reads each root motion Animation's document once, in the closure or not, and gives Play its track scaled by its Model's import scale", async () => {
+    const storage = new MemoryStorageAdapter();
+    await storage.pickProjectFolder();
+    await storage.mkdir("assets");
+    await storage.writeBinary("assets/model.hasset", await encodeHasset({
+      header: {
+        guid: "model", name: "model", type: "Model", version: currentFormat("Model"), engineVersion: "0.0.0", mode: "thin",
+        payload: { importScale: 2 }, dependencies: [], requiredDependencies: [], dependencyMetadataVersion: 1, requiredVariableNames: [],
+      },
+      chunks: [{ id: "source", kind: "model", mime: "model/gltf-binary", data: buildBoxGlbFixture() }],
+    }));
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    // Death_A's hips as the editor samples them, and hand-made tracks. `slide` and `wave` are outside the Play closure,
+    // as an Animation only a slot plays is; `wave` has no root motion.
+    const fall = extractAnimationRootMotion(new Uint8Array(readFileSync(new URL(
+      "../../../../engine-content/kaykit-assets/Adventurers/Rig_Medium_General.glb", import.meta.url))), "Death_A", "hips")!;
+    const motions = new Map<string, AnimationRootMotion | undefined>([
+      ["fall", fall],
+      ["dodge", { bone: "pelvis", track: { durationMs: 100, stepMs: 50, x: [0, 0.5, 1], z: [0, 0.25, 0.5], yaw: [0, 10, 20] } }],
+      ["turn", { bone: "root", track: { durationMs: 50, stepMs: 50, x: [0, -1], z: [0, 3], yaw: [0, 90] } }],
+      ["slide", { bone: "hips", track: { durationMs: 50, stepMs: 50, x: [0, 0.5], z: [0, -1], yaw: [0, 0] } }],
+      ["wave", undefined],
+    ]);
+    for (const [guid, rootMotion] of motions) {
+      await registry.createAsset("project", `${guid}.hasset`, {
+        type: "Animation", name: guid, guid, version: currentFormat("Animation"), dependencies: ["model"], chunks: [],
+        payload: { ...normalizeAnimationPayload({ clipName: guid, modelGuid: "model", durationMs: 100, ...(rootMotion ? { rootMotion } : {}) }) },
+      });
+    }
+    // Each Animation's document chunk read, by its position in the file.
+    const documentReads = new Map<string, number>();
+    const documentAt = new Map(await Promise.all([...motions.keys()].map(async (guid) => {
+      const { header, locator } = await readAssetCatalog(storage, `assets/${guid}.hasset`);
+      const entry = header.chunks.find((chunk) => chunk.id === "document")!;
+      return [`${locator.path}@${locator.payloadOffset + (entry.locator as { inline: { offset: number } }).inline.offset}`, guid] as const;
+    })));
+    const read = storage.readBinaryRange.bind(storage);
+    vi.spyOn(storage, "readBinaryRange").mockImplementation((path, offset, ...rest) => {
+      const guid = documentAt.get(`${path}@${offset}`);
+      if (guid) documentReads.set(guid, (documentReads.get(guid) ?? 0) + 1);
+      return read(path, offset, ...rest);
+    });
+    const loading = createRegistryAssetLoadingService(registry, { projectId: "root-motion" });
+    const host = {
+      registry, project: createEmptyProject("Root Motion"), createScope: (owner: string) => loading.createScope(owner),
+      compile: async () => ({ bundles: [], diagnostics: [] }),
+    };
+    const signal = new AbortController().signal;
+    const prepared = await acquirePlayAssetSources(host, ["model", "fall", "dodge", "turn"], { consumer: "Play", signal });
+    const catalog = new Map(playAnimClipCatalog(registry.list(), await playRootMotionTracks(host, prepared.content.animClipCatalog, signal))
+      .map((entry) => [entry.guid, entry.rootMotion]));
+
+    expect(Object.fromEntries(documentReads)).toEqual({ fall: 1, dodge: 1, turn: 1, slide: 1 });
+    const doubled = ({ bone, track }: AnimationRootMotion) => ({
+      bone, track: { ...track, x: track.x.map((value) => value * 2), z: track.z.map((value) => value * 2) },
+    });
+    expect(catalog.get("dodge")).toEqual({ bone: "pelvis", track: { durationMs: 100, stepMs: 50, x: [0, 1, 2], z: [0, 0.5, 1], yaw: [0, 10, 20] } });
+    expect(catalog.get("turn")).toEqual({ bone: "root", track: { durationMs: 50, stepMs: 50, x: [0, -2], z: [0, 6], yaw: [0, 90] } });
+    expect(catalog.get("fall")).toEqual(doubled(fall));
+    expect(catalog.get("slide")).toEqual({ bone: "hips", track: { durationMs: 50, stepMs: 50, x: [0, 1], z: [0, -2], yaw: [0, 0] } });
+    expect(catalog.has("wave")).toBe(true);
+    expect(catalog.get("wave")).toBeUndefined();
+    prepared.release();
+    loading.dispose();
+  });
+
   it("cooks no collision for a Model without Complex Collision until the runtime asks for it", async () => {
     const storage = new MemoryStorageAdapter();
     await storage.pickProjectFolder();
@@ -1330,5 +1403,69 @@ describe("Play Scene Layer documents", () => {
       expect(runtime.getWorld().getSceneLayers()).toHaveLength(2);
       expect(normalizeSceneLayer).toHaveBeenCalledTimes(1);
     } finally { runtime.stop(); prepared.release(); loading.dispose(); }
+  });
+});
+
+describe("Workspace Trust for Execute JavaScript", () => {
+  /** Two Scenes, each requiring its own Class; `Danger`'s compiled script carries an Execute JavaScript body. */
+  async function trustFixture() {
+    const storage = new MemoryStorageAdapter();
+    await storage.pickProjectFolder();
+    await storage.mkdir("assets");
+    const scenes = { "scene-safe": "safe", "scene-danger": "danger" } as const;
+    for (const [scene, script] of Object.entries(scenes)) {
+      await storage.writeBinary(`assets/${scene}.hasset`, await encodeHasset({ header: {
+        guid: scene, name: scene, type: "Scene", version: SCENE_SCHEMA_VERSION, engineVersion: "0.0.0", mode: "thin",
+        dependencies: [script], requiredDependencies: [script], dependencyMetadataVersion: 1, requiredVariableNames: [], payload: { actors: [] },
+      }, chunks: [] }));
+      await storage.writeBinary(`assets/${script}.hasset`, await encodeHasset({ header: {
+        guid: script, name: script === "danger" ? "Danger" : "Safe", type: "Class", version: 1, engineVersion: "0.0.0", mode: "thin",
+        dependencies: [], requiredDependencies: [], dependencyMetadataVersion: 1, requiredVariableNames: [], payload: { nodes: [], edges: [], members: [] },
+      }, chunks: [] }));
+    }
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const loading = createRegistryAssetLoadingService(registry, { projectId: "trust" });
+    const compile = vi.fn(async (required: ReadonlySet<string>) => ({
+      bundles: [...required].filter((guid) => guid === "safe" || guid === "danger").map((guid): ScriptBundleEntry => ({
+        assetGuid: guid, classId: guid, source: "export function start() {}", anchors: [], entryPoints: [],
+        ...(guid === "danger" ? { executeJavaScriptNodes: ["js"] } : {}),
+      })),
+      diagnostics: [],
+    }));
+    const host = (assertExecuteJavaScriptAllowed?: PlayAssetSourceHost["assertExecuteJavaScriptAllowed"]): PlayAssetSourceHost => ({
+      registry, project: createEmptyProject("Trust"), createScope: (owner: string) => loading.createScope(owner), compile,
+      ...(assertExecuteJavaScriptAllowed ? { assertExecuteJavaScriptAllowed } : {}),
+    });
+    return { host, loading };
+  }
+  const acquire = (host: PlayAssetSourceHost, guid: string) =>
+    acquirePlayAssetSources(host, [guid], { consumer: guid, signal: new AbortController().signal });
+
+  it("refuses every acquisition whose scripts carry Execute JavaScript, startup and later slots alike, and nothing else", async () => {
+    const { host, loading } = await trustFixture();
+    const asked: string[][] = [];
+    const untrusted = host((names) => {
+      asked.push([...names]);
+      throw new Error("not trusted");
+    });
+    const safe = await acquire(untrusted, "scene-safe");
+    expect(safe.game.scripts.map((script) => script.classId)).toEqual(["safe"]);
+    expect(asked).toEqual([]);
+    // A slot of the running session that brings Execute JavaScript in (a streamed Scene, a spawn) is refused too.
+    await expect(acquire(untrusted, "scene-danger")).rejects.toThrow("not trusted");
+    expect(asked).toEqual([["Danger"]]);
+    safe.release();
+    loading.dispose();
+  });
+
+  it("refuses Execute JavaScript when the host makes no trust decision, and runs it once trusted", async () => {
+    const { host, loading } = await trustFixture();
+    await expect(acquire(host(), "scene-danger")).rejects.toThrow(
+      "This project is not trusted on this computer, so the Execute JavaScript in Danger cannot run.");
+    const trusted = await acquire(host(() => {}), "scene-danger");
+    expect(trusted.game.scripts[0]?.executeJavaScriptNodes).toEqual(["js"]);
+    trusted.release();
+    loading.dispose();
   });
 });

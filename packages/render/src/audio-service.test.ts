@@ -7,11 +7,12 @@ import {
   createDefaultAudioPayload,
   encodeAudioReverbChunk,
   normalizeAudioPayload,
+  soundAttenuationLibraryEntry,
   type AudioChannelPayload,
   type AudioMixerPayload,
   type SoundAttenuationPayload,
 } from "@haptic/assets";
-import { createActor, createDefaultSceneSettings } from "@haptic/core";
+import { createActor, createDefaultSceneSettings, type Curve } from "@haptic/core";
 import { createInProcessRuntime } from "@haptic/runtime";
 import { AudioBufferCache } from "./audio-buffer-cache";
 import { FakeAudioPlaybackBackend, type AudioPose } from "./audio-playback-backend";
@@ -22,7 +23,9 @@ function library(options?: {
   mixerGuid?: string | null;
   channels?: Record<string, AudioChannelPayload>;
   audio?: Record<string, unknown>;
-  attenuations?: Record<string, SoundAttenuationPayload>;
+  attenuations?: Record<string, Partial<SoundAttenuationPayload>>;
+  /** Float Curve assets by guid, for Custom falloffs. */
+  curves?: Record<string, Curve<number>>;
 }) {
   return {
     mixerGuid: options?.mixerGuid ?? (options?.mixer ? "mixer-1" : null),
@@ -36,7 +39,22 @@ function library(options?: {
         normalizeAudioPayload(payload),
       ]),
     ),
-    attenuations: new Map(Object.entries(options?.attenuations ?? {})),
+    attenuations: new Map(Object.entries(options?.attenuations ?? {}).map(([guid, payload]) => [
+      guid,
+      soundAttenuationLibraryEntry(payload, (curveGuid) => {
+        const curve = options?.curves?.[curveGuid];
+        return curve ? { curve } : undefined;
+      }),
+    ])),
+  };
+}
+
+/** A Float Curve from (time, value) pairs joined by straight lines, held flat past its ends. */
+function linearCurve(...points: Array<[number, number]>): Curve<number> {
+  return {
+    Keys: points.map(([Time, Value]) => ({ Time, Value, Interpolation: "linear" as const, ArriveTangent: 0, LeaveTangent: 0 })),
+    Before: "constant",
+    After: "constant",
   };
 }
 
@@ -635,12 +653,13 @@ describe("AudioService", () => {
           shot: { ...createDefaultAudioPayload(), soundAttenuationGuid: "room" },
         },
         attenuations: {
-          room: { innerRadius: 2, maxRadius: 20, distanceModel: "linear", rolloff: 1, spatialisation: "equalPower", cone: null, doppler: null },
+          room: { innerRadius: 2, maxRadius: 20, falloff: "linear", falloffCurveGuid: null, spatialisation: "equalPower", cone: null, doppler: null },
         },
       }));
       for (const guid of ["music", "ui", "ambience"]) service.setSourceBytes(guid, new Uint8Array([1]));
       service.setSourceBytes("shot", new Uint8Array(30));
       await service.unlockAsync();
+      service.syncListener({ x: 0, y: 0, z: 0 });
       const play = async (assetGuid: string, voiceId: string, x?: number) => {
         service.handleCommand({
           type: "playSound", assetGuid, volume: 1, frameId: 1, voiceId, ...(x === undefined ? {} : { location: { x, y: 0, z: 0 } }),
@@ -729,8 +748,8 @@ describe("AudioService", () => {
           near: {
             innerRadius: 1,
             maxRadius: 10,
-            distanceModel: "linear",
-            rolloff: 1,
+            falloff: "linear",
+            falloffCurveGuid: null,
             spatialisation: "equalPower",
             cone: null,
             doppler: null,
@@ -761,7 +780,7 @@ describe("AudioService", () => {
     const service = new AudioService({ backend, onDiagnostic: (entry) => diagnostics.push(entry) });
     service.setLibrary(library({
       audio: { jump: { ...createDefaultAudioPayload(), soundAttenuationGuid: "near" } },
-      attenuations: { near: { innerRadius: 1, maxRadius: 10, distanceModel: "linear", rolloff: 1, spatialisation: "equalPower", cone: null, doppler: null } },
+      attenuations: { near: { innerRadius: 1, maxRadius: 10, falloff: "linear", falloffCurveGuid: null, spatialisation: "equalPower", cone: null, doppler: null } },
     }));
     service.setSourceBytes("jump", new Uint8Array([1]));
     await service.unlockAsync();
@@ -814,8 +833,8 @@ describe("AudioService", () => {
           near: {
             innerRadius: 1,
             maxRadius: 50,
-            distanceModel: "linear",
-            rolloff: 1,
+            falloff: "linear",
+            falloffCurveGuid: null,
             spatialisation: "equalPower",
             cone: null,
             doppler: null,
@@ -843,57 +862,159 @@ describe("AudioService", () => {
     service.dispose();
   });
 
-  it("applies the Sound Attenuation curve as each spatial voice's distance gain, silent from Max Radius on", async () => {
+  it("applies the Sound Attenuation curve as each spatial voice's distance gain, silent beyond Max Radius", async () => {
     const backend = new FakeAudioPlaybackBackend();
     const service = new AudioService({ backend });
-    const curve = (distanceModel: SoundAttenuationPayload["distanceModel"]): SoundAttenuationPayload => ({
-      innerRadius: 2, maxRadius: 20, distanceModel, rolloff: 1, spatialisation: "equalPower", cone: null, doppler: null,
+    const attenuation = (falloff: SoundAttenuationPayload["falloff"], falloffCurveGuid: string | null = null) => ({
+      innerRadius: 2, maxRadius: 20, falloff, falloffCurveGuid,
     });
     service.setLibrary(library({
       audio: {
         lin: { ...createDefaultAudioPayload(), volume: 0.5, soundAttenuationGuid: "lin" },
-        inv: { ...createDefaultAudioPayload(), soundAttenuationGuid: "inv" },
-        exp: { ...createDefaultAudioPayload(), soundAttenuationGuid: "exp" },
+        nat: { ...createDefaultAudioPayload(), soundAttenuationGuid: "nat" },
+        cus: { ...createDefaultAudioPayload(), soundAttenuationGuid: "cus" },
         bed: createDefaultAudioPayload(),
       },
-      attenuations: { lin: curve("linear"), inv: curve("inverse"), exp: curve("exponential") },
+      attenuations: { lin: attenuation("linear"), nat: attenuation("natural"), cus: attenuation("custom", "curve-1") },
+      // Starts below full volume and ends above silence: steps at both radii.
+      curves: { "curve-1": linearCurve([0, 0.8], [1, 0.4]) },
     }));
-    for (const guid of ["lin", "inv", "exp", "bed"]) service.setSourceBytes(guid, new Uint8Array([1]));
+    for (const guid of ["lin", "nat", "cus", "bed"]) service.setSourceBytes(guid, new Uint8Array([1]));
     await service.unlockAsync();
     service.syncListener({ x: 0, y: 0, z: 0 });
-    for (const [guid, slotId] of [["lin", 1], ["inv", 2], ["exp", 3]] as const) {
+    for (const [guid, slotId] of [["lin", 1], ["nat", 2], ["cus", 3]] as const) {
       service.noteActorSlot(guid, slotId);
       service.handleCommand({ type: "playSound", assetGuid: guid, volume: 1, frameId: 1, voiceId: guid, emitterActorGuid: guid });
     }
     service.handleCommand({ type: "playSound", assetGuid: "bed", volume: 1, frameId: 1, voiceId: "bed" });
     // A located voice starts at the gain of its place: past Max Radius, silent from its first sample.
-    service.handleCommand({ type: "playSound", assetGuid: "inv", volume: 1, frameId: 1, voiceId: "far", location: { x: 0, y: 0, z: 25 } });
+    service.handleCommand({ type: "playSound", assetGuid: "cus", volume: 1, frameId: 1, voiceId: "far", location: { x: 0, y: 0, z: 25 } });
     await service.flush();
     expect(backend.plays.find((play) => play.voiceId === "far")?.attenuation).toBe(0);
     expect(backend.plays.find((play) => play.voiceId === "bed")?.attenuation).toBeUndefined();
 
     const heardAt = (distance: number) => {
       service.syncSnapshot([1, 2, 3].map((slotId) => ({ slotId, position: { x: distance, y: 0, z: 0 } })));
-      return ["lin", "inv", "exp"].map((voiceId) => backend.attenuations.get(voiceId));
+      return ["lin", "nat", "cus"].map((voiceId) => backend.attenuations.get(voiceId));
     };
-    // Hand-derived from the curve: t = (d - 2) / 18; inverse (1/(1+t) - 1/2) / (1/2); exponential (e^-t - e^-1) / (1 - e^-1).
+    // Hand-derived: t = (d - 2) / 18; Linear 1 - t; Natural (1 - t)³ (1 + 3t), whose keys follow it within 0.001
+    // between them; the custom curve 0.8 - 0.4t.
     const near = (values: number[]) => values.map((value) => expect.closeTo(value, 6));
     expect(heardAt(1)).toEqual([1, 1, 1]);
     expect(heardAt(2)).toEqual([1, 1, 1]);
-    expect(heardAt(11)).toEqual(near([0.5, 0.333333, 0.377541]));
-    expect(heardAt(19.9)).toEqual(near([0.005556, 0.002786, 0.003242]));
-    expect(heardAt(20)).toEqual([0, 0, 0]);
+    expect(heardAt(2.0001)).toEqual(near([0.999994, 1, 0.799998]));
+    expect(heardAt(11)).toEqual(near([0.5, 0.3125, 0.6]));
+    expect(heardAt(20)).toEqual(near([0, 0, 0.4]));
+    expect(heardAt(20.0001)).toEqual([0, 0, 0]);
     expect(heardAt(30)).toEqual([0, 0, 0]);
     // The listener moving between snapshots changes the gain too; the voice's own gain path is left alone.
     service.syncListener({ x: 21, y: 0, z: 0 });
-    expect(heardAt(30)).toEqual(near([0.611111, 0.44, 0.490302]));
+    expect(heardAt(30)).toEqual([expect.closeTo(0.611111, 6), expect.closeTo(0.494486, 2), expect.closeTo(0.644444, 6)]);
     expect(backend.gains.size).toBe(0);
     expect(backend.attenuations.has("bed")).toBe(false);
     service.setShowAudioDebug(true);
     expect(service.stats().debugVoices?.map((voice) => [voice.attenuation, voice.insideRadius])).toEqual([
-      [expect.closeTo(0.611111, 6), true], [expect.closeTo(0.44, 6), true], [expect.closeTo(0.490302, 6), true],
+      [expect.closeTo(0.611111, 6), true], [expect.closeTo(0.494486, 2), true], [expect.closeTo(0.644444, 6), true],
       [null, null], [0, false],
     ]);
+    service.dispose();
+  });
+
+  it("falls a Custom attenuation without its curve back to Natural and reports it like a missing attenuation", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    const diagnostics: Array<{ code: string; assetGuid?: string }> = [];
+    const service = new AudioService({ backend, onDiagnostic: (entry) => diagnostics.push(entry) });
+    service.setLibrary(library({
+      audio: {
+        gone: { ...createDefaultAudioPayload(), soundAttenuationGuid: "gone-curve" },
+        lost: { ...createDefaultAudioPayload(), soundAttenuationGuid: "missing-attenuation" },
+      },
+      attenuations: { "gone-curve": { innerRadius: 2, maxRadius: 20, falloff: "custom", falloffCurveGuid: "deleted" } },
+    }));
+    expect(diagnostics.map((entry) => [entry.code, entry.assetGuid])).toEqual([
+      ["audio.missing_attenuation", "missing-attenuation"],
+      ["audio.missing_falloff_curve", "gone-curve"],
+    ]);
+    service.setSourceBytes("gone", new Uint8Array([1]));
+    await service.unlockAsync();
+    service.syncListener({ x: 0, y: 0, z: 0 });
+    service.handleCommand({ type: "playSound", assetGuid: "gone", volume: 1, frameId: 1, voiceId: "v", location: { x: 11, y: 0, z: 0 } });
+    await service.flush();
+    // Natural at t = 0.5: (1 - 0.5)³ (1 + 1.5).
+    expect(backend.attenuations.get("v")).toBeCloseTo(0.3125, 6);
+    service.dispose();
+  });
+
+  it("re-resolves live voices' attenuation, panner and gain when the library is replaced", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    const clock = { now: 0 };
+    const service = new AudioService({ backend, now: () => clock.now });
+    const audio = {
+      shot: { ...createDefaultAudioPayload(), soundAttenuationGuid: "room" },
+      music: createDefaultAudioPayload(),
+    };
+    service.setLibrary(library({
+      audio,
+      attenuations: { room: { innerRadius: 2, maxRadius: 20, falloff: "linear", doppler: { enabled: true, factor: 1 } } },
+    }));
+    for (const guid of ["shot", "music"]) service.setSourceBytes(guid, new Uint8Array([1]));
+    await service.unlockAsync();
+    service.syncListener({ x: 0, y: 0, z: 0 });
+    service.noteActorSlot("speaker", 1);
+    service.syncSnapshot([{ slotId: 1, position: { x: 12, y: 0, z: 0 } }]);
+    service.handleCommand({ type: "playSound", assetGuid: "shot", volume: 1, frameId: 1, voiceId: "v", emitterActorGuid: "speaker" });
+    service.handleCommand({ type: "playSound", assetGuid: "music", volume: 1, frameId: 1, voiceId: "m" });
+    service.handleCommand({ type: "setVoicePitch", voiceId: "v", pitch: 1.5 });
+    await service.flush();
+    // Approaching the listener: Doppler raises the rate above the voice's pitch.
+    service.syncSnapshot([{ slotId: 1, position: { x: 12, y: 0, z: 0 } }]);
+    clock.now = 100;
+    service.syncSnapshot([{ slotId: 1, position: { x: 11, y: 0, z: 0 } }]);
+    expect(backend.attenuations.get("v")).toBeCloseTo(0.5, 6);
+    expect(backend.playbackRates.get("v")).toBeGreaterThan(1.5);
+
+    // The edit: a custom curve, a wider Max Radius, a cone, HRTF and no Doppler; the Audio is quieter.
+    service.setLibrary(library({
+      audio: { ...audio, shot: { ...audio.shot, volume: 0.5 } },
+      attenuations: {
+        room: {
+          innerRadius: 2, maxRadius: 38, falloff: "custom", falloffCurveGuid: "c", spatialisation: "hrtf",
+          cone: { innerAngle: 90, outerAngle: 180, outerGain: 0.25 }, doppler: null,
+        },
+      },
+      curves: { c: linearCurve([0, 0.9], [1, 0.1]) },
+    }), true);
+    // t = (11 - 2) / 36 = 0.25 on 0.9 - 0.8t.
+    expect(backend.attenuations.get("v")).toBeCloseTo(0.7, 6);
+    expect(backend.gains.get("v")).toBe(0.5);
+    expect(backend.spatialUpdates.get("v")).toMatchObject({
+      spatialisation: "hrtf", cone: { innerAngle: 90, outerAngle: 180, outerGain: 0.25 }, maxRadius: 38,
+    });
+    expect(backend.playbackRates.get("v")).toBeCloseTo(1.5, 9);
+    // A non-spatial voice stays non-spatial.
+    expect(backend.spatialUpdates.has("m")).toBe(false);
+    expect(backend.attenuations.has("m")).toBe(false);
+    service.dispose();
+  });
+
+  it("keeps spatial voices silent until the first listener pose, then gives them their gain without a full-volume frame", async () => {
+    const backend = new FakeAudioPlaybackBackend();
+    const service = new AudioService({ backend });
+    service.setLibrary(library({
+      audio: { shot: { ...createDefaultAudioPayload(), soundAttenuationGuid: "room" } },
+      attenuations: { room: { innerRadius: 2, maxRadius: 20, falloff: "linear" } },
+    }));
+    service.setSourceBytes("shot", new Uint8Array([1]));
+    await service.unlockAsync();
+    expect(service.hasListener()).toBe(false);
+    // At the origin the placeholder listener would give full volume.
+    service.handleCommand({ type: "playSound", assetGuid: "shot", volume: 1, frameId: 1, voiceId: "v", location: { x: 0, y: 0, z: 0 } });
+    await service.flush();
+    expect(backend.plays[0]?.attenuation).toBe(0);
+    expect(backend.plays[0]?.pose).toEqual({ x: 0, y: 0, z: 0 });
+    service.syncListener({ x: 11, y: 0, z: 0 });
+    expect(service.hasListener()).toBe(true);
+    expect(backend.attenuationHistory.get("v")).toEqual([0, 0.5]);
     service.dispose();
   });
 
@@ -913,8 +1034,8 @@ describe("AudioService", () => {
           near: {
             innerRadius: 1,
             maxRadius: 50,
-            distanceModel: "linear",
-            rolloff: 1,
+            falloff: "linear",
+            falloffCurveGuid: null,
             spatialisation: "equalPower",
             cone: { innerAngle: 90, outerAngle: 120, outerGain: 0 },
             doppler: null,
@@ -1095,8 +1216,8 @@ describe("AudioService", () => {
           near: {
             innerRadius: 1,
             maxRadius: 50,
-            distanceModel: "linear",
-            rolloff: 1,
+            falloff: "linear",
+            falloffCurveGuid: null,
             spatialisation: "equalPower",
             cone: null,
             doppler: { enabled: true, factor: 1 },
@@ -1200,8 +1321,8 @@ describe("AudioService", () => {
           near: {
             innerRadius: 1,
             maxRadius: 50,
-            distanceModel: "linear",
-            rolloff: 1,
+            falloff: "linear",
+            falloffCurveGuid: null,
             spatialisation: "equalPower",
             cone: null,
             doppler: { enabled: true, factor: 1 },
@@ -1478,8 +1599,8 @@ describe("AudioService", () => {
           near: {
             innerRadius: 1,
             maxRadius: 50,
-            distanceModel: "linear",
-            rolloff: 1,
+            falloff: "linear",
+            falloffCurveGuid: null,
             spatialisation: "equalPower",
             cone: null,
             doppler: null,
@@ -1554,8 +1675,8 @@ describe("AudioService", () => {
           near: {
             innerRadius: 1,
             maxRadius: 50,
-            distanceModel: "linear",
-            rolloff: 1,
+            falloff: "linear",
+            falloffCurveGuid: null,
             spatialisation: "equalPower",
             cone: null,
             doppler: null,
@@ -1839,8 +1960,8 @@ describe("AudioService", () => {
           near: {
             innerRadius: 1,
             maxRadius: 50,
-            distanceModel: "linear",
-            rolloff: 1,
+            falloff: "linear",
+            falloffCurveGuid: null,
             spatialisation: "equalPower",
             cone: null,
             doppler: null,
@@ -2024,8 +2145,8 @@ describe("AudioService spatial refresh per applied snapshot", () => {
           near: {
             innerRadius: 1,
             maxRadius: 50,
-            distanceModel: "linear",
-            rolloff: 1,
+            falloff: "linear",
+            falloffCurveGuid: null,
             spatialisation: "equalPower",
             cone: null,
             doppler: { enabled: true, factor: 1 },
@@ -2211,7 +2332,7 @@ describe("AudioService writes of unchanged values", () => {
       },
       attenuations: {
         near: {
-          innerRadius: 1, maxRadius: 50, distanceModel: "linear", rolloff: 1, spatialisation: "equalPower", cone: null,
+          innerRadius: 1, maxRadius: 50, falloff: "linear", falloffCurveGuid: null, spatialisation: "equalPower", cone: null,
           doppler: { enabled: true, factor: 1 },
         },
       },
@@ -2387,7 +2508,7 @@ describe("AudioService emitter poses", () => {
         },
         attenuations: {
           near: {
-            innerRadius: 1, maxRadius: 50, distanceModel: "linear", rolloff: 1,
+            innerRadius: 1, maxRadius: 50, falloff: "linear", falloffCurveGuid: null,
             spatialisation: "equalPower", cone: null, doppler: null,
           },
         },

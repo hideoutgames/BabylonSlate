@@ -10,6 +10,7 @@ import { exportGame } from "../packages/exporter/src/index";
 import { openMinimalTestProject } from "./minimal-project";
 import { openMainScene } from "./open-test-project";
 import { clickPlayAndWaitForOverlay, waitForPreviewBuildBoot } from "./play";
+import { expectPlayRefusedUntilTrusted, trustProject } from "./project-trust";
 import { serveExportFiles } from "./export-static-server";
 
 const definition: SaveGameDefinition = {
@@ -57,6 +58,9 @@ test("editor Play and Preview Build share persistent preview progress", async ({
   files.set("assets/SaveFlow.class.hasset", await encodeAssetDocument({ guid: "save-flow-class", name: "SaveFlow", type: "Class", version: createDefaultMigrationRegistry().currentVersion("Class"), payload: { ...graph } }, { parentClass: "GameInstance" }));
   await openMinimalTestProject(page, files);
   await openMainScene(page);
+  // Opened from files, the project is not trusted here, and its Game Instance runs Execute JavaScript.
+  await expectPlayRefusedUntilTrusted(page, ["SaveFlow"]);
+  await trustProject(page);
   await clickPlayAndWaitForOverlay(page);
   await expect(page.getByTestId("print-overlay")).toContainText("Saved Visits: 1", { timeout: 30_000 });
   await page.getByTestId("play-overlay-close").click();

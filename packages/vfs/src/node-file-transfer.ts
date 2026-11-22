@@ -119,6 +119,7 @@ class Exchange {
   /** Rejects on an abort or a request error; never resolves. */
   readonly failed: Promise<never>;
   private fail: (error: unknown) => void = () => {};
+  private readonly signal: AbortSignal | undefined;
   private readonly onAbort = () => {
     this.request.abort();
     this.fail(cancelled());
@@ -129,8 +130,9 @@ class Exchange {
     method: "GET" | "PUT",
     url: string,
     headers: Record<string, string>,
-    private readonly signal: AbortSignal | undefined,
+    signal: AbortSignal | undefined,
   ) {
+    this.signal = signal;
     this.request = transport({ method, url, redirect: "error", credentials: "omit", cache: "no-store" });
     this.failed = new Promise<never>((_resolve, reject) => (this.fail = reject));
     this.failed.catch(() => undefined);

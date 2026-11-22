@@ -8,6 +8,7 @@ import {
   type SerializedScene,
 } from "@haptic/core";
 import {
+  collectAssetDependencyMetadata,
   createDefaultParticleEmitterPayload,
   createDefaultParticleSystemPayload,
 } from "@haptic/assets";
@@ -805,7 +806,7 @@ describe("collectExportReachability", () => {
     expect(result.value.guids).not.toContain("lut-2");
   });
 
-  it("includes the project AudioMixer, its channels, and Audio attenuation refs", () => {
+  it("includes the project AudioMixer, its channels, Audio attenuation refs and a Custom falloff's Float Curve", () => {
     const scene: SerializedScene = {
       ...createDefaultScene(),
       actors: [
@@ -845,7 +846,14 @@ describe("collectExportReachability", () => {
           name: "Jump",
           dependencies: ["ch-sfx", "att-1"],
         }),
-        asset({ guid: "att-1", type: "SoundAttenuation", name: "Near" }),
+        asset({
+          guid: "att-1",
+          type: "SoundAttenuation",
+          name: "Near",
+          dependencies: collectAssetDependencyMetadata("SoundAttenuation", { falloff: "custom", falloffCurveGuid: "fade" }).dependencies,
+        }),
+        asset({ guid: "fade", type: "FloatCurve", name: "Fade" }),
+        asset({ guid: "unused-curve", type: "FloatCurve", name: "Unused Curve" }),
         asset({ guid: "unused-mix", type: "AudioMixer", name: "Unused" }),
       ],
       pluginEnabledGuids: new Set(),
@@ -858,6 +866,7 @@ describe("collectExportReachability", () => {
     expect(result.value.guids.sort()).toEqual(
       [
         "att-1",
+        "fade",
         "ch-master",
         "ch-music",
         "ch-sfx",
@@ -867,6 +876,7 @@ describe("collectExportReachability", () => {
       ].sort(),
     );
     expect(result.value.guids).not.toContain("unused-mix");
+    expect(result.value.guids).not.toContain("unused-curve");
   });
 
   it("includes ParticleComponent → Particle System → Emitters and Particle Graphs → Material → Texture", () => {

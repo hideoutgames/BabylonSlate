@@ -299,10 +299,13 @@ export class GitTestServer {
 
 /** A teammate's clone, driven by the system `git`. */
 export class Teammate {
-  constructor(
-    private readonly server: GitTestServer,
-    readonly dir: string,
-  ) {}
+  private readonly server: GitTestServer;
+  readonly dir: string;
+
+  constructor(server: GitTestServer, dir: string) {
+    this.server = server;
+    this.dir = dir;
+  }
 
   /** Writes files; a `Uint8Array` under `.blobs/` becomes a pointer, with its bytes put in the LFS store. */
   write(files: Record<string, string | Uint8Array>): void {

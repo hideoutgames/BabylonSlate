@@ -4,7 +4,7 @@ import {
   type FeatureTestBreakdownInfo,
   type FeatureTestCheckReport,
 } from "../services/feature-test-check";
-import { annotateSavedCheck, loadSavedCheck, saveFinishedCheck } from "./feature-test-check-record";
+import { annotateSavedCheck, checkRecordBuild, loadSavedCheck, saveFinishedCheck } from "./feature-test-check-record";
 import { BREAKDOWN_RESUME_KEY } from "./feature-test-breakdown-marker";
 
 /**
@@ -13,7 +13,6 @@ import { BREAKDOWN_RESUME_KEY } from "./feature-test-breakdown-marker";
  * Home reopens the project, the dialog measures the same scenes again and writes one report of both passes, and the
  * user's setting is stored again.
  */
-const VERSION = 1;
 /** A marker older than this is stale: the reload and reopen it waits for take a minute or two. */
 export const BREAKDOWN_RESUME_MAX_AGE_MS = 30 * 60_000;
 
@@ -27,7 +26,8 @@ export type BreakdownResumeStage = "reload" | "reopen" | "second-pass";
 export type BreakdownProject = ProjectFolderHandle & { label: string };
 
 export interface BreakdownResumeMarker {
-  version: typeof VERSION;
+  /** The build that wrote it (`checkRecordBuild`): a reload onto another deploy cannot read its first pass. */
+  build: string;
   stage: BreakdownResumeStage;
   /** When the first pass ended (`Date.now()`). */
   savedAt: number;
@@ -71,7 +71,7 @@ function clearBreakdownResume(): void {
 type MarkerRead =
   | { kind: "none" }
   | { kind: "valid"; marker: BreakdownResumeMarker }
-  | { kind: "invalid"; reason: "corrupt" | "stale"; originalPreserve: boolean | null; first: FeatureTestCheckReport | null };
+  | { kind: "invalid"; reason: "corrupt" | "stale" | "other-build"; originalPreserve: boolean | null; first: FeatureTestCheckReport | null };
 
 const isText = (value: unknown): value is string => typeof value === "string";
 
@@ -96,9 +96,11 @@ function readMarker(now: number): MarkerRead {
     return { kind: "invalid", reason: "corrupt", originalPreserve: null, first: null };
   }
   const originalPreserve = typeof value?.originalPreserve === "boolean" ? value.originalPreserve : null;
-  const first = isBreakdownReport(value?.first) ? value.first : null;
-  const project = value?.project;
-  const valid = value?.version === VERSION && STAGES.includes(value.stage as BreakdownResumeStage)
+  // Another build's first pass is never kept: this build's formatter would misread it.
+  if (value?.build !== checkRecordBuild()) return { kind: "invalid", reason: "other-build", originalPreserve, first: null };
+  const first = isBreakdownReport(value.first) ? value.first : null;
+  const project = value.project;
+  const valid = STAGES.includes(value.stage as BreakdownResumeStage)
     && typeof value.savedAt === "number" && originalPreserve !== null && first !== null
     && isText(project?.id) && isText(project?.name) && isText(project?.tier) && isText(project?.label)
     && Array.isArray(value.scenes) && value.scenes.length > 0 && value.scenes.every((scene) => isText(scene?.name) && isText(scene?.path));
@@ -135,7 +137,7 @@ export function planSecondPass(
   if (!first.scenes.some((scene) => scene.play.benchmark.some(isBreakdownBaseline))) return onePass("the first measured no baseline");
   if (!context.project) return onePass("the open project was not found in the project list, to reopen after a reload");
   const marker: BreakdownResumeMarker = {
-    version: VERSION, stage: "reload", savedAt: deps.now(), project: context.project,
+    build: checkRecordBuild(), stage: "reload", savedAt: deps.now(), project: context.project,
     scenes: context.scenes.map(({ name, path }) => ({ name, path })), originalPreserve: original, first,
   };
   if (!saveMarker(marker)) return onePass("browser storage could not keep the first pass across a reload");
@@ -186,7 +188,8 @@ export function resumeAfterLoad(listed: readonly BreakdownProject[], deps: Break
   const abandon = (marker: Parameters<typeof abandonSecondPass>[0], reason: string): BreakdownResumeAction =>
     ({ kind: "abandoned", reason: abandonSecondPass(marker, reason, deps), reported: true });
   if (read.kind === "invalid") {
-    const reason = read.reason === "stale" ? "the reload it waited for was too long ago" : "its saved state was unreadable";
+    const reason = read.reason === "stale" ? "the reload it waited for was too long ago"
+      : read.reason === "other-build" ? "the editor was updated before it ran" : "its saved state was unreadable";
     if (read.first && read.originalPreserve !== null) return abandon({ stage: "reload", originalPreserve: read.originalPreserve, first: read.first }, reason);
     clearBreakdownResume();
     if (read.originalPreserve !== null) deps.setPreserve(read.originalPreserve);

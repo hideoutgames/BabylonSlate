@@ -118,16 +118,33 @@ test("the browser cache is keyed on the installed Playwright release, not the wh
   assert.equal(reported, `${installed}\n`);
 });
 
+test("the first browser shard checks its bundles' budgets after building them and before any browser test", async () => {
+  const { steps } = (await verifyWorkflow()).jobs.e2e;
+  const browser = steps.findIndex((step) => step.run?.startsWith("pnpm test:e2e "));
+  const build = steps.findIndex((step) => step.run === "pnpm test:build");
+  const budgets = steps.findIndex((step) => step.run?.startsWith("node scripts/bundle-report.mjs "));
+  assert.ok(build >= 0 && build < budgets && budgets < browser, "build, budgets, then the browser tests");
+  assert.equal(
+    steps[budgets].run,
+    'node scripts/bundle-report.mjs --budgets scripts/bundle-budgets-test-build.json apps/player/dist apps/editor/dist >> "$GITHUB_STEP_SUMMARY"',
+  );
+  // Only shard 1, and a failed build or budget skips its browser tests: neither step may run after a failure.
+  for (const step of [steps[build], steps[budgets]]) assert.equal(step.if, "matrix.shard == 1", step.name);
+  assert.equal(steps[browser].if, undefined);
+  // The same build environment gives the same artifact identity, so the browser run reuses the build.
+  assert.deepEqual(steps[build].env, steps[browser].env);
+});
+
 test("static restores ESLint's cache only for the same lockfile and saves it only from main", async () => {
   const { steps } = (await verifyWorkflow()).jobs.static;
   const lint = steps.findIndex((step) => step.run === "pnpm lint");
-  const restore = steps.findIndex((step) => step.uses?.startsWith("actions/cache/restore@"));
-  const save = steps.findIndex((step) => step.uses?.startsWith("actions/cache/save@"));
+  const cacheStep = (action) =>
+    steps.findIndex((step) => step.uses?.startsWith(`actions/cache/${action}@`) && step.with?.path === ".cache/eslint");
+  const restore = cacheStep("restore");
+  const save = cacheStep("save");
   assert.ok(restore >= 0 && restore < lint && lint < save, "restore, lint, then save");
   const lockfile = "${{ hashFiles('pnpm-lock.yaml') }}";
   for (const step of [steps[restore], steps[save]]) {
-    // The directory the lint runner passes as --cache-location.
-    assert.equal(step.with.path, ".cache/eslint");
     // ESLint's per-file check covers the config but not plugin code, so a dependency change must miss.
     assert.ok(step.with.key.includes(lockfile), step.with.key);
     assert.ok(step.with.key.includes("${{ hashFiles('eslint.config.js') }}"), step.with.key);
@@ -135,4 +152,28 @@ test("static restores ESLint's cache only for the same lockfile and saves it onl
   assert.equal(steps[save].with.key, steps[restore].with.key);
   assert.equal(steps[restore].with["restore-keys"], `eslint-\${{ runner.os }}-${lockfile}-`);
   assert.equal(steps[save].if, "github.event_name == 'push'");
+  // A fork's pull request reads no cached results from its own scope, which a workflow its author changed could fill.
+  assert.equal(
+    steps[restore].if,
+    "github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository",
+  );
+});
+
+test("static restores tsc's build info before the workspace typecheck and saves it only from main", async () => {
+  const { steps } = (await verifyWorkflow()).jobs.static;
+  const typecheck = steps.findIndex((step) => step.run === "pnpm typecheck");
+  // The directory scripts/typecheck-incremental.mjs writes build info to.
+  const cacheStep = (action) =>
+    steps.findIndex((step) => step.uses?.startsWith(`actions/cache/${action}@`) && step.with?.path === ".cache/typecheck");
+  const restore = cacheStep("restore");
+  const save = cacheStep("save");
+  assert.ok(restore >= 0 && restore < typecheck && typecheck < save, "restore, typecheck, then save");
+  assert.equal(steps[save].with.key, steps[restore].with.key);
+  // A pull request never writes build info that later runs trust.
+  assert.equal(steps[save].if, "github.event_name == 'push'");
+  // Nor does a fork's pull request read build info from its own scope, which a workflow its author changed could fill.
+  assert.equal(
+    steps[restore].if,
+    "github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository",
+  );
 });

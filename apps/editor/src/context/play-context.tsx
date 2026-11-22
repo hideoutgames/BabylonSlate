@@ -4,7 +4,7 @@ import { SimulationInspectionProvider } from "./simulation-inspection-context";
 import { prepareSaveGameConfiguration } from "../services/save-game-configuration";
 import { projectTypeSchemas, requireSaveGameDefinition } from "../lib/save-game-catalog";
 import { createSaveGameStorage, editorBuildPlatform, isTestModeEnabled } from "@haptic/vfs";
-import { acquirePlayStartupSources, playDocumentOverrides, requiredProjectAssets, type PlayAssetSourceHost } from "../services/play-asset-sources";
+import { acquirePlayStartupSources, playDocumentOverrides, playRootMotionTracks, requiredProjectAssets, type PlayAssetSourceHost } from "../services/play-asset-sources";
 import {
   useCallback,
   useContext,
@@ -885,6 +885,8 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
           // each a null check per node while nothing is set or followed. Preview Build and exports compile neither.
           traceExecution: true,
           compile: (required, storedDocuments) => collectPlayPreviewScripts(required, sourceDocuments, projectDocument, { traceExecution: true, storedDocuments }),
+          // Workspace Trust, read at each acquisition: Play, Simulate and every Scene, Class or preload slot of the session.
+          assertExecuteJavaScriptAllowed: (names) => extensionService.assertExecuteJavaScriptAllowed(names),
         };
         playSourceHostRef.current = sourceHost;
         // The extension libraries and the Save Game configuration need none of the content, so they prepare beside it.
@@ -923,6 +925,9 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         }
         playSourceSetsRef.current.add(prepared);
         initialPlaySourceRef.current = prepared;
+        // Every root motion track a slot may play, read beside the rest of the startup work.
+        const rootMotionTracks = playRootMotionTracks(sourceHost, prepared.content.animClipCatalog, sourceSignal);
+        void rootMotionTracks.catch(() => undefined);
         const { game } = prepared;
         const scene = game.scenes.get(effectiveGuid);
         if (!scene) throw new Error(`${describePlayAssetForMessage(assetRegistry, effectiveGuid)} did not produce a Scene document.`);
@@ -938,7 +943,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
           registry: assetRegistry,
           settings: projectDocument.settings,
           sceneGuid: effectiveGuid,
-        }));
+        }, await current(rootMotionTracks)));
         setPlayInputAssets(await current(collectPlayInputAssets(prepared.required, prepared.game.decodedPayloads)));
         playContentActions.setAudioAndNavigation(playAudioAndNavigation(prepared, effectiveGuid));
         setPlayAudioSourceLoader(() => async ({ assetGuid, chunkId }: Parameters<PlayAudioSourceLoader>[0]) => {
@@ -1229,7 +1234,6 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
             sessionSources={sessionSources}
             cookComplexCollision={cookPlayComplexCollision}
             loadAudioSourceBytes={playAudioSourceLoader}
-            animClipCatalog={registryViews?.animClipCatalog}
             postProcessingEnabled={postProcessingEnabled}
             hardwareScalingLevel={hardwareScalingLevel}
             pauseOnPlay={pauseOnPlay}

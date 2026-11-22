@@ -71,16 +71,46 @@ function licenseOf(pkg) {
   return "UNKNOWN";
 }
 
+/** npm's repository shorthands and the web host each names. */
+const SHORTHAND_HOSTS = { github: "github.com", gitlab: "gitlab.com", bitbucket: "bitbucket.org" };
+
+/**
+ * A repository or homepage address as the `https://` page a browser opens:
+ * npm's shorthands (`github:`, `gitlab:`, `bitbucket:`, bare `owner/repo` for
+ * GitHub), scp-style `git@host:owner/repo`, and `git+ssh://`, `ssh://`,
+ * `git://` and `git+https://` addresses become `https://host/path`, with
+ * credentials, a port, a trailing `.git` and the fragment removed. Null for
+ * anything that is then not an `https:` address (`http:`, `file:`, text), so
+ * no notice links to a page a browser cannot open.
+ */
+export function webSourceUrl(address) {
+  if (typeof address !== "string") return null;
+  let text = address.trim().replace(/^git\+/, "");
+  const shorthand = /^(github|gitlab|bitbucket):([\w.-]+\/[\w.-]+)$/.exec(text);
+  const scp = /^(?:[^@/\s:]+@)?([\w-]+(?:\.[\w-]+)+):(?!\/\/)(\S+)$/.exec(text);
+  if (shorthand) text = `https://${SHORTHAND_HOSTS[shorthand[1]]}/${shorthand[2]}`;
+  else if (/^[\w.-]+\/[\w.-]+$/.test(text)) text = `https://github.com/${text}`;
+  else if (scp) text = `https://${scp[1]}/${scp[2].replace(/^\/+/, "")}`;
+  let url;
+  try {
+    url = new URL(text);
+    if (url.protocol === "ssh:" || url.protocol === "git:") url = new URL(`https://${url.hostname}${url.pathname}`);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "https:" || !url.hostname) return null;
+  url.username = "";
+  url.password = "";
+  url.port = "";
+  url.hash = "";
+  url.pathname = url.pathname.replace(/\.git\/?$/, "");
+  return url.href;
+}
+
+/** The package's source page: its repository's, else its homepage; "" when neither is a web address. */
 function sourceOf(pkg) {
   const repo = typeof pkg.repository === "string" ? pkg.repository : pkg.repository?.url;
-  const url = repo ?? pkg.homepage;
-  if (!url) return "";
-  return url
-    .replace(/^git\+/, "")
-    .replace(/^git:\/\//, "https://")
-    .replace(/^github:/, "https://github.com/")
-    .replace(/^([\w.-]+\/[\w.-]+)$/, "https://github.com/$1")
-    .replace(/\.git$/, "");
+  return webSourceUrl(repo) ?? webSourceUrl(pkg.homepage) ?? "";
 }
 
 function licenseTexts(dir) {
@@ -136,7 +166,7 @@ function vendoredPackages(scope) {
       name: entry.name,
       version: entry.version,
       license: entry.license,
-      source: entry.source,
+      source: webSourceUrl(entry.source) ?? "",
       texts: [
         ...(entry.copyright ? [entry.copyright] : []),
         ...entry.files.map(file => normalizeText(readFileSync(path.join(dataDir, file), "utf8"))),
@@ -208,17 +238,9 @@ function editorNoticesJson(editorPackages, gameKeys) {
   return `${JSON.stringify({ packages, texts }, null, 1)}\n`;
 }
 
-/** Each listed package's source page, normalized, when it is an HTTPS address. */
+/** Each listed package's source page (every one is an `https:` address, `webSourceUrl`). */
 function sourceLinksJson(entries) {
-  const links = new Set();
-  for (const { source } of entries) {
-    try {
-      const url = new URL(source);
-      if (url.protocol === "https:") links.add(url.href);
-    } catch {
-      // Not an address (an SSH remote, say): Third-Party Notices cannot open it either.
-    }
-  }
+  const links = new Set(entries.map(({ source }) => source).filter(Boolean));
   return `${JSON.stringify([...links].sort(), null, 1)}\n`;
 }
 

@@ -24,3 +24,4 @@ Blends a slot's Animation out over Blend Out Time; its Play Slot Animation runs 
 ## Notes
 
 - Does nothing when nothing plays on the slot.
+- A Play Slot Animation on the slot still waiting for its Animation to load is cancelled: it never starts, and neither of its outputs runs.

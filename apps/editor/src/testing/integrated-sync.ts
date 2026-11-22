@@ -77,6 +77,7 @@ export async function integratedSync(options: {
     lookup: options.lookup ?? INTEGRATED_LOOKUP,
     locks,
     exclusiveWrites: (reason, work, signal) => (options.exclusiveWrites ?? ((_reason, own, project) => own(project)))(reason, work, storage, signal),
+    backgroundWritesIdle: async () => {},
     factory: {
       open: async () => port,
       init: async () => port,
@@ -124,6 +125,7 @@ export async function deviceIntegratedSync(options: { adopted: boolean; platform
     lookup: INTEGRATED_LOOKUP,
     locks: { theirs: async () => [], releaseOwn: async () => {} },
     exclusiveWrites: (_reason, work) => work(storage),
+    backgroundWritesIdle: async () => {},
     factory,
   };
   await service.configure(input);

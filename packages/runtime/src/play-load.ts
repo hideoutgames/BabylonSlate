@@ -54,6 +54,7 @@ export function runtimeOptionsFromLoadControl(
   | "sceneGuidByKey"
   | "sceneLayerLibrary"
   | "includeDebugCommands"
+  | "verifySnapshotPublishes"
   | "traceDebugDraw"
   | "infiniteLoopDetection"
   | "loopCount"
@@ -147,6 +148,7 @@ export function runtimeOptionsFromLoadControl(
     sceneGuidByKey: record(sceneGuidByKey),
     sceneLayerLibrary: record(sceneLayerLibrary),
     includeDebugCommands: msg.includeDebugCommands,
+    ...(msg.verifySnapshotPublishes ? { verifySnapshotPublishes: true } : {}),
     ...(msg.traceDebugDraw !== undefined ? { traceDebugDraw: msg.traceDebugDraw } : {}),
     infiniteLoopDetection: msg.infiniteLoopDetection,
     loopCount: msg.loopCount,

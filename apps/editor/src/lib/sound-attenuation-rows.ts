@@ -1,6 +1,10 @@
 import type { PropertyRow } from "@haptic/editor-kit";
 import {
+  DEFAULT_SOUND_ATTENUATION_FALLOFF,
+  SOUND_ATTENUATION_FALLOFFS,
+  SOUND_ATTENUATION_FALLOFF_LABELS,
   clampAudioGain,
+  type SoundAttenuationFalloff,
   type SoundAttenuationPayload,
 } from "@haptic/assets";
 
@@ -15,10 +19,20 @@ const DEFAULT_DOPPLER = {
   factor: 1,
 };
 
+/** What Custom falls off as while it has no curve. */
+const FALLBACK_LABEL = SOUND_ATTENUATION_FALLOFF_LABELS[DEFAULT_SOUND_ATTENUATION_FALLOFF];
+
+/**
+ * The Sound Attenuation Details rows. Editing one radius past the other stops at it (Inner Radius never passes Max
+ * Radius), so a scrub never swaps the two. `pickCurve` opens the Float Curve picker for a Custom falloff;
+ * `assetName` labels the picked curve (undefined when the project has no such asset).
+ */
 export function soundAttenuationDetailRows(
   attenuation: SoundAttenuationPayload,
   /** `field` marks a continuous edit whose scrub is one undo step. */
   commit: (next: SoundAttenuationPayload, field?: string) => void,
+  pickCurve: () => void,
+  assetName: (guid: string) => string | undefined,
 ): PropertyRow[] {
   const rows: PropertyRow[] = [
     {
@@ -27,7 +41,8 @@ export function soundAttenuationDetailRows(
       label: "Inner Radius",
       value: attenuation.innerRadius,
       min: 0,
-      onChange: (innerRadius) => commit({ ...attenuation, innerRadius }, "innerRadius"),
+      onChange: (innerRadius) =>
+        commit({ ...attenuation, innerRadius: Math.min(innerRadius, attenuation.maxRadius) }, "innerRadius"),
     },
     {
       id: "maxRadius",
@@ -35,32 +50,39 @@ export function soundAttenuationDetailRows(
       label: "Max Radius",
       value: attenuation.maxRadius,
       min: 0,
-      onChange: (maxRadius) => commit({ ...attenuation, maxRadius }, "maxRadius"),
+      onChange: (maxRadius) =>
+        commit({ ...attenuation, maxRadius: Math.max(maxRadius, attenuation.innerRadius) }, "maxRadius"),
     },
     {
-      id: "distanceModel",
+      id: "falloff",
       kind: "enum",
-      label: "Distance Model",
-      value: attenuation.distanceModel,
-      options: [
-        { value: "linear", label: "Linear" },
-        { value: "inverse", label: "Inverse" },
-        { value: "exponential", label: "Exponential" },
-      ],
-      onChange: (distanceModel) =>
-        commit({
-          ...attenuation,
-          distanceModel: distanceModel as SoundAttenuationPayload["distanceModel"],
-        }),
+      label: "Falloff",
+      description: "How the volume falls from Inner Radius to Max Radius. Custom follows a Float Curve.",
+      value: attenuation.falloff,
+      options: SOUND_ATTENUATION_FALLOFFS.map((value) => ({ value, label: SOUND_ATTENUATION_FALLOFF_LABELS[value] })),
+      onChange: (falloff) => commit({ ...attenuation, falloff: falloff as SoundAttenuationFalloff }),
     },
-    {
-      id: "rolloff",
-      kind: "number",
-      label: "Rolloff",
-      value: attenuation.rolloff,
-      min: 0,
-      onChange: (rolloff) => commit({ ...attenuation, rolloff }, "rolloff"),
-    },
+  ];
+
+  if (attenuation.falloff === "custom") {
+    const guid = attenuation.falloffCurveGuid;
+    const name = guid ? assetName(guid) : undefined;
+    rows.push({
+      id: "falloffCurveGuid",
+      kind: "asset",
+      label: "Falloff Curve",
+      description: "X runs from 0 at Inner Radius to 1 at Max Radius; Y is the volume, from 0 to 1.",
+      value: guid,
+      ...(guid ? { displayLabel: name ?? "Missing Curve", displayType: "Float Curve" } : {}),
+      placeholder: "None",
+      assetTypes: ["FloatCurve"],
+      ...(guid && name !== undefined ? {} : { status: `Falls off as ${FALLBACK_LABEL} until a Float Curve is picked.` }),
+      onPick: pickCurve,
+      onChange: (falloffCurveGuid) => commit({ ...attenuation, falloffCurveGuid }),
+    });
+  }
+
+  rows.push(
     {
       id: "spatialisation",
       kind: "enum",
@@ -88,7 +110,7 @@ export function soundAttenuationDetailRows(
           cone: enabled ? { ...(attenuation.cone ?? DEFAULT_CONE) } : null,
         }),
     },
-  ];
+  );
 
   if (attenuation.cone) {
     const cone = attenuation.cone;
@@ -101,7 +123,7 @@ export function soundAttenuationDetailRows(
         min: 0,
         max: 360,
         onChange: (innerAngle) =>
-          commit({ ...attenuation, cone: { ...cone, innerAngle } }, "cone.innerAngle"),
+          commit({ ...attenuation, cone: { ...cone, innerAngle: Math.min(innerAngle, cone.outerAngle) } }, "cone.innerAngle"),
       },
       {
         id: "coneOuterAngle",
@@ -111,7 +133,7 @@ export function soundAttenuationDetailRows(
         min: 0,
         max: 360,
         onChange: (outerAngle) =>
-          commit({ ...attenuation, cone: { ...cone, outerAngle } }, "cone.outerAngle"),
+          commit({ ...attenuation, cone: { ...cone, outerAngle: Math.max(outerAngle, cone.innerAngle) } }, "cone.outerAngle"),
       },
       {
         id: "coneOuterGain",

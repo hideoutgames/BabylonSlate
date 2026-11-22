@@ -530,6 +530,58 @@ describe("EditorExtensionService Workspace Trust", () => {
     expect(started).toHaveBeenCalledTimes(1);
   });
 
+  it("refuses Execute JavaScript until the project is trusted, naming it for the trust prompt", async () => {
+    const { service } = await fixture();
+    await service.refresh({}, false);
+    expect(() => service.assertExecuteJavaScriptAllowed(["Hero", "Level 1"])).toThrow(
+      "This project is not trusted on this computer, so the Execute JavaScript in Hero, Level 1 cannot run.");
+    expect(() => service.assertExecuteJavaScriptAllowed(["Boss"])).toThrow("Execute JavaScript in Boss cannot run.");
+    expect(service.getSnapshot()).toMatchObject({ untrustedExecuteJavaScript: ["Boss", "Hero", "Level 1"], executeJavaScriptRefusals: 2 });
+    // Nothing to refuse without Execute JavaScript.
+    expect(() => service.assertExecuteJavaScriptAllowed([])).not.toThrow();
+
+    // Trusting lifts the refusal at once, with no reload, and clears the prompt's list.
+    await service.refresh(undefined, true);
+    expect(() => service.assertExecuteJavaScriptAllowed(["Hero"])).not.toThrow();
+    expect(service.getSnapshot().untrustedExecuteJavaScript).toEqual([]);
+
+    await service.refresh(undefined, false);
+    expect(() => service.assertExecuteJavaScriptAllowed(["Hero"])).toThrow("Execute JavaScript in Hero cannot run.");
+    await service.close();
+    expect(service.getSnapshot().untrustedExecuteJavaScript).toEqual([]);
+    expect(() => service.assertExecuteJavaScriptAllowed(["Hero"])).toThrow("Execute JavaScript in Hero cannot run.");
+  });
+
+  it("reads trust for Execute JavaScript when it checks, so neither a grant nor a revoke waits for a refresh", async () => {
+    const { service } = await fixture();
+    let settingsTrust = false;
+    await service.refresh({}, false);
+    service.setTrustSource(() => settingsTrust);
+    expect(() => service.assertExecuteJavaScriptAllowed(["Hero"])).toThrow("Execute JavaScript in Hero cannot run.");
+
+    // Trust, then Play before any refresh: the settings already record it.
+    settingsTrust = true;
+    expect(() => service.assertExecuteJavaScriptAllowed(["Hero"])).not.toThrow();
+
+    // Revoke, then Play before the settings write lands, and with a refresh queued earlier carrying the old trust.
+    const stale = service.refresh(undefined, true);
+    service.revokeTrust();
+    expect(() => service.assertExecuteJavaScriptAllowed(["Hero"])).toThrow("Execute JavaScript in Hero cannot run.");
+    await stale;
+    expect(() => service.assertExecuteJavaScriptAllowed(["Hero"])).toThrow("Execute JavaScript in Hero cannot run.");
+
+    // A later grant the settings record lifts it.
+    service.clearRevocation();
+    expect(() => service.assertExecuteJavaScriptAllowed(["Hero"])).not.toThrow();
+
+    // Closing ends trust at once, before the queue reaches the close.
+    service.setTrustSource(null);
+    await service.refresh(undefined, true);
+    const closing = service.close();
+    expect(() => service.assertExecuteJavaScriptAllowed(["Hero"])).toThrow("Execute JavaScript in Hero cannot run.");
+    await closing;
+  });
+
   it("forgets trust when the project closes", async () => {
     const { project, service } = await fixture();
     await writeProjectExtension(project, "tools", enabledSettings("tools"), originalModule);

@@ -34,7 +34,14 @@ import {
   sanitizeAudioLibrary,
   validateAudioChannelGraph,
   validateAudioMixer,
+  BUILT_IN_FALLOFF_CURVES,
+  attenuationPlotPoints,
+  resolveSoundAttenuationCurve,
+  sampleFalloffCurve,
+  soundAttenuationLibraryEntry,
+  type BuiltInSoundAttenuationFalloff,
 } from "./audio-payload";
+import type { Curve } from "@haptic/core";
 import { collectAssetDependencyMetadata } from "./asset-dependencies";
 import { decodeAssetDocument, encodeAssetDocument } from "./asset-document";
 import { decodeHasset, encodeHasset } from "./hasset";
@@ -219,8 +226,8 @@ describe("audio payloads", () => {
     expect(createDefaultSoundAttenuationPayload()).toEqual({
       innerRadius: 10,
       maxRadius: 250,
-      distanceModel: "linear",
-      rolloff: 1,
+      falloff: "natural",
+      falloffCurveGuid: null,
       spatialisation: "equalPower",
       cone: null,
       doppler: null,
@@ -378,6 +385,10 @@ describe("audio payloads", () => {
       }),
     ).toEqual(["master-sfx"]);
     expect(audioAssetDependencies("SoundAttenuation", {})).toEqual([]);
+    // Only a Custom falloff plays its curve; a curve kept behind a built-in is not loaded or shipped.
+    expect(audioAssetDependencies("SoundAttenuation", { falloff: "custom", falloffCurveGuid: "curve-1" })).toEqual(["curve-1"]);
+    expect(audioAssetDependencies("SoundAttenuation", { falloff: "natural", falloffCurveGuid: "curve-1" })).toEqual([]);
+    expect(audioAssetDependencies("SoundAttenuation", { falloff: "custom", falloffCurveGuid: null })).toEqual([]);
     expect(audioAssetDependencies("Class", { audioChannelGuid: "ch-1" })).toEqual(
       [],
     );
@@ -562,16 +573,163 @@ describe("audio payloads", () => {
     ).toBe(0.5);
   });
 
-  it("keeps attenuation full inside the inner radius and silent at max", () => {
-    const atten = createDefaultSoundAttenuationPayload();
+  it("keeps attenuation full inside the inner radius and silent beyond max", () => {
+    const atten = { ...createDefaultSoundAttenuationPayload(), curve: BUILT_IN_FALLOFF_CURVES.linear };
     expect(computeAttenuationGain(0, atten)).toBe(1);
     expect(computeAttenuationGain(10, atten)).toBe(1);
     expect(computeAttenuationGain(250, atten)).toBe(0);
     expect(computeAttenuationGain(130, atten)).toBeCloseTo(0.5);
-    const farther = computeAttenuationGain(200, atten);
-    const nearer = computeAttenuationGain(50, atten);
-    expect(farther).toBeLessThan(nearer);
-    expect(farther).toBeGreaterThan(0);
+    expect(computeAttenuationGain(1000, atten)).toBe(0);
+  });
+
+  it("silences a distance that is not a finite number", () => {
+    const atten = { ...createDefaultSoundAttenuationPayload(), curve: BUILT_IN_FALLOFF_CURVES.natural };
+    expect(computeAttenuationGain(Number.NaN, atten)).toBe(0);
+    expect(computeAttenuationGain(Number.POSITIVE_INFINITY, atten)).toBe(0);
+  });
+
+  it("cuts a curve that ends above 0 at Max Radius and steps at Inner Radius when it starts below 1", () => {
+    const flat: Curve<number> = { Keys: [{ Time: 0, Value: 0.5, Interpolation: "linear", ArriveTangent: 0, LeaveTangent: 0 }], Before: "constant", After: "constant" };
+    const atten = { innerRadius: 10, maxRadius: 20, curve: flat };
+    expect(computeAttenuationGain(10, atten)).toBe(1);
+    expect(computeAttenuationGain(10.001, atten)).toBe(0.5);
+    expect(computeAttenuationGain(20, atten)).toBe(0.5);
+    expect(computeAttenuationGain(20.001, atten)).toBe(0);
+  });
+
+  it("treats Max Radius equal to Inner Radius as a hard edge without dividing by zero", () => {
+    const curve = BUILT_IN_FALLOFF_CURVES.natural;
+    expect(computeAttenuationGain(5, { innerRadius: 5, maxRadius: 5, curve })).toBe(1);
+    expect(computeAttenuationGain(5.0001, { innerRadius: 5, maxRadius: 5, curve })).toBe(0);
+    expect(computeAttenuationGain(0, { innerRadius: 0, maxRadius: 0, curve })).toBe(1);
+    expect(computeAttenuationGain(0.1, { innerRadius: 0, maxRadius: 0, curve })).toBe(0);
+  });
+
+  it("samples a custom curve at X 0..1 between the radii, clamped in X and Y", () => {
+    // Rises from 0 to 2 over X 0..2: past X 1 must not be read, and values over 1 play at 1.
+    const rising: Curve<number> = {
+      Keys: [
+        { Time: 0, Value: 0, Interpolation: "linear", ArriveTangent: 0, LeaveTangent: 0 },
+        { Time: 2, Value: 2, Interpolation: "linear", ArriveTangent: 0, LeaveTangent: 0 },
+      ],
+      Before: "linear",
+      After: "linear",
+    };
+    expect(sampleFalloffCurve(rising, 0.25)).toBeCloseTo(0.25);
+    expect(sampleFalloffCurve(rising, -3)).toBe(0);
+    expect(sampleFalloffCurve(rising, 1)).toBe(1);
+    expect(sampleFalloffCurve(rising, 5)).toBe(1);
+    expect(sampleFalloffCurve(rising, Number.NaN)).toBe(0);
+    const negative: Curve<number> = { Keys: [{ Time: 0, Value: -4, Interpolation: "linear", ArriveTangent: 0, LeaveTangent: 0 }], Before: "constant", After: "constant" };
+    expect(sampleFalloffCurve(negative, 0.5)).toBe(0);
+    // Between the radii: 10 + 0.25 × 40 = 20 reads X 0.25.
+    expect(computeAttenuationGain(20, { innerRadius: 10, maxRadius: 50, curve: rising })).toBeCloseTo(0.25);
+  });
+
+  it("plays a non-finite curve value as silence, never full volume", () => {
+    const broken = { Keys: [{ Time: 0, Value: Number.NaN }, { Time: 1, Value: Number.POSITIVE_INFINITY }], Before: "constant", After: "constant" } as unknown as Curve<number>;
+    expect(sampleFalloffCurve(broken, 0.5)).toBe(0);
+  });
+
+  it("authors the built-in falloffs from full volume at Inner Radius to silence at Max Radius", () => {
+    const expected: Record<BuiltInSoundAttenuationFalloff, number> = {
+      natural: 0.3125, // (1 − 0.5)³ (1 + 1.5)
+      linear: 0.5,
+      inverse: 1 / 3, // (1 − 0.5) / (1 + 0.5)
+      exponential: (Math.exp(-0.5) - Math.exp(-1)) / (1 - Math.exp(-1)),
+    };
+    for (const [falloff, half] of Object.entries(expected) as Array<[BuiltInSoundAttenuationFalloff, number]>) {
+      const curve = BUILT_IN_FALLOFF_CURVES[falloff];
+      expect(sampleFalloffCurve(curve, 0), falloff).toBe(1);
+      expect(sampleFalloffCurve(curve, 0.5), falloff).toBeCloseTo(half, 5);
+      expect(sampleFalloffCurve(curve, 1), falloff).toBe(0);
+      let previous = 1;
+      for (let i = 1; i <= 200; i += 1) {
+        const value = sampleFalloffCurve(curve, i / 200);
+        expect(value, `${falloff} at ${i / 200}`).toBeLessThanOrEqual(previous);
+        previous = value;
+      }
+    }
+  });
+
+  it("keeps the built-in keys within 0.001 of their shapes, Inverse and Exponential being the rolloff-1 formulas they replace", () => {
+    const formulas = {
+      natural: (t: number) => (1 - t) ** 3 * (1 + 3 * t),
+      inverse: (t: number) => (1 - t) / (1 + t),
+      exponential: (t: number) => (Math.exp(-t) - Math.exp(-1)) / (1 - Math.exp(-1)),
+    };
+    for (const [falloff, formula] of Object.entries(formulas) as Array<["natural" | "inverse" | "exponential", (t: number) => number]>) {
+      for (let i = 0; i <= 100; i += 1) {
+        expect(Math.abs(sampleFalloffCurve(BUILT_IN_FALLOFF_CURVES[falloff], i / 100) - formula(i / 100)), `${falloff} at ${i / 100}`).toBeLessThan(0.001);
+      }
+    }
+  });
+
+  it("resolves Custom to its curve, and without one to Natural as missing", () => {
+    const custom: Curve<number> = { Keys: [], Before: "constant", After: "constant" };
+    expect(resolveSoundAttenuationCurve({ falloff: "inverse" })).toEqual({ curve: BUILT_IN_FALLOFF_CURVES.inverse, missing: false });
+    expect(resolveSoundAttenuationCurve({ falloff: "custom", customCurve: custom })).toEqual({ curve: custom, missing: false });
+    expect(resolveSoundAttenuationCurve({ falloff: "custom", customCurve: null })).toEqual({ curve: BUILT_IN_FALLOFF_CURVES.natural, missing: true });
+  });
+
+  it("builds a library entry with its Custom curve, or none when the library lacks it", () => {
+    const curve = { Keys: [{ Time: 0, Value: 0.75, Interpolation: "linear", ArriveTangent: 0, LeaveTangent: 0 }], Before: "constant", After: "constant" };
+    const lookups: string[] = [];
+    const lookup = (guid: string) => {
+      lookups.push(guid);
+      return guid === "curve-1" ? { curve } : undefined;
+    };
+    expect(soundAttenuationLibraryEntry({ falloff: "custom", falloffCurveGuid: "curve-1" }, lookup).customCurve).toEqual(curve);
+    expect(soundAttenuationLibraryEntry({ falloff: "custom", falloffCurveGuid: "gone" }, lookup).customCurve).toBeNull();
+    // A built-in falloff never reads the curve it keeps.
+    expect(soundAttenuationLibraryEntry({ falloff: "linear", falloffCurveGuid: "curve-1" }, lookup).customCurve).toBeNull();
+    expect(lookups).toEqual(["curve-1", "gone"]);
+  });
+
+  it("reports a Custom falloff without its curve once and plays Natural", () => {
+    const result = sanitizeAudioLibrary({
+      audio: new Map(),
+      channels: new Map(),
+      attenuations: new Map([
+        ["att-missing", soundAttenuationLibraryEntry({ falloff: "custom", falloffCurveGuid: "gone" }, () => undefined)],
+        ["att-none", soundAttenuationLibraryEntry({ falloff: "custom" }, () => undefined)],
+        ["att-linear", soundAttenuationLibraryEntry({ falloff: "linear" }, () => undefined)],
+      ]),
+    });
+    expect(result.diagnostics.map((row) => [row.code, row.guid])).toEqual([
+      ["audio.missing_falloff_curve", "att-missing"],
+      ["audio.missing_falloff_curve", "att-none"],
+    ]);
+    expect(result.attenuations.get("att-missing")?.curve).toBe(BUILT_IN_FALLOFF_CURVES.natural);
+    expect(result.attenuations.get("att-linear")?.curve).toBe(BUILT_IN_FALLOFF_CURVES.linear);
+    expect(result.attenuations.get("att-linear")).not.toHaveProperty("customCurve");
+  });
+
+  it("plots the steps at Inner and Max Radius and the silence past Max", () => {
+    const half: Curve<number> = { Keys: [{ Time: 0, Value: 0.5, Interpolation: "linear", ArriveTangent: 0, LeaveTangent: 0 }], Before: "constant", After: "constant" };
+    expect(attenuationPlotPoints({ innerRadius: 10, maxRadius: 20, curve: half }, 2)).toEqual([
+      { distance: 0, gain: 1 },
+      { distance: 10, gain: 1 },
+      { distance: 10, gain: 0.5 },
+      { distance: 20, gain: 0.5 },
+      { distance: 20, gain: 0 },
+      { distance: 22, gain: 0 },
+    ]);
+    // A curve from 1 to 0 needs no step.
+    expect(attenuationPlotPoints({ innerRadius: 0, maxRadius: 10, curve: BUILT_IN_FALLOFF_CURVES.linear }, 3)).toEqual([
+      { distance: 0, gain: 1 },
+      { distance: 0, gain: 1 },
+      { distance: 5, gain: 0.5 },
+      { distance: 10, gain: 0 },
+      { distance: 11, gain: 0 },
+    ]);
+    // Max equal to Inner: full volume to the radius, then silent.
+    expect(attenuationPlotPoints({ innerRadius: 4, maxRadius: 4, curve: BUILT_IN_FALLOFF_CURVES.linear })).toEqual([
+      { distance: 0, gain: 1 },
+      { distance: 4, gain: 1 },
+      { distance: 4, gain: 0 },
+      { distance: 4.4, gain: 0 },
+    ]);
   });
 
   it("raises Doppler playbackRate when the emitter moves toward the listener", () => {
@@ -595,24 +753,26 @@ describe("audio payloads", () => {
     ).toBe(1);
   });
 
-  it("enforces attenuation radii and known distance models", () => {
-    expect(normalizeSoundAttenuationPayload({})).toMatchObject({ innerRadius: 10, maxRadius: 250 });
+  it("enforces attenuation radii and known falloffs", () => {
+    expect(normalizeSoundAttenuationPayload({})).toMatchObject({ innerRadius: 10, maxRadius: 250, falloff: "natural", falloffCurveGuid: null });
     expect(normalizeSoundAttenuationPayload({ innerRadius: NaN, maxRadius: Infinity })).toMatchObject({ innerRadius: 10, maxRadius: 250 });
     expect(normalizeSoundAttenuationPayload({ innerRadius: 1, maxRadius: 50 })).toMatchObject({ innerRadius: 1, maxRadius: 50 });
     const swapped = normalizeSoundAttenuationPayload({
       innerRadius: 20,
       maxRadius: 5,
-      distanceModel: "bogus",
+      falloff: "bogus",
       spatialisation: "hrtf",
     });
     expect(swapped.innerRadius).toBe(5);
     expect(swapped.maxRadius).toBe(20);
-    expect(swapped.distanceModel).toBe("linear");
+    expect(swapped.falloff).toBe("natural");
     expect(swapped.spatialisation).toBe("hrtf");
     expect(
       normalizeSoundAttenuationPayload({ innerRadius: -4, maxRadius: -1 })
         .innerRadius,
     ).toBe(0);
+    expect(normalizeSoundAttenuationPayload({ falloff: "custom", falloffCurveGuid: " curve-1 " })).toMatchObject({ falloff: "custom", falloffCurveGuid: "curve-1" });
+    expect(normalizeSoundAttenuationPayload({ falloff: "exponential", falloffCurveGuid: "" })).toMatchObject({ falloff: "exponential", falloffCurveGuid: null });
   });
 });
 

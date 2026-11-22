@@ -2,7 +2,7 @@ import type { EngineGpuTimingObservation, EngineGpuTimingSample } from "./engine
 import type { RuntimeMaterialPreparationRequest, RuntimeMaterialCommitCommand } from "./runtime-material-edit";
 import type { RuntimeTransformTools, RuntimeTransformToolsOptions } from "./runtime-transform-tools";
 import type { RenderFrameReport } from "./render-frame-report";
-import type { AudioLibrary } from "./audio-service";
+import type { AudioLibrary, AudioSelectionLibrary } from "./audio-service";
 import type { ParticleLibrary } from "./particle-service";
 import type { AudioPlaybackBackend } from "./audio-playback-backend";
 import type { RagdollCaptureResult } from "./ragdoll-pose";
@@ -644,7 +644,7 @@ export interface EditorTools {
     sceneData: SerializedScene | null;
     selectedActorIds: readonly string[];
     selectedComponentIds?: readonly string[];
-    audioLibrary?: Pick<AudioLibrary, "audio" | "attenuations">;
+    audioLibrary?: AudioSelectionLibrary;
   }) => void;
   setPreviewCanvas: (canvas: HTMLCanvasElement | null) => void;
   frameActor: (actorId: string) => void;

@@ -1,5 +1,5 @@
 import { Actor, engineScriptApiFor, Scene, SceneLayer, type ActorComponent, type EngineObject } from "@haptic/object-model";
-import type { ScriptHostServices, ScriptNodeLocation } from "./script-host-services";
+import type { ScriptHostServices, ScriptNodeLocation, SlotClipLoad } from "./script-host-services";
 
 /** The diagnostic code of a script write or spawn that waits for an asset its owner did not load. */
 export const ASSET_LOAD_ON_DEMAND_DIAGNOSTIC_CODE = "runtime.assetLoadOnDemand";
@@ -33,6 +33,8 @@ interface LoadRequest {
   consumer: string;
   /** What happens once it loads, e.g. `it applies to Material on …` or `the decal spawns`. */
   onLoad: string;
+  /** What happens when it cannot load; `<consumer> keeps its current value` when not given. */
+  failed?: string;
   caller: EngineObject | null;
 }
 
@@ -49,11 +51,16 @@ function componentLabel(component: ActorComponent): string {
   return `${typeLabel(component.classId.replace(/Component$/, ""))}${owner ? ` of actor "${actor}"` : ""}`;
 }
 
+/** What happens when the request's asset cannot load. */
+function failedPhrase(request: LoadRequest): string {
+  return request.failed ?? `${request.consumer} keeps its current value`;
+}
+
 /**
  * On-demand loading for script writes of assets their owner did not load (Soft references): a component asset
- * property keeps showing its previous value while the asset loads, then takes the new one; Spawn Decal and Spawn
- * Particles wait the same way. The first such write per asset and node warns; a failed load or an asset the game
- * does not include is an error, and the property keeps its value.
+ * property keeps showing its previous value while the asset loads, then takes the new one; Spawn Decal, Spawn
+ * Particles and Play Slot Animation (`loadSlotClip`) wait the same way. The first such write per asset and node
+ * warns; a failed load or an asset the game does not include is an error, and the property keeps its value.
  *
  * Read back meanwhile, the property answers with the value the script set (`pendingValue`), as any Set Variable
  * does; everything that draws, simulates or saves the component reads the value it shows. The latest write wins: a
@@ -154,6 +161,28 @@ export class ScriptAssetLoads {
     });
   }
 
+  /**
+   * Loads the clip a Play Slot Animation names on `component` (an Animation Graph), for a play that starts once it
+   * has loaded: `play.ready` runs then, and `play.failed` when it fails or the game does not include it, either only
+   * while `play.current()` holds and the component lives. Warns once per asset and node, as a deferred write does.
+   */
+  loadSlotClip(component: ActorComponent, guid: string, play: SlotClipLoad): void {
+    const consumer = `Play Slot Animation on ${componentLabel(component)}`;
+    const request: LoadRequest = { guid, type: "Animation", consumer, caller: null,
+      onLoad: `it plays on ${componentLabel(component)} once loaded`, failed: `${consumer} plays nothing` };
+    if (!this.admit(request)) { play.failed(); return; }
+    const location = this.host.services.locateScriptNode?.() ?? null;
+    this.warn(request, location);
+    const live = () => play.current() && !component.destroyed && !!component.owner && !component.owner.destroyed;
+    void this.host.services.prepareAssets!([guid], component.owner ?? null).then(() => {
+      if (live() && this.host.canInvokeOwner(component)) play.ready();
+    }, (error: unknown) => {
+      if (!live()) return;
+      this.fail(request, location, error);
+      play.failed();
+    });
+  }
+
   /** A script-settable component property holding an asset this host loads on demand: its asset type and name. */
   private assetProperty(component: ActorComponent, name: string): { type: string; label: string } | undefined {
     let properties = this.assetProperties.get(component.classId);
@@ -179,7 +208,7 @@ export class ScriptAssetLoads {
     if (!catalog || catalog.assetCount === 0 || catalog.hasAsset(request.guid)) return true;
     const location = this.host.services.locateScriptNode?.() ?? null;
     this.report("error", ASSET_LOAD_FAILED_DIAGNOSTIC_CODE, request, location,
-      `${typeLabel(request.type)} ${request.guid} is not included in this game, so ${request.consumer} keeps its current value. ` +
+      `${typeLabel(request.type)} ${request.guid} is not included in this game, so ${failedPhrase(request)}. ` +
       "Reference it from a Class, Scene or Data asset the game ships, or add its folder to Always Package Folders.");
     return false;
   }
@@ -195,7 +224,7 @@ export class ScriptAssetLoads {
   private fail(request: LoadRequest, location: ScriptNodeLocation | null, error: unknown): void {
     const reason = error instanceof Error ? error.message : String(error);
     this.report("error", ASSET_LOAD_FAILED_DIAGNOSTIC_CODE, request, location,
-      `${this.assetLabel(request)} failed to load, so ${request.consumer} keeps its current value: ${reason}`);
+      `${this.assetLabel(request)} failed to load, so ${failedPhrase(request)}: ${reason}`);
   }
 
   /** Reported once per severity, asset and node (once per asset outside compiled nodes). */

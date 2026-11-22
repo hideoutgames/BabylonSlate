@@ -157,6 +157,12 @@ export type ScriptBundleEntry = {
   }>;
   /** Present when the graph is a DebugCommand OnCommandRun handler. */
   command?: ScriptConsoleCommand;
+  /**
+   * Execute JavaScript nodes whose code `source` carries, as the compiler reported them (omitted for
+   * none). The editor refuses to run or package such a script in a project this computer does not
+   * trust; the runtime ignores it.
+   */
+  executeJavaScriptNodes?: string[];
   /** Class registry parent; omitted scripts default to Actor at load. */
   parentClassId?: string;
   /** ScriptInterface asset guids this class implements. */
@@ -291,6 +297,8 @@ export type ControlMessage =
       environment?: import("@haptic/core").GameEnvironment;
       /** When false, debug-tier console commands are stripped in the player. */
       includeDebugCommands?: boolean;
+      /** Debugging aid: check every snapshot publish against a whole-World pass (`stats` `snapshotMismatches`). */
+      verifySnapshotPublishes?: boolean;
       /** False strips the debug lines of Line Trace and Project Cursor To Scene, even for an explicit `drawDebug: true`. True when omitted; release players send false. */
       traceDebugDraw?: boolean;
       infiniteLoopDetection?: boolean;
@@ -983,6 +991,8 @@ export type CommandMessage =
       phaseMs?: number[];
       /** Most recent snapshot publish: overlay layout and removal pass, world composition and buffer write. */
       publishMs?: number;
+      /** Published frames that differed from a whole-World pass; only while snapshot verification is on, and must stay 0. */
+      snapshotMismatches?: number;
       fps?: number;
       liveActors?: number;
       snapshotCapacity?: number;

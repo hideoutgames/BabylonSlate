@@ -266,6 +266,19 @@ describe("typed asset dependencies", () => {
     expect(variable.requiredVariableNames).toEqual(["screen"]);
   });
 
+  it("loads the assets a Behaviour Tree's built-in tasks play with the tree", () => {
+    const metadata = collectAssetDependencyMetadata("BehaviourTree", {
+      blackboardGuid: "board",
+      nodes: [
+        { id: "wave", kind: "task", classId: "bt.task.playAnimation", properties: { clipKind: "animation", clipAssetGuid: "wave-anim" } },
+        { id: "hop", kind: "task", classId: "bt.task.playAnimation", properties: { clipKind: "sprite", clipAssetGuid: "hop-sprite" } },
+        { id: "shout", kind: "task", classId: "bt.task.playSound", properties: { audioAssetGuid: "shout-audio", volume: 1 } },
+        { id: "rest", kind: "task", classId: "bt.task.wait", properties: { durationMs: 500 } },
+      ],
+    });
+    expect(metadata.requiredDependencies).toEqual(["board", "hop-sprite", "shout-audio", "wave-anim"]);
+  });
+
   it("ships a Timeline Asset a node names or a clip is bound to, without loading it with its owner", () => {
     const graph = collectAssetDependencyMetadata("Class", {
       nodes: [{ id: "timeline", type: "timeline.fromAsset", data: { "default:timelineAsset": "story" } }],

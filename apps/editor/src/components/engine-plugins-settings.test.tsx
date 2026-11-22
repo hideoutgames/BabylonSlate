@@ -187,7 +187,8 @@ describe("EnginePluginsSettings", () => {
     fireEvent.click(within(enable).getByRole("button", { name: "Project & Engine" }));
     await waitFor(() => expect(library.setEnabledByDefault).toHaveBeenCalledWith("custom", true));
     expect(library.export).toHaveBeenCalledWith("custom");
-    expect(project.importPlugin).toHaveBeenCalledWith(bytes);
+    // Not bundled with Haptic, so its Execute JavaScript, if any, would be disclosed first.
+    expect(project.importPlugin).toHaveBeenCalledWith(bytes, undefined, { allowExecuteJavaScript: false });
     expect(project.applyPluginOverrides).toHaveBeenCalledWith({ custom: { enabled: true } });
     expect(project.overrides).toEqual({ custom: { enabled: true } });
 
@@ -212,5 +213,51 @@ describe("EnginePluginsSettings", () => {
     await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
     expect(project.overrides.bundled).toEqual({ enabled: true });
     expect(library.setEnabledByDefault).toHaveBeenCalledTimes(1);
+  });
+
+  describe("Execute JavaScript in library plugins", () => {
+    const disclosed = { status: "executeJavaScript", incoming: {}, assets: [{ guid: "hero", name: "Hero", type: "Class", nodes: [{ nodeId: "js", body: "x" }] }] };
+
+    it("copies a plugin bundled with Haptic in without asking", async () => {
+      project.open = true;
+      project.plugins = [];
+      const bytes = new Uint8Array([1]);
+      library.export.mockResolvedValue(bytes);
+      project.importPlugin.mockResolvedValue({ status: "imported", descriptor: { ...entry("bundled", true), source: "project" } });
+      render(<EnginePluginsSettings />);
+      fireEvent.click(within(await screen.findByTestId("engine-plugin-row-bundled")).getByRole("switch"));
+      fireEvent.click(within(await screen.findByRole("alertdialog", { name: "Enable Starter Content" })).getByRole("button", { name: "Project Only" }));
+      await waitFor(() => expect(project.applyPluginOverrides).toHaveBeenCalledWith({ bundled: { enabled: true } }));
+      expect(project.importPlugin.mock.calls).toEqual([[bytes, undefined, { allowExecuteJavaScript: true }]]);
+      expect(screen.queryByTestId("execute-javascript-import-dialog")).toBeNull();
+    });
+
+    it("discloses any other entry's Execute JavaScript; Cancel copies nothing and keeps the default", async () => {
+      project.open = true;
+      const bytes = new Uint8Array([2]);
+      library.export.mockResolvedValue(bytes);
+      project.importPlugin.mockImplementation(async (_bytes: unknown, _decision: unknown, options?: { allowExecuteJavaScript?: boolean }) =>
+        options?.allowExecuteJavaScript ? { status: "imported", descriptor: { ...entry("custom", false), source: "project" } } : disclosed);
+      render(<EnginePluginsSettings />);
+      const toggle = async () => {
+        fireEvent.click(within(await screen.findByTestId("engine-plugin-row-custom")).getByRole("switch"));
+        fireEvent.click(within(await screen.findByRole("alertdialog", { name: "Enable User Plugin" })).getByRole("button", { name: "Project & Engine" }));
+        return screen.findByTestId("execute-javascript-import-dialog");
+      };
+      fireEvent.click(within(await toggle()).getByTestId("execute-javascript-import-cancel"));
+      await waitFor(() => expect(screen.queryByTestId("execute-javascript-import-dialog")).toBeNull());
+      // The action finished (the page's load, the bundled check and the action's own list refresh ran), so the page takes the next one.
+      await waitFor(() => expect(library.list).toHaveBeenCalledTimes(3));
+      expect(project.importPlugin).toHaveBeenCalledTimes(1);
+      expect(project.applyPluginOverrides).not.toHaveBeenCalled();
+      expect(library.setEnabledByDefault).not.toHaveBeenCalled();
+
+      fireEvent.click(within(await toggle()).getByTestId("execute-javascript-import-confirm"));
+      await waitFor(() => expect(library.setEnabledByDefault).toHaveBeenCalledWith("custom", true));
+      expect(project.importPlugin.mock.calls.map(([, , options]) => options)).toEqual([
+        { allowExecuteJavaScript: false }, { allowExecuteJavaScript: false }, { allowExecuteJavaScript: true },
+      ]);
+      expect(project.applyPluginOverrides).toHaveBeenCalledWith({ custom: { enabled: true } });
+    });
   });
 });

@@ -19,6 +19,8 @@ export type AssetCreateRequest = {
   waterMaterial?: boolean;
   /** Data Definition constraint when creating a Data Tree. */
   defaultDefinitionGuid?: string | null;
+  /** A new Float, Vector or Color Curve starts as this curve instead of the default rise. */
+  curve?: unknown;
   /**
    * Path of the document that will hold the reference; the host creates the
    * asset in that document's content. `null` means the project itself (the

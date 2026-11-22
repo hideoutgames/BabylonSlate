@@ -4,6 +4,7 @@ import {
   useProjectState,
   useRegistryState,
 } from "../context/document-context";
+import { getAppSettingsSnapshot } from "../context/app-settings-context";
 import { useProjectTrust } from "./use-project-trust";
 
 /**
@@ -16,6 +17,16 @@ export function EditorExtensionsRuntime() {
   const { extensionService, projectGuid } = useRegistryState();
   const { ready, trusted, persisted, setTrusted } = useProjectTrust();
   const overrides = JSON.stringify(projectDocument?.settings.extensionOverrides ?? {});
+  // Execute JavaScript's gate reads trust from Engine Settings as they are when it checks.
+  useEffect(() => {
+    if (!extensionService || !projectGuid) return;
+    extensionService.setTrustSource(() => {
+      const { settings, hydrated } = getAppSettingsSnapshot();
+      const key = extensionService.projectTrustKey(projectGuid);
+      return hydrated && key !== null && (settings.trustedProjects.includes(key) || extensionService.createdHere(key));
+    });
+    return () => extensionService.setTrustSource(null);
+  }, [extensionService, projectGuid]);
   useEffect(() => {
     if (!extensionService) return;
     // Checks the tabs open when the Extension writes, not those at the last render.

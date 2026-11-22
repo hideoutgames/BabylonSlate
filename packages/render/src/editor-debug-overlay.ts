@@ -44,7 +44,7 @@ import { isEditorHelperMesh, markEditorHelperMesh } from "./helper-mesh";
 import { withSceneReadinessState } from "./scene-perf";
 import { isRenderTargetCaptureCandidate } from "./render-target-capture";
 import { admittedSceneMeshes } from "./scene-stream-admission";
-import type { AudioLibrary } from "./audio-service";
+import type { AudioSelectionLibrary } from "./audio-service";
 import { asNumber } from "./as-number";
 
 /** Lens preview redraws per second unless the editor sets its own rate. */
@@ -68,7 +68,7 @@ type OverlaySync = {
   sceneData: SerializedScene | null;
   selectedActorIds: readonly string[];
   selectedComponentIds?: readonly string[];
-  audioLibrary?: Pick<AudioLibrary, "audio" | "attenuations">;
+  audioLibrary?: AudioSelectionLibrary;
 };
 
 type EditorDebugOverlayOptions = {

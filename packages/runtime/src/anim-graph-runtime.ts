@@ -29,7 +29,7 @@ import type { RuntimeSubsystem } from "./runtime-subsystems";
 import type { ScriptBreakpoints } from "./script-breakpoints";
 import type { ScriptDebugTrace, ScriptGraphRecorder } from "./script-debug";
 import type { SpriteClipState } from "./sprite-clip-trace";
-import type { AnimGraphControl, ScriptHost } from "./script-host";
+import type { AnimGraphControl, ScriptHost, SlotClipLoader } from "./script-host";
 import { walkComponentOwners } from "./world-component-index";
 import { TickWait } from "./tick-wait";
 
@@ -69,6 +69,8 @@ const ENDED_SLOT_PLAY_TICKS = 600;
 /** A Play Slot Animation's handle while scripts may wait on it. */
 interface SlotPlay {
   component: string;
+  /** Its clip is still loading: it has not started, so ending it now runs neither output. */
+  loading?: boolean;
   blendedOut: boolean;
   ended?: "completed" | "interrupted";
   /** Ticks since it ended: a handle nothing waited on goes after `ENDED_SLOT_PLAY_TICKS`. */
@@ -89,6 +91,8 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
   private readonly slotRequestsByComponent = new Map<string, AnimSlotRequest[]>();
   /** Each Play Slot Animation's handle: its component, whether it began blending out, how it ended, and its waits. */
   private readonly slotPlays = new Map<number, SlotPlay>();
+  /** The play waiting for its clip to load, by component and slot: only the slot's latest request waits. */
+  private readonly loadingSlotPlays = new Map<string, Map<string, number>>();
   private nextSlotPlayId = 1;
   /** Animations and Sprite Animations by guid, which Play Slot Animation plays. */
   private readonly clipCatalog = new Map<string, AnimClipCatalogEntry>();
@@ -164,14 +168,30 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
   /** Ends every play of a component that will not run again: their waits answer false. */
   private dropSlotPlays(componentGuid: string): void {
     this.slotRequestsByComponent.delete(componentGuid);
+    this.loadingSlotPlays.delete(componentGuid);
     for (const [handle, play] of this.slotPlays) {
       if (play.component !== componentGuid) continue;
       if (!play.ended) {
-        if (!play.blendedOut) this.settleSlotEvent({ id: handle, phase: "blendOut" });
+        // A play still loading its clip never started: it does not blend out.
+        if (!play.blendedOut && !play.loading) this.settleSlotEvent({ id: handle, phase: "blendOut" });
         this.settleSlotEvent({ id: handle, phase: "interrupted" });
       }
       this.slotPlays.delete(handle);
     }
+  }
+
+  /**
+   * Ends the play waiting on the slot for its clip, superseded by a later Play or Stop Slot Animation there (or its
+   * load failed): it never started, so its waits answer false and its late load plays nothing.
+   */
+  private endLoadingSlotPlay(componentGuid: string, slot: string): void {
+    const loading = this.loadingSlotPlays.get(componentGuid);
+    const handle = loading?.get(slot);
+    if (!loading || handle === undefined) return;
+    loading.delete(slot);
+    if (loading.size === 0) this.loadingSlotPlays.delete(componentGuid);
+    const play = this.slotPlays.get(handle);
+    if (play && !play.ended) this.settleSlotEvent({ id: handle, phase: "interrupted" });
   }
 
   /**
@@ -194,6 +214,7 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
   cancelPending(): void {
     for (const componentGuid of new Set([...this.slotPlays.values()].map((play) => play.component))) this.dropSlotPlays(componentGuid);
     this.slotRequestsByComponent.clear();
+    this.loadingSlotPlays.clear();
   }
 
   /** Stop, phase 2: forget every graph, clip, component state and debug follower the session held. */
@@ -296,26 +317,36 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
         this.bindGraph(evalKey, guid);
         this.pendingJumpByComponent.set(evalKey, match.id);
       },
-      playSlotAnimation: (request) => {
-        const clip = document && guid && hasSlot ? this.slotClip(request.animation, document) : null;
-        if (!clip || !guid) return 0;
-        this.bindGraph(evalKey, guid);
-        const id = this.nextSlotPlayId++;
-        this.slotPlays.set(id, { component: evalKey, blendedOut: false, waits: [] });
-        this.queueSlotRequest(evalKey, {
-          kind: "play", id, slot: request.slot.trim() || ANIM_DEFAULT_SLOT, clip,
+      playSlotAnimation: (request, clips) => {
+        if (!document || !guid || !hasSlot) return 0;
+        const slot = request.slot.trim() || ANIM_DEFAULT_SLOT;
+        const queue = (id: number, clip: AnimSlotClip) => this.queueSlotRequest(evalKey, {
+          kind: "play", id, slot, clip,
           blendInSeconds: request.blendInSeconds, blendOutSeconds: request.blendOutSeconds,
           playRate: request.playRate, loopCount: request.loopCount, startSeconds: request.startSeconds,
         });
+        const asset = request.animation.trim();
+        if (asset && clips?.needsLoad(asset)) return this.loadSlotPlay(target, guid, slot, asset, clips, queue);
+        const clip = this.slotClip(asset, document);
+        if (!clip) return 0;
+        this.bindGraph(evalKey, guid);
+        // The latest request on a slot wins: one still waiting for its clip never starts.
+        this.endLoadingSlotPlay(evalKey, slot);
+        const id = this.nextSlotPlayId++;
+        this.slotPlays.set(id, { component: evalKey, blendedOut: false, waits: [] });
+        queue(id, clip);
         return id;
       },
       stopSlotAnimation: (slot, blendOutSeconds) => {
         if (!guid || !document) return;
-        this.queueSlotRequest(evalKey, { kind: "stop", slot: slot.trim() || ANIM_DEFAULT_SLOT, blendOutSeconds });
+        const name = slot.trim() || ANIM_DEFAULT_SLOT;
+        this.endLoadingSlotPlay(evalKey, name);
+        this.queueSlotRequest(evalKey, { kind: "stop", slot: name, blendOutSeconds });
       },
       isSlotActive: (slot) => {
         const name = slot.trim() || ANIM_DEFAULT_SLOT;
-        // A play queued since the last evaluation already counts.
+        // A play waiting for its clip, or queued since the last evaluation, already counts.
+        if (this.loadingSlotPlays.get(evalKey)?.has(name)) return true;
         const requests = this.slotRequestsByComponent.get(evalKey) ?? [];
         for (let i = requests.length - 1; i >= 0; i--) {
           const request = requests[i]!;
@@ -325,6 +356,45 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
         return evalState?.slots?.[name]?.active !== undefined;
       },
     };
+  }
+
+  /**
+   * A Play Slot Animation whose clip its owner did not load: its handle at once, and the play queued once the clip
+   * has loaded, while it is still the slot's latest request and its component still runs `graphGuid`; the slot shows
+   * what it showed meanwhile. A later Play or Stop Slot Animation on the slot, the graph's switch or end, or a failed
+   * load ends it unstarted, so its waits answer false.
+   */
+  private loadSlotPlay(
+    component: ActorComponent, graphGuid: string, slot: string, asset: string, clips: SlotClipLoader,
+    queue: (id: number, clip: AnimSlotClip) => void,
+  ): number {
+    const evalKey = component.guid;
+    this.bindGraph(evalKey, graphGuid);
+    this.endLoadingSlotPlay(evalKey, slot);
+    const id = this.nextSlotPlayId++;
+    this.slotPlays.set(id, { component: evalKey, loading: true, blendedOut: false, waits: [] });
+    let loading = this.loadingSlotPlays.get(evalKey);
+    if (!loading) this.loadingSlotPlays.set(evalKey, loading = new Map());
+    loading.set(slot, id);
+    const current = () => this.loadingSlotPlays.get(evalKey)?.get(slot) === id;
+    clips.loadSlotClip(component, asset, {
+      current,
+      ready: () => {
+        if (!current()) return;
+        const document = this.graphByComponent.get(evalKey) === graphGuid ? this.documents.get(graphGuid) : undefined;
+        const clip = document ? this.slotClip(asset, document) : null;
+        const play = this.slotPlays.get(id);
+        // An asset that is no clip for this graph (another type, or a Sprite Animation in a 3D graph) plays nothing.
+        if (!clip || !play) { this.endLoadingSlotPlay(evalKey, slot); return; }
+        const waiting = this.loadingSlotPlays.get(evalKey)!;
+        waiting.delete(slot);
+        if (waiting.size === 0) this.loadingSlotPlays.delete(evalKey);
+        delete play.loading;
+        queue(id, clip);
+      },
+      failed: () => { if (current()) this.endLoadingSlotPlay(evalKey, slot); },
+    });
+    return id;
   }
 
   private queueSlotRequest(componentGuid: string, request: AnimSlotRequest): void {

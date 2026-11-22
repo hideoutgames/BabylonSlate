@@ -624,7 +624,7 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
         playRate: Number(playRate ?? 1),
         loopCount: Number(loopCount ?? 1),
         startSeconds: Number(startTime ?? 0),
-      }) ?? 0,
+      }, host.assetLoads) ?? 0,
     stopSlotAnimation: (target, slotName, blendOutTime) => {
       services.animGraphControl?.(target)?.stopSlotAnimation(String(slotName ?? ""), Number(blendOutTime ?? 0.25));
     },

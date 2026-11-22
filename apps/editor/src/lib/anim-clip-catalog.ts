@@ -1,9 +1,8 @@
-import type { AnimClipCatalogEntry } from "@haptic/anim-graph";
+import type { AnimClipCatalogEntry, AnimClipRootMotion } from "@haptic/anim-graph";
 import {
   animationClipEvents,
+  animationRootMotionBone,
   normalizeAnimationPayload,
-  normalizeModelPayload,
-  scaledAnimationRootMotion,
   spriteAnimationClipEvents,
   normalizeBlendSpacePayload,
   normalizeSpriteBlendSpacePayload,
@@ -48,16 +47,12 @@ type CatalogAsset = {
 
 /**
  * Build a clip catalog from Content Browser headers: Animation and Sprite Animation clips, the Models and Skeletons an
- * Animation names, and Blend Spaces with their Skeleton, axes and samples.
+ * Animation names, and Blend Spaces with their Skeleton, axes and samples. An Animation's root motion is only its bone
+ * (`animationHeaderSummary`), which previews hold in place; Play and export catalogs come from documents, with the track.
  */
 export function animClipCatalogFromAssets(
   assets: ReadonlyArray<CatalogAsset>,
 ): AnimClipCatalogEntry[] {
-  // Root motion travels in its source Model's units: each Animation's track scales by that Model's import scale.
-  const importScales = new Map<string, number>();
-  for (const asset of assets) {
-    if (asset.header.type === "Model") importScales.set(asset.header.guid, normalizeModelPayload(asset.header.payload).importScale);
-  }
   return assets.map((asset) => {
     const payload = asRecord(asset.header.payload);
     const durationMs =
@@ -81,13 +76,13 @@ export function animClipCatalogFromAssets(
       asset.header.type === "SpriteAnimation" && Array.isArray(payload.frames) && payload.frames.length > 0
         ? payload.frames.length
         : undefined;
+    const animation = asset.header.type === "Animation" ? normalizeAnimationPayload(payload) : undefined;
+    const additive = animation?.additive;
+    const rootMotionBone = animation ? animationRootMotionBone(payload) : null;
     // The events a player of this clip fires: an Animation's, or a Sprite Animation's frame events at their frames.
-    const additive = asset.header.type === "Animation" ? normalizeAnimationPayload(payload).additive : undefined;
-    const sourceRootMotion = asset.header.type === "Animation" ? normalizeAnimationPayload(payload).rootMotion : undefined;
-    const rootMotion = sourceRootMotion ? scaledAnimationRootMotion(sourceRootMotion, importScales.get(modelGuid) ?? 1) : undefined;
     const events =
-      asset.header.type === "Animation"
-        ? animationClipEvents(normalizeAnimationPayload(payload).events)
+      animation
+        ? animationClipEvents(animation.events)
         : asset.header.type === "SpriteAnimation"
           ? spriteAnimationClipEvents(parseSpriteAnimationPayload(payload))
           : [];
@@ -104,7 +99,7 @@ export function animClipCatalogFromAssets(
       ...(modelGuid ? { modelGuid } : {}),
       ...(events.length > 0 ? { events } : {}),
       ...(additive ? { additive } : {}),
-      ...(rootMotion ? { rootMotion } : {}),
+      ...(rootMotionBone ? { rootMotion: { bone: rootMotionBone } } : {}),
       ...(blendSpace
         ? {
             blendSpace: {
@@ -117,5 +112,25 @@ export function animClipCatalogFromAssets(
           }
         : {}),
     };
+  });
+}
+
+/**
+ * A Play session's clip catalog: every clip the headers list (a script may play any Animation on a slot, not only those
+ * its Play closure holds), each Animation's root motion taken from `tracks` (`playRootMotionTracks`: read from
+ * documents, scaled by the source Model's import scale as export scales it). An Animation `tracks` lacks has none.
+ */
+export function playAnimClipCatalog(
+  assets: ReadonlyArray<CatalogAsset>,
+  tracks: ReadonlyMap<string, AnimClipRootMotion>,
+): AnimClipCatalogEntry[] {
+  return animClipCatalogFromAssets(assets).map((entry) => {
+    if (entry.type !== "Animation") return entry;
+    const rootMotion = tracks.get(entry.guid);
+    if (rootMotion) return { ...entry, rootMotion };
+    if (!entry.rootMotion) return entry;
+    const { rootMotion: _bone, ...rest } = entry;
+    void _bone;
+    return rest;
   });
 }

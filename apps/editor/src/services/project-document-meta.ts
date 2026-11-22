@@ -37,6 +37,7 @@ import {
   stripAssetFileSuffix,
   type EncodableChunk,
   type HassetHeader,
+  animationHeaderSummary,
   modelHeaderSummary,
   normalizeBlendSpacePayload,
   normalizeSpriteBlendSpacePayload,
@@ -75,6 +76,8 @@ export function headerMetaForSave(
   }
   // Collision hulls stay in the document chunk; the header carries the rest and their count.
   if (type === "Model") return modelHeaderSummary(content);
+  // The root motion track stays in the document chunk; the header names its bone.
+  if (type === "Animation") return animationHeaderSummary(content);
   const materialMeta = materialHeaderMeta(
     type,
     content as Record<string, unknown>,

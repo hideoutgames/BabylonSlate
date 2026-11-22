@@ -1,4 +1,4 @@
-import { loadExtensionGameLibraries, RandomStream, SaveGameError, type ExtensionLibraries, type SaveGameMigrationData, type SaveGameService } from "@haptic/core";
+import { loadExtensionGameLibraries, RandomStream, sourceUrlLabel, SaveGameError, type ExtensionLibraries, type SaveGameMigrationData, type SaveGameService } from "@haptic/core";
 import {
   interfaceHandlerKey,
   isCreatableObjectChain,
@@ -37,7 +37,9 @@ import { unchangedComponentWrite } from "./runtime-property-writes";
 import { RuntimeContinuationCancelled } from "./simulation-waits";
 import { isThenable } from "./tick-wait";
 
-export type { AnimGraphControl, ScriptAssetLoadResult, ScriptColor, ScriptHostServices, SpawnActorOptions } from "./script-host-services";
+export type {
+  AnimGraphControl, ScriptAssetLoadResult, ScriptColor, ScriptHostServices, SlotClipLoad, SlotClipLoader, SpawnActorOptions,
+} from "./script-host-services";
 export type {
   CompiledScript,
   HostContextKey,
@@ -54,7 +56,7 @@ export function compiledScriptKey(script: Pick<CompiledScript, "assetGuid" | "cl
 }
 
 export function compiledScriptSourceLabel(script: Pick<CompiledScript, "assetGuid" | "classId">): string {
-  return `${script.assetGuid}~${encodeURIComponent(script.classId)}`;
+  return `${sourceUrlLabel(script.assetGuid)}~${encodeURIComponent(script.classId)}`;
 }
 
 /** A loaded module is reused only when its source and export list are both unchanged. */

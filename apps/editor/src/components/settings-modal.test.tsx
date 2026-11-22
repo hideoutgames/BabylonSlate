@@ -126,6 +126,7 @@ vi.mock("../context/document-context", async () => {
     extensionService: {
       subscribe: () => () => {}, getSnapshot: () => snapshot,
       projectTrustKey: (guid: string) => guid, createdHere: () => false, forgetCreatedProject: () => {},
+      revokeTrust: () => {}, clearRevocation: () => {},
     } as never,
     projectGuid: "test-project",
     activeDocumentId: "active-scene",

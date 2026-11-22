@@ -5,7 +5,7 @@ import { getHostPlatform, isAppOwnedFolder, pickImportFiles } from "@haptic/vfs"
 import { staticAudioGeometryFingerprint } from "../lib/audio-reverb-bake";
 import { convertGlslToMaterial, normalizeMaterialDocument, normalizeMaterialFunctionDocument, validateMaterialParameterNames } from "@haptic/shader-graph";
 import { EditorExtensionService } from "./editor-extension-service";
-import { admitOwnerWrites, guardProjectStorage, ProjectWriteAdmission, withExclusiveWriter, withProjectWriter, type ProjectSceneWriter, type ProjectWriteLease } from "./project-write-admission";
+import { admitOwnerWrites, guardProjectStorage, ProjectWriteAdmission, withExclusiveWriter, withProjectWriter, type ProjectSceneWriter, type ProjectWriteLease, type ProjectWriteLockOptions } from "./project-write-admission";
 import { guardProjectAssetRegistry } from "./project-authoring-ports";
 import { isExtensionPackagePath, isAssetSourceRevisionChanged, mountExtensionContentRoots, resolveExtensionFieldValues, type AssetDocument, type ExtensionDescriptor } from "@haptic/assets";
 import type {
@@ -144,7 +144,7 @@ import {
   withSavedTextureEncodeState,
 } from "./project-document-meta";
 import { ProjectTextureEncoding, type TextureEncodingOptions } from "./project-texture-encoding";
-import { ProjectPlugins, type PluginImportResult } from "./project-plugins";
+import { ProjectPlugins, type PluginImportOptions, type PluginImportResult } from "./project-plugins";
 import { resetAreaEmissionPreparations } from "../lib/area-emission-preparation";
 import {
   assertEmptyProjectFolder,
@@ -177,7 +177,7 @@ export interface ProjectLoadResult {
   layouts: ProjectLayouts;
 }
 
-export type { PluginImportResult } from "./project-plugins";
+export type { PluginImportOptions, PluginImportResult } from "./project-plugins";
 
 /**
  * What Clean Unused Project Storage did: `reclaimed` (`stopped` when a write
@@ -382,17 +382,36 @@ export class ProjectService {
     return this.writeAdmission.lock(reason);
   }
 
-  get authoringWriteBlockedReason(): string | null { return this.writeAdmission.reason; }
+  /** Resolves once a save would be admitted without waiting for a commit's lock (`ProjectWriteAdmission.whenAdmitting`). */
+  whenWritesAdmitted(): Promise<void> {
+    return this.writeAdmission.whenAdmitting();
+  }
+
+  /** Why a save is refused now; null while no lock refuses (a commit's lock makes a save wait instead). */
+  get authoringWriteBlockedReason(): string | null { return this.writeAdmission.refusal; }
 
   /**
    * Runs `work` as the project's only writer (Remove Unused Files): other
    * writers are refused with `reason`, admitted ones (saves, imports, copies,
    * encodes) finish first, and `work` writes through the storage it is given
    * until it returns. Refused while another operation holds project writes
-   * (Simulation); `signal` ends the wait.
+   * (Simulation); `signal` ends the wait. With `queueWrites` (a commit) other
+   * writers wait for it instead of being refused.
    */
-  withExclusiveWrites<T>(reason: string, work: (storage: ProjectStorage) => Promise<T>, signal?: AbortSignal): Promise<T> {
-    return withExclusiveWriter(this.writeAdmission, this.unguardedStorage, reason, work, signal);
+  withExclusiveWrites<T>(reason: string, work: (storage: ProjectStorage) => Promise<T>, signal?: AbortSignal, options?: ProjectWriteLockOptions): Promise<T> {
+    return withExclusiveWriter(this.writeAdmission, this.unguardedStorage, reason, work, signal, options);
+  }
+
+  /**
+   * Resolves once the Texture encode queue has no job waiting or running and
+   * the last result is written (`EncodeQueue.whenIdle`); a queue paused with
+   * work waiting (a Scene load, Play, the app in the background) is not idle
+   * until it resumes and finishes. `signal` ends the wait. Publish waits for
+   * it, so a project's first commit holds its encodes rather than leaving
+   * them as changes.
+   */
+  textureEncodesIdle(signal?: AbortSignal): Promise<void> {
+    return this.textures.whenIdle(signal);
   }
 
   /**
@@ -1170,8 +1189,9 @@ export class ProjectService {
   async importPlugin(
     bytes: Uint8Array,
     decision?: "keep" | "replace",
+    options?: PluginImportOptions,
   ): Promise<PluginImportResult> {
-    return this.projectPlugins.import(bytes, decision);
+    return this.projectPlugins.import(bytes, decision, options);
   }
 
   private storageForPath(path: string): ProjectStorage {
@@ -1731,12 +1751,12 @@ export class ProjectService {
         : existing?.parentClass ?? (type === "Class" ? "Actor" : null);
     // Imported assets keep their settings in the header beside their binary
     // chunks; a Font's MSDF attach merges into that header payload.
-    // A Model keeps its payload in the document chunk and a summary in the header (`modelHeaderSummary`).
+    // A Model and an Animation keep their payload in the document chunk and a summary in the header
+    // (`modelHeaderSummary`, `animationHeaderSummary`).
     const storeInHeader =
       (kind === "texture" ||
         kind === "font" ||
-        kind === "skeleton" ||
-        kind === "animation") &&
+        kind === "skeleton") &&
       existing !== null &&
       !existing.hasDocumentChunk;
     if (storeInHeader && existing && type === "Texture") {

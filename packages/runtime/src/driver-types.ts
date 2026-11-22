@@ -132,6 +132,11 @@ export interface RuntimeDriverOptions {
   /** When false, debug-tier console commands are stripped (non-debug export stand-in). */
   includeDebugCommands?: boolean;
   /**
+   * Check every snapshot publish against a whole-World pass (`snapshot-verification.ts`), reported as `stats`
+   * `snapshotMismatches`, which must stay 0. Omitted: the module switch `verifySnapshotPublishes`.
+   */
+  verifySnapshotPublishes?: boolean;
+  /**
    * False strips the debug lines of Line Trace and Project Cursor To Scene,
    * even for an explicit `drawDebug: true`; the release player sets it. True
    * or omitted (Play, Preview Build) keeps their Draw Debug rules.

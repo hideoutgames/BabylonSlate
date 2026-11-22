@@ -34,6 +34,7 @@ vi.mock("@babylonjs/core/AudioV2", () => ({
   CreateSoundAsync: audio.createSound,
   CreateStreamingSoundAsync: audio.createStreamingSound,
 }));
+import { BUILT_IN_FALLOFF_CURVES } from "@haptic/assets";
 import { BabylonAudioPlaybackBackend } from "./babylon-audio-backend";
 
 const request = { voiceId: "voice", assetGuid: "audio", source: new Uint8Array([1]), gain: 1, loop: false, reverbSend: false };
@@ -116,7 +117,7 @@ describe("Babylon audio backend lifecycle", () => {
   it("leaves distance falloff to the service's gain, so the panner only pans", async () => {
     const backend = new BabylonAudioPlaybackBackend();
     const spatial = {
-      enabled: true, innerRadius: 2, maxRadius: 20, distanceModel: "inverse" as const, rolloff: 3,
+      enabled: true, innerRadius: 2, maxRadius: 20, curve: BUILT_IN_FALLOFF_CURVES.inverse,
       spatialisation: "hrtf" as const, cone: null,
     };
     expect(backend.setVoiceAttenuation(request.voiceId, 0.5)).toBe(false);
@@ -135,13 +136,50 @@ describe("Babylon audio backend lifecycle", () => {
     expect(sound.volume).toBeCloseTo(0.2);
     backend.setVoiceGain(request.voiceId, 0.4);
     expect(sound.volume).toBeCloseTo(0.1);
+    // A distance gain that is not a number is silence, never full volume.
+    backend.setVoiceMuffle(request.voiceId, 0);
+    backend.setVoiceAttenuation(request.voiceId, Number.NaN);
+    expect(sound.volume).toBe(0);
+    backend.dispose();
+  });
+
+  it("places a spatial voice at its start pose before it plays", async () => {
+    const backend = new BabylonAudioPlaybackBackend();
+    const spatial = {
+      enabled: true, innerRadius: 2, maxRadius: 20, curve: BUILT_IN_FALLOFF_CURVES.natural,
+      spatialisation: "equalPower" as const, cone: null,
+    };
+    await backend.play({ ...request, spatial, pose: { x: 4, y: 5, z: 6, qx: 0, qy: 1, qz: 0, qw: 0 } });
+    const options = audio.createSound.mock.calls[0]![2] as { spatialPosition: { x: number; y: number; z: number }; spatialRotationQuaternion: { x: number; y: number; z: number; w: number } };
+    expect([options.spatialPosition.x, options.spatialPosition.y, options.spatialPosition.z]).toEqual([4, 5, 6]);
+    expect([options.spatialRotationQuaternion.x, options.spatialRotationQuaternion.y, options.spatialRotationQuaternion.z, options.spatialRotationQuaternion.w]).toEqual([0, 1, 0, 0]);
+    backend.dispose();
+  });
+
+  it("applies a live voice's new spatialisation and cone, and a removed cone as a full circle", async () => {
+    const backend = new BabylonAudioPlaybackBackend();
+    const spatial = {
+      enabled: true, innerRadius: 2, maxRadius: 20, curve: BUILT_IN_FALLOFF_CURVES.natural,
+      spatialisation: "equalPower" as const, cone: null,
+    };
+    expect(backend.setVoiceSpatial("emitter", spatial)).toBe(false);
+    await backend.play({ ...request, voiceId: "emitter", spatial });
+    await backend.play({ ...request, voiceId: "music" });
+    const [emitter] = await Promise.all(audio.createSound.mock.results.map((result) => result.value)) as Array<ReturnType<typeof audio.sound> & { spatial: Record<string, unknown> }>;
+    expect(backend.setVoiceSpatial("emitter", { ...spatial, spatialisation: "hrtf", cone: { innerAngle: 90, outerAngle: 180, outerGain: 0.25 } })).toBe(true);
+    expect(emitter!.spatial).toMatchObject({ panningModel: "HRTF", coneInnerAngle: Math.PI / 2, coneOuterAngle: Math.PI, coneOuterVolume: 0.25 });
+    expect(emitter!.spatial.update).toHaveBeenCalled();
+    backend.setVoiceSpatial("emitter", spatial);
+    expect(emitter!.spatial).toMatchObject({ panningModel: "equalpower", coneInnerAngle: 2 * Math.PI, coneOuterAngle: 2 * Math.PI });
+    // A non-spatial voice has no panner to change.
+    expect(backend.setVoiceSpatial("music", spatial)).toBe(false);
     backend.dispose();
   });
 
   it("runs no per-voice update loop: each pose write pushes itself, and non-spatial voices get no panner", async () => {
     const backend = new BabylonAudioPlaybackBackend();
     const spatial = {
-      enabled: true, innerRadius: 2, maxRadius: 20, distanceModel: "linear" as const, rolloff: 1,
+      enabled: true, innerRadius: 2, maxRadius: 20, curve: BUILT_IN_FALLOFF_CURVES.linear,
       spatialisation: "equalPower" as const, cone: null,
     };
     await backend.play({ ...request, voiceId: "emitter", spatial });

@@ -9,9 +9,11 @@ import {
   collectLandscapeChunksForPlay,
   compileText2DFontStacks, complexCollisionModelGuids, cookComplexCollisionMesh, createDefaultMigrationRegistry, gltfGeometryDecodersReady, createLimiter, createReadAhead, currentAreaEmissionChunk, decodeAreaEmission, DOCUMENT_CHUNK_ID,
   normalizeAudioPayload, normalizeFontPayload, normalizeModelPayload, normalizeSkeletonPayload, withSkeletonSockets,
+  animationRootMotionBone, mapBounded, normalizeAnimationPayload, scaledAnimationRootMotion,
   registryAssetRepresentation, selectTextureChunk, type AssetLoadPriority, type AssetLoadScope, type AssetRegistry, type AssetSourceLocator,
   type IndexedAsset, type ModelPayload, type RegistryLoadedAsset, sceneLayerPostProcessAssetGuids,
 } from "@haptic/assets";
+import type { AnimClipCatalogEntry, AnimClipRootMotion } from "@haptic/anim-graph";
 import { componentChunkKey, packedContentFromGame, packedPlayControls, packedSourceControls, type GameSourceContent, type PackedGameContent } from "@haptic/exporter";
 import { editorBuildPlatform } from "@haptic/vfs";
 import type { SceneSourceAssets } from "@haptic/render";
@@ -40,6 +42,7 @@ import {
 import { ownedActorsOfScene, ownedTimelineClipsOfScene } from "../lib/owned-actor-gets";
 import { persistableDocumentContent } from "../lib/scene-layer-document";
 import type { OpenDocument } from "./document-service";
+import { executeJavaScriptAssetNames, untrustedExecuteJavaScriptMessage } from "./execute-javascript-trust";
 import { extensionNodesFingerprint } from "./extension-nodes";
 
 export interface PlayDocumentOverride {
@@ -119,6 +122,60 @@ export interface PlayAssetSourceHost {
    * foreground rescan). A retry trusts none. Omitted, every walk reads every catalog from storage.
    */
   verifiedRevisions?: Map<string, string>;
+  /**
+   * Workspace Trust for Execute JavaScript (`EditorExtensionService.assertExecuteJavaScriptAllowed`):
+   * called with the assets whose compiled scripts carry an Execute JavaScript body before any
+   * acquisition (the startup set and every later slot) publishes them; it throws to refuse. Omitted,
+   * every such script is refused, so a host cannot run one without deciding.
+   */
+  assertExecuteJavaScriptAllowed?: (assetNames: readonly string[]) => void;
+}
+
+/** Refuses an acquisition's scripts that carry Execute JavaScript unless the host's Workspace Trust allows them. */
+function checkExecuteJavaScriptTrust(host: PlayAssetSourceHost, scripts: readonly ScriptBundleEntry[]): void {
+  const names = executeJavaScriptAssetNames(scripts, (guid) => host.registry.getByGuid(guid)?.header.name);
+  if (names.length === 0) return;
+  if (!host.assertExecuteJavaScriptAllowed) throw new Error(untrustedExecuteJavaScriptMessage(names));
+  host.assertExecuteJavaScriptAllowed(names);
+}
+
+/**
+ * Root motion of every project Animation that has some, for editor Play's clip catalog (`playAnimClipCatalog`): a
+ * script may play any Animation on a slot, not only those in the Play closure. `prepared` (the closure's catalog,
+ * built from the documents preparation read) supplies its Animations' tracks; each other Animation whose header names
+ * a root motion bone (or whose open working copy has root motion) is read once here, and one without root motion is
+ * never read. Travel scales by the source Model's import scale, as in the prepared catalog. An Animation that cannot
+ * be read plays without root motion.
+ */
+export async function playRootMotionTracks(
+  host: Pick<PlayAssetSourceHost, "registry" | "documentOverrides">,
+  prepared: readonly AnimClipCatalogEntry[],
+  signal: AbortSignal,
+): Promise<Map<string, AnimClipRootMotion>> {
+  const tracks = new Map<string, AnimClipRootMotion>();
+  for (const entry of prepared) if (entry.type === "Animation" && entry.rootMotion?.track) tracks.set(entry.guid, entry.rootMotion);
+  const assets = host.registry.list();
+  const importScales = new Map<string, number>();
+  for (const asset of assets) if (asset.header.type === "Model") importScales.set(asset.header.guid, normalizeModelPayload(asset.header.payload).importScale);
+  const others = assets.filter((asset) => asset.header.type === "Animation" && !asset.placeholder && !tracks.has(asset.header.guid) &&
+    animationRootMotionBone(host.documentOverrides?.get(asset.header.guid)?.payload ?? asset.header.payload));
+  const read = await mapBounded(others, READ_AHEAD, async (asset) => {
+    const override = host.documentOverrides?.get(asset.header.guid);
+    if (override) return override.payload;
+    try {
+      return (await host.registry.readAssetDocument(asset.header.guid, { signal })).payload;
+    } catch (error) {
+      signal.throwIfAborted();
+      console.warn(`[play] ${describePlayAssetForMessage(host.registry, asset.header.guid)}: root motion unavailable`, error);
+      return null;
+    }
+  }, signal);
+  for (const [index, asset] of others.entries()) {
+    const animation = read[index] ? normalizeAnimationPayload(read[index]) : null;
+    if (!animation?.rootMotion) continue;
+    tracks.set(asset.header.guid, scaledAnimationRootMotion(animation.rootMotion, importScales.get(animation.modelGuid) ?? 1));
+  }
+  return tracks;
 }
 
 /** A document as storage holds it: its asset type, schema version and payload. */
@@ -780,6 +837,8 @@ async function acquirePlayAssetSourcesAttempt(
       return override ? [[guid, override.cacheKey]] : [];
     }).sort(([a], [b]) => a.localeCompare(b));
     const compiled = await compiling;
+    // Before anything of the acquisition reaches the runtime: Play, Simulate and every slot pass here.
+    checkExecuteJavaScriptTrust(host, compiled.bundles);
     const failure = compiled.diagnostics.find((entry) => entry.severity === "error");
     if (failure && !options.allowCompileErrors) throw new Error(failure.message);
     game.scripts = compiled.bundles;
@@ -884,9 +943,9 @@ function playText2DFontStacks(host: PlayAssetSourceHost, preparedFamilies: Reado
   };
 }
 
-const SCRIPT_ASSET_TYPES = new Set(["Class", "AnimationGraph3D", "AnimationGraph2D"]);
+export const SCRIPT_ASSET_TYPES: ReadonlySet<string> = new Set(["Class", "AnimationGraph3D", "AnimationGraph2D"]);
 /** Assets that may embed a script (SceneScript, SceneLayerScript). */
-const EMBEDDED_SCRIPT_OWNER_TYPES = new Set(["Scene", "SceneLayer"]);
+export const EMBEDDED_SCRIPT_OWNER_TYPES: ReadonlySet<string> = new Set(["Scene", "SceneLayer"]);
 const COMPILE_INPUT_TYPES = new Set([...SCRIPT_ASSET_TYPES, "InputAction", "InputAxis", "DataDefinition", "DataTree", "Enum", "Structure", "ScriptInterface"]);
 /**
  * Assets the Play compile reads project-wide, beyond its closure: class lineage and palette, the typed

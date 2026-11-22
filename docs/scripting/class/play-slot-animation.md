@@ -33,4 +33,6 @@ Plays an Animation (3D) or Sprite Animation (2D) once on a slot of the graph, ov
 - **On Blend Out** runs once it starts blending out: near its end, or when stopped or replaced. **On Completed** runs once it has played through and blended out. A play that is stopped, or replaced by another play on its slot, runs On Blend Out but not On Completed.
 - A new play on a slot replaces the one playing there, which blends out under it.
 - It starts on the next animation update. Nothing runs if the Animation is not one the graph can play.
+- An **Animation** that has not loaded yet (a Soft reference, such as one picked on this pin that nothing else uses) loads first, and the play starts once it has; the slot keeps showing what it showed meanwhile. **On Blend Out** and **On Completed** follow that start. A warning names the Animation the first time. See [Soft and Hard assets](../variables.md#soft-and-hard-assets).
+- While it loads, the latest request on the slot wins: another Play Slot Animation there, or [Stop Slot Animation](stop-slot-animation.md), cancels it, and so do destroying the actor or ending Play. A cancelled play never starts, so neither output runs. If the Animation fails to load or is not in the game, an error names it and nothing plays.
 - Available in Actor class graphs and in Scene and Scene Layer scripts.
