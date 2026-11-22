@@ -88,6 +88,7 @@ import {
   hydrateFoliageChunksToEditor,
   hydrateLandscapeChunksToEditor,
   landscapeChunkIdsInHeader,
+  unreadableComponentChunks,
   exportProjectZip,
   type ClassAssetReplacement,
   isAssetDocumentPath,
@@ -227,6 +228,8 @@ export class ProjectService {
   private readonly ownWriteListeners = new Set<(write: OwnAssetWrite) => void>();
   private readonly diagnostics: string[] = [];
   private readonly diagnosticListeners = new Set<(line: string) => void>();
+  /** `<path>\n<componentId>` of each unreadable Landscape already reported. */
+  private readonly reportedUnreadableComponentChunks = new Set<string>();
   /** Change counter shared by every project registry, so remounts never rewind it. */
   private readonly registryClock = new RegistryGenerationClock();
   private readonly files: AssetFileAccess = {
@@ -1508,40 +1511,51 @@ export class ProjectService {
       } finally {
         if (!options.scope) scope.dispose();
       }
-      if (decoded.type === "Scene" || decoded.type === "Prefab" || decoded.type === "Class") {
+      // Only Scenes store component chunks; Prefab and Class documents keep Landscape and Foliage data inline.
+      if (decoded.type === "Scene") {
         decoded = await this.hydrateComponentChunks(path, decoded, indexed.header.chunks, options.signal);
       }
     } else {
       decoded = await readUnindexedAssetDocument(this.files, path, options.signal);
-      if (decoded.type === "Scene" || decoded.type === "Prefab" || decoded.type === "Class") {
+      if (decoded.type === "Scene") {
         const header = readAssetDocumentHeader(await this.storageForPath(path).readBinary(path));
         decoded = await this.hydrateComponentChunks(path, decoded, header.chunks, options.signal);
       }
     }
+    if (decoded.type === "Scene" || decoded.type === "Prefab" || decoded.type === "Class") {
+      this.reportUnreadableComponentChunks(path, decoded.payload);
+    }
     return decoded;
   }
 
-  /** Restores a document's binary Landscape and Foliage chunks into the base64 `data` editor documents hold. */
+  /** Restores a Scene's binary Landscape and Foliage chunks into the base64 `data` editor documents hold. */
   private async hydrateComponentChunks(
     path: string,
     decoded: AssetDocument,
     chunks: ReadonlyArray<{ id: string }>,
     signal: AbortSignal | undefined,
   ): Promise<AssetDocument> {
-    const landscapeIds = landscapeChunkIdsInHeader(chunks);
-    const foliageIds = foliageChunkIdsInHeader(chunks);
-    const read = landscapeIds.length > 0 || foliageIds.length > 0
-      ? (await this.readAssetDocumentWithChunksAttempt(path, [...landscapeIds, ...foliageIds], signal)).chunks
-      : new Map<string, Uint8Array>();
-    // A Foliage component whose chunk cannot be read keeps its `chunkId`, so saving carries the stored chunk unchanged.
-    const payload = hydrateFoliageChunksToEditor(hydrateLandscapeChunksToEditor(decoded.payload, read), read, (componentId, chunkId) => {
-      this.pushDiagnostic(`[project] ${path}: Foliage component ${componentId} could not read its instances (${chunkId}); they are kept on disk unchanged and draw nothing.`);
-    });
-    return payload === decoded.payload ? decoded : { ...decoded, payload };
+    const ids = [...landscapeChunkIdsInHeader(chunks), ...foliageChunkIdsInHeader(chunks)];
+    if (ids.length === 0) return decoded;
+    const read = (await this.readAssetDocumentWithChunksAttempt(path, ids, signal)).chunks;
+    // A component whose chunk cannot be read keeps its `chunkId`, so saving carries the stored chunk unchanged.
+    return { ...decoded, payload: hydrateFoliageChunksToEditor(hydrateLandscapeChunksToEditor(decoded.payload, read), read) };
   }
 
-  private reportUnreadableFoliage(path: string, componentId: string): void {
-    this.pushDiagnostic(`[project] ${path}: Foliage component ${componentId} holds instance data that could not be read; it was saved inline unchanged.`);
+  /**
+   * Tells the user, once per component and file, about Landscape or Foliage data the document names but cannot
+   * supply. A Landscape shows and plays flat, Foliage draws nothing; a save keeps the stored data untouched until the
+   * component is sculpted or painted again.
+   */
+  private reportUnreadableComponentChunks(path: string, payload: unknown): void {
+    for (const { actorName, componentId, kind } of unreadableComponentChunks(payload)) {
+      const key = `${path}\n${componentId}`;
+      if (this.reportedUnreadableComponentChunks.has(key)) continue;
+      this.reportedUnreadableComponentChunks.add(key);
+      const owner = actorName ? `the ${kind} on "${actorName}"` : `a ${kind}`;
+      const effect = kind === "Landscape" ? "it shows and plays flat" : "it draws nothing";
+      this.pushDiagnostic(`${path}: the ${kind === "Landscape" ? "terrain" : "instance"} data of ${owner} is missing or damaged, so ${effect}. Saving keeps the stored data; ${kind === "Landscape" ? "sculpting" : "painting"} replaces it.`);
+    }
   }
 
   /** Writes a `.hasset` document in its asset's write queue. */
@@ -1659,7 +1673,7 @@ export class ProjectService {
 
     const guid = await this.guidForAsset(path);
     const stored = existing?.catalog ?? null;
-    const componentChunkSave = prepareComponentChunksForSave(type, content as unknown as Record<string, unknown>, (id) => this.reportUnreadableFoliage(path, id));
+    const componentChunkSave = prepareComponentChunksForSave(type, content as unknown as Record<string, unknown>);
     const payloadToSave = componentChunkSave.payload;
     const baseChunks = type === "Scene"
       ? await this.sceneChunksForSave(path, content as SerializedScene, guid, stored)
@@ -1832,7 +1846,7 @@ export class ProjectService {
     const stored = existing?.catalog ?? null;
     const type = existing?.type ?? "Scene";
     // The stored chunks are carried over, not read; the navmesh it replaces is not read at all.
-    const componentChunkSave = prepareComponentChunksForSave(type, payload, (id) => this.reportUnreadableFoliage(path, id));
+    const componentChunkSave = prepareComponentChunksForSave(type, payload);
     const payloadToSave = componentChunkSave.payload;
     const baseChunks = await this.sceneChunksForSave(path, payload, guid, stored, [NAVMESH_CHUNK_ID]);
     const chunks: EncodableChunk[] = [
@@ -2154,20 +2168,21 @@ function storedProjectUpdatedAt(text: string): string | null {
 function prepareComponentChunksForSave(
   type: string,
   content: Record<string, unknown>,
-  onUnreadableFoliage: (componentId: string) => void,
 ): {
   payload: Record<string, unknown>;
   chunks: ChunkInput[];
   keepStoredChunk: (chunkId: string) => boolean;
 } {
-  if (type !== "Scene" && type !== "Prefab" && type !== "Class") {
+  // Prefab and Class Landscape and Foliage data stays inline: placing one copies its components into the Scene, which
+  // saves its own chunks, and runtime spawns read the data from the document itself.
+  if (type === "Prefab" || type === "Class") {
+    return { payload: content, chunks: [], keepStoredChunk: (chunkId) => !isLandscapeChunkId(chunkId) && !isFoliageChunkId(chunkId) };
+  }
+  if (type !== "Scene") {
     return { payload: content, chunks: [], keepStoredChunk: () => true };
   }
   const landscape = extractLandscapeChunks(content);
-  // Only Scenes store Foliage as chunks; Prefab and Class templates keep it inline, so every placed instance and
-  // every runtime spawn carries its own instances without a chunk owned by another asset.
-  const foliage = type === "Scene" ? extractFoliageChunks(landscape.payload) : { payload: landscape.payload, chunks: [], unreadable: [] };
-  for (const componentId of foliage.unreadable) onUnreadableFoliage(componentId);
+  const foliage = extractFoliageChunks(landscape.payload);
   const payload = foliage.payload;
   const chunks = [...landscape.chunks, ...foliage.chunks];
   const referencedChunkIds = new Set<string>();

@@ -557,7 +557,7 @@ async function acquirePlayAssetSourcesAttempt(
       (game.decodedPayloads as Map<string, unknown>).set(guid, payload);
       if (type === "Scene") {
         const landscape = collectLandscapeChunksForPlay(normalizeScene(payload), value.chunks);
-        const foliage = collectFoliageChunksForPlay(landscape.payload, value.chunks, guid);
+        const foliage = collectFoliageChunksForPlay(landscape.payload, value.chunks);
         game.scenes.set(guid, foliage.payload);
         for (const [chunkId, chunkBytes] of [...landscape.chunks, ...foliage.chunks]) {
           game.componentChunks!.set(componentChunkKey(guid, chunkId), chunkBytes);

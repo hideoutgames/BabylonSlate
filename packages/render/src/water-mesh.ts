@@ -55,9 +55,11 @@ export const WATER_RESTORES_PER_FRAME = 2;
  * frustum skip their CPU vertex work (Custom Material water), their terrain and contact refreshes and their FFT detail
  * request until they are; the FFT simulations then update once for the whole scene. An editor-time clock advances by
  * the last frame's time (at most 0.1 s). An `early` run (`settleSceneWater`) precedes the frame's own: it leaves the
- * clock and each surface's drawn flag, which the frame's own run consumes, to it.
+ * clock and each surface's drawn flag, which the frame's own run consumes, to it. A `settle` run (a load) also finishes
+ * every enabled surface's contact field at once, seen or not (`WaterContactField.settle`); other runs build contacts
+ * within the frame's contact budget.
  */
-export function updateSceneWater(scene: Scene, early = false): void {
+export function updateSceneWater(scene: Scene, early = false, settle = false): void {
   const time = advanceSceneWaterClock(scene, early);
   const entries = surfaces.get(scene);
   if (!entries) return;
@@ -87,17 +89,22 @@ export function updateSceneWater(scene: Scene, early = false): void {
     // enables many bodies spreads the work); the rest draw without them until their turn.
     if (surface.released && restored < WATER_RESTORES_PER_FRAME) {
       restored++;
-      surface.released = false; surface.field?.restore(); surface.contacts?.restore(now);
+      surface.released = false; surface.field?.restore(); surface.contacts?.restore(now, settle);
     }
     const active = surface.drawn || inActiveView(scene, surface.mesh);
     // Water drawn only by another pass (a capture, a planar reflection) and outside the active frusta keeps its CPU work
     // running in the frame's own run, which an early run must not use up.
     if (!early) surface.drawn = false;
-    if (!active) continue;
+    if (!active) {
+      // A load leaves no contact work for later, also where no camera looks yet.
+      if (settle) surface.contacts?.settle(now);
+      continue;
+    }
     animateSurface(surface, time);
     // Waves never rebake either field: the shader reads contacts at each fragment's rendered height.
     surface.field?.update();
-    surface.contacts?.update(now);
+    if (settle) surface.contacts?.settle(now);
+    else surface.contacts?.update(now);
     // Visible water a spectrum displaces asks for it (it is already known to be drawn or in view); the simulations run
     // once below, after every request.
     if (surface.waves) requestWaterFft(scene, surface.mesh, surface.water, surface.mesh.isVisible && surface.mesh.visibility > 0);
@@ -119,10 +126,11 @@ function waterUnsettled(scene: Scene): boolean {
  * then changes compiles another variant. Copy intent is counted when the surface is created and re-synced only when its
  * enablement changes (or, for an edited asset, by `updateWaterMeshDefinition`). Idempotent with the before-render
  * update. Without `force` it does nothing unless a surface was created or its enablement changed since the last update
- * (an editor edit or drop, a Play spawn, a published scene stream); a load forces it.
+ * (an editor edit or drop, a Play spawn, a published scene stream), and new contacts come in within the frame budget;
+ * a load forces it, which also builds every enabled surface's contacts before it returns.
  */
 export function settleSceneWater(scene: Scene, force = false): void {
-  if (force || waterUnsettled(scene)) updateSceneWater(scene, true);
+  if (force || waterUnsettled(scene)) updateSceneWater(scene, true, force);
 }
 
 const waveOut = createWaterWaveOutput(), slopeOut = new Float64Array(2);
@@ -437,7 +445,9 @@ export function updateWaterMeshBody(mesh: Mesh, input: unknown): boolean {
   syncCopyIntent(mesh.getScene(), surface);
   refreshSurface(surface, sceneWaterTime(mesh.getScene()));
   surface.field?.update(true);
-  surface.contacts?.update(performance.now(), true);
+  // A drag reshapes the body every frame: its contacts are cut again and rebuilt within the frame budget.
+  surface.contacts?.invalidate();
+  surface.contacts?.update(performance.now());
   return true;
 }
 
@@ -539,7 +549,8 @@ function attachFields(surface: Surface): void {
   const field = new WaterField(scene, fieldSurface), contacts = new WaterContactField(scene, fieldSurface);
   surface.field = field; surface.contacts = contacts;
   field.update(true);
-  contacts.update(performance.now(), true);
+  // Built within the frame budget: a spawned or dropped body costs no frame. A load settles it (`settleSceneWater`).
+  contacts.update(performance.now());
   mesh.onDisposeObservable.addOnce(() => { field.dispose(); contacts.dispose(); });
 }
 

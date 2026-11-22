@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import { createActor, createDefaultScene, createMeshComponent, type SerializedScene } from "@haptic/core";
 import { readSnapshotHeader, snapshotFloatCount, type CommandMessage } from "@haptic/bridge";
 import { readActorSlot } from "@haptic/bridge/read-actor-slot";
-import { sceneAssetClassId } from "@haptic/object-model";
+import { sceneAssetClassId, type Actor } from "@haptic/object-model";
+import type { ScriptedActorSpawn } from "./actor-realization";
 import { createInProcessRuntime, type RuntimeDriver } from "./driver";
 import type { CompiledScript } from "./script-host";
 import type { AcquireRuntimeScene } from "./scene-source";
@@ -49,6 +50,14 @@ async function realized(commands: CommandMessage[], actorGuid: string, afterId =
   return [...commands].reverse().find((command): command is Extract<CommandMessage, { type: "sceneStreamRealized" }> =>
     command.type === "sceneStreamRealized" && command.actorGuid === actorGuid && command.streamLoadId > afterId)!;
 }
+
+/** The in-process runtime's script spawn surface, which `RuntimeDriver` narrows to plain spawns. */
+type ScriptedSpawns = {
+  spawnScriptedActor(options: ScriptedActorSpawn): Actor | null;
+  prepareScriptedActor(options: ScriptedActorSpawn): Actor | null;
+  finishScriptedActor(actor: Actor): Actor | null;
+};
+const spawns = (runtime: RuntimeDriver) => runtime as unknown as ScriptedSpawns;
 
 function acknowledge(runtime: RuntimeDriver, command: { actorGuid: string; streamLoadId: number }) {
   runtime.notifySceneStreamReady(command.actorGuid, command.streamLoadId);
@@ -315,6 +324,41 @@ describe("additive scene streaming", () => {
       expect(nested.destroyed).toBe(true);
       expect(leaf.destroyed).toBe(true);
       expect(world.getActors()).toHaveLength(3);
+    } finally { runtime.stop(); }
+  });
+
+  it("places later spawns at the instance's load-time origin after its component moves", async () => {
+    const { runtime, world, left } = await setup({ deferred: false, scripts: [logic("Crate")] });
+    try {
+      await runtime.loadSceneStream(left);
+      const member = world.getActors().find((actor) => actor.classId === "ChildActor")!;
+      const component = left.components.find((entry) => entry.classId === "SceneStreamingComponent")!;
+      component.transform = { position: { x: 40, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 } };
+      const crate = spawns(runtime).spawnScriptedActor({ classId: "Crate", streamOwner: member,
+        transform: { position: { x: 1, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 }, scale: { x: 1, y: 1, z: 1 } } })!;
+      // The member was placed at the authored offset (3, 0, 0); a later spawn joins it there.
+      expect(member.transform.position.x).toBe(4);
+      expect(crate.transform.position.x).toBe(4);
+    } finally { runtime.stop(); }
+  });
+
+  it("gives a script spawn inside a streamed Scene its body without a whole-world physics sync", async () => {
+    const { runtime, world, left } = await setup({ deferred: false, scripts: [logic("Crate")] });
+    try {
+      await runtime.loadSceneStream(left);
+      runtime.tick();
+      const member = world.getActors().find((actor) => actor.classId === "ChildActor")!;
+      const sync = runtime.getPhysicsSync()!;
+      const fullSyncs = vi.spyOn(sync as unknown as { runFullSync(): void }, "runFullSync");
+      const crate = spawns(runtime).prepareScriptedActor({ classId: "Crate", streamOwner: member })!;
+      crate.attachComponent(world.createComponent({ classId: "RigidBodyComponent", variables: { motionType: "static" } }));
+      crate.attachComponent(world.createComponent({ classId: "ColliderComponent", variables: {
+        shape: { kind: "box", halfExtents: { x: 0.5, y: 0.5, z: 0.5 } } } }));
+      expect(spawns(runtime).finishScriptedActor(crate)).toBe(crate);
+      runtime.tick();
+      expect(fullSyncs).not.toHaveBeenCalled();
+      // Under the streaming actor at x = 10 (scale 2), at the stream component's offset (3, 0, 0).
+      expect(sync.getBackend().getBodyTransform(`body:${crate.guid}`)?.position).toEqual({ x: 16, y: 0, z: 0 });
     } finally { runtime.stop(); }
   });
 

@@ -35,7 +35,7 @@ it("transports authored terrain and a whole mixed foliage stroke via raw HPLD an
     playScene: { ...createDefaultScene(), actors: [createActor("environment", "Environment", { components: [
       { id: "terrain", classId: "LandscapeComponent", properties: { width: landscape.width, depth: landscape.depth, subdivisions: landscape.subdivisions, chunkId, materialGuid: "terrain", collisionsEnabled: true } },
       { id: "plants", classId: "FoliageComponent", properties: {
-        groupId: "trees", batches: foliageBatchInfos(foliage), chunkId: foliageChunk, chunkOwner: "scene-env",
+        groupId: "trees", batches: foliageBatchInfos(foliage), chunkId: foliageChunk,
       } },
       { id: "template", classId: "FoliageComponent", properties: { ...serializeFoliageProperties(inline) } },
     ] })] },

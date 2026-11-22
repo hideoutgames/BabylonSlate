@@ -22,8 +22,11 @@ const NONE: ReadonlySet<WorldDebugPart> = new Set();
  */
 const DEFAULT_OFF: ReadonlySet<WorldDebugPart> = new Set(["mergedmarches"]);
 
-/** The parts that change only the view's graph (`liveSceneEffectsKey`), never a Material's program. */
-const GRAPH_PARTS: ReadonlySet<WorldDebugPart> = new Set(["geometryonce", "geometryoncescissor", "mergedmarches"]);
+/**
+ * The parts that change no Material's program: those of the view's graph (`liveSceneEffectsKey`), and
+ * `spritebatching`, which the Play view applies itself (`syncWorldSpriteBatching` in `create-engine.ts`).
+ */
+const PROGRAM_FREE_PARTS: ReadonlySet<WorldDebugPart> = new Set(["geometryonce", "geometryoncescissor", "mergedmarches", "spritebatching"]);
 
 /** Whether `part` of the world is switched off for `scene`. */
 export function worldDebugOff(scene: Scene, part: WorldDebugPart): boolean {
@@ -42,7 +45,7 @@ export function setSceneWorldDebug(scene: Scene, part: WorldDebugPart, enabled: 
   const next = new Set(switched.get(scene) ?? NONE);
   if (next.has(part)) next.delete(part); else next.add(part);
   switched.set(scene, next);
-  if (!GRAPH_PARTS.has(part)) for (const material of scene.materials) material.markDirty(true);
+  if (!PROGRAM_FREE_PARTS.has(part)) for (const material of scene.materials) material.markDirty(true);
   markSceneReadinessDirty(scene, "renderSettings");
   return true;
 }

@@ -120,7 +120,8 @@ export async function runWaterCutProof() {
         scene.incrementRenderId();
         // Still water shades the same surface in every draw.
         if (still) setSceneWaterTime(scene, 0);
-        updateSceneWater(scene);
+        // Contacts settle each frame, as a load's do, so no capture depends on when the contact worker answers.
+        updateSceneWater(scene, false, true);
         await graph.prepare(camera);
         engine.beginFrame();
         try { graph.render(camera, false); } finally { engine.endFrame(); }

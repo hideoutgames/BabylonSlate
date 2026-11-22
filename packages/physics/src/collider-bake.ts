@@ -177,14 +177,31 @@ export function colliderLocalPose(
     y: lengths[1]! * local.scale.y,
     z: lengths[2]! * local.scale.z,
   };
+  const rotation = quaternionFromBasis(basis[0]!, basis[1]!, basis[2]!);
+  const translation = {
+    x: local.position.x * actorScale.x,
+    y: local.position.y * actorScale.y,
+    z: local.position.z * actorScale.z,
+  };
+  return kind === "heightfield"
+    ? { ...foldHeightFieldMirror(scale, rotation), translation }
+    : { scale, translation, rotation };
+}
+
+/** Half a turn about Z: `diag(-1, -1, 1)`. */
+const HALF_TURN_Z: Quat = { x: 0, y: 0, z: 1, w: 0 };
+
+/**
+ * A heightfield's attachment with no mirror between X and Z. A grid mirrored on exactly one of X and Z splits its cells
+ * along the other diagonal, which no heightfield can (Havok always splits along `(1,0)–(0,1)`). `R · diag(x, y, z)`
+ * equals `(R · Rz(180°)) · diag(-x, -y, z)`, so such a pose becomes one that turns an upside-down field (heights
+ * negated) half a turn about Z: the same surface, triangulated as drawn. A mirror on both X and Z, or none, is kept.
+ */
+export function foldHeightFieldMirror(scale: Vec3, rotation: Quat): { scale: Vec3; rotation: Quat } {
+  if (!(scale.x * scale.z < 0)) return { scale, rotation };
   return {
-    scale,
-    translation: {
-      x: local.position.x * actorScale.x,
-      y: local.position.y * actorScale.y,
-      z: local.position.z * actorScale.z,
-    },
-    rotation: quaternionFromBasis(basis[0]!, basis[1]!, basis[2]!),
+    scale: { x: -scale.x, y: -scale.y, z: scale.z },
+    rotation: normalizedPhysicsPose({ position: { x: 0, y: 0, z: 0 }, rotation: multiplyQuat(rotation, HALF_TURN_Z) }).rotation,
   };
 }
 
@@ -320,6 +337,11 @@ export function scaleColliderShape(
       const depth = shape.depth * sz;
       const flipX = scale.x < 0;
       const flipZ = scale.z < 0;
+      // Reversing samples on one axis alone would flip the cells' diagonal: `foldHeightFieldMirror` moves that mirror
+      // into the attachment first. Both axes reversed is a half turn, which keeps it.
+      if (flipX !== flipZ) {
+        throw new Error("A heightfield mirrored on one of X and Z needs foldHeightFieldMirror before scaling");
+      }
       if (!flipX && !flipZ && scale.y === 1) {
         return { kind: "heightfield", numXSamples, numZSamples, width, depth, heights: shape.heights };
       }

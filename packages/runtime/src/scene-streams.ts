@@ -17,7 +17,7 @@ import {
   type World,
 } from "@haptic/object-model";
 import type { PhysicsWorldKind } from "@haptic/physics";
-import { composeParentChildTransform } from "./actor-world-transform";
+import { composeParentChildTransform, copyTransform } from "./actor-world-transform";
 import type { OwnerAdmission } from "./owner-admission";
 import type { RuntimeNavigation } from "./runtime-navigation";
 import type { RuntimeSubsystem } from "./runtime-subsystems";
@@ -167,13 +167,15 @@ export class SceneStreams implements RuntimeSubsystem {
     return !(stream && (owner?.destroyed || !this.ready(stream)));
   }
 
-  /** A script-spawned actor joins the stream of the owner that spawned it. */
+  /**
+   * A script-spawned actor joins the stream of the owner that spawned it. Adoption happens before the actor enters
+   * the World and only into a ready stream, so no actor's readiness changes: physics meets the actor as a spawn.
+   */
   adoptSpawned(owner: EngineObject | null | undefined, actor: Actor): void {
     const stream = this.streamFor(owner);
     if (!stream) return;
     stream.actors.add(actor);
     this.actorStream.set(actor, stream);
-    this._readinessRevision++;
     actor.setVariable("parentId", stream.actor.guid);
     if (stream.origin) actor.transform = composeParentChildTransform(stream.origin, actor.transform);
   }
@@ -395,7 +397,8 @@ export class SceneStreams implements RuntimeSubsystem {
     checkpoint();
     const cloned = yield* cloneSceneStreamingActorsSteps(document.actors, { instanceId: stream.scene.guid, parentActorId: stream.actor.guid });
     stream.idMap = cloned.idMap;
-    let origin = component.transform;
+    // The load-time pose: a copy, since the component's live transform changes in place.
+    let origin = copyTransform(component.transform);
     let parentId = component.parentId;
     const visited = new Set([component.guid]);
     while (parentId && !visited.has(parentId)) {
