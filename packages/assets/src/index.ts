@@ -96,3 +96,4 @@ export {
 export { materialParameterTextureAssetGuids } from "./material-parameter-textures";
 export * from "./area-emission";
 export * from "./landscape-chunks";
+export * from "./foliage-chunks";

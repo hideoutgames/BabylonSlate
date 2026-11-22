@@ -190,8 +190,8 @@ export interface RuntimeSceneContent {
   assetGuids: string[];
   sceneLayers?: Array<{ guid: string; layer: SerializedSceneLayer }>;
   sceneNavmeshBytes?: Record<string, Uint8Array>;
-  /** Binary HPLD landscape chunks keyed by `<sceneGuid>:<chunkId>`, decoded once on component realization. */
-  sceneLandscapeBytes?: Record<string, Uint8Array>;
+  /** Binary Landscape (HPLD) and Foliage (HPFG) component chunks keyed by `<sceneGuid>:<chunkId>`, decoded once on component realization. */
+  sceneComponentChunks?: Record<string, Uint8Array>;
   dataAssets?: import("@haptic/core").DataAssetCatalogEntry[];
   /** Float, Vector and Color Curve assets of the current sources; `Get <Type> Curve Object` reads them. */
   curveAssets?: import("@haptic/core").CurveAssetCatalogEntry[];
@@ -282,8 +282,8 @@ export type ControlMessage =
       consoleCommands?: Array<import("@haptic/core").ConsoleCommandMetadata & { classId: string; assetGuid: string }>;
       /** Baked navigation by canonical scene guid, selected before Begin Play. */
       sceneNavmeshBytes?: Record<string, Uint8Array>;
-      /** Binary HPLD landscape chunks keyed by `<sceneGuid>:<chunkId>`, decoded once on component realization. */
-      sceneLandscapeBytes?: Record<string, Uint8Array>;
+      /** Binary Landscape (HPLD) and Foliage (HPFG) component chunks keyed by `<sceneGuid>:<chunkId>`, decoded once on component realization. */
+      sceneComponentChunks?: Record<string, Uint8Array>;
       /** Overlay documents the session compositor can instantiate by guid or name. */
       sceneLayers?: Array<{ guid: string; layer: SerializedSceneLayer }>;
       /** Where the session runs: device platform, touch, editor and development build (the System nodes read it). */

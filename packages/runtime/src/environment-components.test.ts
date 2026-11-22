@@ -2,28 +2,38 @@ import { expect, it } from "vitest";
 import {
   createActor,
   createDefaultScene,
+  encodeFoliageChunk,
+  foliageBatchInfos,
   encodeLandscapeChunk,
+  foliageChunkId,
   identitySerializedTransform,
   landscapeChunkId,
+  packFoliageTransforms,
   parseLandscapeProperties,
 } from "@haptic/core";
 import type { CommandMessage } from "@haptic/bridge";
 import { createInProcessRuntime } from "./driver";
 
-it("transports authored terrain via raw HPLD chunks and a whole mixed foliage stroke as component parts for Play", async () => {
+it("transports authored terrain and a whole mixed foliage stroke via raw HPLD and HPFG chunks as component parts for Play", async () => {
   const landscape = parseLandscapeProperties({ subdivisions: 4, heights: new Float32Array(25).fill(3), materialGuid: "terrain", collisionsEnabled: true });
   const chunkId = landscapeChunkId("terrain");
   const chunkBytes = encodeLandscapeChunk(landscape);
-  const foliage = { groupId: "trees", batches: ["oak", "pine"].map((modelGuid) => ({ modelGuid, materialGuid: "leaves", transforms: [identitySerializedTransform()] })) };
+  const foliage = { groupId: "trees", batches: ["oak", "pine"].map((modelGuid, index) => ({
+    modelGuid, materialGuid: "leaves", cullDistance: 120, fadeRange: 15, shadowDistance: 45,
+    transforms: packFoliageTransforms([{ ...identitySerializedTransform(), position: [index, 0, 2] }]),
+  })) };
+  const foliageChunk = foliageChunkId("plants");
   const commands: CommandMessage[] = [];
   const runtime = createInProcessRuntime({
     seed: 1,
     preferSoftwarePhysics: true,
     playSceneGuid: "scene-env",
-    sceneLandscapeBytes: { [`scene-env:${chunkId}`]: chunkBytes },
+    sceneComponentChunks: { [`scene-env:${chunkId}`]: chunkBytes, [`scene-env:${foliageChunk}`]: encodeFoliageChunk(foliage.batches) },
     playScene: { ...createDefaultScene(), actors: [createActor("environment", "Environment", { components: [
       { id: "terrain", classId: "LandscapeComponent", properties: { width: landscape.width, depth: landscape.depth, subdivisions: landscape.subdivisions, chunkId, materialGuid: "terrain", collisionsEnabled: true } },
-      { id: "plants", classId: "FoliageComponent", properties: { ...foliage } },
+      { id: "plants", classId: "FoliageComponent", properties: {
+        groupId: "trees", batches: foliageBatchInfos(foliage), chunkId: foliageChunk,
+      } },
     ] })] },
     onCommand: (command) => commands.push(command),
   });

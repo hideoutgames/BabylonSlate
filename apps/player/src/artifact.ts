@@ -7,7 +7,8 @@ import {
   AUDIO_REVERB_EXPORT_TYPE,
   sceneGuidFromAudioReverbExport,
   LANDSCAPE_EXPORT_TYPE,
-  landscapeSidecarKeyFromExport,
+  FOLIAGE_EXPORT_TYPE,
+  componentChunkKeyFromExport,
   FONT_FACETYPE_EXPORT_TYPE,
   AREA_EMISSION_EXPORT_TYPE,
   textureGuidFromAreaEmissionExport,
@@ -80,8 +81,8 @@ export type LoadedGame = {
   cookComplexCollision?: (guid: string) => CollisionTriangleMesh | null;
   navmeshBytes: Map<string, Uint8Array>;
   audioReverbBytes: Map<string, Uint8Array>;
-  /** Binary `HPLD` landscape chunks keyed by `<ownerGuid>:<chunkId>`. */
-  landscapeBytes: Map<string, Uint8Array>;
+  /** Binary Landscape (`HPLD`) and Foliage (`HPFG`) component chunks keyed by `<ownerGuid>:<chunkId>`. */
+  componentChunks: Map<string, Uint8Array>;
 };
 
 function textFromFiles(files: Map<string, Uint8Array>, name: string): string {
@@ -132,7 +133,7 @@ export async function loadGameFromFiles(
   const complexMeshes = new Map<string, CollisionTriangleMesh>();
   const navmeshBytes = new Map<string, Uint8Array>();
   const audioReverbBytes = new Map<string, Uint8Array>();
-  const landscapeBytes = new Map<string, Uint8Array>();
+  const componentChunks = new Map<string, Uint8Array>();
 
   const manifestLength = files.get(GAME_MANIFEST_FILE)?.byteLength ?? 0;
   const readMetrics: StorageReadMetrics = { operations: 1, fullReads: 1, rangeReads: 0, requestedBytes: manifestLength, actualBytesRead: manifestLength };
@@ -254,7 +255,7 @@ export async function loadGameFromFiles(
       install = () => { const index = scripts.findIndex(script => script.assetGuid === value.assetGuid && script.classId === value.classId); if (index >= 0) scripts[index] = value as ScriptBundleEntry; else scripts.push(value as ScriptBundleEntry); };
     } else if (entry.type === NAVMESH_EXPORT_TYPE) { const guid = sidecarOwner(sceneGuidFromNavmeshExport(entry.guid)); install = () => { navmeshBytes.set(guid, bytes); }; }
     else if (entry.type === AUDIO_REVERB_EXPORT_TYPE) { const guid = sidecarOwner(sceneGuidFromAudioReverbExport(entry.guid)); install = () => { audioReverbBytes.set(guid, bytes); }; }
-    else if (entry.type === LANDSCAPE_EXPORT_TYPE) { const key = sidecarOwner(landscapeSidecarKeyFromExport(entry.guid)); install = () => { landscapeBytes.set(key, bytes); }; }
+    else if (entry.type === LANDSCAPE_EXPORT_TYPE || entry.type === FOLIAGE_EXPORT_TYPE) { const key = sidecarOwner(componentChunkKeyFromExport(entry.guid)); install = () => { componentChunks.set(key, bytes); }; }
     // Every acquisition of a loaded asset publishes these same objects, and nothing edits them in place:
     // boot's `loadedSourcesChanged` and `packedContentFromGame`'s per-payload documents rely on that identity.
     return { bytes, decodedBytes, document, model, publish: () => { payloads.set(entry.guid, bytes); if (document !== undefined) decodedPayloads.set(entry.guid, document); install(); } };
@@ -276,7 +277,7 @@ export async function loadGameFromFiles(
     if (entry.type === AREA_EMISSION_EXPORT_TYPE) areaEmissions.delete(owner);
     if (entry.type === NAVMESH_EXPORT_TYPE) navmeshBytes.delete(owner);
     if (entry.type === AUDIO_REVERB_EXPORT_TYPE) audioReverbBytes.delete(owner);
-    if (entry.type === LANDSCAPE_EXPORT_TYPE) landscapeBytes.delete(owner);
+    if (entry.type === LANDSCAPE_EXPORT_TYPE || entry.type === FOLIAGE_EXPORT_TYPE) componentChunks.delete(owner);
     if (entry.type === FONT_FACETYPE_EXPORT_TYPE) fontFacetypeBytes.delete(owner);
     if (entry.type === FONT_MSDF_EXPORT_TYPE) fontMsdfJson.delete(owner);
     if (entry.type === FONT_MSDF_ATLAS_EXPORT_TYPE) fontMsdfPng.delete(owner);
@@ -345,7 +346,7 @@ export async function loadGameFromFiles(
     complexMeshes,
     navmeshBytes,
     audioReverbBytes,
-    landscapeBytes,
+    componentChunks,
   };
   // The cooked mesh is its own cached representation and can outlive the
   // Model's trimmed source bytes.

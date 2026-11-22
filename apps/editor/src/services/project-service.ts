@@ -43,6 +43,7 @@ import {
   type ProjectMetadata,
   type ProjectAppearance,
   type RenderProjectSettings,
+  isFoliageChunkId,
   isLandscapeChunkId,
 } from "@haptic/core";
 import type { ProjectFolderHandle, ProjectStorage, SourceControlProjectSettings } from "@haptic/core";
@@ -76,7 +77,10 @@ import {
   encodeAssetDocument,
   audioClipChunk,
   audioClipChunkToDrop,
+  extractFoliageChunks,
   extractLandscapeChunks,
+  foliageChunkIdsInHeader,
+  hydrateFoliageChunksToEditor,
   hydrateLandscapeChunksToEditor,
   landscapeChunkIdsInHeader,
   exportProjectZip,
@@ -1491,24 +1495,31 @@ export class ProjectService {
         if (!options.scope) scope.dispose();
       }
       if (decoded.type === "Scene" || decoded.type === "Prefab" || decoded.type === "Class") {
-        const landscapeIds = landscapeChunkIdsInHeader(indexed.header.chunks);
-        if (landscapeIds.length > 0) {
-          const withChunks = await this.readAssetDocumentWithChunksAttempt(path, landscapeIds, options.signal);
-          decoded = { ...decoded, payload: hydrateLandscapeChunksToEditor(decoded.payload, withChunks.chunks) };
-        }
+        decoded = await this.hydrateComponentChunks(path, decoded, indexed.header.chunks, options.signal);
       }
     } else {
       decoded = await readUnindexedAssetDocument(this.files, path, options.signal);
       if (decoded.type === "Scene" || decoded.type === "Prefab" || decoded.type === "Class") {
         const header = readAssetDocumentHeader(await this.storageForPath(path).readBinary(path));
-        const landscapeIds = landscapeChunkIdsInHeader(header.chunks);
-        if (landscapeIds.length > 0) {
-          const withChunks = await this.readAssetDocumentWithChunksAttempt(path, landscapeIds, options.signal);
-          decoded = { ...decoded, payload: hydrateLandscapeChunksToEditor(decoded.payload, withChunks.chunks) };
-        }
+        decoded = await this.hydrateComponentChunks(path, decoded, header.chunks, options.signal);
       }
     }
     return decoded;
+  }
+
+  /** Restores a document's binary Landscape and Foliage chunks into the base64 `data` editor documents hold. */
+  private async hydrateComponentChunks(
+    path: string,
+    decoded: AssetDocument,
+    chunks: ReadonlyArray<{ id: string }>,
+    signal: AbortSignal | undefined,
+  ): Promise<AssetDocument> {
+    const landscapeIds = landscapeChunkIdsInHeader(chunks);
+    const foliageIds = foliageChunkIdsInHeader(chunks);
+    if (landscapeIds.length === 0 && foliageIds.length === 0) return decoded;
+    const withChunks = await this.readAssetDocumentWithChunksAttempt(path, [...landscapeIds, ...foliageIds], signal);
+    const payload = hydrateFoliageChunksToEditor(hydrateLandscapeChunksToEditor(decoded.payload, withChunks.chunks), withChunks.chunks);
+    return { ...decoded, payload };
   }
 
   /** Writes a `.hasset` document in its asset's write queue. */
@@ -1626,14 +1637,14 @@ export class ProjectService {
 
     const guid = await this.guidForAsset(path);
     const stored = existing?.catalog ?? null;
-    const landscapeSave = prepareLandscapeChunksForSave(type, content as unknown as Record<string, unknown>);
-    const payloadToSave = landscapeSave.payload;
+    const componentChunkSave = prepareComponentChunksForSave(type, content as unknown as Record<string, unknown>);
+    const payloadToSave = componentChunkSave.payload;
     const baseChunks = type === "Scene"
       ? await this.sceneChunksForSave(path, content as SerializedScene, guid, stored)
       : await keptChunksFor(this.files, path, stored);
     const extraChunks: EncodableChunk[] = [
-      ...baseChunks.filter((chunk) => landscapeSave.keepStoredChunk(chunk.id)),
-      ...landscapeSave.chunks,
+      ...baseChunks.filter((chunk) => componentChunkSave.keepStoredChunk(chunk.id)),
+      ...componentChunkSave.chunks,
     ];
     const bytes = await encodeAssetDocument(
       {
@@ -1799,12 +1810,12 @@ export class ProjectService {
     const stored = existing?.catalog ?? null;
     const type = existing?.type ?? "Scene";
     // The stored chunks are carried over, not read; the navmesh it replaces is not read at all.
-    const landscapeSave = prepareLandscapeChunksForSave(type, payload);
-    const payloadToSave = landscapeSave.payload;
+    const componentChunkSave = prepareComponentChunksForSave(type, payload);
+    const payloadToSave = componentChunkSave.payload;
     const baseChunks = await this.sceneChunksForSave(path, payload, guid, stored, [NAVMESH_CHUNK_ID]);
     const chunks: EncodableChunk[] = [
-      ...baseChunks.filter((chunk) => landscapeSave.keepStoredChunk(chunk.id)),
-      ...landscapeSave.chunks,
+      ...baseChunks.filter((chunk) => componentChunkSave.keepStoredChunk(chunk.id)),
+      ...componentChunkSave.chunks,
       navmeshChunk(bytes),
     ];
     const encoded = await encodeAssetDocument(
@@ -2117,7 +2128,7 @@ function storedProjectUpdatedAt(text: string): string | null {
   }
 }
 
-function prepareLandscapeChunksForSave(
+function prepareComponentChunksForSave(
   type: string,
   content: Record<string, unknown>,
 ): {
@@ -2128,14 +2139,17 @@ function prepareLandscapeChunksForSave(
   if (type !== "Scene" && type !== "Prefab" && type !== "Class") {
     return { payload: content, chunks: [], keepStoredChunk: () => true };
   }
-  const { payload, chunks } = extractLandscapeChunks(content);
+  const landscape = extractLandscapeChunks(content);
+  const foliage = extractFoliageChunks(landscape.payload);
+  const payload = foliage.payload;
+  const chunks = [...landscape.chunks, ...foliage.chunks];
   const referencedChunkIds = new Set<string>();
   const visit = (components: unknown) => {
     if (!Array.isArray(components)) return;
     for (const component of components as Array<{ classId?: string; properties?: Record<string, unknown> }>) {
-      if (component?.classId !== "LandscapeComponent") continue;
+      if (component?.classId !== "LandscapeComponent" && component?.classId !== "FoliageComponent") continue;
       const cid = component.properties?.chunkId;
-      if (typeof cid === "string" && isLandscapeChunkId(cid)) referencedChunkIds.add(cid);
+      if (typeof cid === "string" && (isLandscapeChunkId(cid) || isFoliageChunkId(cid))) referencedChunkIds.add(cid);
     }
   };
   const record = payload as { actors?: Array<{ components?: unknown }>; components?: unknown };
@@ -2146,6 +2160,6 @@ function prepareLandscapeChunksForSave(
     payload,
     chunks,
     keepStoredChunk: (chunkId: string) =>
-      !isLandscapeChunkId(chunkId) || (referencedChunkIds.has(chunkId) && !extractedIds.has(chunkId)),
+      (!isLandscapeChunkId(chunkId) && !isFoliageChunkId(chunkId)) || (referencedChunkIds.has(chunkId) && !extractedIds.has(chunkId)),
   };
 }

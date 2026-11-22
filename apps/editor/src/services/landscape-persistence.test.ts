@@ -88,7 +88,7 @@ describe("Landscape binary .hasset persistence and export sidecars", () => {
       loadDocumentWithChunks: (kind, path, chunks) => service.loadDocumentWithChunks(kind as never, path, chunks),
       readAssetChunk: (path, chunkId) => service.readAssetChunk(path, chunkId),
     });
-    const exportedChunks = exportInputs.landscapeChunksByGuid(sceneGuid);
+    const exportedChunks = exportInputs.componentChunksByGuid(sceneGuid);
     expect(exportedChunks).toHaveLength(1);
     expect(exportedChunks[0]!.chunkId).toBe(expectedChunkId);
     expect(decodeLandscapeChunk(exportedChunks[0]!.bytes)?.heights[12]).toBeCloseTo(5.75, 5);

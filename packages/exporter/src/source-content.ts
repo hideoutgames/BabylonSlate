@@ -30,8 +30,8 @@ export type GameSourceContent = {
   payloads: Map<string, Uint8Array>;
   navmeshBytes: Map<string, Uint8Array>;
   audioReverbBytes: Map<string, Uint8Array>;
-  /** Binary `HPLD` landscape chunks keyed by `<ownerGuid>:<chunkId>`. */
-  landscapeBytes?: Map<string, Uint8Array>;
+  /** Binary Landscape (`HPLD`) and Foliage (`HPFG`) component chunks keyed by `<ownerGuid>:<chunkId>`. */
+  componentChunks?: Map<string, Uint8Array>;
 };
 
 /** Required edges only; deferred references stay in the catalog for later use. */
@@ -71,8 +71,8 @@ export function gameSourceSubset(game: GameSourceContent, ids: ReadonlySet<strin
     return keys.has(key) || (colon > 0 && keys.has(key.slice(0, colon)));
   }));
   // Binary landscape chunks are keyed `<ownerGuid>:<chunkId>`.
-  const landscapeBytes = game.landscapeBytes
-    ? new Map([...game.landscapeBytes].filter(([key]) => {
+  const componentChunks = game.componentChunks
+    ? new Map([...game.componentChunks].filter(([key]) => {
         const colon = key.indexOf(":");
         return keys.has(key) || (colon > 0 && keys.has(key.slice(0, colon)));
       }))
@@ -90,6 +90,6 @@ export function gameSourceSubset(game: GameSourceContent, ids: ReadonlySet<strin
     fontFacetypeBytes: select(game.fontFacetypeBytes), fontMsdfJson: select(game.fontMsdfJson), fontMsdfPng: select(game.fontMsdfPng),
     audioBytes, audioPayloads: select(game.audioPayloads),
     payloads: select(game.payloads), navmeshBytes: select(game.navmeshBytes), audioReverbBytes: select(game.audioReverbBytes),
-    ...(landscapeBytes ? { landscapeBytes } : {}),
+    ...(componentChunks ? { componentChunks } : {}),
   };
 }

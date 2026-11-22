@@ -253,7 +253,7 @@ export function materialAssetGuidsFromScene(
     ...componentGuidsFromScene(scene, "MirrorComponent", ["materialGuid"]),
     ...componentGuidsFromScene(scene, "DecalComponent", ["materialGuid"]),
     ...componentGuidsFromScene(scene, "LandscapeComponent", ["materialGuid"]),
-    ...(scene?.actors.flatMap((actor) => actor.components.flatMap((component) => component.classId === "FoliageComponent" ? parseFoliageProperties(component.properties).batches.flatMap((batch) => batch.materialGuid ? [batch.materialGuid] : []) : [])) ?? []),
+    ...(scene?.actors.flatMap((actor) => actor.components.flatMap((component) => component.classId === "FoliageComponent" ? foliageBatchInfos(component.properties).flatMap((batch) => batch.materialGuid ? [batch.materialGuid] : []) : [])) ?? []),
     ...UI_CONTROL_2D_CLASS_IDS.flatMap(classId => componentGuidsFromScene(scene, classId, ["backgroundMaterialGuid", "trackMaterialGuid", "fillMaterialGuid", "thumbMaterialGuid", "indicatorMaterialGuid"])),
     ...componentGuidsFromScene(scene, "2DJoystickComponent", ["backgroundMaterialGuid", "joystickMaterialGuid"]),
     ...componentGuidsFromScene(scene, "2DMaterialComponent", ["materialGuid"]),
@@ -410,7 +410,7 @@ export function modelAssetGuidsFromScene(
 ): string[] {
   return [...new Set([
     ...componentGuidsFromScene(scene, "MeshComponent", ["assetGuid"]),
-    ...(scene?.actors.flatMap((actor) => actor.components.flatMap((component) => component.classId === "FoliageComponent" ? parseFoliageProperties(component.properties).batches.map((batch) => batch.modelGuid) : [])) ?? []),
+    ...(scene?.actors.flatMap((actor) => actor.components.flatMap((component) => component.classId === "FoliageComponent" ? foliageBatchInfos(component.properties).map((batch) => batch.modelGuid) : [])) ?? []),
   ])];
 }
 
@@ -572,4 +572,4 @@ export function playLoadTilemapsControl(
       : {}),
   };
 }
-import { parseFoliageProperties } from "@haptic/core";
+import { foliageBatchInfos } from "@haptic/core";

@@ -23,9 +23,10 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-type ComponentTransformer = (component: SerializedComponent) => SerializedComponent;
+export type ComponentTransformer = (component: SerializedComponent) => SerializedComponent;
 
-function mapPayloadComponents<T>(payload: T, transform: ComponentTransformer): T {
+/** Applies `transform` to every component of a Scene, Prefab or Class payload; unchanged parts keep their identity. */
+export function mapPayloadComponents<T>(payload: T, transform: ComponentTransformer): T {
   if (!payload || typeof payload !== "object") return payload;
   const record = payload as {
     actors?: readonly SerializedActor[];

@@ -3,7 +3,7 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
-import { createActor, createDefaultScene, identitySerializedTransform } from "@haptic/core";
+import { createActor, createDefaultScene, identitySerializedTransform, packFoliageTransforms } from "@haptic/core";
 import { installAssetBytes, normalizeModelPayload } from "@haptic/assets";
 import { EditorSceneSync } from "./editor-scene-sync";
 import { createTestEngine } from "./test-support/test-engine";
@@ -34,9 +34,9 @@ it("shares model vertices while keeping stroke and cell instance buffers indepen
   const material = new StandardMaterial("leaves", scene);
   material.metadata = { boundsPadding: 2 };
   const assets = { modelSources: new Map([["tree", installAssetBytes(encodeTriangleGlb(), "model/gltf-binary")]]), resolveMaterial: () => material };
-  const data = { groupId: "forest", batches: [{ modelGuid: "tree", materialGuid: "leaf-material", transforms: [identitySerializedTransform(), { ...identitySerializedTransform(), position: [4, 0, 0] }, { ...identitySerializedTransform(), position: [40, 0, 0] }] }] };
+  const data = { groupId: "forest", batches: [{ modelGuid: "tree", materialGuid: "leaf-material", transforms: packFoliageTransforms([identitySerializedTransform(), { ...identitySerializedTransform(), position: [4, 0, 0] }, { ...identitySerializedTransform(), position: [40, 0, 0] }]) }] };
   const a = createFoliageMesh(scene, "stroke-a", data, assets);
-  const b = createFoliageMesh(scene, "stroke-b", { batches: [{ modelGuid: "tree", transforms: [{ ...identitySerializedTransform(), position: [12, 0, 0] }] }] }, assets);
+  const b = createFoliageMesh(scene, "stroke-b", { batches: [{ modelGuid: "tree", transforms: packFoliageTransforms([{ ...identitySerializedTransform(), position: [12, 0, 0] }]) }] }, assets);
   await Promise.all([foliagePreparation(a), foliagePreparation(b)]);
   const am = a.getChildMeshes().find((mesh): mesh is Mesh => mesh instanceof Mesh && mesh.hasThinInstances)!;
   const bm = b.getChildMeshes().find((mesh): mesh is Mesh => mesh instanceof Mesh && mesh.hasThinInstances)!;
@@ -74,7 +74,7 @@ it("shares model vertices while keeping stroke and cell instance buffers indepen
 it("does not adopt a model after its foliage component is deleted", async () => {
   const { engine, scene } = createTestEngine();
   disposers.push(() => { scene.dispose(); engine.dispose(); });
-  const root = createFoliageMesh(scene, "deleted", { batches: [{ modelGuid: "m", transforms: [identitySerializedTransform()] }] }, { modelBytes: new Map([["m", encodeTriangleGlb()]]) });
+  const root = createFoliageMesh(scene, "deleted", { batches: [{ modelGuid: "m", transforms: packFoliageTransforms([identitySerializedTransform()]) }] }, { modelBytes: new Map([["m", encodeTriangleGlb()]]) });
   root.dispose();
   await foliagePreparation(root);
   expect(scene.meshes.some((mesh) => mesh.name.startsWith("deleted:"))).toBe(false);
@@ -84,7 +84,7 @@ it("waits for initial foliage and refreshes late model sources and import scale 
   const { scene, engine } = createTestEngine();
   const sync = new EditorSceneSync(scene);
   disposers.push(() => { sync.dispose(); scene.dispose(); engine.dispose(); });
-  const data = { ...createDefaultScene(), actors: [createActor("stroke", "Stroke", { visible: false, locked: true, components: [{ id: "foliage", classId: "FoliageComponent", properties: { batches: [{ modelGuid: "tree", transforms: [identitySerializedTransform()] }] } }] })] };
+  const data = { ...createDefaultScene(), actors: [createActor("stroke", "Stroke", { visible: false, locked: true, components: [{ id: "foliage", classId: "FoliageComponent", properties: { batches: [{ modelGuid: "tree", transforms: packFoliageTransforms([identitySerializedTransform()]) }] } }] })] };
   sync.apply(data);
   await sync.whenEditorModelsReady();
   const empty = sync.meshForComponent("stroke", "foliage")!;
@@ -115,7 +115,7 @@ it("preserves the last foliage visual and reports a replacement failure even aft
   disposers.push(() => { sync.dispose(); scene.dispose(); engine.dispose(); });
   const warnings = vi.spyOn(console, "warn").mockImplementation(() => {});
   sync.setMeshAssets({ modelSources: new Map([["tree", installAssetBytes(encodeTriangleGlb(), "model/gltf-binary")]]) });
-  sync.apply({ ...createDefaultScene(), actors: [createActor("stroke", "Stroke", { components: [{ id: "foliage", classId: "FoliageComponent", properties: { batches: [{ modelGuid: "tree", transforms: [identitySerializedTransform()] }] } }] })] });
+  sync.apply({ ...createDefaultScene(), actors: [createActor("stroke", "Stroke", { components: [{ id: "foliage", classId: "FoliageComponent", properties: { batches: [{ modelGuid: "tree", transforms: packFoliageTransforms([identitySerializedTransform()]) }] } }] })] });
   await sync.whenEditorModelsReady();
   const previous = sync.meshForComponent("stroke", "foliage")!;
   sync.setMeshAssets({ modelSources: new Map([["tree", installAssetBytes(new Uint8Array([0, 1, 2]), "model/gltf-binary")]]) });
@@ -130,7 +130,7 @@ it("keeps an unchanged foliage visual across applies and rebuilds it when its pr
   const sync = new EditorSceneSync(scene);
   disposers.push(() => { sync.dispose(); scene.dispose(); engine.dispose(); });
   sync.setMeshAssets({ modelSources: new Map([["tree", installAssetBytes(encodeTriangleGlb(), "model/gltf-binary")]]) });
-  const properties = { batches: [{ modelGuid: "tree", transforms: [identitySerializedTransform()] }] };
+  const properties = { batches: [{ modelGuid: "tree", transforms: packFoliageTransforms([identitySerializedTransform()]) }] };
   const foliage = (next: typeof properties) => ({ ...createDefaultScene(), actors: [createActor("stroke", "Stroke", { components: [{ id: "foliage", classId: "FoliageComponent", properties: next }] })] });
   sync.apply(foliage(properties));
   await sync.whenEditorModelsReady();
@@ -138,7 +138,7 @@ it("keeps an unchanged foliage visual across applies and rebuilds it when its pr
   sync.apply(foliage(properties));
   await sync.whenEditorModelsReady();
   expect(sync.meshForComponent("stroke", "foliage")).toBe(first);
-  sync.apply(foliage({ batches: [{ modelGuid: "tree", transforms: [identitySerializedTransform(), { ...identitySerializedTransform(), position: [4, 0, 0] }] }] }));
+  sync.apply(foliage({ batches: [{ modelGuid: "tree", transforms: packFoliageTransforms([identitySerializedTransform(), { ...identitySerializedTransform(), position: [4, 0, 0] }]) }] }));
   await sync.whenEditorModelsReady();
   const rebuilt = sync.meshForComponent("stroke", "foliage")!;
   expect(rebuilt).not.toBe(first);
@@ -168,7 +168,7 @@ async function meadow(editor: boolean) {
   const root = createFoliageMesh(scene, "meadow", {
     batches: [{
       modelGuid: "grass", materialGuid: "grass-material", cullDistance: 80, fadeRange: 20, shadowDistance: 40,
-      transforms: [5, 50, 100].map((x) => ({ ...identitySerializedTransform(), position: [x, 0, 0] })),
+      transforms: packFoliageTransforms([5, 50, 100].map((x) => ({ ...identitySerializedTransform(), position: [x, 0, 0] }))),
     }],
   }, assets);
   await foliagePreparation(root);
@@ -224,7 +224,7 @@ it("applies new distances to Play's existing cells in the next frame", async () 
   applyFoliageDistances(root, {
     batches: [{
       modelGuid: "grass", materialGuid: "grass-material", cullDistance: 200, fadeRange: 0, shadowDistance: 100,
-      transforms: [5, 50, 100].map((x) => ({ ...identitySerializedTransform(), position: [x, 0, 0] })),
+      transforms: packFoliageTransforms([5, 50, 100].map((x) => ({ ...identitySerializedTransform(), position: [x, 0, 0] }))),
     }],
   });
   scene.render();
@@ -248,7 +248,7 @@ it("applies a Foliage distance edit to the editor's foliage in place, through un
       ...base,
       settings: { ...base.settings, foliageGroups: [{ id: "trees", name: "Trees", models: [{ ...model, cullDistance }] }] },
       actors: [createActor("stroke", "Stroke", { components: [{ id: "foliage", classId: "FoliageComponent", properties: {
-        groupId: "trees", batches: [{ modelGuid: "tree", materialGuid: null, cullDistance, fadeRange: 15, shadowDistance: 45, transforms: positions }],
+        groupId: "trees", batches: [{ modelGuid: "tree", materialGuid: null, cullDistance, fadeRange: 15, shadowDistance: 45, transforms: packFoliageTransforms(positions) }],
       } }] })],
     };
   };
@@ -312,10 +312,10 @@ it("swaps pre-built per-cell LOD geometries while sharing thin-instance matrix b
       cullDistance: 100,
       fadeRange: 10,
       shadowDistance: 50,
-      transforms: [
+      transforms: packFoliageTransforms([
         { ...identitySerializedTransform(), position: [5, 0, 0] },
         { ...identitySerializedTransform(), position: [50, 0, 0] },
-      ],
+      ]),
     }],
   }, assets);
   await foliagePreparation(root);
@@ -442,7 +442,7 @@ it("reports once per Model when its levels of detail cannot attach to the foliag
   disposers.push(() => { scene.dispose(); engine.dispose(); });
   const assets = { modelSources: new Map([["tree", installAssetBytes(encodeTriangleGlb(), "model/gltf-binary")]]) };
   const strokes = ["a", "b"].map((name) => createFoliageMesh(scene, name, {
-    batches: [{ modelGuid: "tree", transforms: [identitySerializedTransform(), { ...identitySerializedTransform(), position: [40, 0, 0] }] }],
+    batches: [{ modelGuid: "tree", transforms: packFoliageTransforms([identitySerializedTransform(), { ...identitySerializedTransform(), position: [40, 0, 0] }]) }],
   }, assets));
   await Promise.all(strokes.map((root) => foliagePreparation(root)));
   await vi.waitFor(() => expect(attaches).toBe(2));

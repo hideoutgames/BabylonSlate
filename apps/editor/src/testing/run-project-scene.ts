@@ -84,8 +84,8 @@ export async function runProjectScene(options: {
       scenes: [...game.scenes].map(([guid, entry]) => ({ guid, scene: entry })),
       sceneLayers: [...game.sceneLayers].map(([guid, layer]) => ({ guid, layer })),
       sceneNavmeshBytes: Object.fromEntries(game.navmeshBytes),
-      ...(game.landscapeBytes && game.landscapeBytes.size > 0
-        ? { sceneLandscapeBytes: Object.fromEntries(game.landscapeBytes) }
+      ...(game.componentChunks && game.componentChunks.size > 0
+        ? { sceneComponentChunks: Object.fromEntries(game.componentChunks) }
         : {}),
       saveGame: await prepareSaveGameConfiguration({
         projectId: project.guid,

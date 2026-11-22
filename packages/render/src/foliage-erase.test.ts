@@ -1,38 +1,47 @@
 import { describe, expect, it } from "vitest";
 import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
-import { parseFoliageProperties } from "@haptic/core";
+import { FOLIAGE_FLOATS_PER_INSTANCE, parseFoliageProperties, serializeFoliageProperties, type FoliageProperties } from "@haptic/core";
 import { FoliageEraseSession } from "./foliage-erase";
 
 type Dab = { point: Vector3; radius: number };
 
-/** The brush's earlier per-dab erase: re-parse the previous result and keep what lies beyond the radius. `null` once nothing is left. */
-function eraseBySweeping(properties: unknown, world: Matrix, dabs: Dab[]): Array<unknown> {
-  const results: unknown[] = [];
+/** Each instance's floats: position, identity rotation, unit scale. */
+function instances(positions: Array<[number, number, number]>): Float32Array {
+  return new Float32Array(positions.flatMap(([x, y, z]) => [x, y, z, 0, 0, 0, 1, 1, 1, 1]));
+}
+
+/** A plain reference: per dab, keep each instance whose world position lies beyond the radius. `null` once nothing is left. */
+function eraseBySweeping(properties: FoliageProperties, world: Matrix, dabs: Dab[]): Array<FoliageProperties | null> {
+  const results: Array<FoliageProperties | null> = [];
   let current = properties;
   for (const { point, radius } of dabs) {
-    const data = parseFoliageProperties(current);
-    const batches = data.batches.map((batch) => ({ ...batch, transforms: batch.transforms.filter((transform) =>
-      Vector3.Distance(Vector3.TransformCoordinates(Vector3.FromArray(transform.position), world), point) > radius) })).filter((batch) => batch.transforms.length);
+    const batches = current.batches.map((batch) => {
+      const kept: number[] = [];
+      for (let at = 0; at < batch.transforms.length; at += FOLIAGE_FLOATS_PER_INSTANCE) {
+        const position = Vector3.TransformCoordinates(new Vector3(batch.transforms[at]!, batch.transforms[at + 1]!, batch.transforms[at + 2]!), world);
+        if (Vector3.Distance(position, point) > radius) kept.push(...batch.transforms.subarray(at, at + FOLIAGE_FLOATS_PER_INSTANCE));
+      }
+      return { ...batch, transforms: new Float32Array(kept) };
+    }).filter((batch) => batch.transforms.length);
     if (!batches.length) { results.push(null); break; }
-    current = { ...data, batches };
+    current = { ...current, batches };
     results.push(current);
   }
   return results;
 }
 
-const transform = (x: number, y: number, z: number) => ({ position: [x, y, z], rotation: [0, 0, 0, 1], scale: [1, 1, 1] });
 let seed = 3;
 const random = () => (seed = Math.imul(seed, 1664525) + 1013904223 >>> 0) / 0x100000000;
 
-/** A stored component with the debris parsing discards: unnamed models, non-array transforms, partial and invalid transforms. */
+/** A stored component (base64 HPFG data) with three batches; the third lies far from the others. */
 function stored(positions: (random: () => number) => Array<[number, number, number]>) {
-  return { groupId: "trees", batches: [
-    { modelGuid: "oak", materialGuid: "bark", transforms: positions(random).map(([x, y, z]) => transform(x, y, z)) },
-    { modelGuid: "   ", transforms: [transform(0, 0, 0)] },
-    { modelGuid: "pine", materialGuid: null, transforms: [...positions(random).map(([x, y, z]) => transform(x, y, z)), { position: [1, 2] }, { rotation: [NaN, 0, 0, "w"], scale: [2, 2, 2] }, null] },
-    { modelGuid: "fern", transforms: "none" },
-    { modelGuid: "elm", transforms: [transform(40, 0, 40), transform(41, 0, 40)] },
-  ] };
+  const batch = (modelGuid: string, materialGuid: string | null, transforms: Float32Array) =>
+    ({ modelGuid, materialGuid, cullDistance: 120, fadeRange: 15, shadowDistance: 45, transforms });
+  return serializeFoliageProperties({ groupId: "trees", batches: [
+    batch("oak", "bark", instances(positions(random))),
+    batch("pine", null, instances(positions(random))),
+    batch("elm", null, instances([[40, 0, 40], [41, 0, 40]])),
+  ] });
 }
 
 describe("foliage erase session", () => {
@@ -44,10 +53,10 @@ describe("foliage erase session", () => {
     ["a lattice with instances exactly at the radius", Matrix.Identity(),
       (r: () => number) => Array.from({ length: 169 }, (_, i): [number, number, number] => [-6 + i % 13, 0, -6 + Math.floor(i / 13)]).filter(() => r() < 0.9),
       () => ({ point: new Vector3(Math.floor(random() * 13) - 6, 0, Math.floor(random() * 13) - 6), radius: 1 + Math.floor(random() * 3) })],
-  ])("equals re-parsing and filtering the component for every dab, on %s", (_name, world, positions, nextDab) => {
+  ])("keeps exactly the instances beyond every dab, on %s", (_name, world, positions, nextDab) => {
     const properties = stored(positions);
     const dabs = Array.from({ length: 60 }, nextDab);
-    const expected = eraseBySweeping(properties, world, dabs);
+    const expected = eraseBySweeping(parseFoliageProperties(properties), world, dabs);
     const session = new FoliageEraseSession(properties, world);
     expect(session.empty).toBe(false);
     let erasedSome = false;

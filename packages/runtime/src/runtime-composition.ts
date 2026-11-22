@@ -117,7 +117,7 @@ export interface RuntimeComposition extends Pick<RuntimeDriver,
   readonly hasAnimatedTiles: boolean;
   readonly waterClock: WaterClock;
   /** Decodes binary HPLD chunks onto any LandscapeComponent of a newly created actor. */
-  hydrateActorLandscapes(actor: Actor | null, sceneGuid?: string): Actor | null;
+  hydrateActorComponentChunks(actor: Actor | null, sceneGuid?: string): Actor | null;
   navFrameActors: Map<string, Actor> | null;
   guidIndexCache: { revision: number; index: Map<string, Actor> } | null;
 
