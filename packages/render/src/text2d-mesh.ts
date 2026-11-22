@@ -922,11 +922,13 @@ export function createText2DMesh(
       const { mesh } = batch;
       glyphBatchVertexData(batch.quads).applyToMesh(mesh);
       // An overlay-box resize counter-scales plane glyphs so letters keep their
-      // size while the box scales; a batch re-poses the quads it draws to match.
+      // size while the box scales; a batch re-poses the quads it draws to match, into one array it keeps for that
+      // (every write covers all of it, and the mesh's buffer takes the same array each time).
+      let positions: Float32Array | undefined;
       mesh.metadata = {
         ...mesh.metadata,
         text2dCounterScale: (counterX: number, counterY: number) => {
-          const positions = new Float32Array(batch.quads.length * 12);
+          positions ??= new Float32Array(batch.quads.length * 12);
           writeGlyphBatchPositions(batch.quads, positions, counterX, counterY);
           if (mesh.isVertexBufferUpdatable(VertexBuffer.PositionKind)) mesh.updateVerticesData(VertexBuffer.PositionKind, positions, true);
           else mesh.setVerticesData(VertexBuffer.PositionKind, positions, true);
