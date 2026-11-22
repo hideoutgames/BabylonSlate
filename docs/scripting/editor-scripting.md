@@ -10,6 +10,8 @@ Editor Utility Objects and Editor Function Libraries are classes that run inside
 
 The editor starts every listed class when the project opens. Changing the list shuts the running tools down and starts the new list. [Plugins](../projects/plugins.md) can bring their own Editor Utility Objects, which start when the plugin is enabled.
 
+Editor Utility Objects run code in the editor, so they start only in a project this computer trusts: turn on **Trust This Project** beside the list. In a project you have not trusted, nothing starts and the **Output Log** says why. Projects you create from scratch are trusted. See [Trust project extensions](../projects/extensions.md#trust-project-extensions).
+
 ## Editor events
 
 | Event | When it runs |

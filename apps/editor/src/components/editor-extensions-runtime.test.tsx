@@ -52,13 +52,13 @@ vi.mock("../context/app-settings-context", async () => {
   const { defaultEngineSettings: defaults } = await import("@haptic/vfs");
   return {
     useAppSettings: () => ({
-      settings: { ...defaults(), trustedProjectExtensions: harness.state.trusted },
+      settings: { ...defaults(), trustedProjects: harness.state.trusted },
       version: 1,
       hydrated: harness.state.hydrated,
       updateSettings: async (mutate: (settings: EngineSettings) => void) => {
-        const next = { ...defaults(), trustedProjectExtensions: [...harness.state.trusted] };
+        const next = { ...defaults(), trustedProjects: [...harness.state.trusted] };
         mutate(next);
-        harness.state.settingsUpdates.push(next.trustedProjectExtensions);
+        harness.state.settingsUpdates.push(next.trustedProjects);
       },
       updateDebuggerDefaults: async () => {},
     }),

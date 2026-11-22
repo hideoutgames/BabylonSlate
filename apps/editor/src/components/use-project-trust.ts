@@ -6,11 +6,11 @@ import { useRegistryState } from "../context/document-context";
 const MAX_TRUSTED_PROJECTS = 500;
 
 /**
- * Workspace Trust for the open project's own Extensions, kept in this
+ * Workspace Trust for the open project (its Extensions and Editor Utilities), kept in this
  * computer's Engine Settings under the project's folder and GUID. A project
  * this editor created in this session is trusted without asking.
  */
-export function useProjectExtensionTrust(): {
+export function useProjectTrust(): {
   /** False until Engine Settings have loaded and a project is open. */
   ready: boolean;
   trusted: boolean;
@@ -21,14 +21,14 @@ export function useProjectExtensionTrust(): {
   const { settings, hydrated, updateSettings } = useAppSettings();
   const { extensionService, projectGuid } = useRegistryState();
   const key = extensionService && projectGuid ? extensionService.projectTrustKey(projectGuid) : null;
-  const stored = key !== null && settings.trustedProjectExtensions.includes(key);
+  const stored = key !== null && settings.trustedProjects.includes(key);
   const trusted = stored || (key !== null && extensionService!.createdHere(key));
   const setTrusted = useCallback(async (next: boolean) => {
     if (key === null) return;
     if (!next) extensionService?.forgetCreatedProject();
     await updateSettings((current) => {
-      const others = current.trustedProjectExtensions.filter((value) => value !== key);
-      current.trustedProjectExtensions = next ? [...others, key].slice(-MAX_TRUSTED_PROJECTS) : others;
+      const others = current.trustedProjects.filter((value) => value !== key);
+      current.trustedProjects = next ? [...others, key].slice(-MAX_TRUSTED_PROJECTS) : others;
     });
   }, [extensionService, key, updateSettings]);
   return { ready: hydrated && key !== null, trusted, persisted: stored, setTrusted };

@@ -4,7 +4,7 @@ import {
   useProjectState,
   useRegistryState,
 } from "../context/document-context";
-import { useProjectExtensionTrust } from "./use-project-extension-trust";
+import { useProjectTrust } from "./use-project-trust";
 
 /**
  * Mirrors editor utility startup: activates editor entries; Play links gameplay libraries separately.
@@ -14,7 +14,7 @@ export function EditorExtensionsRuntime() {
   const { getOpenDocuments } = useDocumentActions();
   const { projectDocument } = useProjectState();
   const { extensionService, projectGuid } = useRegistryState();
-  const { ready, trusted, persisted, setTrusted } = useProjectExtensionTrust();
+  const { ready, trusted, persisted, setTrusted } = useProjectTrust();
   const overrides = JSON.stringify(projectDocument?.settings.extensionOverrides ?? {});
   useEffect(() => {
     if (!extensionService) return;

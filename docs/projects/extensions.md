@@ -31,11 +31,11 @@ Rows also show **Experimental**, **Beta** and **Gameplay** badges, the version, 
 
 ## Trust project extensions
 
-A project's own extensions are code that came with the project, for example from a repository you cloned or a folder someone sent you. Haptic does not run them until you trust the project on this computer.
+A project's own extensions, and its [Editor Utility Objects](../scripting/editor-scripting.md), are code that came with the project, for example from a repository you cloned or a folder someone sent you. Haptic does not run them until you trust the project on this computer.
 
-- When you open a project whose enabled extensions are not trusted, a banner names them. Choose **Trust Project Extensions** to run them, or **Not Now** to keep working without them.
-- You can trust a project, or take trust back, with **Trust Project Extensions** in **Project Settings > Project Extensions**. Taking trust back stops its extensions straight away.
-- Until you trust the project, its extensions add no commands, and Play, Preview Build and packaging stop with a message if a gameplay extension is enabled.
+- When you open a project whose enabled extensions or registered Editor Utility Objects are not trusted, a banner says what is held back. Choose **Trust Project** to run them, or **Not Now** to keep working without them.
+- You can trust a project, or take trust back, with **Trust This Project** in **Project Settings > Project Extensions** or under **Editor Utility Objects** in **Project Settings > General**. It is one switch for both. Taking trust back stops them straight away.
+- Until you trust the project, its extensions add no commands, its Editor Utility Objects do not start (the **Output Log** says why), and Play, Preview Build and packaging stop with a message if a gameplay extension is enabled.
 - Trust belongs to this computer and to the project's folder. A copy of the project in another folder, or a different project in the same folder, asks again. Projects you create from scratch in Haptic are trusted. Projects made from a template, cloned or opened from a folder are not.
 - Engine extensions always run: they come with Haptic or you added them to this computer yourself.
 

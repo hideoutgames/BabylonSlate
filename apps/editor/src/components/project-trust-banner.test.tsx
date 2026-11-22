@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { EngineSettings } from "@haptic/vfs";
-import { ProjectExtensionTrustBanner } from "./project-extension-trust-banner";
+import { ProjectTrustBanner } from "./project-trust-banner";
 
 const KEY = JSON.stringify(["opfs:Game", "project-guid"]);
 
@@ -9,6 +9,7 @@ const harness = vi.hoisted(() => ({
   untrusted: ["Level Tools"] as string[],
   trusted: [] as string[],
   updates: [] as string[][],
+  utilities: [] as string[],
 }));
 
 /** One snapshot object per held-back list, as the service keeps its snapshot until it changes. */
@@ -21,6 +22,7 @@ function snapshotFor(untrusted: string[]): object {
 vi.mock("../context/document-context", async () =>
   (await import("../testing/document-context-mock")).documentContextMock(() => ({
     projectGuid: "project-guid",
+    projectDocument: { settings: { editorUtilityObjects: harness.utilities } },
     extensionService: {
       subscribe: () => () => {},
       getSnapshot: () => snapshotFor(harness.untrusted),
@@ -35,13 +37,13 @@ vi.mock("../context/app-settings-context", async () => {
   const { defaultEngineSettings } = await import("@haptic/vfs");
   return {
     useAppSettings: () => ({
-      settings: { ...defaultEngineSettings(), trustedProjectExtensions: harness.trusted },
+      settings: { ...defaultEngineSettings(), trustedProjects: harness.trusted },
       version: 1,
       hydrated: true,
       updateSettings: async (mutate: (settings: EngineSettings) => void) => {
-        const next = { ...defaultEngineSettings(), trustedProjectExtensions: [...harness.trusted] };
+        const next = { ...defaultEngineSettings(), trustedProjects: [...harness.trusted] };
         mutate(next);
-        harness.updates.push(next.trustedProjectExtensions);
+        harness.updates.push(next.trustedProjects);
       },
       updateDebuggerDefaults: async () => {},
     }),
@@ -53,29 +55,39 @@ afterEach(() => {
   harness.untrusted = ["Level Tools"];
   harness.trusted = [];
   harness.updates = [];
+  harness.utilities = [];
 });
 
 it("names the held-back Project Extensions and trusts the project on this computer when asked", async () => {
-  render(<ProjectExtensionTrustBanner />);
-  expect(screen.getByTestId("project-extension-trust-banner").textContent).toContain("Level Tools");
-  fireEvent.click(screen.getByRole("button", { name: "Trust Project Extensions" }));
+  render(<ProjectTrustBanner />);
+  expect(screen.getByTestId("project-trust-banner").textContent).toContain("Level Tools");
+  fireEvent.click(screen.getByRole("button", { name: "Trust Project" }));
   await waitFor(() => expect(harness.updates).toEqual([[KEY]]));
 });
 
 it("goes away on Not Now without trusting anything", () => {
-  render(<ProjectExtensionTrustBanner />);
+  render(<ProjectTrustBanner />);
   fireEvent.click(screen.getByRole("button", { name: "Not Now" }));
-  expect(screen.queryByTestId("project-extension-trust-banner")).toBeNull();
+  expect(screen.queryByTestId("project-trust-banner")).toBeNull();
   expect(harness.updates).toEqual([]);
 });
 
 it("stays hidden for a trusted project and when nothing is held back", () => {
   harness.trusted = [KEY];
-  render(<ProjectExtensionTrustBanner />);
-  expect(screen.queryByTestId("project-extension-trust-banner")).toBeNull();
+  render(<ProjectTrustBanner />);
+  expect(screen.queryByTestId("project-trust-banner")).toBeNull();
   cleanup();
   harness.trusted = [];
   harness.untrusted = [];
-  render(<ProjectExtensionTrustBanner />);
-  expect(screen.queryByTestId("project-extension-trust-banner")).toBeNull();
+  render(<ProjectTrustBanner />);
+  expect(screen.queryByTestId("project-trust-banner")).toBeNull();
+});
+
+it("asks for trust when only registered Editor Utilities are held back", () => {
+  harness.untrusted = [];
+  harness.utilities = ["assets/Tools.class.hasset"];
+  render(<ProjectTrustBanner />);
+  const banner = screen.getByTestId("project-trust-banner");
+  expect(banner.textContent).toContain("Editor Utilities");
+  expect(banner.textContent).not.toContain("Extensions (");
 });

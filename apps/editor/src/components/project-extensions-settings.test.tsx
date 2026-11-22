@@ -18,13 +18,13 @@ vi.mock("../context/app-settings-context", async () => {
   const { defaultEngineSettings } = await import("@haptic/vfs");
   return {
     useAppSettings: () => ({
-      settings: { ...defaultEngineSettings(), trustedProjectExtensions: harness.trusted },
+      settings: { ...defaultEngineSettings(), trustedProjects: harness.trusted },
       version: 1,
       hydrated: true,
       updateSettings: async (mutate: (settings: ReturnType<typeof defaultEngineSettings>) => void) => {
-        const next = { ...defaultEngineSettings(), trustedProjectExtensions: [...harness.trusted] };
+        const next = { ...defaultEngineSettings(), trustedProjects: [...harness.trusted] };
         mutate(next);
-        harness.trusted = next.trustedProjectExtensions;
+        harness.trusted = next.trustedProjects;
       },
       updateDebuggerDefaults: async () => {},
     }),
@@ -99,7 +99,7 @@ describe("ProjectExtensionsSettings", () => {
   it("trusts and revokes this project's Extensions on this computer, keyed by its folder and GUID", async () => {
     harness.trusted = [];
     render(<ProjectExtensionsSettings />);
-    const trust = screen.getByRole("switch", { name: "Trust Project Extensions" });
+    const trust = screen.getByRole("switch", { name: "Trust This Project" });
     expect(trust.getAttribute("aria-checked")).toBe("false");
     fireEvent.click(trust);
     const key = harness.service!.projectTrustKey("project-guid")!;
@@ -107,7 +107,7 @@ describe("ProjectExtensionsSettings", () => {
     cleanup();
 
     render(<ProjectExtensionsSettings />);
-    fireEvent.click(screen.getByRole("switch", { name: "Trust Project Extensions" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Trust This Project" }));
     await waitFor(() => expect(harness.trusted).toEqual([]));
   });
 

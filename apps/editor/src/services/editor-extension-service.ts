@@ -55,14 +55,14 @@ export interface ExtensionSnapshot {
  * project GUID. A copy of a trusted project in another folder, or another
  * project placed in a trusted folder, has a different key and is not trusted.
  */
-export function projectExtensionTrustKey(folderId: string, projectGuid: string): string {
+export function projectTrustKeyFor(folderId: string, projectGuid: string): string {
   return JSON.stringify([folderId, projectGuid]);
 }
 
 /** Why Play, Preview Build or export cannot link a project's gameplay Extensions. */
 export function untrustedExtensionsMessage(names: readonly string[]): string {
   return `Project Extensions are not trusted on this computer, so ${names.join(", ")} cannot run. `
-    + "Choose Trust Project Extensions in Project Settings > Project Extensions if you trust this project.";
+    + "Turn on Trust This Project in Project Settings > Project Extensions if you trust this project.";
 }
 
 export interface EditorExtensionWriteOptions {
@@ -217,7 +217,7 @@ export class EditorExtensionService {
   /** The open project's Workspace Trust key, or null with no folder open. */
   projectTrustKey(projectGuid: string): string | null {
     const folder = this.storage.getCurrentFolder();
-    return folder ? projectExtensionTrustKey(folder.id, projectGuid) : null;
+    return folder ? projectTrustKeyFor(folder.id, projectGuid) : null;
   }
   /** Records that this editor just created the open project, so it is trusted without asking. */
   noteCreatedProject(projectGuid: string): void {
