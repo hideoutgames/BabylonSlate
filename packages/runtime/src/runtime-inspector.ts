@@ -149,6 +149,9 @@ export class RuntimeInspector {
     if (target instanceof Actor) {
       for (const [key, name, typeId] of [["name", "Name", "string"], ["visible", "Visible", "bool"], ["generateHitEvents", "Generate Hit Events", "bool"], ["generateOverlapEvents", "Generate Overlap Events", "bool"], ["tickOnPause", "Tick On Pause", "bool"]])
         values.set(key!, { key: key!, name: name!, typeId: typeId!, capability: "live" });
+      // Turned into whole steps when the actor spawns, as Event Tick is applied then.
+      values.set("tickInterval", { key: "tickInterval", name: "Tick Interval", typeId: "float", capability: "readOnly",
+        reason: "Set in the Class's Actor Defaults; it applies when the actor spawns." });
     }
     for (const classId of this.host.world.classRegistry.ancestry(target.classId).reverse()) {
       for (const variable of engineScriptApiFor(classId)?.variables ?? []) {
@@ -185,6 +188,7 @@ export class RuntimeInspector {
     if (target instanceof Actor && descriptor.key === "generateHitEvents") return target.generateHitEvents;
     if (target instanceof Actor && descriptor.key === "generateOverlapEvents") return target.generateOverlapEvents;
     if (target instanceof Actor && descriptor.key === "tickOnPause") return target.tickOnPause;
+    if (target instanceof Actor && descriptor.key === "tickInterval") return target.tickInterval;
     if (target instanceof ActorComponent && descriptor.key.startsWith("material:")) {
       const material = target.getVariable("materialObject");
       return material instanceof MaterialObject ? this.host.materials.describe(material)?.[descriptor.key.slice(9)] : undefined;
