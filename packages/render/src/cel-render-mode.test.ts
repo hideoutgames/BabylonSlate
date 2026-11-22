@@ -22,6 +22,7 @@ import { setSceneRenderSettings } from "./scene-render-mode";
 import { ResourceCache } from "./resource-cache";
 import { applyEnvironmentLighting } from "./environment-lighting";
 import { buildFloatDdsCubeFixture } from "@haptic/test-kit/environment-fixtures";
+import { nodeBlockName } from "./test-support/material-node-blocks";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -287,7 +288,7 @@ describe("CEL render mode", () => {
     expect(await drawsCel()).toBe(false);
     expect(mesh.material).toBe(material);
     expect(material.isFrozen).toBe(true);
-    const tint = material.getBlockByName("baseColor") as InputBlock;
+    const tint = material.getBlockByName(nodeBlockName(doc, "baseColor")) as InputBlock;
     expect(tint.value.asArray()).toEqual([0.1, 0.4, 0.8, 1]);
     setSceneRenderSettings(scene, { mode: "cel" });
     expect(await drawsCel()).toBe(true);
@@ -295,7 +296,7 @@ describe("CEL render mode", () => {
     expect(material.attachedBlocks).toEqual(blocks);
     expect(mesh.material).toBe(material);
     expect(material.isFrozen).toBe(true);
-    expect(material.getBlockByName("baseColor")).toBe(tint);
+    expect(material.getBlockByName(nodeBlockName(doc, "baseColor"))).toBe(tint);
     expect(
       compiled.setParameter("Tint", {
         kind: "color",

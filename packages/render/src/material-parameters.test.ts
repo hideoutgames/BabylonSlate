@@ -11,7 +11,8 @@ import {
   createDefaultMaterialDocument,
   lowerMaterialDocument,
 } from "@haptic/shader-graph";
-import { compileMaterialPlan } from "./material-compiler";
+import { compileMaterialPlan, MATERIAL_BLOCK_PREFIX } from "./material-compiler";
+import { nodeBlockName } from "./test-support/material-node-blocks";
 import { materialParameterRevision } from "./material-parameters";
 import { MaterialLibrary } from "./material-library";
 import * as snapshots from "./snapshot-apply";
@@ -48,6 +49,9 @@ function parameterDocument() {
   });
   return doc;
 }
+
+/** The block of `parameterDocument`'s Roughness parameter. */
+const ROUGHNESS = nodeBlockName(parameterDocument(), "roughness");
 
 describe("material parameter bindings", () => {
   it("validates pending writes against authored parameter names and types", () => {
@@ -87,7 +91,7 @@ describe("material parameter bindings", () => {
     ];
     const after = library.resolve(scene, "mat", edited)!;
     expect(after).not.toBe(before);
-    expect(after.getBlockByName("roughness")).toMatchObject({ value: 0.8 });
+    expect(after.getBlockByName(ROUGHNESS)).toMatchObject({ value: 0.8 });
     const invalid = { ...edited, nodes: [] };
     expect(library.resolve(scene, "mat", invalid)).toBe(after);
   });
@@ -108,9 +112,7 @@ describe("material parameter bindings", () => {
     });
     if (!compiled.ok) throw new Error("Compile failed");
     disposers.push(compiled.dispose);
-    const lighting = compiled.material.getBlockByName(
-      "color_lighting",
-    ) as import("./haptic-lighting-block").HapticLightingBlock;
+    const lighting = compiled.material.getBlockByName(`${MATERIAL_BLOCK_PREFIX}_lighting`) as import("./haptic-lighting-block").HapticLightingBlock;
     expect(lighting.baseColor.connectedPoint?.ownerBlock.getClassName()).toBe(
       "VectorSplitterBlock",
     );
@@ -120,7 +122,7 @@ describe("material parameter bindings", () => {
         value: [0.1, 0.2, 0.3, 0.6],
       }),
     ).toBe(true);
-    const input = compiled.material.getBlockByName("baseColor") as InputBlock;
+    const input = compiled.material.getBlockByName(nodeBlockName(doc, "baseColor")) as InputBlock;
     expect(input.value.asArray()).toEqual([0.1, 0.2, 0.3, 0.6]);
     const value = compiled.getParameter("Tint");
     expect(value).toEqual({ kind: "color", value: [0.1, 0.2, 0.3, 0.6] });
@@ -142,7 +144,7 @@ describe("material parameter bindings", () => {
     expect(
       compiled.setParameter("Roughness", { kind: "float", value: 0.8 }),
     ).toBe(true);
-    const input = compiled.material.getBlockByName("roughness") as InputBlock;
+    const input = compiled.material.getBlockByName(ROUGHNESS) as InputBlock;
     expect(input.value).toBe(0.8);
     expect(
       compiled.setParameter("Missing", { kind: "float", value: 0.1 }),
@@ -209,8 +211,8 @@ describe("material parameter bindings", () => {
     expect(compiled.getParameter("Tiling")).toEqual({ kind: "vec2", value: [2, 4] });
     expect(compiled.setParameter("Glow", { kind: "vec3", value: [1, 0.5, 0] })).toBe(true);
     expect(compiled.setParameter("Tiling", { kind: "vec2", value: [8, 1] })).toBe(true);
-    const glow = compiled.material.getBlockByName("glow") as InputBlock;
-    const tiling = compiled.material.getBlockByName("tiling") as InputBlock;
+    const glow = compiled.material.getBlockByName(nodeBlockName(doc, "glow")) as InputBlock;
+    const tiling = compiled.material.getBlockByName(nodeBlockName(doc, "tiling")) as InputBlock;
     expect(glow.value).toBeInstanceOf(Vector3);
     expect((glow.value as Vector3).asArray()).toEqual([1, 0.5, 0]);
     expect((tiling.value as Vector2).asArray()).toEqual([8, 1]);
@@ -239,8 +241,8 @@ describe("material parameter bindings", () => {
     const compiled = compileMaterialPlan(lowered.plan, { scene, name: "raw" });
     if (!compiled.ok) throw new Error("Compile failed");
     disposers.push(compiled.dispose);
-    const rect = compiled.material.getBlockByName("rect") as InputBlock;
-    const tint = compiled.material.getBlockByName("tint") as InputBlock;
+    const rect = compiled.material.getBlockByName(nodeBlockName(doc, "rect")) as InputBlock;
+    const tint = compiled.material.getBlockByName(nodeBlockName(doc, "tint")) as InputBlock;
     expect(rect.value).toBeInstanceOf(Vector4);
     expect(rect.convertToLinearSpace).toBe(false);
     expect(rect.isConstant).toBe(false);
@@ -278,17 +280,17 @@ describe("material parameter bindings", () => {
       ),
     ).toBe(true);
     expect(
-      (first.material.getBlockByName("roughness") as InputBlock).value,
+      (first.material.getBlockByName(ROUGHNESS) as InputBlock).value,
     ).toBe(0.9);
     expect(
-      (second.material.getBlockByName("roughness") as InputBlock).value,
+      (second.material.getBlockByName(ROUGHNESS) as InputBlock).value,
     ).toBe(0.5);
     expect(
-      (shared.material.getBlockByName("roughness") as InputBlock).value,
+      (shared.material.getBlockByName(ROUGHNESS) as InputBlock).value,
     ).toBe(0.5);
     expect(library.getParameter(scene, "mat", "Roughness", { instanceKey: "1|body" })).toEqual({ kind: "float", value: 0.9 });
     expect(library.resetParameter(scene, "mat", "Roughness", { instanceKey: "1|body" })).toBe(true);
-    expect((first.material.getBlockByName("roughness") as InputBlock).value).toBe(0.5);
+    expect((first.material.getBlockByName(ROUGHNESS) as InputBlock).value).toBe(0.5);
     expect(library.resetParameter(scene, "mat", "Missing", { instanceKey: "1|body" })).toBe(false);
     library.releaseInstance("1|body");
     expect(
@@ -354,7 +356,7 @@ describe("material parameter bindings", () => {
         textureAssetGuid: "second",
       }),
     ).toBe(true);
-    const sample = compiled.material.getBlockByName("sample") as TextureBlock;
+    const sample = compiled.material.getBlockByName(nodeBlockName(doc, "sample")) as TextureBlock;
     expect(sample.texture).toBe(second);
     expect(compiled.getParameter("Albedo")).toEqual({ kind: "texture", textureAssetGuid: "second" });
     expect(compiled.resetParameter("Albedo")).toBe(true);
@@ -440,14 +442,10 @@ describe("runtime material parameters", () => {
     const second = binding.meshes.get(2)!.material!;
     expect(first).not.toBe(second);
     expect(
-      (first as import("@babylonjs/core").NodeMaterial).getBlockByName(
-        "roughness",
-      ),
+      (first as import("@babylonjs/core").NodeMaterial).getBlockByName(ROUGHNESS),
     ).toMatchObject({ value: 0.7 });
     expect(
-      (second as import("@babylonjs/core").NodeMaterial).getBlockByName(
-        "roughness",
-      ),
+      (second as import("@babylonjs/core").NodeMaterial).getBlockByName(ROUGHNESS),
     ).toMatchObject({ value: 0.5 });
     snapshots.applyAssignMesh(scene, binding, {
       type: "assignMesh",
@@ -467,7 +465,7 @@ describe("runtime material parameters", () => {
     const write = (value: number) => snapshots.applySetMaterialParameter(binding, {
       type: "setMaterialParameter", slotId: 1, materialAssetGuid: "mat", parameterName: "Roughness", parameter: { kind: "float", value },
     });
-    const roughness = () => (binding.meshes.get(1)!.material as import("@babylonjs/core").NodeMaterial).getBlockByName("roughness");
+    const roughness = () => (binding.meshes.get(1)!.material as import("@babylonjs/core").NodeMaterial).getBlockByName(ROUGHNESS);
     // The first write gives the actor a Material of its own.
     write(0.7);
     const own = binding.meshes.get(1)!.material!;
@@ -560,9 +558,7 @@ describe("runtime material parameters", () => {
       library.materialFor(scene, "mat", { instanceKey: "1|body" }),
     ).toBeNull();
     expect(
-      (body.material as import("@babylonjs/core").NodeMaterial).getBlockByName(
-        "roughness",
-      ),
+      (body.material as import("@babylonjs/core").NodeMaterial).getBlockByName(ROUGHNESS),
     ).toMatchObject({ value: 0.5 });
   });
 
@@ -590,7 +586,7 @@ describe("runtime material parameters", () => {
     assign("hat");
     const meshes = [root, body, imported, hat, stray];
     const roughness = (mesh: Mesh) =>
-      (mesh.material as import("@babylonjs/core").NodeMaterial).getBlockByName("roughness");
+      (mesh.material as import("@babylonjs/core").NodeMaterial).getBlockByName(ROUGHNESS);
     const resolved: Array<string | undefined> = [];
     const resolve = binding.resolveMaterial!;
     binding.resolveMaterial = (guid, options) => {
@@ -661,7 +657,7 @@ describe("runtime material parameters", () => {
     for (const mesh of [root, hull, turret, late]) {
       expect(mesh.material).toBe(root.material);
       expect(
-        (mesh.material as import("@babylonjs/core").NodeMaterial).getBlockByName("roughness"),
+        (mesh.material as import("@babylonjs/core").NodeMaterial).getBlockByName(ROUGHNESS),
       ).toMatchObject({ value: 0.3 });
     }
   });
@@ -728,7 +724,7 @@ describe("runtime material parameters", () => {
       (
         binding.meshes.get(1)!
           .material as import("@babylonjs/core").NodeMaterial
-      ).getBlockByName("roughness"),
+      ).getBlockByName(ROUGHNESS),
     ).toMatchObject({ value: 0.8 });
   });
 });

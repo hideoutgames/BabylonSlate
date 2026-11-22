@@ -27,6 +27,7 @@ export * from "./canvas-drawing-buffer";
 export * from "./draw-calls";
 export { DRAW_PASSES, type DrawPass, type DrawPassCounts } from "./draw-passes";
 export type { OverlayAloneReason, OverlayBatchStats, OverlayBatchWork } from "./overlay-draw-batcher";
+export type { LayerFrameStats } from "./layer-frame-stats";
 export { verifyRetainedOverlayBatches } from "./overlay-draw-batcher";
 export { drawLayersFullPath, verifyLayerDrawLists } from "./layer-draw-list";
 export type { InstancePoolDiagnostics, InstancingIneligibility } from "./instance-pool";
