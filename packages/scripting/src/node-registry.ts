@@ -1,3 +1,4 @@
+import type { TrustGateKind } from "@haptic/core";
 import type { PinType } from "./types";
 import type { GraphNode, GraphPin, LogicGraph } from "./ir";
 import { registerDevelopmentOnlyByDefaultTypeId } from "./development-only";
@@ -112,6 +113,14 @@ export type NodeDefinition = {
    */
   developmentOnlyByDefault?: boolean;
   /**
+   * Workspace Trust: in a project this computer does not trust, Play, Simulate, Preview Build and
+   * packaging refuse a script whose compiled code holds this node. The compiler records every such
+   * node it emits (`CompileResult.trustGatedNodes`); a node opts in with this one field.
+   */
+  trustGate?: TrustGateKind;
+  /** Narrows `trustGate` by the node's properties: the node is gated only when this holds. */
+  trustGateWhen?: (properties: Record<string, unknown>) => boolean;
+  /**
    * Structured control-flow discriminator. Preferred over scattered typeId
    * checks for Switch On Int / String, loops / Break, and stateful flow.
    */
@@ -124,6 +133,15 @@ export function isPureNode(
   node: { properties: Record<string, unknown> },
 ): boolean {
   return def?.pure === true || def?.pureWhen?.(node.properties) === true;
+}
+
+/** The trust kind `node` needs, or undefined when its definition is not gated or `trustGateWhen` excludes it. */
+export function trustGateOf(
+  def: Pick<NodeDefinition, "trustGate" | "trustGateWhen"> | undefined,
+  node: { properties: Record<string, unknown> },
+): TrustGateKind | undefined {
+  if (!def?.trustGate) return undefined;
+  return def.trustGateWhen && !def.trustGateWhen(node.properties) ? undefined : def.trustGate;
 }
 
 export class NodeRegistry {

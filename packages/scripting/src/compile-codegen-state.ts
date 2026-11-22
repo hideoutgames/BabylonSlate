@@ -1,4 +1,4 @@
-import { generatedCommentText } from "@haptic/core";
+import { generatedCommentText, type TrustGatedNode } from "@haptic/core";
 import type { GraphNode, LogicGraph } from "./ir";
 import { findPin } from "./ir";
 import { isPureNode, type HoistBodyAnchor } from "./node-registry";
@@ -103,10 +103,10 @@ export type CodegenState = {
   readonly outputDecls: Map<string, string>;
   isAsync: boolean;
   /**
-   * Execute JavaScript nodes with a body that code generation reached: exactly the authored code
-   * this module carries, which Workspace Trust gates (`CompileResult.executeJavaScriptNodes`).
+   * Trust-gated nodes (`NodeDefinition.trustGate`) that code generation reached, by node id: exactly
+   * the gated code this module carries (`CompileResult.trustGatedNodes`).
    */
-  readonly executeJavaScriptNodes: Set<string>;
+  readonly trustGatedNodes: Map<string, TrustGatedNode>;
 };
 
 /**
@@ -160,7 +160,7 @@ export function createCodegenState(
     epochFragments: [],
     outputDecls: new Map<string, string>(),
     isAsync: false,
-    executeJavaScriptNodes: new Set<string>(),
+    trustGatedNodes: new Map<string, TrustGatedNode>(),
   };
 }
 

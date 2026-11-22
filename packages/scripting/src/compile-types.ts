@@ -1,4 +1,4 @@
-import type { TagRegistry } from "@haptic/core";
+import type { TagRegistry, TrustGatedNode } from "@haptic/core";
 import type { NodeRegistry } from "./node-registry";
 
 export type CompileAnchor = {
@@ -38,10 +38,11 @@ export type CompileResult = {
   isAsync: boolean;
   entryPoints: CompiledEntryPoint[];
   /**
-   * Ids of the Execute JavaScript nodes with a body whose code this module carries. An unrooted,
-   * stripped or empty node is not here, as none of its code ships.
+   * The trust-gated nodes (`NodeDefinition.trustGate`) whose code this module carries: Execute
+   * JavaScript with a body, Open URL and Extension nodes. An unrooted, stripped or excluded node
+   * (an empty Execute JavaScript) is not here, as none of its code ships.
    */
-  executeJavaScriptNodes: string[];
+  trustGatedNodes: TrustGatedNode[];
 };
 
 export type CompileOptions = {

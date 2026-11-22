@@ -57,12 +57,15 @@ describe("AnimGraphPreviewSession", () => {
     expect(session.getSnapshot().state?.stateId).toBe("run");
   });
 
-  it("never loads a rule script that carries Execute JavaScript, as the preview runs without a click", async () => {
+  it.each([
+    { nodeId: "js", kind: "executeJavaScript" as const, title: "Execute JavaScript" },
+    { nodeId: "ext", kind: "extension" as const, title: "Read Sensor" },
+  ])("never loads a rule script that carries a trust-gated node ($title), as the preview runs without a click", async (gated) => {
     const doc = locomotion();
     const session = new AnimGraphPreviewSession();
     session.setDocument(doc, GUID);
     const scripts = compileAnimGraphScripts([{ guid: GUID, path: "assets/Loco.anim3d.hasset", document: doc }]);
-    await session.loadScripts(scripts.map((script) => script.classId.startsWith("AnimRule:") ? { ...script, executeJavaScriptNodes: ["js"] } : script));
+    await session.loadScripts(scripts.map((script) => script.classId.startsWith("AnimRule:") ? { ...script, trustGatedNodes: [gated] } : script));
     session.setValue("Go", true);
     session.tick(ANIM_PREVIEW_STEP_SECONDS);
     expect(session.getSnapshot().state?.stateId).toBe("idle");

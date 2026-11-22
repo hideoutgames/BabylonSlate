@@ -258,12 +258,19 @@ export function useProjectLifecycle({
     ],
   );
 
-  const attachEnginePlugins = useCallback(async (forNewProject = false) => {
-    const storage = forNewProject
-      ? await (await ensureEnginePluginLibrary()).createStorageSnapshot({ forNewProject: true })
+  /**
+   * A new project (`newProject`) copies this computer's Engine Plugins library; its plugins not bundled
+   * with Haptic that hold Execute JavaScript are included only when `reviewExecuteJavaScript` confirms them.
+   */
+  const attachEnginePlugins = useCallback(async (newProject?: Pick<CreateProjectOptions, "reviewExecuteJavaScript">) => {
+    const storage = newProject
+      ? await (await ensureEnginePluginLibrary()).createStorageSnapshot({
+        forNewProject: true,
+        ...(newProject.reviewExecuteJavaScript ? { reviewExecuteJavaScript: newProject.reviewExecuteJavaScript } : {}),
+      })
       : await ensureEnginePluginStorage();
     projectService.setEnginePluginStorage(storage);
-    projectService.setEngineExtensionStorage(forNewProject
+    projectService.setEngineExtensionStorage(newProject
       ? await (await ensureEngineExtensionLibrary()).createStorageSnapshot()
       : await ensureEngineExtensionStorage());
   }, [projectService]);
@@ -284,7 +291,7 @@ export function useProjectLifecycle({
   const createEmptyProject = useCallback(
     async (name: string, options?: CreateProjectOptions): Promise<CreateProjectOutcome> => {
       if (!await documentTransitions.check({ kind: "replace-project" })) return "refused";
-      await attachEnginePlugins(true);
+      await attachEnginePlugins({ reviewExecuteJavaScript: options?.reviewExecuteJavaScript });
       const { document, layouts, created } =
         await projectService.createEmptyProject(name, options);
       options?.onPhase?.("opening");
@@ -305,7 +312,7 @@ export function useProjectLifecycle({
         throw new Error(`Unknown template: ${templateId}`);
       }
       if (!await documentTransitions.check({ kind: "replace-project" })) return "refused";
-      await attachEnginePlugins(true);
+      await attachEnginePlugins({ reviewExecuteJavaScript: options?.reviewExecuteJavaScript });
       const { document, layouts } =
         await projectService.createFromTemplate({
           templateFiles: await loadSelectedTemplateFiles(template.id),
