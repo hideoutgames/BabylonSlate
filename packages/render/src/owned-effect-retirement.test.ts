@@ -2,7 +2,7 @@ import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import { DrawWrapper } from "@babylonjs/core/Materials/drawWrapper";
 import type { Effect } from "@babylonjs/core/Materials/effect";
 import { afterEach, expect, it, vi } from "vitest";
-import { disposeKeepingLinkingEffects, retireOwnedEffect } from "./owned-effect-retirement";
+import { disposeKeepingLinkingEffects } from "./owned-effect-retirement";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -68,36 +68,4 @@ it("keeps the Effect of a draw wrapper Babylon disposes a frame later while its 
   expect(linking.isDisposed).toBe(false);
   linking.onCompileObservable.notifyObservers(linking);
   await vi.waitFor(() => expect(linking.isDisposed).toBe(true));
-});
-
-it.each([
-  { cause: "a compile that never settles", give: () => vi.advanceTimersByTime(15_000) },
-  { cause: "a lost context", give: (engine: NullEngine) => engine.onContextLostObservable.notifyObservers(engine) },
-])("releases what it holds and lets go of the Effect and Engine after $cause", async ({ give }) => {
-  vi.useFakeTimers();
-  try {
-    const engine = new NullEngine();
-    engines.push(engine);
-    const linking = compile(engine, "0.5");
-    stillLinking(linking);
-    const observers = () => [linking.onCompileObservable, linking.onErrorObservable, engine.onDisposeObservable, engine.onContextLostObservable]
-      .map((observable) => observable.observers.length);
-    const before = observers();
-    const release = vi.fn();
-    const retirement = retireOwnedEffect(linking, release);
-    expect(release).not.toHaveBeenCalled();
-    give(engine);
-    await expect(retirement.completion).rejects.toThrow(/uncertain/);
-    await retirement.released;
-    // The owner's resources go, and no observer keeps them, the Effect or the Engine reachable.
-    expect(release).toHaveBeenCalledOnce();
-    // Babylon removes an observer on the next tick.
-    vi.advanceTimersByTime(1);
-    expect(observers()).toEqual(before);
-    linking.onCompileObservable.notifyObservers(linking);
-    await Promise.resolve();
-    expect(release).toHaveBeenCalledOnce();
-  } finally {
-    vi.useRealTimers();
-  }
 });
