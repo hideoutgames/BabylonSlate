@@ -111,8 +111,8 @@ describe("binary storage transport", () => {
     expect(await storage.readBinary("assets/a b+c.bin")).toEqual(bytes);
 
     expect(host.requests.map((request) => request.url)).toEqual([
-      "haptic-storage://bridge/launch-token/file?directory=DOCUMENTS&path=BabylonSlate%2Fprojects%2FMy%20Game%2Fassets%2Fa%20b%2Bc.bin&size=300",
-      "haptic-storage://bridge/launch-token/file?directory=DOCUMENTS&path=BabylonSlate%2Fprojects%2FMy%20Game%2Fassets%2Fa%20b%2Bc.bin",
+      "haptic-storage://bridge/launch-token/file?directory=DOCUMENTS&path=Projects%2FMy%20Game%2Fassets%2Fa%20b%2Bc.bin&size=300",
+      "haptic-storage://bridge/launch-token/file?directory=DOCUMENTS&path=Projects%2FMy%20Game%2Fassets%2Fa%20b%2Bc.bin",
     ]);
     expect(host.requests.map((request) => request.method)).toEqual(["POST", "GET"]);
     expect(readFile).not.toHaveBeenCalled();
