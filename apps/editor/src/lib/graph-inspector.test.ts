@@ -40,7 +40,7 @@ describe("Value units", () => {
 
 describe("Range Structure rows", () => {
   const schemas = mergeEngineTypeSchemas({ structs: {
-    tuning: { id: "Tuning", name: "Tuning", fields: [{ id: "SpawnCount", name: "SpawnCount", typeId: "struct", typeClassId: "engine:IntRange" }, { id: "Label", name: "Label", typeId: "string" }] },
+    tuning: { name: "Tuning", fields: [{ id: "SpawnCount", name: "SpawnCount", typeId: "struct", typeClassId: "engine:IntRange" }, { id: "Label", name: "Label", typeId: "string" }] },
   } });
 
   it("edits a range variable as one Min – Max row and reads crossing ends as swapped", () => {
@@ -69,7 +69,7 @@ describe("Range Structure rows", () => {
     const [row, ...rest] = variableDefaultPropertyRows("struct", curve, onChange, { typeClassId: "engine:FloatCurve", schemas });
     expect(rest).toEqual([]);
     expect(row).toMatchObject({ kind: "value-curve", curveKind: "float", value: curve });
-    const curveSchemas = mergeEngineTypeSchemas({ structs: { fx: { id: "Fx", name: "Fx", fields: [{ id: "Tint", name: "Tint", typeId: "struct", typeClassId: "engine:ColorCurve" }] } } });
+    const curveSchemas = mergeEngineTypeSchemas({ structs: { fx: { name: "Fx", fields: [{ id: "Tint", name: "Tint", typeId: "struct", typeClassId: "engine:ColorCurve" }] } } });
     const [tint] = variableDefaultPropertyRows("struct", {}, onChange, { typeClassId: "fx", schemas: curveSchemas });
     expect(tint).toMatchObject({ kind: "value-curve", curveKind: "color", label: "Tint" });
   });
