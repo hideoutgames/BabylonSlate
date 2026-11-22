@@ -1,3 +1,4 @@
+import { assetSourceHeader } from "./installed-asset";
 import { sniffSourceImageSize } from "./image-size";
 
 /** Normalized AABB in texture/frame space. Default is the full image. */
@@ -90,13 +91,14 @@ export function applyTexturePixelSizeToSprite(
 /** Fill missing Sprite pixel sizes from Texture source bytes (PNG, JPEG, WebP, GIF). */
 export function hydrateSpritePixelSizes(
   sprites: ReadonlyMap<string, SpritePayload>,
-  textureBytes: ReadonlyMap<string, Uint8Array>,
+  textureBytes: ReadonlyMap<string, Uint8Array | Blob>,
 ): Map<string, SpritePayload> {
   const next = new Map<string, SpritePayload>();
   for (const [guid, sprite] of sprites) {
     next.set(guid, applyTexturePixelSizeToSprite(sprite, (textureGuid) => {
-      const bytes = textureBytes.get(textureGuid);
-      return bytes ? sniffSourceImageSize(bytes) : null;
+      const source = textureBytes.get(textureGuid);
+      const header = source ? assetSourceHeader(source) : undefined;
+      return header ? sniffSourceImageSize(header) : null;
     }));
   }
   return next;

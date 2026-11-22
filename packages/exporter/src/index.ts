@@ -56,6 +56,8 @@ export {
   defaultPlayerIndexHtml,
   SAFE_ZIP_MTIME,
 } from "./export-game";
+export { COMPLEX_COLLISION_EXPORT_TYPE, complexCollisionExportGuid, decodeComplexCollisionMesh, encodeComplexCollisionMesh, modelGuidFromComplexCollisionExport } from "./complex-collision";
+export { EXPORT_ASSET_FORMS, exportAssetForm, stripEditorOnlyFields, type ExportAssetForm } from "./export-asset-forms";
 export type {
   ExportIndexedAsset,
   ExportClosureInput,

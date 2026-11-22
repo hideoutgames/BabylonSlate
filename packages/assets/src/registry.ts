@@ -1,9 +1,7 @@
 import type { ProjectStorage, StorageReadOptions } from "@haptic/core";
 import { ENGINE_VERSION, SourceRevisionChangedError } from "@haptic/core";
-import {
-  ASSET_DEPENDENCY_METADATA_VERSION,
-  type HassetHeader,
-} from "./hasset";
+import type { HassetHeader } from "./hasset";
+import { ASSET_DEPENDENCY_METADATA_VERSION } from "./asset-dependencies";
 import { createVfsBlobStore, type BlobStore } from "./blob-store";
 import { contentRootBlobFolder, type ContentRoot } from "./content-root";
 import { BLOBS_DIR } from "./hproject";

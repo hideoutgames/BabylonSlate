@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { generateNavMesh, initNavigation } from "./recast-backend";
+import { generateNavMesh } from "./bake";
+import { initNavigation } from "./recast-backend";
 import { navMeshDebugPrimitives } from "./debug-primitives";
 import { trackRecastHandles } from "./recast-test-handles";
 

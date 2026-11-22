@@ -25,6 +25,12 @@ describe("stack parser", () => {
     });
   });
 
+  it("parses frames of any URL scheme, the desktop's app: and iOS's capacitor: included", () => {
+    expect(parseStackFrames("foo@capacitor://localhost/player.js:7:9")[0]).toMatchObject({ url: "capacitor://localhost/player.js", line: 7, column: 9 });
+    expect(parseStackFrames("Error: boom\n    at foo (app://game/player.js:3:4)")[0]).toMatchObject({ url: "app://game/player.js", line: 3, column: 4 });
+    expect(parseStackFrames("bar@native")).toEqual([]);
+  });
+
   it("looks up the nearest preceding anchor", () => {
     const anchors: AnchorEntry[] = [
       { line: 1, column: 0, assetGuid: "a", graphId: "g", nodeId: "n1" },

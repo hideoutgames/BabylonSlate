@@ -1,3 +1,5 @@
+// Its FrameGraph work needs Babylon's engine extensions on any Engine, including one a caller made without createEngine.
+import "./babylon-registrations";
 import type { Camera } from "@babylonjs/core/Cameras/camera";
 import type { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
 import type { Light } from "@babylonjs/core/Lights/light";

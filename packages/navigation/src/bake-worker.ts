@@ -2,7 +2,7 @@
  * Dedicated navmesh bake worker. Hosts post generate input; this thread runs
  * Recast solo or tile-cache generate and returns export bytes.
  */
-import { generateNavMesh } from "./recast-backend";
+import { generateNavMesh } from "./bake";
 import type { NavMeshGenerateInput } from "./types";
 
 type BakeRequest = {

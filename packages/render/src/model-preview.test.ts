@@ -15,10 +15,9 @@ import {
   cookGeneratedCollisionFromGltf,
   encodeGlbJsonBin,
   splitGlbJsonBin,
-  decodeHasset,
   embedGlbExternalImages,
-  encodeHasset,
 } from "@haptic/assets";
+import { decodeHasset, encodeHasset } from "@haptic/assets/hasset";
 import { createTestEngine } from "./test-support/test-engine";
 import { isEngineDefaultMaterial } from "./default-material";
 import {

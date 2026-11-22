@@ -7,13 +7,13 @@ import {
   type SerializedScene,
 } from "@haptic/core";
 import {
-  generateNavMesh,
   initNavigation,
   mergeNavBakeMeshes,
   recastWalkableQuadFromXy,
   solidBlockerMesh,
   type NavCostVolume,
 } from "@haptic/navigation";
+import { generateNavMesh } from "@haptic/navigation/bake";
 import { actorGuidIndex, actorWorldTransform, WorldTransformComposer } from "./actor-world-transform";
 import { createInProcessRuntime } from "./driver";
 
