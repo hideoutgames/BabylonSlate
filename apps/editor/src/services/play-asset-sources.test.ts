@@ -2,9 +2,9 @@ import { readFileSync } from "node:fs";
 import v8 from "node:v8";
 import { runInNewContext } from "node:vm";
 import { describe, expect, it, vi } from "vitest";
-import { createActor, createDocumentRef, createEmptyProject, documentId, normalizeSceneLayer, SCENE_SCHEMA_VERSION } from "@haptic/core";
+import { createActor, createDefaultSceneSettings, createDocumentRef, createEmptyProject, documentId, normalizeSceneLayer, SCENE_SCHEMA_VERSION } from "@haptic/core";
 import { MemoryStorageAdapter } from "@haptic/vfs";
-import { createInProcessRuntime } from "@haptic/runtime";
+import { applyRuntimeSourceControl, createInProcessRuntime } from "@haptic/runtime";
 import type { CommandMessage, ScriptBundleEntry } from "@haptic/bridge";
 import {
   AssetFormatVersionError,
@@ -907,7 +907,7 @@ describe("Play source ownership", () => {
     const catalog = playAnimClipCatalog(registry.list(), await playRootMotionTracks(host, prepared.content.animClipCatalog, signal));
 
     // The renderer binds the Model's Throw group to the Animation a slot names.
-    expect(prepared.sources.assets.modelClipAnimationGuids?.get("model")?.get("Throw")).toBe("throw");
+    expect(prepared.sources.assets?.modelClipAnimationGuids?.get("model")?.get("Throw")).toBe("throw");
     expect(prepared.game.modelBytes.has("model")).toBe(true);
     // Travel in the Model's units (import scale 2), from the one read of the Animation's document.
     expect(catalog.find((entry) => entry.guid === "throw")?.rootMotion).toEqual(
@@ -1011,6 +1011,59 @@ describe("Play source ownership", () => {
     expect(content?.type === "loadSceneContent" ? content.audioAssetGuids : null).toEqual(["audio"]);
     expect(systems.game.manifest.assets.map((entry) => entry.guid)).toEqual(["system"]);
     systems.release(); scene.release(); loading.dispose();
+  });
+
+  it("keeps the session's clips, with their root motion, playable after a later acquisition publishes its content", async () => {
+    const storage = new MemoryStorageAdapter();
+    await storage.pickProjectFolder();
+    await storage.mkdir("assets");
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const rootMotion = { bone: "hips", track: { durationMs: 1000, stepMs: 500, x: [0, 0.5, 1], z: [0, 0, 0], yaw: [0, 0, 0] } };
+    // A clip no closure holds: the session catalog lists it from its header, with the track read from its document.
+    await registry.createAsset("project", "walk.hasset", {
+      type: "Animation", name: "Walk", guid: "walk", version: currentFormat("Animation"), dependencies: [], chunks: [],
+      payload: { ...normalizeAnimationPayload({ clipName: "Walk", durationMs: 1000, rootMotion }) },
+    });
+    const tree = { name: "Guard", rootId: "anim", blackboardGuid: null, nodes: [{ id: "anim", kind: "task",
+      classId: "bt.task.playAnimation", children: [], decorators: [], services: [], properties: { clipKind: "animation", clipAssetGuid: "walk" } }] };
+    await registry.createAsset("project", "tree.hasset", {
+      type: "BehaviourTree", name: "Guard", guid: "tree", version: currentFormat("BehaviourTree"), dependencies: [], chunks: [], payload: tree,
+    });
+    const scene = { name: "Scene", viewportMode: "3d", settings: createDefaultSceneSettings(), folders: [],
+      actors: [createActor("guard", "Guard", { components: [{ id: "bt", classId: "BehaviourTreeComponent", properties: { treeGuid: "tree" } }] })] };
+    await registry.createAsset("project", "scene.hasset", {
+      type: "Scene", name: "Scene", guid: "scene", version: currentFormat("Scene"), dependencies: [], chunks: [], payload: scene,
+    });
+    await registry.createAsset("project", "room.hasset", {
+      type: "Scene", name: "Room", guid: "room", version: currentFormat("Scene"), dependencies: [], chunks: [],
+      payload: { name: "Room", viewportMode: "3d", settings: createDefaultSceneSettings(), folders: [], actors: [] },
+    });
+    const loading = createRegistryAssetLoadingService(registry, { projectId: "session-clips" });
+    const host = { registry, project: createEmptyProject("Session Clips"), createScope: (owner: string) => loading.createScope(owner),
+      compile: async () => ({ bundles: [], diagnostics: [] }) };
+    const signal = new AbortController().signal;
+    const startup = await acquirePlayAssetSources(host, ["scene"], { consumer: "Play", signal });
+    expect(startup.required.has("walk")).toBe(false);
+    const session = playAnimClipCatalog(registry.list(), await playRootMotionTracks(host, startup.content.animClipCatalog, signal));
+    const commands: CommandMessage[] = [];
+    const runtime = createInProcessRuntime({ seed: 1, maxActors: 4, dt: 0.1, preferSoftwarePhysics: true,
+      playScene: startup.game.scenes.get("scene")!, animClipCatalog: session, onCommand: (command) => commands.push(command) });
+    try {
+      for (const control of startup.controls) await applyRuntimeSourceControl(runtime, control);
+      // A streamed Scene's set joins the session, and the merged content reaches the runtime.
+      const live = new Set([startup, await acquirePlayAssetSources(host, ["room"], { consumer: "Stream", signal })]);
+      const controls = createMergedPlaySourceControls(() => live, () => session);
+      const content = controls().find((control) => control.type === "loadSceneContent");
+      expect(content?.type === "loadSceneContent" ? content.animClipCatalog?.find((entry) => entry.guid === "walk") : null)
+        .toMatchObject({ clipName: "Walk", rootMotion });
+      for (const control of controls()) await applyRuntimeSourceControl(runtime, control);
+      runtime.start();
+      runtime.realizePlayWorld();
+      runtime.tick();
+      expect(commands.filter((command) => command.type === "animState").at(-1)).toMatchObject({ clipAssetGuid: "walk", clipName: "Walk" });
+      for (const set of live) set.release();
+    } finally { runtime.stop(); loading.dispose(); }
   });
 
   it("merges overlapping acquisitions once per GUID and rebuilds controls only when the live sets change", async () => {

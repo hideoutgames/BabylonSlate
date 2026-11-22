@@ -294,6 +294,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     playSourceLifetimeRef,
     playSourceSetsRef,
     initialPlaySourceRef,
+    sessionClipCatalogRef,
     mergedSourceControls,
     sessionSources,
     setSessionSources,
@@ -937,11 +938,14 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         setExtensionLibraries(await current(libraries));
         setScripts(nextScripts);
         setDiagnostics(nextDiagnostics);
-        playContentActions.setPrepared(preparedPlayContent(prepared, {
+        const preparedContent = preparedPlayContent(prepared, {
           registry: assetRegistry,
           settings: projectDocument.settings,
           sceneGuid: effectiveGuid,
-        }, await current(rootMotionTracks)));
+        }, await current(rootMotionTracks));
+        // The runtime boots with this catalog, and every source union it is sent later keeps it.
+        sessionClipCatalogRef.current = preparedContent.animClipCatalog;
+        playContentActions.setPrepared(preparedContent);
         setPlayInputAssets(await current(collectPlayInputAssets(prepared.required, prepared.game.decodedPayloads)));
         playContentActions.setAudioAndNavigation(playAudioAndNavigation(prepared, effectiveGuid));
         setPlayAudioSourceLoader(() => async ({ assetGuid, chunkId }: Parameters<PlayAudioSourceLoader>[0]) => {
@@ -1016,6 +1020,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       playSourceHostRef,
       playSourceSetsRef,
       initialPlaySourceRef,
+      sessionClipCatalogRef,
       setSessionSources,
       beginSimulationDocument,
       collectPlayInputAssets,

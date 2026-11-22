@@ -1005,8 +1005,12 @@ function releasePackedContent(content: PackedGameContent): void {
 
 export type PreparedPlaySources = Awaited<ReturnType<typeof acquirePlayAssetSources>>;
 
-/** Rebuild only container unions; retained collision/animation results are reused. */
-export function mergePreparedPlaySources(entries: Iterable<PreparedPlaySources>) {
+/**
+ * Rebuild only container unions; retained collision/animation results are reused. `sessionClips`, the session's clip
+ * catalog (`playAnimClipCatalog`), is what the runtime's catalog holds besides the prepared clips: a `loadSceneContent`
+ * replaces the runtime's catalog, so it carries the session's clips with the prepared ones in their place.
+ */
+export function mergePreparedPlaySources(entries: Iterable<PreparedPlaySources>, sessionClips: readonly AnimClipCatalogEntry[] = []) {
   const prepared = [...entries];
   if (!prepared.length) return null;
   const first = prepared[0];
@@ -1022,29 +1026,56 @@ export function mergePreparedPlaySources(entries: Iterable<PreparedPlaySources>)
   mergeContainers(content, rest.map((next) => next.content));
   mergeContainers(content.audioLibrary, rest.map((next) => next.content.audioLibrary));
   mergeContainers(content.particleLibrary, rest.map((next) => next.content.particleLibrary));
-  const controls = packedSourceControls(game, content);
+  const controls = withSessionClips(packedSourceControls(game, content), sessionClips);
   return { game, content, controls };
 }
 
 /**
- * Merged source controls for the live preparations, rebuilt only when the set of
- * preparations changes. Prepared content is immutable once acquired, so membership
- * identifies the result. `reset` drops the retained union at session end.
+ * `controls` with their `loadSceneContent` holding the session's clips in order, each prepared clip (read from the
+ * closure's documents) in place of the session's entry, then any prepared clip the session does not list.
  */
-export function createMergedPlaySourceControls(entries: () => Iterable<PreparedPlaySources>): {
+function withSessionClips(controls: ControlMessage[], sessionClips: readonly AnimClipCatalogEntry[]): ControlMessage[] {
+  if (!sessionClips.length) return controls;
+  return controls.map((control) => {
+    if (control.type !== "loadSceneContent") return control;
+    const prepared = (control.animClipCatalog ?? []) as readonly AnimClipCatalogEntry[];
+    const byGuid = new Map(prepared.map((entry) => [entry.guid, entry]));
+    const listed = new Set<string>();
+    const clips = sessionClips.map((entry) => { listed.add(entry.guid); return byGuid.get(entry.guid) ?? entry; });
+    for (const entry of prepared) if (!listed.has(entry.guid)) clips.push(entry);
+    return { ...control, animClipCatalog: clips };
+  });
+}
+
+const NO_SESSION_CLIPS: readonly AnimClipCatalogEntry[] = [];
+
+/**
+ * Merged source controls for the live preparations, rebuilt only when the set of
+ * preparations or the session's clip catalog changes. Prepared content is immutable
+ * once acquired, so membership identifies the result. `reset` drops the retained
+ * union at session end.
+ */
+export function createMergedPlaySourceControls(
+  entries: () => Iterable<PreparedPlaySources>,
+  /** The session's clip catalog, which every merged `loadSceneContent` keeps (`mergePreparedPlaySources`). */
+  sessionClips: () => readonly AnimClipCatalogEntry[] = () => NO_SESSION_CLIPS,
+): {
   (): ControlMessage[];
   reset(): void;
 } {
   let members: PreparedPlaySources[] = [];
+  let clips: readonly AnimClipCatalogEntry[] | null = null;
   let merged: ControlMessage[] | null = null;
   const get = () => {
     const current = [...entries()];
-    if (merged && current.length === members.length && current.every((entry, index) => entry === members[index])) return merged;
+    const currentClips = sessionClips();
+    if (merged && currentClips === clips && current.length === members.length && current.every((entry, index) => entry === members[index])) return merged;
     members = current;
-    merged = mergePreparedPlaySources(current)?.controls ?? emptyPlaySourceControls();
+    clips = currentClips;
+    merged = mergePreparedPlaySources(current, currentClips)?.controls ?? withSessionClips(emptyPlaySourceControls(), currentClips);
     return merged;
   };
-  get.reset = () => { members = []; merged = null; };
+  get.reset = () => { members = []; clips = null; merged = null; };
   return get;
 }
 
