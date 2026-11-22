@@ -104,8 +104,8 @@ it("names where the worker failed when WebKit gives no message", () => {
   const host = createPlayerWorkerHost();
   const errors: string[] = [];
   host.onError((error) => errors.push(error.message));
-  FakeWorker.instance.onerror?.({ message: "", filename: "https://example.test/player/worker-game-worker-entry.js", lineno: 12, colno: 7 } as ErrorEvent);
-  expect(errors).toEqual(["The game worker failed to start or stopped unexpectedly (https://example.test/player/worker-game-worker-entry.js:12:7)."]);
+  FakeWorker.instance.onerror?.({ message: "", filename: "https://example.test/player/worker-worker-entry.js", lineno: 12, colno: 7 } as ErrorEvent);
+  expect(errors).toEqual(["The game worker failed to start or stopped unexpectedly (https://example.test/player/worker-worker-entry.js:12:7)."]);
 });
 
 it("reports a worker whose module never evaluates, and not one that started or was stopped", () => {

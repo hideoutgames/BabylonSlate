@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import { functionModuleLoader } from "./function-module-loader";
 import { InfiniteLoopError } from "@haptic/debugger";
 import { Actor, ActorComponent, ClassRegistry, InterfaceRegistry, type TickContext } from "@haptic/object-model";
 import { ScriptHost, type CompiledScript, type ScriptHostServices } from "./script-host";
@@ -7,7 +6,6 @@ import { RuntimeContinuationCancelled } from "./simulation-waits";
 
 function services(extras: Partial<ScriptHostServices> = {}): ScriptHostServices {
   return {
-    moduleLoader: functionModuleLoader,
     log: () => {},
     print: () => {},
     destroyActor: () => {},

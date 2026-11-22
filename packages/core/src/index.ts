@@ -143,6 +143,4 @@ export * from "./actor-property-references";
 export { remapScenePropertyReferences } from "./scene-property-references";
 export * from "./console-command";
 export * from "./extension-library";
-export * from "./extension-eval";
-export * from "./compiled-module";
 export * from "./platform-directives";

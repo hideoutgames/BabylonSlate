@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { functionModuleLoader } from "./function-module-loader";
 import { Actor } from "@haptic/object-model";
 import { compileGraph, type GraphNode, type LogicGraph, type NodeRegistry } from "@haptic/scripting";
 import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
@@ -43,7 +42,6 @@ describe("FunctionLibrary tween lifetime", () => {
     const messages: string[] = [];
     const errors: unknown[] = [];
     const host = new ScriptHost({
-      moduleLoader: functionModuleLoader,
       log: (_severity, _category, message) => { messages.push(message); },
       print: () => {}, destroyActor: () => {},
       executeConsoleCommand: () => ({ success: true, output: "" }),

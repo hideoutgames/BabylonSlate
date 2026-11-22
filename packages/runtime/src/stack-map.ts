@@ -15,8 +15,8 @@ export interface AnchorEntry {
   btNodeId?: string;
 }
 
-// Any URL scheme: Editor Play's `haptic:`, and a game's scripts module over `https:`, `blob:` (Preview Build), `file:`,
-// `app:` (desktop) or `capacitor:` (iOS).
+// Any URL scheme: `haptic:` sources, and the page or worker's own code over `https:`, `blob:`, `file:`, `app:` (desktop)
+// or `capacitor:` (iOS), whose frames a stack interleaves with them.
 const V8_FRAME =
   /^\s*at\s+(?:(.+?)\s+\()?([a-zA-Z][\w+.-]*:.+?):(\d+):(\d+)\)?\s*$/;
 const WEBKIT_FRAME =
@@ -77,20 +77,17 @@ export function assetGuidFromSourceUrl(url: string): string | null {
   return match ? match[1]! : null;
 }
 
-/**
- * The anchor of the innermost frame in a compiled script: a `haptic:///<label>.js` source's own table, or the table of a
- * file holding several scripts (an exported game's scripts module), keyed by its URL, where an entry with no node
- * marks where a script starts.
- */
 export function mapStackToAnchor(
   stack: string,
   tables: ReadonlyMap<string, readonly AnchorEntry[]>,
 ): AnchorEntry | null {
   for (const frame of parseStackFrames(stack)) {
-    const table = tables.get(assetGuidFromSourceUrl(frame.url) ?? frame.url);
+    const guid = assetGuidFromSourceUrl(frame.url);
+    if (!guid) continue;
+    const table = tables.get(guid);
     if (!table) continue;
     const hit = lookupAnchor(table, frame.line, frame.column);
-    if (hit?.nodeId) return hit;
+    if (hit) return hit;
   }
   return null;
 }

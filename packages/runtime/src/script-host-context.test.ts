@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { functionModuleLoader } from "./function-module-loader";
 import { RandomStream } from "@haptic/core";
 import { Actor, type TickContext } from "@haptic/object-model";
 import {
@@ -10,7 +9,6 @@ import {
 
 function services(extras: Partial<ScriptHostServices> = {}): ScriptHostServices {
   return {
-    moduleLoader: functionModuleLoader,
     log: () => {},
     print: () => {},
     destroyActor: () => {},

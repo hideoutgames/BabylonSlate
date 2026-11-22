@@ -1,11 +1,10 @@
 import { expect, it } from "vitest";
-import { functionModuleLoader } from "./function-module-loader";
 import { Actor, ActorComponent, MaterialObject, Scene, getPostProcessMaterialObject } from "@haptic/object-model";
 import { ScriptHost, type ScriptHostServices } from "./script-host";
 import type { MaterialParameterValue } from "@haptic/bridge";
 
 function services(extra: Partial<ScriptHostServices>): ScriptHostServices {
-  return { moduleLoader: functionModuleLoader, log() {}, print() {}, destroyActor() {}, executeConsoleCommand: () => ({ success: true, output: "" }),
+  return { log() {}, print() {}, destroyActor() {}, executeConsoleCommand: () => ({ success: true, output: "" }),
     delay: async () => {}, reportError() {}, ...extra };
 }
 

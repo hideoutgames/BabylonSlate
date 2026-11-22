@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { loadCompiledModule } from "./function-module-loader";
+import { loadCompiledModule } from "./module-loader";
 
 const entries = (...names: string[]) => names.map((name) => ({ name }));
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parseStackFrames, lookupAnchor, type AnchorEntry } from "./stack-map";
 import { LogRingBuffer } from "./log-ring";
-import { loadCompiledModule } from "./function-module-loader";
+import { loadCompiledModule } from "./module-loader";
 import { createInProcessRuntime } from "./driver";
 import { readSnapshotHeader, snapshotFloatCount } from "@haptic/bridge";
 
@@ -23,6 +23,12 @@ describe("stack parser", () => {
       line: 12,
       column: 3,
     });
+  });
+
+  it("parses frames of any URL scheme, the desktop's app: and iOS's capacitor: included", () => {
+    expect(parseStackFrames("foo@capacitor://localhost/player.js:7:9")[0]).toMatchObject({ url: "capacitor://localhost/player.js", line: 7, column: 9 });
+    expect(parseStackFrames("Error: boom\n    at foo (app://game/player.js:3:4)")[0]).toMatchObject({ url: "app://game/player.js", line: 3, column: 4 });
+    expect(parseStackFrames("bar@native")).toEqual([]);
   });
 
   it("looks up the nearest preceding anchor", () => {

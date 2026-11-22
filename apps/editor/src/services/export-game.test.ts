@@ -1,7 +1,3 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 import { createDefaultAnimGraph } from "@haptic/anim-graph";
 import {
@@ -16,8 +12,6 @@ import {
   isErr,
   isOk,
   SCENE_SCHEMA_VERSION,
-  compiledScriptSourceLabel,
-  type GameScriptsModule,
   type SerializedGraph,
 } from "@haptic/core";
 import { createImportedMaterialDocument } from "@haptic/shader-graph";
@@ -36,17 +30,6 @@ import { EXEC, pin } from "@haptic/scripting";
 function compiledScripts(artifact: ExportArtifact): ScriptBundleEntry[] {
   return artifact.manifest.assets.filter(asset => asset.type === "CompiledScript").map(asset =>
     JSON.parse(new TextDecoder().decode(artifact.files.get(asset.path!))));
-}
-
-/** The export's static scripts module, imported as the game worker imports it. */
-async function scriptsModule(artifact: ExportArtifact): Promise<{ text: string; module: GameScriptsModule }> {
-  const text = new TextDecoder().decode(artifact.files.get(artifact.manifest.scriptsModule!.path)!);
-  const root = mkdtempSync(path.join(tmpdir(), "game-scripts-"));
-  const file = path.join(root, "game-scripts.js");
-  writeFileSync(file, text);
-  try {
-    return { text, module: await import(/* @vite-ignore */ pathToFileURL(file).href) as GameScriptsModule };
-  } finally { rmSync(root, { recursive: true, force: true }); }
 }
 
 function asset(
@@ -978,10 +961,7 @@ describe("collectAndExportGame", () => {
     expect(result.ok).toBe(true);
     if (!isOk(result)) return;
     const registry = compiledScripts(result.value);
-    // Compiled code ships only in the scripts module, each script a function of `extensions` returning its exports.
-    expect(registry.every((script) => script.source === "")).toBe(true);
-    const { text: scripts, module } = await scriptsModule(result.value);
-    const exportsOf = (script: ScriptBundleEntry) => module.scripts[compiledScriptSourceLabel(script)]![1]({}) as Record<string, (...args: unknown[]) => unknown>;
+    const scripts = registry.map(script => script.source).join("\n");
     expect(registry.map((entry) => entry.classId)).toEqual(
       expect.arrayContaining([
         "AnimGraph:graph-1",
@@ -989,7 +969,7 @@ describe("collectAndExportGame", () => {
       ]),
     );
     expect(scripts).toContain("onInitializeAnimation");
-    expect(scripts).toContain("function evaluate(ctx)");
+    expect(scripts).toContain("export function evaluate(ctx)");
     const actor = registry.find((entry) => entry.classId === "TagActor");
     const rule = registry.find((entry) => entry.classId === "AnimRule:graph-1:idle-to-idle");
     const graphSources = result.value.manifest.assets.filter(asset => asset.type === "CompiledScript" && asset.ownerGuid === "graph-1");
@@ -999,7 +979,9 @@ describe("collectAndExportGame", () => {
     expect(rule?.assetGuid).toBe("graph-1");
     expect(actor).toBeDefined();
     expect(rule).toBeDefined();
-    const begin = exportsOf(actor!).onBeginPlay as (ctx: unknown) => void;
+    const begin = new Function(
+      `${actor!.source.replace(/export function /g, "function ")}\nreturn onBeginPlay;`,
+    )() as (ctx: unknown) => void;
     const logs: string[] = [];
     begin({
       checkInfiniteLoop: () => {},
@@ -1007,7 +989,9 @@ describe("collectAndExportGame", () => {
       log: (_severity: string, _category: string, value: string) => logs.push(value),
     });
     expect(logs).toEqual(["State.Ready"]);
-    const evaluate = exportsOf(rule!).evaluate as (ctx: unknown) => { enter: boolean };
+    const evaluate = new Function(
+      `${rule!.source.replace(/export function /g, "function ")}\nreturn evaluate;`,
+    )() as (ctx: unknown) => { enter: boolean };
     expect(evaluate({}).enter).toBe(true);
   });
 

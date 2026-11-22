@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { functionModuleLoader } from "./function-module-loader";
 import type { CommandMessage } from "@haptic/bridge";
 import {
   SNAPSHOT_FLAG_VISIBLE,
@@ -146,7 +145,8 @@ describe("p7-play-scene-load", () => {
         },
         physicsWorld: "3d",
       },
-      (command) => commands.push(command), { moduleLoader: functionModuleLoader });
+      (command) => commands.push(command),
+    );
 
     expect(runtime.getWorld().getActors()).toHaveLength(0);
     await runtime.realizePlayWorld();
@@ -518,7 +518,8 @@ describe("p7-play-scene-load", () => {
         sceneAssetGuid: "assets/possess.scene.hasset",
         scene: cameraPossessScene(true),
       },
-      (command) => commands.push(command), { moduleLoader: functionModuleLoader });
+      (command) => commands.push(command),
+    );
     await runtime.realizePlayWorld();
 
     const possess = commands.filter((c) => c.type === "possessCamera");
@@ -535,7 +536,7 @@ describe("p7-play-scene-load", () => {
     const scene = cameraPossessScene(true);
     scene.actors.push(createActor("cam", "Camera Copy"));
     const runtime = createRuntimeFromLoad({ type: "load", sceneAssetGuid: "cameras", scene },
-      (command) => commands.push(command), { moduleLoader: functionModuleLoader });
+      (command) => commands.push(command));
     try {
       await expect(Promise.resolve().then(() => runtime.realizePlayWorld()))
         .rejects.toThrow('"Possess" contains duplicate actor id "cam" (actors "Camera" and "Camera Copy")');
@@ -553,7 +554,8 @@ describe("p7-play-scene-load", () => {
         sceneAssetGuid: "assets/possess.scene.hasset",
         scene: cameraPossessScene(false),
       },
-      (command) => commands.push(command), { moduleLoader: functionModuleLoader });
+      (command) => commands.push(command),
+    );
     await runtime.realizePlayWorld();
     expect(commands.some((c) => c.type === "possessCamera")).toBe(false);
     runtime.stop();
@@ -567,7 +569,7 @@ describe("p7-play-scene-load", () => {
     }));
     scene.settings.defaultCameraActorId = "default-camera";
     const runtime = createRuntimeFromLoad({ type: "load", sceneAssetGuid: "cameras", scene },
-      (command) => commands.push(command), { moduleLoader: functionModuleLoader });
+      (command) => commands.push(command));
     try {
       await runtime.realizePlayWorld();
       const possessions = commands.filter((command) => command.type === "possessCamera");
@@ -587,7 +589,8 @@ describe("p7-play-scene-load", () => {
         sceneAssetGuid: "assets/possess.scene.hasset",
         scene,
       },
-      (command) => commands.push(command), { moduleLoader: functionModuleLoader });
+      (command) => commands.push(command),
+    );
     await runtime.realizePlayWorld();
     expect(commands.some((c) => c.type === "possessCamera")).toBe(false);
     runtime.stop();
@@ -697,7 +700,8 @@ describe("p7-play-scene-load", () => {
           ],
         },
       },
-      (command) => commands.push(command), { moduleLoader: functionModuleLoader });
+      (command) => commands.push(command),
+    );
     await runtime.realizePlayWorld();
     const meshAssign = commands.filter((c) => c.type === "assignMesh");
     expect(meshAssign).toHaveLength(1);
@@ -755,7 +759,8 @@ describe("p7-play-scene-load", () => {
           ],
         },
       },
-      (command) => commands.push(command), { moduleLoader: functionModuleLoader });
+      (command) => commands.push(command),
+    );
 
     await runtime.realizePlayWorld();
     const assignment = commands.find((command) => command.type === "assignMesh");
@@ -793,7 +798,8 @@ describe("p7-play-scene-load", () => {
           ],
         },
       },
-      (command) => commands.push(command), { moduleLoader: functionModuleLoader });
+      (command) => commands.push(command),
+    );
     await runtime.realizePlayWorld();
     // A one-visual actor draws on its optimized actor mesh: its shadow flags ride the assignment, not a part.
     const casts = Object.fromEntries(commands.flatMap((command) => command.type === "assignMesh" && command.primaryComponentId
@@ -851,7 +857,8 @@ describe("p7-play-scene-load", () => {
           ],
         },
       },
-      (command) => commands.push(command), { moduleLoader: functionModuleLoader });
+      (command) => commands.push(command),
+    );
     await runtime.realizePlayWorld();
     const assigns = commands.filter((c) => c.type === "assignMesh");
     expect(assigns).toEqual(
@@ -891,7 +898,7 @@ describe("p7-play-scene-load", () => {
       { id: "wide-camera", classId: "CameraComponent", properties: { fieldOfView: 80 } },
       { id: "detail-camera", classId: "CameraComponent", properties: { fieldOfView: 35 } },
     ] })];
-    const runtime = createRuntimeFromLoad({ type: "load", sceneAssetGuid: "scene", scene }, command => commands.push(command), { moduleLoader: functionModuleLoader });
+    const runtime = createRuntimeFromLoad({ type: "load", sceneAssetGuid: "scene", scene }, command => commands.push(command));
     await runtime.realizePlayWorld();
     const assignment = commands.find(command => command.type === "assignMesh" && command.actorGuid === "rig");
     expect(assignment).toMatchObject({
@@ -949,7 +956,8 @@ describe("p7-play-scene-load", () => {
           ],
         },
       },
-      (command) => commands.push(command), { moduleLoader: functionModuleLoader });
+      (command) => commands.push(command),
+    );
     await runtime.realizePlayWorld();
     const assigns = commands.filter((c) => c.type === "assignMesh");
     expect(assigns).toEqual(
@@ -998,7 +1006,8 @@ describe("p7-play-scene-load", () => {
             ],
           },
         },
-        (command) => commands.push(command), { moduleLoader: functionModuleLoader });
+        (command) => commands.push(command),
+      );
       await runtime.realizePlayWorld();
       expect(
         commands.filter((command) => command.type === "assignMesh"),
@@ -1037,7 +1046,8 @@ describe("p7-play-scene-load", () => {
         sceneAssetGuid: "assets/main.scene.hasset",
         scene,
       },
-      (command) => commands.push(command), { moduleLoader: functionModuleLoader });
+      (command) => commands.push(command),
+    );
     await runtime.realizePlayWorld();
     expect(commands.filter((command) => command.type === "assignMaterial")).toEqual([
       {
@@ -1082,7 +1092,8 @@ describe("p7-play-scene-load", () => {
           ],
         },
       },
-      (command) => commands.push(command), { moduleLoader: functionModuleLoader });
+      (command) => commands.push(command),
+    );
     await runtime.realizePlayWorld();
     expect(commands.filter((command) => command.type === "assignMesh")).toEqual([
       expect.objectContaining({
@@ -1560,7 +1571,8 @@ describe("p7-play-scene-load", () => {
           ],
         },
       },
-      (command) => commands.push(command), { moduleLoader: functionModuleLoader });
+      (command) => commands.push(command),
+    );
     await runtime.realizePlayWorld();
     expect(commands.filter((command) => command.type === "assignMesh")).toEqual([
       {
@@ -1615,7 +1627,8 @@ describe("p7-play-scene-load", () => {
           ],
         },
       },
-      (command) => commands.push(command), { moduleLoader: functionModuleLoader });
+      (command) => commands.push(command),
+    );
     await runtime.realizePlayWorld();
     expect(commands.filter((command) => command.type === "assignMesh")).toEqual([
       {
@@ -1684,7 +1697,8 @@ describe("p7-play-scene-load", () => {
           },
         ],
       },
-      (command) => commands.push(command), { moduleLoader: functionModuleLoader });
+      (command) => commands.push(command),
+    );
     await runtime.realizePlayWorld();
     // Scene Layer actor guids are scoped to their layer instance.
     const layer = runtime.getWorld().getSceneLayers()[0]!;

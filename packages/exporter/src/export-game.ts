@@ -1,5 +1,5 @@
 import { SAFE_ZIP_MTIME } from "./zip-time";
-import { err, ok, GAME_SCRIPTS_MODULE_FILE, writeGameScriptsModule, classIdForAssetPath, clampAudioScale, DEFAULT_LOOP_COUNT, normalizeSceneLayer, normalizeSortingLayers, normalizeGarbageCollectionIntervalTicks, normalizePlayFrameCap, normalizeRenderProjectSettings, normalizeFocusNavigationSettings, normalizeSceneLayerPostProcessStack, renderEffectsAssetGuids, consoleCommandMetadataFromGraph, normalizeCollisionPresets, isBuildPlatform, type Result } from "@haptic/core";
+import { err, ok, classIdForAssetPath, clampAudioScale, DEFAULT_LOOP_COUNT, normalizeSceneLayer, normalizeSortingLayers, normalizeGarbageCollectionIntervalTicks, normalizePlayFrameCap, normalizeRenderProjectSettings, normalizeFocusNavigationSettings, normalizeSceneLayerPostProcessStack, renderEffectsAssetGuids, consoleCommandMetadataFromGraph, normalizeCollisionPresets, isBuildPlatform, type Result } from "@haptic/core";
 import { collectAssetDependencyMetadata, complexCollisionModelGuids, cookComplexCollisionMesh, sceneLayerPostProcessAssetGuids, decodePackedAudioAsset, decodePackedModelAsset, encodePackedAudioAsset, mimeForAudioBytes, peekPackedAudioPayload, sha256Hex, type AssetDependencyClass } from "@haptic/assets";
 import { zipSync, unzipSync } from "fflate";
 import {
@@ -371,8 +371,7 @@ export async function exportGame(
     const owner = sourceAssets.find(asset => asset.guid === script.assetGuid);
     if (!owner) return err(`Compiled script ${script.classId} has no exported asset ${script.assetGuid}.`);
     sourceAssets.push({ guid: `script:${script.assetGuid}:${encodeURIComponent(script.classId)}`, ownerGuid: script.assetGuid, type: "CompiledScript", classId: script.classId,
-      // The source is in the static scripts module; the sidecar keeps what the runtime reads about the script.
-      sceneGuid: owner.sceneGuid, encoding: "json", bytes: encoder.encode(JSON.stringify({ ...script, source: "" })), requiredDependencies: [] });
+      sceneGuid: owner.sceneGuid, encoding: "json", bytes: encoder.encode(JSON.stringify(script)), requiredDependencies: [] });
   }
   sourceAssets.push(...complexCollisionSidecars(sourceAssets));
 
@@ -388,11 +387,6 @@ export async function exportGame(
   const index = await writeAssetFiles(files, shipAssets(prepared));
 
   inlineCssIntoIndex(files);
-  // Every compiled script and Extension module as a function of one static module: games load code with a standard
-  // module import and never evaluate text.
-  const scriptsModuleBytes = encoder.encode(writeGameScriptsModule(options.scripts, options.extensionLibraries ?? []));
-  files.set(GAME_SCRIPTS_MODULE_FILE, scriptsModuleBytes);
-  const scriptsModule = { path: GAME_SCRIPTS_MODULE_FILE, byteLength: scriptsModuleBytes.byteLength, revision: await sha256Hex(scriptsModuleBytes) };
 
   const manifest: GameManifest = {
     assetCatalogVersion: 1,
@@ -431,9 +425,7 @@ export async function exportGame(
     physicsWorld: options.physicsWorld ?? "3d",
     platform: options.platform,
     collisionPresets: normalizeCollisionPresets(options.collisionPresets),
-    ...(options.extensionLibraries?.length ? { extensionLibraries: options.extensionLibraries.map((library) => ({ ...structuredClone(library),
-      bundle: { ...library.bundle, modules: library.bundle.modules.map((module) => ({ ...structuredClone(module), code: "" })) } })) } : {}),
-    scriptsModule,
+    ...(options.extensionLibraries?.length ? { extensionLibraries: structuredClone([...options.extensionLibraries]) } : {}),
     assets: index,
     ...(options.bundleDebugger
       ? {
@@ -489,7 +481,7 @@ function normalizeGlobalFallback(value: unknown): string {
 const REQUIRED_MANIFEST_FIELDS = [
   "project", "focusNavigation", "sceneLayerPostProcessStack", "startupSceneGuid", "globalFallback", "occlusionEnabled", "reverbWetScale", "reverbDecayScale",
   "reverbDampingScale", "bundleDebugger", "render", "playFrameCap", "garbageCollectionIntervalTicks", "touchMinTargetPx", "pixelsPerUnit",
-  "pixelPerfect", "nearestTextures", "sortingLayers", "physicsWorld", "platform", "collisionPresets", "scriptsModule", "assets",
+  "pixelPerfect", "nearestTextures", "sortingLayers", "physicsWorld", "platform", "collisionPresets", "assets",
 ] as const satisfies readonly (keyof GameManifest)[];
 const DEBUGGER_MANIFEST_FIELDS = ["infiniteLoopDetection", "loopCount"] as const satisfies readonly (keyof GameManifest)[];
 

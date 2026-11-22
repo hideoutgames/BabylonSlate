@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { normalizeScene } from "@haptic/core";
-import { createRuntimeFromLoad, functionModuleLoader } from "@haptic/runtime";
+import { createRuntimeFromLoad } from "@haptic/runtime";
 import {
   canonicalPlaySceneGuid,
   playLoadControl,
@@ -14,7 +14,7 @@ import {
 
 describe("playLoadControl", () => {
   it("initializes console readback with the editor session frame cap", () => {
-    const runtime = createRuntimeFromLoad(playLoadControl({ frameCap: 30 }), () => {}, { moduleLoader: functionModuleLoader });
+    const runtime = createRuntimeFromLoad(playLoadControl({ frameCap: 30 }), () => {});
     try {
       expect(runtime.executeConsoleCommand("framecap").output).toBe("framecap 30");
     } finally {
@@ -29,7 +29,7 @@ describe("playLoadControl", () => {
     const runtime = createRuntimeFromLoad(playLoadControl({
       traceByteBudget,
       scene: normalizeScene({ name: "Trace", actors: [] }),
-    }), () => {}, { moduleLoader: functionModuleLoader });
+    }), () => {});
     try {
       const world = runtime.getWorld();
       const actor = world.createActor({

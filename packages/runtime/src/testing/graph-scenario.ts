@@ -80,7 +80,7 @@ export type GraphScenarioOptions = {
   seed?: number;
   dt?: number;
   /** Anything else the session needs, such as `includeDebugCommands` or loop detection. */
-  runtime?: Omit<RuntimeDriverOptions, "seed" | "dt" | "playScene" | "onCommand" | "moduleLoader"> & Partial<Pick<RuntimeDriverOptions, "moduleLoader">>;
+  runtime?: Omit<RuntimeDriverOptions, "seed" | "dt" | "playScene" | "onCommand">;
 };
 
 export type GraphScenario = {

@@ -160,17 +160,8 @@ export type GameManifest = {
   platform: import("@haptic/core").BuildPlatform;
   /** Project Collision Presets. */
   collisionPresets: import("@haptic/core").CollisionPreset[];
-  /**
-   * Linked game modules of enabled gameplay Extensions, dependencies first; absent when there are none. Each module's
-   * `code` is empty: the code is in `scriptsModule`.
-   */
+  /** Linked game modules of enabled gameplay Extensions, dependencies first; absent when there are none. */
   extensionLibraries?: import("@haptic/core").ExtensionGameLibrary[];
-  /**
-   * The static scripts module (`GAME_SCRIPTS_MODULE_FILE`, `writeGameScriptsModule`): every compiled script and Extension
-   * module as a function. The game worker imports it by URL; compiled script sidecars carry no source of their own. Every
-   * export writes it; Editor Play's in-memory catalog has none.
-   */
-  scriptsModule?: { path: string; byteLength: number; revision: string };
   assets: GameAssetIndexEntry[];
   /** Present only when `bundleDebugger` is true. */
   infiniteLoopDetection?: boolean;

@@ -1,13 +1,691 @@
+import { simulationCaptureChunks } from "./simulation-capture-transport";
+import { createSaveStorageClient, normalizeWaterDefinition } from "@haptic/core";
 /**
- * Editor Play's game worker: compiles each script from its source text (`functionModuleLoader`), so a recompiled graph
- * runs at once. Exported games use `game-worker-entry.ts`.
+ * Game worker entry. Hosts create a Worker from this module URL and post
+ * control / input messages. In-process Play uses `createInProcessRuntime`.
  */
-import { functionModuleLoader } from "./function-module-loader";
-import { startRuntimeWorker } from "./runtime-worker";
+import { parseAnimGraphDocument } from "@haptic/anim-graph";
+import {
+  parseBehaviourTreeDocument,
+  parseBlackboardDocument,
+} from "@haptic/behaviour-tree";
+import {
+  normalizeModelPayload,
+  normalizeTilemapPayload,
+  normalizeTilesetPayload,
+  parseSpriteAnimationPayload,
+  parseSpritePayload,
+  type ModelPayload,
+  type SpritePayload,
+} from "@haptic/assets";
+import {
+  TransferablePingPong,
+  dynamicMeshTransferables,
+  type BridgeHostMessage,
+  type BridgeWorkerMessage,
+  type CommandMessage,
+  type ControlMessage,
+} from "@haptic/bridge";
+import { createInProcessRuntime, type RuntimeDriver } from "./driver";
+import { createRuntimeFromLoad } from "./play-load";
+import { createPlayBootCoordinator } from "./play-boot";
+import { createPlayPauseGate } from "./play-pause-gate";
+import { applyInspectControl } from "./inspect-control";
+import { createWorkerScheduler } from "./worker-scheduler";
+import { captureConsoleLogs } from "./console-capture";
+import { createSceneSnapshotDelivery } from "./scene-snapshot-delivery";
+import { createSceneSourceClient } from "./scene-source";
+import { cookedCollisionMeshMap } from "./source-content-control";
 // The physics backends belong in this entry's chunk. Loaded lazily, their chunk imports code this entry also uses from
 // the entry chunk itself, and WebKit evaluates that import as a second copy of the whole worker, which then answers
 // messages as a runtime that never started ("Runtime is unavailable.", "Stale session generation.").
 import "@haptic/physics/havok-backend";
 import "@haptic/physics/rapier-backend";
+import { preloadPhysicsEngine } from "@haptic/physics";
 
-startRuntimeWorker(() => functionModuleLoader);
+let runtime: RuntimeDriver | null = null;
+let sceneSources = createSceneSourceClient(onCommand);
+let saveStorage = createSaveStorageClient((request) => onCommand({ type: "saveStorageRequest", request }));
+const boot = createPlayBootCoordinator();
+let bootGeneration = 0;
+let consoleQueue = Promise.resolve();
+const sceneSnapshots = createSceneSnapshotDelivery({
+  publishSnapshot: () => publishSnapshot(),
+  send: queueCommand,
+});
+// Recycled via the host's `recycleSnapshot` message so the per-frame
+// snapshot transfer never allocates a fresh ArrayBuffer once warmed up.
+let snapshotPing = new TransferablePingPong(256);
+// Poses are latest-state. A host that stops returning buffers (a stalled main
+// thread or a hidden tab) must not queue a transfer every tick: with this many
+// outstanding, a tick's pose is skipped and the newest one is published as
+// soon as a buffer comes back. Structural commands are never held.
+const MAX_IN_FLIGHT_SNAPSHOTS = 2;
+let inFlightSnapshots = 0;
+let snapshotSkipped = false;
+// The runtime and write serial (`snapshotSerial`) of the last pose posted. A pump that ran no
+// tick (always while paused) posts nothing: the host already holds that pose. Clearing
+// `postedRuntime` makes the next pump post the current pose again.
+let postedRuntime: RuntimeDriver | null = null;
+let postedSerial = 0;
+const snapshotMessage: Extract<BridgeWorkerMessage, { channel: "snapshot" }> = { channel: "snapshot", payload: new ArrayBuffer(0), generation: 0 };
+const snapshotTransfer: [ArrayBuffer] = [snapshotMessage.payload];
+// One-shot replies that describe a pose and were held by backpressure; each
+// is sent, in order, right after the next pose snapshot. Never dropped.
+let afterPose: CommandMessage[] = [];
+
+function releaseAfterPose(): void {
+  if (afterPose.length === 0) return;
+  const held = afterPose;
+  afterPose = [];
+  for (const command of held) onCommand(command);
+  // Right after the pose, not behind whatever the rest of the handler emits.
+  flushCommands();
+}
+let installedGeneration = 0;
+let pendingGeneration: number | null = null;
+// A layout whose transfer buffers could not be allocated yet; poses wait for it.
+let unpostedLayout: Extract<CommandMessage, { type: "snapshotLayout" }> | null = null;
+let stopConsoleCapture: (() => void) | null = null;
+
+// Plain commands leave as one `commands` message instead of one clone each. The
+// queue is flushed where the emitting handler or tick ends and before every
+// other post (`post`), so the host sees the order separate posts would give.
+//
+// A post clones its message before it returns, so the batch's array and envelope are reused: two arrays take turns
+// (a command queued while one posts goes to the other), each written over from the start and cut to its count only
+// when it posts, as emptying it would make its storage again as it grew.
+let commandQueue: CommandMessage[] = [];
+let queuedCommands = 0;
+let spareCommandQueue: CommandMessage[] = [];
+const batchMessage: Extract<BridgeWorkerMessage, { channel: "commands" }> = { channel: "commands", payload: [] };
+let flushScheduled = false;
+
+function queueCommand(command: CommandMessage): void {
+  commandQueue[queuedCommands++] = command;
+  if (flushScheduled) return;
+  flushScheduled = true;
+  // Replies from promise and timer continuations have no handler end to flush them.
+  queueMicrotask(flushScheduledCommands);
+}
+
+function flushScheduledCommands(): void {
+  flushScheduled = false;
+  flushCommands();
+}
+
+/** Never throws, so a flush on the way to a pose or a `finally` cannot lose that post or mask an error. */
+function flushCommands(): void {
+  if (queuedCommands === 0) return;
+  const batch = commandQueue;
+  // Its entries past the count are an earlier, longer batch's.
+  batch.length = queuedCommands;
+  commandQueue = spareCommandQueue;
+  spareCommandQueue = batch;
+  queuedCommands = 0;
+  try {
+    batchMessage.payload = batch;
+    postMessage(batchMessage);
+  } catch {
+    // A command the structured clone rejects must not drop the rest of the
+    // batch: send the others alone, in order, and report each failure as uncaught.
+    for (const command of batch) {
+      try {
+        postMessage({ channel: "command", payload: command } satisfies BridgeWorkerMessage);
+      } catch (error) {
+        queueMicrotask(() => { throw error; });
+      }
+    }
+  } finally {
+    // Posted (cloned): the spare array keeps its storage, not the commands.
+    batch.fill(undefined as unknown as CommandMessage);
+  }
+}
+
+/** Every post except the batch itself, so queued commands are never overtaken. */
+function post(message: BridgeWorkerMessage, transfer?: Transferable[]): void {
+  flushCommands();
+  if (transfer) postMessage(message, transfer);
+  else postMessage(message);
+}
+
+/** The envelope `postCommand` reuses: a post clones it before it returns. */
+const commandMessage: Extract<BridgeWorkerMessage, { channel: "command" }> = { channel: "command", payload: { type: "log", message: "", severity: "log", category: "console", frameId: 0 } };
+
+/** Posts one command with the buffers it moves (a per-frame transfer: ticks, cable frames, runtime mesh geometry). */
+function postCommand(command: CommandMessage, transfer: Transferable[]): void {
+  flushCommands();
+  commandMessage.payload = command;
+  postMessage(commandMessage, transfer);
+}
+
+function onCommand(command: CommandMessage): void {
+  if (command.type === "performanceTicks") {
+    postCommand(command,
+      command.scripts ? [command.rows.buffer as ArrayBuffer, command.scripts.buffer as ArrayBuffer] : [command.rows.buffer as ArrayBuffer]);
+    return;
+  }
+  if (sceneSnapshots.receive(command)) return;
+  if (command.type === "sessionEnded") {
+    // `quit` already ran End Play and On Game End. The host ends the session, and in the
+    // player terminates this worker, only once their save writes are answered.
+    const rt = runtime;
+    const generation = bootGeneration;
+    void saveStorage.whenIdle().then(() => {
+      if (runtime === rt && generation === bootGeneration) queueCommand(command);
+    });
+    return;
+  }
+  const geometryTransfers = dynamicMeshTransferables(command);
+  if (geometryTransfers) {
+    postCommand(command, geometryTransfers);
+    return;
+  }
+  if (command.type === "cableFrame") {
+    postCommand(command, [command.data.buffer as ArrayBuffer]);
+    return;
+  }
+  if (command.type === "snapshotLayout") {
+    installSnapshotLayout(command);
+    return;
+  }
+  queueCommand(command);
+}
+
+/**
+ * Grow the transfer buffers for a layout, then announce it. When allocation
+ * fails, the failure is reported once and poses wait; each later publish
+ * retries the newest layout, so poses resume once memory allows.
+ */
+function installSnapshotLayout(command: Extract<CommandMessage, { type: "snapshotLayout" }>): boolean {
+  try {
+    snapshotPing = snapshotPing.grow(command.capacity);
+  } catch (error) {
+    if (unpostedLayout?.generation !== command.generation) {
+      ensureRuntime().reportError(new Error(`Unable to allocate transferable Actor snapshots (${command.capacity}): ${error instanceof Error ? error.message : String(error)}`));
+    }
+    unpostedLayout = command;
+    return false;
+  }
+  unpostedLayout = null;
+  pendingGeneration = command.generation;
+  post({ channel: "command", payload: command });
+  return true;
+}
+
+function ensureRuntime(seed = 1): RuntimeDriver {
+  if (!runtime) {
+    runtime = createInProcessRuntime({
+      seed,
+      onCommand,
+    });
+  }
+  return runtime;
+}
+
+const pauseGate = createPlayPauseGate({
+  pause: () => ensureRuntime().pause(),
+  resume: () => ensureRuntime().resume(),
+});
+
+function handleControl(msg: ControlMessage): void {
+  switch (msg.type) {
+    case "quiesceSimulation": {
+      const rt = runtime;
+      if (!rt) {
+        onCommand({ type: "simulationQuiesced", sessionGeneration: msg.sessionGeneration, requestId: msg.requestId,
+          success: false, reason: "Runtime is unavailable.", paused: false, pauseReasons: [], tickIndex: 0,
+          sceneAssetGuid: "", sceneLoadId: 0, commandRevision: 0 }); return;
+      }
+      void rt.quiesceSimulation(msg).then(result => onCommand({ type: "simulationQuiesced", ...result }));
+      return;
+    }
+    case "captureSimulationState": {
+      const rt = runtime;
+      const generation = bootGeneration;
+      const refuse = (reason: string) => onCommand({ type: "simulationCaptureResult", sessionGeneration: msg.sessionGeneration, requestId: msg.requestId,
+        result: { ok: false, code: "boundary", path: "scene", reason, identity: {
+          generation: msg.sessionGeneration, sceneAssetGuid: "", sceneInstanceId: "", sceneLoadId: 0, tickIndex: 0, commandRevision: 0 } } });
+      if (!rt) { refuse("Runtime is unavailable."); return; }
+      // Every request ends with a result, so chunks already posted never wait on
+      // the host's capture timeout when `load` or `stop` replaces the session.
+      const superseded = () => runtime !== rt || bootGeneration !== generation;
+      const refuseSuperseded = () => refuse("The session was replaced or stopped before its final capture completed.");
+      void rt.captureSimulationState(msg).then(async result => {
+        if (superseded()) { refuseSuperseded(); return; }
+        if (!result.ok) { onCommand({ type: "simulationCaptureResult", sessionGeneration: msg.sessionGeneration, requestId: msg.requestId, result }); return; }
+        let sequence = 0;
+        for (const bytes of simulationCaptureChunks(result.scene)) {
+          if (superseded()) { refuseSuperseded(); return; }
+          const chunk: CommandMessage = { type: "simulationCaptureChunk", sessionGeneration: msg.sessionGeneration, requestId: msg.requestId, sequence: sequence++, bytes };
+          post({ channel: "command", payload: chunk }, [bytes.buffer as ArrayBuffer]);
+          await new Promise(resolve => setTimeout(resolve, 0));
+        }
+        if (superseded()) { refuseSuperseded(); return; }
+        onCommand({ type: "simulationCaptureResult", sessionGeneration: msg.sessionGeneration, requestId: msg.requestId,
+          result: { ok: true, identity: result.identity, byteSize: result.byteSize, chunkCount: sequence } });
+      }).catch((error: unknown) => {
+        // Report the failure now instead of leaving the host to its capture timeout.
+        refuse(error instanceof Error ? error.message : String(error));
+      });
+      return;
+    }
+    case "runtimeMaterialEditPrepared":
+    case "runtimeMaterialEditApplied":
+      runtime?.applyRuntimeMaterialEditResult(msg);
+      return;
+    case "diagnosticOperation": {
+      const rt = runtime;
+      if (!rt) {
+        onCommand({ type: "diagnosticOperationResult", sessionGeneration: msg.sessionGeneration, requestId: msg.requestId,
+          recordingId: msg.operation.recordingId, success: false, reason: "Runtime is unavailable." });
+        return;
+      }
+      void rt.requestDiagnosticOperation(msg).then(result => onCommand({ type: "diagnosticOperationResult", ...result }));
+      return;
+    }
+    case "cancelRuntimeInspector":
+      runtime?.cancelRuntimeInspector(msg);
+      return;
+    case "runtimeInspector": {
+      const rt = runtime;
+      if (!rt) {
+        onCommand({ type: "runtimeInspectorResult", sessionGeneration: msg.sessionGeneration, requestId: msg.requestId,
+          success: false, reason: "Runtime is unavailable.", tickIndex: 0, frameId: 0, commandRevision: 0, identityRevision: 0 });
+        return;
+      }
+      void rt.requestRuntimeInspector(msg).then(result => {
+        const command: CommandMessage = { type: "runtimeInspectorResult", ...result };
+        // A paused host redraws on this result, so it must follow the edited pose.
+        if (runtime === rt && result.success && result.payload?.kind === "mutation" && !publishSnapshot() && snapshotSkipped) {
+          afterPose.push(command);
+          return;
+        }
+        onCommand(command);
+      });
+      return;
+    }
+    case "sessionBoundary": {
+      const rt = runtime;
+      if (!rt) {
+        onCommand({ type: "sessionBoundaryResult", sessionGeneration: msg.sessionGeneration, requestId: msg.requestId,
+          success: false, reason: "Runtime is unavailable.", paused: false, pauseReasons: [], tickIndex: 0,
+          sceneAssetGuid: "", sceneLoadId: 0, commandRevision: 0 });
+        return;
+      }
+      void rt.requestSessionBoundary(msg).then(result => {
+        if (runtime === rt && result.success && !result.paused && msg.action.kind === "pause") scheduler.resetClock();
+        onCommand({ type: "sessionBoundaryResult", ...result });
+      });
+      return;
+    }
+    case "loadSceneContent": ensureRuntime().registerSceneContent(msg); return;
+    case "preloadPhysics":
+      // The session's own load reports a failure; this only warms the module cache it shares.
+      void preloadPhysicsEngine(msg.physicsWorld, { havokWasmUrl: msg.havokWasmUrl }).catch(() => undefined);
+      return;
+    case "saveStorageResponse":
+      saveStorage.receive(msg.response);
+      return;
+    case "sceneSourceResponse":
+      sceneSources.receive(msg);
+      return;
+    case "load": {
+      releaseAfterPose();
+      bootGeneration++;
+      boot.reset();
+      pauseGate.reset();
+      sceneSnapshots.reset();
+      stopConsoleCapture?.();
+      stopConsoleCapture = captureConsoleLogs(console, (message, severity) => {
+        if (runtime) runtime.reportLog(message, severity);
+        else onCommand({ type: "log", message, severity, category: "console", frameId: 0 });
+      });
+      scheduler.stop();
+      if (runtime) {
+        runtime.stop();
+        runtime = null;
+      }
+      // The replaced runtime's layout never applies to the next one.
+      unpostedLayout = null;
+      saveStorage.dispose();
+      sceneSources.dispose();
+      sceneSources = createSceneSourceClient(onCommand);
+      saveStorage = createSaveStorageClient((request) => onCommand({ type: "saveStorageRequest", request }));
+      runtime = createRuntimeFromLoad(msg, onCommand, saveStorage.storage,
+        msg.sceneCatalog ? { acquireScene: sceneSources.acquireScene } : undefined);
+      return;
+    }
+    case "loadScripts": {
+      const rt = ensureRuntime();
+      void boot.queueScripts(rt, msg.scripts, msg.spawn ?? [], msg.replace, msg.retain).then(() => {
+        if (msg.requestId !== undefined) onCommand({ type: "assetSourcesReady", requestId: msg.requestId,
+          success: runtime === rt, ...(runtime !== rt ? { error: "Runtime changed during script preparation." } : {}) });
+      }, (error: unknown) => {
+        if (msg.requestId !== undefined) onCommand({ type: "assetSourcesReady", requestId: msg.requestId,
+          success: false, error: error instanceof Error ? error.message : String(error) });
+      });
+      return;
+    }
+    case "loadAnimGraphs": {
+      const rt = ensureRuntime();
+      for (const entry of msg.graphs) {
+        const document = parseAnimGraphDocument(entry.document);
+        if (document) rt.registerAnimGraph(entry.guid, document);
+      }
+      return;
+    }
+    case "loadBehaviourTrees": {
+      const rt = ensureRuntime();
+      for (const entry of msg.trees) {
+        const document = parseBehaviourTreeDocument(entry.document);
+        if (document) rt.registerBehaviourTree(entry.guid, document);
+      }
+      for (const entry of msg.blackboards ?? []) {
+        const document = parseBlackboardDocument(entry.document);
+        if (document) rt.registerBlackboard(entry.guid, document);
+      }
+      return;
+    }
+    case "loadWater": {
+      ensureRuntime().registerWaterContent(new Map(msg.waters.map((entry) => [entry.guid, normalizeWaterDefinition(entry.document)])));
+      return;
+    }
+    case "loadTilemaps": {
+      const rt = ensureRuntime();
+      const tilemaps: Record<string, ReturnType<typeof normalizeTilemapPayload>> =
+        {};
+      const tilesets: Record<string, ReturnType<typeof normalizeTilesetPayload>> =
+        {};
+      for (const entry of msg.tilemaps) {
+        tilemaps[entry.guid] = normalizeTilemapPayload(entry.document);
+      }
+      for (const entry of msg.tilesets) {
+        tilesets[entry.guid] = normalizeTilesetPayload(entry.document);
+      }
+      rt.registerTileContent({
+        tilemaps,
+        tilesets,
+        pixelsPerUnit: msg.pixelsPerUnit,
+      });
+      return;
+    }
+    case "loadSprites": {
+      const rt = ensureRuntime();
+      const sprites: Record<string, SpritePayload> = {};
+      const spriteAnimations: Record<
+        string,
+        ReturnType<typeof parseSpriteAnimationPayload>
+      > = {};
+      for (const entry of msg.sprites) {
+        const document = entry.document;
+        if (!document || typeof document !== "object") continue;
+        sprites[entry.guid] = parseSpritePayload(document);
+      }
+      for (const entry of msg.spriteAnimations) {
+        spriteAnimations[entry.guid] = parseSpriteAnimationPayload(
+          entry.document,
+        );
+      }
+      rt.registerSpriteContent({
+        sprites,
+        spriteAnimations,
+        pixelsPerUnit: msg.pixelsPerUnit,
+      });
+      return;
+    }
+    case "loadModels": {
+      const rt = ensureRuntime();
+      const models: Record<string, ModelPayload> = {};
+      for (const entry of msg.models) {
+        models[entry.guid] = normalizeModelPayload(entry.document);
+      }
+      rt.registerModelContent({ models, complexMeshes: cookedCollisionMeshMap(msg.complexMeshes) });
+      return;
+    }
+    case "loadComplexCollision": {
+      ensureRuntime().registerComplexCollisionMeshes(cookedCollisionMeshMap(msg.meshes), msg.unavailable);
+      return;
+    }
+    case "loadNavMesh": {
+      const rt = ensureRuntime();
+      boot.queueNavMesh(rt, msg.bytes ? new Uint8Array(msg.bytes) : undefined);
+      return;
+    }
+    case "play": {
+      const rt = ensureRuntime();
+      const generation = bootGeneration;
+      void pauseGate.beginPlay((onStarted) => boot.play(rt, () => {
+        if (runtime !== rt || generation !== bootGeneration) return;
+        onStarted();
+        scheduler.start();
+      })).catch((error: unknown) => {
+        if (runtime !== rt || generation !== bootGeneration) return;
+        scheduler.stop();
+        sceneSnapshots.reset();
+        rt.reportError(error);
+      });
+      return;
+    }
+    case "step": {
+      const rt = ensureRuntime();
+      rt.resume();
+      try {
+        rt.tick();
+      } finally {
+        rt.pause();
+      }
+      return;
+    }
+    case "stop": {
+      releaseAfterPose();
+      bootGeneration++;
+      boot.reset();
+      pauseGate.reset();
+      sceneSnapshots.reset();
+      scheduler.stop();
+      ensureRuntime().stop();
+      sceneSources.dispose();
+      stopConsoleCapture?.();
+      stopConsoleCapture = null;
+      // End Play and On Game End may still be writing saves through the host:
+      // report the stop once they finish, so the host keeps this worker until then.
+      void saveStorage.whenIdle().then(() => onCommand({ type: "runtimeStopped" }));
+      return;
+    }
+    case "setPaused":
+      // A render hold is a time-only pause the runtime keeps apart from Pause; it never waits for the boot gate.
+      if (msg.reason === "rendering") {
+        if (msg.paused) runtime?.pause("rendering"); else runtime?.resume("rendering");
+      } else pauseGate.setPaused(msg.paused);
+      return;
+    case "debugObserve":
+      runtime?.applyDebugObserve(msg.target, msg.instanceId);
+      return;
+    case "setGlobalParameterCatalog":
+      runtime?.applyGlobalParameterCatalog(msg.catalog);
+      return;
+    case "setBreakpoints":
+      runtime?.applyBreakpoints(msg.breakpoints);
+      return;
+    case "console": {
+      const rt = ensureRuntime();
+      const generation = bootGeneration;
+      // Hosts correlate replies in control-channel order while reads stay async.
+      consoleQueue = consoleQueue.then(async () => {
+        const result = await rt.executeConsoleCommandAsync(msg.line);
+        if (runtime === rt && generation === bootGeneration) onCommand({ type: "consoleResult", ...result });
+      }).catch(error => {
+        if (runtime === rt && generation === bootGeneration) onCommand({ type: "consoleResult", success: false, output: String(error) });
+      });
+      return;
+    }
+    case "inspect":
+      applyInspectControl(ensureRuntime(), msg, onCommand);
+      return;
+    case "sceneLayerScroll":
+      ensureRuntime().applySceneLayerScroll(msg.layerId, msg.actorId, msg.componentId, msg.deltaX, msg.deltaY);
+      break;
+    case "sceneLayerPointer":
+      ensureRuntime().applySceneLayerPointer(msg);
+      return;
+    case "sceneLayerControl":
+      ensureRuntime().applySceneLayerControl(msg);
+      return;
+    case "sceneLayerFocusNavigate":
+      ensureRuntime().applySceneLayerFocusNavigate(msg.reverse);
+      return;
+    case "sceneLayerView":
+      ensureRuntime().applySceneLayerView(msg.layerId, msg.view);
+      return;
+    case "sceneLayerResize":
+      ensureRuntime().applySceneLayerResize(
+        msg.outputWidth,
+        msg.outputHeight,
+        msg.canvasWidth,
+        msg.canvasHeight,
+        msg.safeAreaInsets,
+      );
+      return;
+    case "audioVoiceEnded":
+      ensureRuntime().applyAudioVoiceEnded(msg);
+      return;
+    case "particlePlaybackEnded":
+      ensureRuntime().applyParticlePlaybackEnded(msg);
+      return;
+    case "scalabilityStatus":
+      ensureRuntime().applyScalabilityStatus(msg.acknowledgement);
+      return;
+    case "ragdollPoseCaptured":
+      runtime?.applyRagdollPoseCaptured(msg);
+      return;
+    case "sceneLoadingPainted":
+      runtime?.notifySceneLoadingPainted(msg.sceneAssetGuid, msg.sceneLoadId);
+      return;
+    case "sceneModelsReady":
+      runtime?.notifySceneModelsReady(msg.sceneAssetGuid, msg.sceneLoadId);
+      return;
+    case "sceneStreamReady":
+      runtime?.notifySceneStreamReady(msg.actorGuid, msg.streamLoadId);
+      return;
+    case "assetPreloadResult":
+      runtime?.notifyAssetPreloadResult(msg);
+      return;
+    case "assetLoadStates":
+      runtime?.setAssetLoadStates(msg.states);
+      return;
+    case "sceneStreamProgress":
+      runtime?.notifySceneStreamProgress(msg.actorGuid, msg.streamLoadId, msg.progress);
+      return;
+    case "sceneStreamFailed":
+      runtime?.notifySceneStreamFailed(msg.actorGuid, msg.streamLoadId, msg.message);
+      return;
+    case "sceneLayerLoadingPainted":
+      runtime?.notifySceneLayerLoadingPainted(msg.layerId, msg.layerLoadId);
+      return;
+    case "sceneLayerReady":
+      runtime?.notifySceneLayerReady(msg.layerId, msg.layerLoadId);
+      return;
+  }
+}
+
+function publishSnapshot(): boolean {
+  const rt = runtime;
+  if (!rt) return false;
+  if (unpostedLayout) installSnapshotLayout(unpostedLayout);
+  if (unpostedLayout || pendingGeneration !== null) return false;
+  if (inFlightSnapshots >= MAX_IN_FLIGHT_SNAPSHOTS) {
+    snapshotSkipped = true;
+    return false;
+  }
+  const serial = rt.snapshotSerial;
+  const buf = snapshotPing.beginWrite();
+  if (!rt.copySnapshot(buf)) {
+    snapshotPing.cancelWrite();
+    return false;
+  }
+  const ab = snapshotPing.commitWrite();
+  inFlightSnapshots++;
+  snapshotSkipped = false;
+  postedRuntime = rt;
+  postedSerial = serial;
+  // The envelope and transfer list are reused: the post clones and detaches before it returns.
+  snapshotMessage.payload = snapshotTransfer[0] = ab;
+  snapshotMessage.generation = installedGeneration;
+  post(snapshotMessage, snapshotTransfer);
+  releaseAfterPose();
+  return true;
+}
+
+/** Post the newest pose when one was written since the last post; markers, edits and skipped poses post through `publishSnapshot`. */
+function publishNewSnapshot(): void {
+  const rt = runtime;
+  if (rt && (rt !== postedRuntime || rt.snapshotSerial !== postedSerial)) publishSnapshot();
+}
+
+function pump(elapsed: number): void {
+  const rt = runtime;
+  if (!rt) return;
+  try {
+    rt.advance(elapsed);
+    if (!sceneSnapshots.flush()) publishNewSnapshot();
+  } finally {
+    flushCommands();
+  }
+}
+
+const scheduler = createWorkerScheduler(self, pump);
+
+function handleHostMessage(msg: BridgeHostMessage): void {
+  if (msg.channel === "control") {
+    handleControl(msg.payload);
+    return;
+  }
+  if (msg.channel === "input") {
+    // Do not ensureRuntime() here: a pre-load dummy World would eat the
+    // first stick samples and then be thrown away on `load`.
+    runtime?.pushInputBuffer(msg.payload as ArrayBuffer);
+    return;
+  }
+  if (msg.channel === "recycleSnapshot") {
+    // Every posted buffer comes back once, stale layout generations included.
+    inFlightSnapshots = Math.max(0, inFlightSnapshots - 1);
+    snapshotPing.recycle(msg.payload);
+    if (!sceneSnapshots.flush() && snapshotSkipped) publishSnapshot();
+    return;
+  }
+  if (msg.channel === "snapshotLayoutAck" && msg.generation === pendingGeneration) {
+    installedGeneration = msg.generation;
+    pendingGeneration = null;
+    // The host emptied its pose when it installed the layout: the next pump posts the current one.
+    postedRuntime = null;
+    sceneSnapshots.flush();
+  }
+}
+
+self.onmessage = (event: MessageEvent<BridgeHostMessage>) => {
+  try {
+    handleHostMessage(event.data);
+  } finally {
+    flushCommands();
+  }
+};
+
+self.addEventListener("error", (event) => {
+  try {
+    ensureRuntime().reportError(event.error ?? event.message);
+  } finally {
+    flushCommands();
+  }
+});
+
+self.addEventListener("unhandledrejection", (event) => {
+  try {
+    ensureRuntime().reportError(event.reason);
+  } finally {
+    flushCommands();
+  }
+});
+
+// Last: the module has evaluated and its handlers are installed. A host that never hears this reports the worker as not started.
+postMessage({ channel: "ready" } satisfies BridgeWorkerMessage);

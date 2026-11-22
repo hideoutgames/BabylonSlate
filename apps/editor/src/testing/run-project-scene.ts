@@ -1,7 +1,7 @@
 import { buildParticleParameterCatalog } from "@haptic/assets";
 import type { CommandMessage } from "@haptic/bridge";
 import { createSessionSaveStorage, type ProjectDocument, type SaveGameStorage } from "@haptic/core";
-import { applyRuntimeSourceControl, createPlayBootCoordinator, createRuntimeFromLoad, functionModuleLoader, type RuntimeDriver } from "@haptic/runtime";
+import { applyRuntimeSourceControl, createPlayBootCoordinator, createRuntimeFromLoad, type RuntimeDriver } from "@haptic/runtime";
 import { playRegistryViews } from "../lib/play-registry-views";
 import { playAssetCatalog } from "../services/asset-catalog";
 import { DocumentService } from "../services/document-service";
@@ -138,9 +138,7 @@ export async function runProjectScene(options: {
       commands.push(command);
       // After the command returns, as a host's reply would arrive.
       queueMicrotask(() => answer(command));
-    }, {
-      moduleLoader: functionModuleLoader,
-      saveGameStorage: createSessionSaveStorage(emptySaveStorage),
+    }, createSessionSaveStorage(emptySaveStorage), {
       acquireScene: async (guid, request) => {
         const source = await acquire([guid], request.consumer, request.signal);
         // Released with the rest when the run ends.

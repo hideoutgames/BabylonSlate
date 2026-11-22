@@ -11,7 +11,7 @@ import {
 import type { ScriptBundleEntry } from "@haptic/bridge";
 import type { GraphRunEvent, GraphRunTrace } from "@haptic/graph-ui";
 import { ClassRegistry } from "@haptic/object-model";
-import { functionModuleLoader, ScriptHost, type ScriptHostServices } from "@haptic/runtime";
+import { ScriptHost, type ScriptHostServices } from "@haptic/runtime";
 
 /** What compiled Get Variable nodes read (the runtime's variable store): values by variable name. */
 type VariableStore = { getVariable(name: string): unknown; setVariable(name: string, value: unknown): void };
@@ -54,7 +54,6 @@ function fitsVariable(variable: AnimGraphVariable, value: unknown): boolean {
 
 function previewHostServices(): ScriptHostServices {
   return {
-    moduleLoader: functionModuleLoader,
     classRegistry: new ClassRegistry(),
     log: () => {},
     print: () => {},

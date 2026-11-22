@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import { functionModuleLoader } from "./function-module-loader";
 import { createActor, createDefaultScene } from "@haptic/core";
 import type { CommandMessage } from "@haptic/bridge";
 import { Actor } from "@haptic/object-model";
@@ -194,7 +193,7 @@ describe("script load handles in a running session", () => {
 
 describe("script load handles without a host loader", () => {
   const services = (extra: Partial<ScriptHostServices> = {}): ScriptHostServices => ({
-    moduleLoader: functionModuleLoader, log() {}, print() {}, destroyActor() {}, executeConsoleCommand: () => ({ success: true, output: "" }),
+    log() {}, print() {}, destroyActor() {}, executeConsoleCommand: () => ({ success: true, output: "" }),
     delay: async () => {}, reportError() {}, ...extra });
 
   it("fails every load with an unavailable-host error instead of throwing", async () => {

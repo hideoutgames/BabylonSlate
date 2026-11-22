@@ -5,7 +5,7 @@ import { compileGraph, type GraphNode, type LogicGraph } from "@haptic/scripting
 import { createDefaultNodeRegistry } from "@haptic/scripting-nodes";
 import { RuntimeDataCatalog } from "./data-catalog";
 import { ScriptHost, type ScriptHostServices } from "./script-host";
-import { functionModuleLoader, loadCompiledModule } from "./function-module-loader";
+import { loadCompiledModule } from "./module-loader";
 import { runtimeOptionsFromLoadControl } from "./play-load";
 import { createInProcessRuntime } from "./driver";
 
@@ -41,7 +41,6 @@ function assets(): DataAssetCatalogEntry[] {
 
 function host(data?: RuntimeDataCatalog, logs: string[] = [], prepareAssets?: ScriptHostServices["prepareAssets"]): ScriptHost {
   const services: ScriptHostServices = {
-    moduleLoader: functionModuleLoader,
     data, prepareAssets,
     log: (_severity, _category, message) => { logs.push(message); },
     print: () => {}, destroyActor: () => {},

@@ -9,7 +9,6 @@ import {
   createInProcessRuntime,
   createPlayBootCoordinator,
   createRuntimeFromLoad,
-  functionModuleLoader,
   runtimeOptionsFromLoadControl,
   type RuntimeDriver,
 } from "@haptic/runtime";
@@ -150,10 +149,10 @@ describe.each(["worker", "in-process"] as const)(
         finishBoot = resolve;
         failBoot = reject;
       });
-      vi.mocked(createRuntimeFromLoad).mockImplementation((load, onCommand, host) => {
+      vi.mocked(createRuntimeFromLoad).mockImplementation((load, onCommand, _storage, sourceHost) => {
         runtime = createInProcessRuntime({
           ...runtimeOptionsFromLoadControl(load),
-          ...(host.acquireScene ? { acquireScene: host.acquireScene } : {}),
+          ...sourceHost,
           onCommand,
           preferSoftwarePhysics: true,
         });
@@ -204,7 +203,7 @@ describe.each(["worker", "in-process"] as const)(
             // The session posts its boot controls before installing its handlers, as a real worker's replies are
             // tasks that arrive after the session has started.
             if (control.type === "load")
-              runtime = createRuntimeFromLoad(control, (command) => onCommand(command), { moduleLoader: functionModuleLoader });
+              runtime = createRuntimeFromLoad(control, (command) => onCommand(command));
             if (control.type === "loadScripts") {
               const ready = boot.queueScripts(runtime, control.scripts, control.spawn ?? [], control.replace, control.retain);
               const { requestId } = control;

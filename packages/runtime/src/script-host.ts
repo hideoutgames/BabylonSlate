@@ -1,4 +1,4 @@
-import { compiledScriptSourceLabel, RandomStream, SaveGameError, type ExtensionLibraries, type SaveGameMigrationData, type SaveGameService } from "@haptic/core";
+import { loadExtensionGameLibraries, RandomStream, SaveGameError, type ExtensionLibraries, type SaveGameMigrationData, type SaveGameService } from "@haptic/core";
 import {
   interfaceHandlerKey,
   isCreatableObjectChain,
@@ -13,7 +13,7 @@ import {
 import type { AnimTransitionDecision } from "@haptic/anim-graph";
 import { INPUT_EVENT } from "@haptic/scripting";
 import { isInfiniteLoopError } from "@haptic/debugger";
-import type { ScriptSourceLocation } from "./module-loader";
+import { loadCompiledModule } from "./module-loader";
 import type { ScriptBreakpoints } from "./script-breakpoints";
 import { createScriptContextClass, type ScriptContextConstructor, type ScriptContextHost } from "./script-context-factory";
 import type {
@@ -52,7 +52,9 @@ export function compiledScriptKey(script: Pick<CompiledScript, "assetGuid" | "cl
   return JSON.stringify([script.assetGuid, script.classId]);
 }
 
-export { compiledScriptSourceLabel };
+export function compiledScriptSourceLabel(script: Pick<CompiledScript, "assetGuid" | "classId">): string {
+  return `${script.assetGuid}~${encodeURIComponent(script.classId)}`;
+}
 
 /** A loaded module is reused only when its source and export list are both unchanged. */
 function sameModule(a: Pick<CompiledScript, "source" | "entryPoints">, b: Pick<CompiledScript, "source" | "entryPoints">): boolean {
@@ -249,27 +251,22 @@ export class ScriptHost {
    * Gameplay Extension libraries, evaluated once, before the first module that
    * can call them; a library that fails is reported and left out.
    */
-  private extensions: Promise<ExtensionLibraries> | null = null;
-  private extensionLibraries(): Promise<ExtensionLibraries> {
-    this.extensions ??= this.services.moduleLoader.loadExtensions(this.services.extensionLibraries ?? [], (error) => this.services.reportError(error));
+  private extensions: ExtensionLibraries | null = null;
+  private extensionLibraries(): ExtensionLibraries {
+    this.extensions ??= loadExtensionGameLibraries(this.services.extensionLibraries ?? [], (error) => this.services.reportError(error));
     return this.extensions;
-  }
-
-  /** Where a loaded script's source sits for stack frames, when it is not its own `haptic:///<label>.js` source. */
-  scriptSourceLocation(script: Pick<CompiledScript, "assetGuid" | "classId">): ScriptSourceLocation | null {
-    return this.services.moduleLoader.sourceLocation(compiledScriptSourceLabel(script));
   }
 
   /** Prepare a complete owned union, retaining the previous valid modules on failure. */
   async replaceScripts(scripts: readonly CompiledScript[]): Promise<void> {
     const generation = ++this.sourceGeneration;
-    const extensions = await this.extensionLibraries();
+    const extensions = this.extensionLibraries();
     const existing = new Map([...this.byClassId.values()].flat().map((entry) => [compiledScriptKey(entry.script), entry]));
     const prepared = new Map<string, LoadedScript[]>();
     for (const script of scripts) {
       const previous = existing.get(compiledScriptKey(script));
       const exports = previous && sameModule(previous.script, script)
-        ? previous.exports : await this.services.moduleLoader.loadScript(script, compiledScriptSourceLabel(script), extensions);
+        ? previous.exports : await loadCompiledModule(script, compiledScriptSourceLabel(script), extensions);
       if (generation !== this.sourceGeneration) throw new Error("Script preparation was superseded or disposed.");
       const entries = prepared.get(script.classId) ?? [];
       entries.push({ script, exports });

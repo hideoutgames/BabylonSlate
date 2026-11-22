@@ -179,8 +179,8 @@ describe("worker entry snapshot transport", () => {
     let runtime!: RuntimeDriver;
     let saveStorage!: SaveGameStorage;
     const hud = { ...createDefaultSceneLayer(), actors: [createActor("badge", "Badge", { classId: "SceneLayerActor" })] };
-    vi.mocked(createRuntimeFromLoad).mockImplementation((control, onCommand, host) => {
-      saveStorage = host.saveGameStorage!;
+    vi.mocked(createRuntimeFromLoad).mockImplementation((control, onCommand, storage) => {
+      saveStorage = storage!;
       runtime = createInProcessRuntime({
         ...runtimeOptionsFromLoadControl(control),
         // This fake host acknowledges no Scene load: the immediate in-process harness.

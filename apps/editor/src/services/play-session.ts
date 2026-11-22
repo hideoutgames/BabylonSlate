@@ -4,7 +4,6 @@ import type { ScalabilityAcknowledgement } from "@haptic/core";
 import {
   type createPlayPauseGate,
   createRuntimeFromLoad,
-  functionModuleLoader,
   captureConsoleLogs,
   DESTROYED_ACCESS_DIAGNOSTIC_CODE,
   SessionDiagnosticAggregator,
@@ -710,12 +709,11 @@ export function startPlaySession(options: PlaySessionOptions): PlaySession {
   } else {
     const err = workerUnavailable;
     runtimeMode = "in-process";
-    runtime = createRuntimeFromLoad(loadControl, (command) => onCommand(command), {
-      // Editor Play compiles each script from its source, so a recompiled graph runs at once.
-      moduleLoader: functionModuleLoader,
-      saveGameStorage: saveStorage,
-      ...(sourceTracker.acquireScene ? { acquireScene: sourceTracker.acquireScene } : {}),
-    });
+    runtime = createRuntimeFromLoad(loadControl, (command) =>
+      onCommand(command),
+      saveStorage,
+      sourceTracker.acquireScene ? { acquireScene: sourceTracker.acquireScene } : undefined,
+    );
     ({ pauseGate, resetBoot } = bootInProcessPlay(runtime, { options, scripts, animGraphs, stopped: () => stopped }));
     options.onLog?.(
       `Play worker unavailable (${err instanceof Error ? err.message : String(err)}); using in-process.`,

@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { functionModuleLoader } from "./function-module-loader";
 import { RandomStream, drawSeeded, type RandomSeed } from "@haptic/core";
 import { Actor } from "@haptic/object-model";
 import { compileGraph, ENGINE_SEED_STRUCT_ID, ENGINE_STRUCTS, type GraphEdge, type GraphNode, type LogicGraph } from "@haptic/scripting";
@@ -36,7 +35,6 @@ function call(functionName: string, rows: Row[]): Record<string, unknown> {
 async function dice(...functions: LogicGraph[]) {
   const errors: unknown[] = [];
   const host = new ScriptHost({
-    moduleLoader: functionModuleLoader,
     seed: 9, log: () => {}, print: () => {}, destroyActor: () => {},
     executeConsoleCommand: () => ({ success: true, output: "" }),
     delay: async () => {}, reportError: (error) => { errors.push(error); },
