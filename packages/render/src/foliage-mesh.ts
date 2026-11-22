@@ -429,6 +429,7 @@ function isolateFoliageGeometry(mesh: Mesh, source: Mesh): void {
 /** One thin-instance draw per model primitive/material/spatial cell; never one actor per plant. */
 export function createFoliageMesh(scene: Scene, name: string, properties: unknown, assets?: MeshAssetContext): Mesh {
   const data = parseFoliageProperties(properties);
+  if (data.unreadable) console.warn(`[render] Foliage ${name} has instance data that could not be read; it draws nothing.`);
   const root = new Mesh(name, scene);
   root.isPickable = false;
   const bundle = new VisualBundle();

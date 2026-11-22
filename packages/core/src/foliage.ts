@@ -44,6 +44,11 @@ export interface FoliageBatch extends FoliageBatchInfo {
 export interface FoliageProperties {
   groupId: string;
   batches: FoliageBatch[];
+  /**
+   * The component holds instances (`data` or chunk bytes) that do not decode or do not match its batch list. Its
+   * batches are then empty; hosts report it and never write the component back from this result.
+   */
+  unreadable?: true;
 }
 
 /**
@@ -56,6 +61,8 @@ export interface SerializedFoliageProperties {
   batches: FoliageBatchInfo[];
   data?: string | null;
   chunkId?: string;
+  /** Play and exported games: the asset whose chunks hold `chunkId`, so the runtime looks up `<chunkOwner>:<chunkId>`. */
+  chunkOwner?: string;
 }
 
 export const MAX_FOLIAGE_INSTANCES = 20000;
@@ -281,16 +288,25 @@ export function parseFoliageProperties(value: unknown, binaryBytes?: Uint8Array 
   const groupId = guid(p.groupId) ?? "";
   const rawBatches = Array.isArray(p.batches) ? p.batches.slice(0, MAX_FOLIAGE_BATCHES) : [];
   let transforms: readonly Float32Array[] | null = null;
+  let unreadable = false;
   if (rawBatches.length > 0 && rawBatches.every((batch) => object(batch).transforms instanceof Float32Array)) {
     transforms = rawBatches.map((batch) => object(batch).transforms as Float32Array);
   } else {
-    try {
-      if (binaryBytes && binaryBytes.byteLength > 0) transforms = decodeBytesCached(binaryBytes);
-      else if (typeof p.data === "string" && p.data.length > 0) transforms = decodeBase64Cached(p.data);
-    } catch {
-      transforms = null;
+    const stored = binaryBytes && binaryBytes.byteLength > 0 ? binaryBytes : typeof p.data === "string" && p.data.length > 0 ? p.data : null;
+    if (stored !== null) {
+      try {
+        transforms = typeof stored === "string" ? decodeBase64Cached(stored) : decodeBytesCached(stored);
+      } catch {
+        transforms = null;
+      }
+      if (!transforms || transforms.length !== rawBatches.length) {
+        transforms = null;
+        unreadable = true;
+      }
+    } else if (typeof p.chunkId === "string" && p.chunkId.length > 0) {
+      // A chunk is named but its bytes are not here: a stored chunk that did not load.
+      unreadable = true;
     }
-    if (transforms && transforms.length !== rawBatches.length) transforms = null;
   }
   const batches: FoliageBatch[] = [];
   let remaining = MAX_FOLIAGE_INSTANCES * FOLIAGE_FLOATS_PER_INSTANCE;
@@ -302,7 +318,7 @@ export function parseFoliageProperties(value: unknown, binaryBytes?: Uint8Array 
     remaining -= kept.length;
     batches.push({ ...info, transforms: kept });
   }
-  const parsed = { groupId, batches };
+  const parsed: FoliageProperties = unreadable ? { groupId, batches, unreadable: true } : { groupId, batches };
   if (memo) decodedByProperties.set(memo, parsed);
   return parsed;
 }
@@ -332,7 +348,7 @@ export function normalizeSerializedFoliageProperties(value: unknown): Serialized
   return {
     groupId: guid(p.groupId) ?? "",
     batches: foliageBatchInfos(p),
-    ...(data ? { data } : chunkId ? { chunkId } : { data: null }),
+    ...(data ? { data } : chunkId ? { chunkId, ...(guid(p.chunkOwner) ? { chunkOwner: p.chunkOwner as string } : {}) } : { data: null }),
   };
 }
 

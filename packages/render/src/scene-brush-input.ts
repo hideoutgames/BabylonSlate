@@ -187,7 +187,9 @@ export function attachSceneBrushInput(handle: EngineHandle, canvas: HTMLCanvasEl
           let session = erasing.get(component);
           if (session === undefined) {
             const root = handle.editor?.sync.meshForComponent(actor.id, component.id);
-            session = root ? new FoliageEraseSession(component.properties, root.computeWorldMatrix(true)) : null;
+            // A component whose stored instances could not be read is never rewritten from its empty result.
+            session = root && !parseFoliageProperties(component.properties).unreadable
+              ? new FoliageEraseSession(component.properties, root.computeWorldMatrix(true)) : null;
             erasing.set(component, session);
           }
           if (!session) return [component];

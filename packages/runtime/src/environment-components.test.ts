@@ -10,6 +10,7 @@ import {
   landscapeChunkId,
   packFoliageTransforms,
   parseLandscapeProperties,
+  serializeFoliageProperties,
 } from "@haptic/core";
 import type { CommandMessage } from "@haptic/bridge";
 import { createInProcessRuntime } from "./driver";
@@ -22,7 +23,9 @@ it("transports authored terrain and a whole mixed foliage stroke via raw HPLD an
     modelGuid, materialGuid: "leaves", cullDistance: 120, fadeRange: 15, shadowDistance: 45,
     transforms: packFoliageTransforms([{ ...identitySerializedTransform(), position: [index, 0, 2] }]),
   })) };
-  const foliageChunk = foliageChunkId("plants");
+  const foliageChunk = foliageChunkId("environment/plants");
+  // A Prefab or Class template's Foliage carries its instances inline.
+  const inline = { groupId: "trees", batches: [{ ...foliage.batches[0]!, transforms: packFoliageTransforms([{ ...identitySerializedTransform(), position: [5, 0, 5] }]) }] };
   const commands: CommandMessage[] = [];
   const runtime = createInProcessRuntime({
     seed: 1,
@@ -32,8 +35,9 @@ it("transports authored terrain and a whole mixed foliage stroke via raw HPLD an
     playScene: { ...createDefaultScene(), actors: [createActor("environment", "Environment", { components: [
       { id: "terrain", classId: "LandscapeComponent", properties: { width: landscape.width, depth: landscape.depth, subdivisions: landscape.subdivisions, chunkId, materialGuid: "terrain", collisionsEnabled: true } },
       { id: "plants", classId: "FoliageComponent", properties: {
-        groupId: "trees", batches: foliageBatchInfos(foliage), chunkId: foliageChunk,
+        groupId: "trees", batches: foliageBatchInfos(foliage), chunkId: foliageChunk, chunkOwner: "scene-env",
       } },
+      { id: "template", classId: "FoliageComponent", properties: { ...serializeFoliageProperties(inline) } },
     ] })] },
     onCommand: (command) => commands.push(command),
   });
@@ -43,6 +47,7 @@ it("transports authored terrain and a whole mixed foliage stroke via raw HPLD an
     expect(assignment).toMatchObject({ type: "assignMesh", parts: [
       { componentId: "terrain", meshKind: "landscape", landscape },
       { componentId: "plants", meshKind: "foliage", foliage },
+      { componentId: "template", meshKind: "foliage", foliage: inline },
     ] });
     expect(runtime.getWorld().getActors()).toHaveLength(1);
     runtime.start();

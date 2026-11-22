@@ -994,11 +994,19 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     for (const component of actor.components) {
       if (component.classId === "FoliageComponent") {
         if (!component.variables.has("chunkId") && !component.variables.has("data")) continue;
-        const parsed = parseFoliageProperties(Object.fromEntries(component.variables), this.componentChunk(component.getVariable("chunkId"), sceneGuid));
+        // Play and exports name each chunk's owner, so the lookup is exact; Prefab and Class templates carry `data`.
+        const chunkId = component.getVariable("chunkId");
+        const owner = component.getVariable("chunkOwner");
+        const bytes = typeof chunkId === "string" && typeof owner === "string" ? this.sceneComponentChunks.get(`${owner}:${chunkId}`) : undefined;
+        const parsed = parseFoliageProperties(Object.fromEntries(component.variables), bytes);
+        if (parsed.unreadable || (typeof chunkId === "string" && !bytes)) {
+          console.warn(`[runtime] Foliage component ${component.guid} has instance data that could not be read; it draws nothing.`);
+        }
         component.setVariable("groupId", parsed.groupId);
         component.setVariable("batches", parsed.batches);
         component.variables.delete("data");
         component.variables.delete("chunkId");
+        component.variables.delete("chunkOwner");
         continue;
       }
       if (component.classId !== "LandscapeComponent") continue;

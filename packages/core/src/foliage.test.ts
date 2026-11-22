@@ -105,7 +105,9 @@ it("drops instances whose chunk does not match the batch list instead of misassi
     { modelGuid: "a", materialGuid: null, cullDistance: 1, fadeRange: 1, shadowDistance: 1, transforms: transforms(...instance(1)) },
   ] }).data;
   const twoBatches = { groupId: "g", data, batches: [{ modelGuid: "a" }, { modelGuid: "b" }] };
-  expect(parseFoliageProperties(twoBatches).batches).toEqual([]);
+  expect(parseFoliageProperties(twoBatches)).toEqual({ groupId: "g", batches: [], unreadable: true });
+  expect(parseFoliageProperties({ groupId: "g", chunkId: "foliage:a/b", batches: [{ modelGuid: "a" }] }).unreadable).toBe(true);
+  expect(parseFoliageProperties({ groupId: "g", data: null, batches: [] }).unreadable).toBeUndefined();
   expect(parseFoliageProperties({ groupId: "g", data: "not base64!", batches: [{ modelGuid: "a" }] }).batches).toEqual([]);
 });
 
