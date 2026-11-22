@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
+import { createThumbnailVersionStore } from "@haptic/editor-kit";
 import { useThumbnailUrls, type LoadThumbnail } from "./use-thumbnail-urls";
 
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
@@ -25,11 +26,26 @@ afterEach(() => {
 
 type Props = { guids: string[]; versions: Record<string, number>; enabled: boolean };
 
+/** `versions` as the thumbnail owner's store holds them: each rerender bumps the guids whose version rose. */
 function renderUrls(load: LoadThumbnail, initial: Props) {
-  return renderHook(
-    ({ guids, versions, enabled }: Props) => useThumbnailUrls(guids, load, versions, enabled),
+  const store = createThumbnailVersionStore();
+  const apply = (versions: Record<string, number>) => {
+    for (const [guid, version] of Object.entries(versions)) {
+      while (store.version(guid) < version) store.bump([guid]);
+    }
+  };
+  apply(initial.versions);
+  const view = renderHook(
+    ({ guids, enabled }: Props) => useThumbnailUrls(guids, load, store, enabled),
     { initialProps: initial },
   );
+  return {
+    ...view,
+    rerender: (props: Props) => act(() => {
+      apply(props.versions);
+      view.rerender(props);
+    }),
+  };
 }
 
 describe("useThumbnailUrls", () => {

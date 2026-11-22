@@ -34,6 +34,7 @@ import type {
   TraceDocumentEntry,
 } from "@haptic/assets";
 import type { ScriptBundleEntry } from "@haptic/bridge";
+import type { ThumbnailVersions } from "@haptic/editor-kit";
 import type { TracePayload } from "@haptic/debugger";
 import type { ExportArtifact } from "@haptic/exporter";
 import type { Diagnostic } from "@haptic/scripting";
@@ -467,7 +468,7 @@ export interface DocumentContextValue {
   /** Lazy CB thumbnail decode (derived-data LRU, separate from scene cache). */
   loadAssetThumbnail: (assetGuid: string) => Promise<Uint8Array | null>;
   writeAssetThumbnail: (assetGuid: string, bytes: Uint8Array, expected?: AssetThumbnailWriteIdentity) => Promise<void>;
-  thumbnailVersions: Readonly<Record<string, number>>;
+  thumbnailVersions: ThumbnailVersions;
   thumbnailsEnabled: boolean;
   /** Compile requested Play graphs, or every graph for explicit project compilation. */
   collectPlayPreviewScripts: (requiredGuids?: ReadonlySet<string>, sourceDocuments?: readonly OpenDocument[], sourceProject?: ProjectDocument, compileOptions?: PlayScriptCompileOptions) => Promise<{

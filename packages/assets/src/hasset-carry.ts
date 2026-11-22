@@ -164,6 +164,8 @@ async function storedChunkIntact(
  *   blob whose size matches), so a save would report success while the only
  *   good copy lives in memory. Their stored bytes are verified: a damaged
  *   stored blob throws, and a damaged or unreadable inline copy returns false.
+ *   Inline copies are read only when `bytes` keeps the stored header, the one
+ *   case where the write could be skipped; otherwise the write replaces them.
  *
  * Resolves true when nothing stored needs repair, so leaving the file alone
  * loses nothing; false when a write is needed to repair an inline copy.
@@ -181,11 +183,16 @@ export async function verifyChunksBeforeWrite(
       throw new Error(`Blob ${entry.locator.blob} of chunk ${entry.id} is missing`);
     }
   }
+  // A container with another header is written whatever the stored copies
+  // hold, so its supplied inline bytes replace them unread; only a kept blob
+  // can still carry damage into the new file.
+  const rewritten = stableStringify(stored.header) !== stableStringify(next);
   let intact = true;
   for (const id of replaced) {
     const now = next.chunks.find((entry) => entry.id === id);
     const before = stored.header.chunks.find((entry) => entry.id === id);
     if (!now || !before || now.sha256 !== before.sha256) continue;
+    if (rewritten && !("blob" in before.locator && "blob" in now.locator)) continue;
     if (await storedChunkIntact(storage, blobs, stored, before)) continue;
     if ("blob" in before.locator && "blob" in now.locator && before.locator.blob === now.locator.blob) {
       throw new Error(`Stored blob of chunk ${id} is damaged and would be kept as it is`);

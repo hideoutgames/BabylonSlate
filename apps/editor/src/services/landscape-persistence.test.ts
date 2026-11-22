@@ -1,5 +1,5 @@
 import { installMinimalProject } from "../../../../packages/assets/src/test-support/minimal-project";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   createActor,
   createDefaultScene,
@@ -18,6 +18,7 @@ import {
   encodeAssetDocument,
   LANDSCAPE_CHUNK_KIND,
   LANDSCAPE_CHUNK_MIME,
+  readAssetCatalog,
   readAssetDocumentHeader,
 } from "@haptic/assets";
 import { MemoryStorageAdapter } from "@haptic/vfs";
@@ -133,6 +134,65 @@ describe("Landscape binary .hasset persistence and export sidecars", () => {
     await service.saveDocument("scene", scenePath, { ...reloaded, actors: [] });
     const afterDeleteHeader = readAssetDocumentHeader(await storage.readBinary(scenePath));
     expect(afterDeleteHeader.chunks.some((chunk) => chunk.id === expectedChunkId)).toBe(false);
+  });
+
+  it("reads each stored chunk once to open a Landscape Scene, none to save an edit, and at most once to save it unchanged", async () => {
+    const twoLandscapes = (first: number, second: number): SerializedScene => ({
+      ...createDefaultScene(),
+      actors: [createActor("land", "Land", { components: [
+        { id: "c1", classId: "LandscapeComponent", properties: { ...peak(first) } },
+        { id: "c2", classId: "LandscapeComponent", properties: { ...peak(second) } },
+      ] })],
+    });
+    const { storage, service: writer } = await openProject();
+    await writer.saveDocument("scene", MAIN_SCENE_FILE, twoLandscapes(2, 3));
+    writer.dispose();
+    // A fresh session, so nothing is cached.
+    const service = new ProjectService(storage);
+    await service.loadCurrentProject();
+
+    // Counts, per chunk of the file as it is at the time of the read, the reads whose bytes overlap it.
+    const read = storage.readBinaryRange.bind(storage);
+    const readFull = storage.readBinary.bind(storage);
+    let chunkReads: string[] = [];
+    const chunksAt = async (offset: number, length: number) => {
+      const { header, locator } = await readAssetCatalog({ ...storage, readBinaryRange: read } as typeof storage, MAIN_SCENE_FILE);
+      return header.chunks.flatMap((entry) => {
+        const span = "inline" in entry.locator ? entry.locator.inline : null;
+        if (!span) return [];
+        const start = locator.payloadOffset + span.offset;
+        return start < offset + length && offset < start + span.length ? [entry.id] : [];
+      });
+    };
+    vi.spyOn(storage, "readBinaryRange").mockImplementation(async (path, offset, length, revision, options) => {
+      if (path === MAIN_SCENE_FILE && length > 0) chunkReads.push(...await chunksAt(offset, length));
+      return read(path, offset, length, revision, options);
+    });
+    vi.spyOn(storage, "readBinary").mockImplementation(async (path, options) => {
+      if (path === MAIN_SCENE_FILE) chunkReads.push(...await chunksAt(0, Number.MAX_SAFE_INTEGER));
+      return readFull(path, options);
+    });
+    const take = () => {
+      const taken = [...chunkReads].sort();
+      chunkReads = [];
+      return taken;
+    };
+
+    const opened = (await service.loadDocument("scene", MAIN_SCENE_FILE)) as SerializedScene;
+    expect(parseLandscapeProperties(opened.actors[0]!.components[1]!.properties).heights[12]).toBeCloseTo(3, 5);
+    expect(take()).toEqual(["document", "landscape:land/c1", "landscape:land/c2"]);
+
+    // Sculpting one Landscape rewrites the file from the editor's copy: no stored chunk is read.
+    const edited = twoLandscapes(9, 3);
+    await service.saveDocument("scene", MAIN_SCENE_FILE, edited);
+    expect(take()).toEqual([]);
+    expect(decodeLandscapeChunk((await service.readAssetChunk(MAIN_SCENE_FILE, landscapeChunkId("land/c1")))!)?.heights[12]).toBeCloseTo(9, 5);
+    take();
+
+    // Saving it unchanged leaves the file alone once each stored copy it keeps is confirmed intact.
+    await service.saveDocument("scene", MAIN_SCENE_FILE, edited);
+    expect(take()).toEqual(["document", "landscape:land/c1", "landscape:land/c2"]);
+    service.dispose();
   });
 
   it("keeps Prefab and Class terrain in their documents, so every reader and every placed instance gets it", async () => {

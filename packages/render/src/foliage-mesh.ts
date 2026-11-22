@@ -18,6 +18,7 @@ import { VisualBundle } from "./visual-bundle";
 import { applyMaterialBounds } from "./material-bounds";
 import { markBoundsHoldInstances } from "./play-view-culling";
 import { sharedVertexBuffer } from "./shared-vertex-buffer";
+import { applyWithSharedIndices, forgetLostIndexBuffer } from "./shared-index-buffer";
 import { sceneRenderingSettings } from "./render-settings";
 import { setShadowDistanceCulled } from "./shadow-caster-list";
 import type { ModelLodSet } from "./model-lod";
@@ -77,7 +78,7 @@ function applyCellLod(cell: FoliageCellRecord, levelIndex: number): void {
   const target = cell.lods[levelIndex];
   if (!target) return;
   const savedBounds = cell.mesh.getBoundingInfo();
-  target.geometry.applyToMesh(cell.mesh);
+  applyWithSharedIndices(target.geometry, cell.mesh);
   cell.mesh.releaseSubMeshes();
   for (const spec of target.subMeshes) {
     new SubMesh(spec.materialIndex, spec.verticesStart, spec.verticesCount, spec.indexStart, spec.indexCount, cell.mesh);
@@ -101,6 +102,8 @@ function attachCellLods(cell: FoliageCellRecord, lodSet: ModelLodSet): void {
     for (const buffer of baseBuffers) {
       geometry.setVerticesBuffer(sharedVertexBuffer(buffer), totalVertices);
     }
+    // No mesh draws it yet, so this uploads nothing: the first swap to the level shares its index buffer with every
+    // other cell of the same source that drew the level (`applyWithSharedIndices`).
     geometry.setIndices(level.data.indices, totalVertices);
     cell.lods.push({
       geometry,
@@ -161,11 +164,19 @@ function foliageDistanceState(scene: Scene): FoliageDistanceState {
   state.observer = scene.onBeforeRenderObservable.add(() => {
     updateFoliageDistances(scene);
   });
+  // A level of detail no cell draws keeps the index buffer of the lost context, which Babylon does not rebuild.
+  const engine = scene.getEngine();
+  const restored = engine.onContextRestoredObservable.add(() => {
+    for (const cell of state!.cells) {
+      for (const lod of cell.lods) if (lod.geometry !== cell.mesh.geometry) forgetLostIndexBuffer(lod.geometry);
+    }
+  });
   scene.onDisposeObservable.addOnce(() => {
     if (state!.observer) {
       scene.onBeforeRenderObservable.remove(state!.observer);
       state!.observer = null;
     }
+    engine.onContextRestoredObservable.remove(restored);
     state!.cells.clear();
   });
   foliageDistancesByScene.set(scene, state);
@@ -419,7 +430,10 @@ const composeRotation = new Quaternion();
 const composePosition = new Vector3();
 const composeInstance = new Matrix();
 
-/** Thin-instance attributes belong to Geometry, so every cell needs its own. */
+/**
+ * Thin-instance attributes belong to Geometry, so every cell needs its own. It borrows the source's vertex buffers
+ * and draws the index buffer every cell of the source shares.
+ */
 function isolateFoliageGeometry(mesh: Mesh, source: Mesh): void {
   const geometry = new Geometry(mesh.name, mesh.getScene());
   const total = source.getTotalVertices();
@@ -427,7 +441,7 @@ function isolateFoliageGeometry(mesh: Mesh, source: Mesh): void {
     geometry.setVerticesBuffer(sharedVertexBuffer(buffer), total);
   }
   geometry.setIndices(source.getIndices() ?? [], total);
-  geometry.applyToMesh(mesh);
+  applyWithSharedIndices(geometry, mesh);
   mesh.releaseSubMeshes();
   for (const subMesh of source.subMeshes) subMesh.clone(mesh);
 }
@@ -470,11 +484,20 @@ export function createFoliageMesh(scene: Scene, name: string, properties: unknow
       const scale = assets?.modelPayloads?.get(batch.modelGuid)?.importScale ?? 1;
       // Instance indices by 32 m spatial cell, read straight from the batch's floats.
       const transforms = batch.transforms;
+      // Found by column and row, so an instance names nothing; a cell is named once, in the order cells first appear.
       const cells = new Map<string, number[]>();
+      const columns = new Map<number, Map<number, number[]>>();
       for (let instance = 0, at = 0; at < transforms.length; instance++, at += FOLIAGE_FLOATS_PER_INSTANCE) {
-        const key = `${Math.floor(transforms[at]! / 32)}:${Math.floor(transforms[at + 2]! / 32)}`;
-        const cell = cells.get(key);
-        if (cell) cell.push(instance); else cells.set(key, [instance]);
+        const cellX = Math.floor(transforms[at]! / 32), cellZ = Math.floor(transforms[at + 2]! / 32);
+        let column = columns.get(cellX);
+        if (!column) columns.set(cellX, (column = new Map()));
+        const cell = column.get(cellZ);
+        if (cell) cell.push(instance);
+        else {
+          const created = [instance];
+          column.set(cellZ, created);
+          cells.set(`${cellX}:${cellZ}`, created);
+        }
       }
       const batchCellRecords: FoliageCellRecord[] = [];
       for (const sourceMesh of container.meshes) {

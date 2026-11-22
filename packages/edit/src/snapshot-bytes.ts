@@ -3,6 +3,22 @@ export function snapshotBytes(value: unknown): number {
   return new TextEncoder().encode(JSON.stringify(value)).byteLength;
 }
 
+const retained = new WeakMap<object, number>();
+
+/**
+ * `snapshotBytes` of a command's own fields (the data it retains, as the
+ * journal records it), measured once per command. For commands whose fields
+ * are small and fixed, where a memo per side is not worth keeping.
+ */
+export function retainedFieldBytes(command: object): number {
+  let bytes = retained.get(command);
+  if (bytes === undefined) {
+    bytes = snapshotBytes({ ...command });
+    retained.set(command, bytes);
+  }
+  return bytes;
+}
+
 /** Validate and count canonical JSON without allocating a full encoded copy. */
 export function canonicalSnapshotBytes(value: unknown, maxBytes = Number.MAX_SAFE_INTEGER): number {
   let total = 0;
