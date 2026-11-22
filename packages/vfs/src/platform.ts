@@ -43,6 +43,11 @@ export interface ElectronSecretsBridge {
   get(key: string): Promise<string | null>;
   set(key: string, value: string): Promise<void>;
   delete(key: string): Promise<void>;
+  /**
+   * Source control and signing secrets only: false when this computer has no
+   * secure OS encryption, so secrets are kept in memory until the app quits.
+   */
+  persistent?(): Promise<boolean>;
 }
 
 /**

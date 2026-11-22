@@ -272,6 +272,8 @@ async function registerIpc(): Promise<void> {
   handle("secrets:delete", async (_event, key) => {
     await secrets.delete(String(key));
   });
+  // False when this computer has no secure OS encryption: secrets then last until the app quits.
+  handle("secrets:persistent", () => secrets.persistent);
 
   // Android games: built with Gradle from the user's JDK and Android SDK, signed with their keystore.
   // The JDK, SDK and keystore are chosen here in native pickers, so the page never names a program to run.

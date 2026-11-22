@@ -392,7 +392,7 @@ export function validateIpcArguments(channel: string, args: unknown[]): void {
   const counts: Record<string, number> = {
     "save-games:read": 1, "save-games:write": 2, "save-games:remove": 1,
     "save-games:list": 1, "save-games:acquire-lock": 1, "save-games:release-lock": 1,
-    "memory:stats": 0, "updates:status": 0, "updates:restart": 0, "settings:read": 0, "settings:write": 1, "secrets:get": 1, "secrets:set": 2, "secrets:delete": 1,
+    "memory:stats": 0, "updates:status": 0, "updates:restart": 0, "settings:read": 0, "settings:write": 1, "secrets:get": 1, "secrets:set": 2, "secrets:delete": 1, "secrets:persistent": 0,
     "account-secrets:get": 1, "account-secrets:set": 2, "account-secrets:delete": 1,
     "lfs:fetch": 1, "files:transfer": 2, "files:cancel": 1, "auth:open-browser": 2, "project:pickFolder": 0, "project:openDocuments": 1, "project:openKnown": 1,
     "project:list": 0, "project:delete": 1, "project:release": 0, "project:readBinary": 1, "project:readBinaryRange": 4,
@@ -481,6 +481,8 @@ export function validateIpcArguments(channel: string, args: unknown[]): void {
     text(args[0]);
     const parsed: unknown = JSON.parse(args[0]);
     requireValue(parsed && typeof parsed === "object" && !Array.isArray(parsed));
+  } else if (channel === "secrets:persistent") {
+    // No arguments.
   } else if (channel.startsWith("secrets:") || channel.startsWith("account-secrets:")) {
     text(args[0], 1024);
     requireValue(args[0].length > 0);
