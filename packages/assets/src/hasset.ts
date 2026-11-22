@@ -7,6 +7,7 @@ import {
   writeU32LE,
 } from "./bytes";
 import { AssetFormatVersionError } from "./migration";
+import { ASSET_DEPENDENCY_METADATA_VERSION } from "./asset-dependencies";
 
 export const HASSET_MAGIC = new TextEncoder().encode("HAPT");
 export const HASSET_FORMAT_VERSION = 1;
@@ -15,8 +16,6 @@ export const HASSET_PREFIX_BYTES = 12;
 export const MAX_HASSET_HEADER_BYTES = 16 * 1024 * 1024;
 /** Chunks at or above this size externalise to the blob store in thin mode. */
 export const DEFAULT_BLOB_THRESHOLD = 64 * 1024;
-/** Header dependency metadata layout this engine writes and reads. */
-export const ASSET_DEPENDENCY_METADATA_VERSION = 1;
 
 const chunkLocatorSchema = z.union([
   z.object({

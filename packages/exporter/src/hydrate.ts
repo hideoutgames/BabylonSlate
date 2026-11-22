@@ -259,6 +259,13 @@ function gameComplexCollisionModelGuids(game: GameSourceContent): Set<string> {
   ]);
 }
 
+/** The Models whose GLB a host holds raw; one holding installed sources supplies `complexMeshes` itself. */
+function rawModelBytes(models: ReadonlyMap<string, Uint8Array | Blob>): Map<string, Uint8Array> {
+  const raw = new Map<string, Uint8Array>();
+  for (const [guid, source] of models) if (source instanceof Uint8Array) raw.set(guid, source);
+  return raw;
+}
+
 export function packedContentFromGame(game: GameSourceContent): PackedGameContent {
   const dataAssets: DataAssetCatalogEntry[] = [];
   const curveAssets: CurveAssetCatalogEntry[] = [];
@@ -453,7 +460,7 @@ export function packedContentFromGame(game: GameSourceContent): PackedGameConten
     retargetAnimationLoads,
     modelPayloads: new Map(game.modelPayloads),
     complexMeshes: game.complexMeshes ? new Map(game.complexMeshes)
-      : cookComplexCollisionMeshes(game.modelBytes, game.modelPayloads, gameComplexCollisionModelGuids(game)),
+      : cookComplexCollisionMeshes(rawModelBytes(game.modelBytes), game.modelPayloads, gameComplexCollisionModelGuids(game)),
     texturePixelSizes,
   };
 }

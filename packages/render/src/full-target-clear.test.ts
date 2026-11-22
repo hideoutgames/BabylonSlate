@@ -2,7 +2,6 @@ import { afterEach, expect, it, vi } from "vitest";
 import { Constants } from "@babylonjs/core/Engines/constants";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
-import { FrameGraphBloomTask } from "@babylonjs/core/FrameGraph/Tasks/PostProcesses/bloomTask";
 import { FrameGraphPassTask } from "@babylonjs/core/FrameGraph/Tasks/PostProcesses/passTask";
 import { FrameGraphCopyToBackbufferColorTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/copyToBackbufferColorTask";
 import { backbufferColorTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
@@ -11,6 +10,8 @@ import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { Scene } from "@babylonjs/core/scene";
 import { adaptNullEngineFrameGraph } from "./framegraph-test-fixtures";
 import { fragmentDiscards, fullTargetClear, startFullScreenPassesWithClear } from "./full-target-clear";
+import { FrameGraphBloomBlurTask } from "./bloom-blur-task";
+import { FrameGraphDisplayColorTask } from "./display-color-task";
 import { setBackbufferDepthStencilFold } from "./backbuffer-depth-tracker";
 
 const dispose: Array<() => void> = [];
@@ -20,8 +21,9 @@ afterEach(() => {
 });
 
 /**
- * A source texture, a pass task drawing it into a target of its own, then bloom over that, then the backbuffer copy; or,
- * `intoBackbuffer`, the pass alone drawing into the backbuffer, as a chain's last stage does.
+ * A source texture, a pass task drawing it into a target of its own, then bloom over that (its blurs, then its merge into
+ * a target of its own), then the backbuffer copy; or, `intoBackbuffer`, the pass alone drawing into the backbuffer, as a
+ * chain's last stage does.
  */
 function host(intoBackbuffer = false) {
   const engine = adaptNullEngineFrameGraph(new NullEngine());
@@ -35,12 +37,16 @@ function host(intoBackbuffer = false) {
   pass.depthTest = false;
   if (intoBackbuffer) pass.targetTexture = backbufferColorTextureHandle;
   graph.addTask(pass);
-  const bloom = new FrameGraphBloomTask("Bloom", graph);
+  const bloom = new FrameGraphBloomBlurTask("Bloom", graph, { threshold: 0.2, kernel: 64, scale: 0.5, hdr: false });
   bloom.sourceTexture = pass.outputTexture;
+  const merge = new FrameGraphDisplayColorTask("Bloom Merge", graph, { bloom: { weight: 0.25 }, imageProcessing: null });
+  merge.sourceTexture = pass.outputTexture;
+  merge.bloomTexture = bloom.outputTexture;
   const present = new FrameGraphCopyToBackbufferColorTask("Present", graph);
-  present.sourceTexture = bloom.outputTexture;
+  present.sourceTexture = merge.outputTexture;
   if (!intoBackbuffer) {
     graph.addTask(bloom);
+    graph.addTask(merge);
     graph.addTask(present);
   }
   dispose.push(() => {
@@ -62,7 +68,7 @@ function host(intoBackbuffer = false) {
     events.push(`draw ${engine._currentRenderTarget ? "target" : "backbuffer"}`);
     draw(...args);
   });
-  return { engine, graph, pass, bloom, present, events };
+  return { engine, graph, pass, bloom, merge, present, events };
 }
 
 it("starts every full-screen pass, the backbuffer copy's included, with a clear of its colour before its draw", async () => {
@@ -70,7 +76,7 @@ it("starts every full-screen pass, the backbuffer copy's included, with a clear 
   await graph.buildAsync();
   startFullScreenPassesWithClear(graph.tasks);
   graph.execute();
-  // The pass, bloom's downscale, blurs and merge, then the copy into the backbuffer: each clears its colour, then draws.
+  // The pass, bloom's downscale and blurs, its merge, then the copy into the backbuffer: each clears its colour, then draws.
   expect(events).toEqual([
     ...Array.from({ length: 5 }, () => ["clear target colour", "draw target"]).flat(),
     "clear backbuffer colour", "draw backbuffer",
@@ -78,14 +84,24 @@ it("starts every full-screen pass, the backbuffer copy's included, with a clear 
 });
 
 it("clears nothing before a draw that would leave part of its target as it was", async () => {
-  const { graph, pass, bloom, events } = host();
+  const { graph, pass, bloom, merge, events } = host();
   await graph.buildAsync();
   startFullScreenPassesWithClear(graph.tasks);
   // Blending onto the target, a partial viewport, colour writes off, a stencil test.
   pass.alphaMode = Constants.ALPHA_ADD;
-  bloom.alphaMode = Constants.ALPHA_COMBINE;
+  merge.alphaMode = Constants.ALPHA_COMBINE;
+  graph.execute();
+  // Bloom's blurs, which still write their whole targets, start with their clears.
+  expect(events.slice(0, 8)).toEqual([
+    "draw target", ...Array.from({ length: 3 }, () => ["clear target colour", "draw target"]).flat(), "draw target",
+  ]);
+  // A bloom stage blending onto its target: none of bloom's passes is taken to cover its target.
+  const [, blurX] = bloom.stages;
+  blurX.alphaMode = Constants.ALPHA_ADD;
+  events.length = 0;
   graph.execute();
   expect(events.slice(0, 5)).toEqual(Array.from({ length: 5 }, () => "draw target"));
+  blurX.alphaMode = Constants.ALPHA_DISABLE;
   for (const change of [
     () => { pass.viewport = { x: 0, y: 0, width: 0.5, height: 1 }; },
     () => { pass.disableColorWrite = true; },
@@ -108,7 +124,7 @@ it("clears nothing while the effect is not ready: the draw draws nothing and the
   startFullScreenPassesWithClear(graph.tasks);
   vi.spyOn(pass.drawWrapper.effect!, "isReady").mockReturnValue(false);
   graph.execute();
-  // Only bloom's four passes clear and draw into targets.
+  // Only bloom's three blurs and its merge clear and draw into targets.
   expect(events.filter((event) => event === "clear target colour")).toHaveLength(4);
   expect(events.filter((event) => event === "draw target")).toHaveLength(4);
 });

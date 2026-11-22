@@ -2,10 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import {
   AssetRegistry,
   createExtensionSettings,
-  encodeHasset,
   normalizeExtensionContributions,
   projectContentRoot,
 } from "@haptic/assets";
+import { encodeHasset } from "@haptic/assets/hasset";
 import { MemoryStorageAdapter } from "@haptic/vfs";
 import type { IndexedAsset, ImportResult } from "@haptic/assets";
 import type { SerializedScene } from "@haptic/core";

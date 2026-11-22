@@ -136,6 +136,30 @@ export function materialPickerEntries(
     .map((asset) => ({ guid: asset.header.guid, name: asset.header.name ?? asset.header.guid, type: asset.header.type, path: asset.path }));
 }
 
+/**
+ * The domain an engine component's own `materialGuid` field draws, by class id, as its Inspector row offers it (the
+ * slot table in the Material docs). The Simulation Inspector, which has a running component's class and values but
+ * not its rows, filters by it.
+ */
+const COMPONENT_MATERIAL_DOMAINS: ReadonlyMap<string, MaterialDomain> = new Map<string, MaterialDomain>([
+  ["MeshComponent", "surface"],
+  ["DynamicRuntimeMeshComponent", "surface"],
+  ["CableComponent", "surface"],
+  ["MirrorComponent", "surface"],
+  ["LandscapeComponent", "landscape"],
+  ["DecalComponent", "decal"],
+  ["2DTextComponent", "text"],
+  ["2DRichTextComponent", "text"],
+  ["2DMaterialComponent", "ui"],
+  ["2DPanelComponent", "ui"],
+  ["2DPostProcessingPanelComponent", "postProcess"],
+]);
+
+/** The domain `classId`'s `materialGuid` field draws; undefined for a class whose field has no known domain. */
+export function componentMaterialDomain(classId: string): MaterialDomain | undefined {
+  return COMPONENT_MATERIAL_DOMAINS.get(classId);
+}
+
 /** A guid's Material domain, or undefined when it names no Material or Material Instance. */
 export type MaterialDomainLookup = (guid: string) => string | undefined;
 

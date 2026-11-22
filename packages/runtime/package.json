@@ -3,6 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "sideEffects": [
+    "./src/worker-entry.ts"
+  ],
   "exports": {
     ".": "./src/index.ts",
     "./worker-entry": "./src/worker-entry.ts",

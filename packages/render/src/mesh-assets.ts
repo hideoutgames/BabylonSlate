@@ -132,11 +132,14 @@ export class PayloadFingerprints {
   }
 }
 
-import { environmentTextureContainer, installAssetBytes, isKtx2Bytes } from "@haptic/assets";
+import { installAssetBytes, installTextureSource } from "@haptic/assets";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { assetByteFingerprint } from "./asset-byte-fingerprint";
 
-export function installModelSources(assets: Pick<MeshAssetContext, "modelBytes" | "modelSources">): ReadonlyMap<string, Blob> | undefined {
+/** A view's Model sources: its installed `modelSources`, else its `modelBytes` installed now (Blobs pass through). */
+export function installModelSources(
+  assets: { modelBytes?: ReadonlyMap<string, Uint8Array | Blob>; modelSources?: ReadonlyMap<string, Blob> },
+): ReadonlyMap<string, Blob> | undefined {
   if (assets.modelSources) return assets.modelSources;
   if (!assets.modelBytes) return undefined;
   return new Map([...assets.modelBytes].map(([guid, bytes]) => [guid, installAssetBytes(bytes, "model/gltf-binary")]));
@@ -262,7 +265,7 @@ export function modelSlotFingerprint(
 }
 
 /**
- * Copy mutable bytes once at asset installation; resource lookups use immutable identities.
+ * Install mutable bytes once; resource lookups use immutable identities.
  * `verifiedSha256` names the hex SHA-256 a host already verified for a guid's exact bytes.
  */
 export function installTextureBytes(
@@ -270,12 +273,7 @@ export function installTextureBytes(
   verifiedSha256?: (guid: string) => string | undefined,
 ): ReadonlyMap<string, Blob> | undefined {
   if (!bytes) return undefined;
-  return new Map([...bytes].map(([guid, source]) => {
-    const kind = source instanceof Uint8Array ? environmentTextureContainer(source) : null;
-    const mime = kind === "env" ? "application/vnd.babylon.env" : kind === "dds" ? "image/vnd-ms.dds"
-      : source instanceof Uint8Array && isKtx2Bytes(source) ? "image/ktx2" : "application/octet-stream";
-    return [guid, installAssetBytes(source, mime, verifiedSha256?.(guid))];
-  }));
+  return new Map([...bytes].map(([guid, source]) => [guid, installTextureSource(source, verifiedSha256?.(guid))]));
 }
 
 interface AlbedoBinding {

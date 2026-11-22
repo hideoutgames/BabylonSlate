@@ -21,7 +21,7 @@ import { SceneOutlineHost } from "./scene-outline-host";
 import { createSceneStreamAdmission, isSceneStreamSlotPending } from "./scene-stream-admission";
 import { createSnapshotSceneBinding, retirePlaySlot } from "./snapshot-apply";
 import { createDefaultAudioPayload, createDefaultSoundAttenuationPayload } from "@haptic/assets";
-import { createActor, createDefaultScene, fogVolumeBindings, normalizeRenderingQuality, normalizeShadowSettings, outlineBindings, qualitySettingPatch } from "@haptic/core";
+import { DEFAULT_RENDER_EFFECTS, type AntiAliasingMode, type RenderEffectsSettings, createActor, createDefaultScene, fogVolumeBindings, normalizeRenderingQuality, normalizeShadowSettings, outlineBindings, qualitySettingPatch } from "@haptic/core";
 import { EditorDebugOverlay } from "./editor-debug-overlay";
 import { sceneShadowController } from "./shadow-controller";
 import { setSceneRenderSettings } from "./scene-render-mode";
@@ -31,7 +31,7 @@ import { markSceneReadinessDirty } from "./scene-perf";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import { FrameGraphTextureManager } from "@babylonjs/core/FrameGraph/frameGraphTextureManager";
-import { backbufferColorTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
+import { backbufferColorTextureHandle, type FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
 import type { FrameGraphObjectRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/objectRendererTask";
 import { COMPILE_HOLD_STALL_MS, PreparationTimedOut, SceneRenderCoordinator } from "./scene-render-coordinator";
 import {
@@ -1223,6 +1223,49 @@ it("composes a multisampled WebGL2 view's outlines onto the backbuffer after its
   renderer.dispose();
   view.dispose();
 });
+
+// The outlines blend in place onto the image before antialiasing. With no FXAA or FSR after them that image is the
+// view's output itself: drawn there by the chain's last own stage, or by the objects without a chain.
+it.each([
+  ["no effects", "off", {}, ["Forward objects", "Shared outlines"]],
+  ["Display Color", "off", { vignette: { enabled: true, weight: 2, color: [0, 0, 0] } }, ["Scene Effects Display Color", "Shared outlines"]],
+  ["Display Color over a multisampled scene", "msaa4", { vignette: { enabled: true, weight: 2, color: [0, 0, 0] } },
+    ["Scene Effects Display Color", "Shared outlines"]],
+  ["bloom alone", "off", { bloom: { enabled: true, threshold: 0.8, weight: 0.2, kernel: 16, scale: 0.5 } },
+    ["Scene Effects Bloom", "Scene Effects Bloom Merge", "Shared outlines"]],
+  ["Display Color and FXAA", "fxaa", { colorPipeline: { mode: "sceneLinear" } },
+    ["Scene Effects Display Color", "Shared outlines", "Scene Effects FXAA"]],
+] as Array<[string, AntiAliasingMode, Partial<RenderEffectsSettings>, string[]]>)(
+  "places the outlines of a view with %s (%s) on its output unless antialiasing follows them, with no output copy",
+  async (_, antiAliasing, effects, tail) => {
+    const { engine, scene, renderer } = host();
+    Object.assign(engine.getCaps(), { maxMSAASamples: 4 });
+    vi.spyOn(engine, "webGLVersion", "get").mockReturnValue(2);
+    allowSceneScreenShadows(scene, () => false);
+    sceneRenderingSettings(scene).qualityOverrides = qualitySettingPatch("postprocessing", { antiAliasing });
+    updateSceneRenderingSettings(scene, { mode: "pbr", effects: { ...DEFAULT_RENDER_EFFECTS, ...effects } });
+    const box = MeshBuilder.CreateBox("outlined", {}, scene);
+    const view = SharedOutlineOwner.forScene(scene).createView("play");
+    setOutlineContribution(view, "component", { kind: "component", targets: [{ key: "actor", meshes: [box] }], color: [1, 0, 0], width: 1 });
+    const detach = renderer.attachSharedOutline(view);
+    await renderer.prepare();
+    expect(renderer.render()).toMatchObject({ path: "frameGraph", rendered: true });
+    const tasks = renderer.taskNames();
+    expect(tasks.slice(-tail.length)).toEqual(tail);
+    expect(tasks).not.toContain("Scene post-process output");
+    expect(tasks).not.toContain("Multisample output");
+    const graph = (renderer as unknown as { graph: { graph: FrameGraph; outlineTask: { targetTexture: FrameGraphTextureHandle } } }).graph;
+    const textures = graph.graph.textureManager;
+    // Before FXAA the outlines compose onto the display image FXAA reads; otherwise onto the output.
+    const fxaa = tail.at(-1) === "Scene Effects FXAA";
+    expect(textures.isBackbufferColor(graph.outlineTask.targetTexture)).toBe(!fxaa);
+    // The compose and the strict mask.
+    expect(renderer.sharedOutlineDiagnostics().drawingPassCount).toBe(2);
+    detach();
+    renderer.dispose();
+    view.dispose();
+  },
+);
 
 // A game's world view (`seedsFromSceneDepth`) starts its strict outline mask from the scene's depth wherever that is
 // a texture: the view's own multisampled pair's (resolved by sample) or a settings chain's. The backbuffer's cannot be read.
