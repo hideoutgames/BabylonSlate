@@ -15,6 +15,8 @@ The Homepage status bar names the default location for your platform.
 
 Projects in default storage reopen from the Homepage without asking for a folder.
 
+Haptic's own working data, such as thumbnails and crash recovery, is kept separately from your projects. On iPad and iPhone it does not appear in the Files app, and on iPad, iPhone and Android it is not included in device backups.
+
 ::: warning
 On Android and the web, nothing else holds a copy of your project. Use **Project Settings > Export > Export Project** regularly to keep a backup. See [Projects](index.md).
 :::
