@@ -13,8 +13,8 @@ import {
   createDefaultTilesetPayload,
   normalizeTilesetPayload,
 } from "@haptic/assets";
-import { dispatchPointerEvent } from "../../../../packages/editor-kit/src/test-support/pointer-events";
-import { tapAtlasTile } from "../../../../packages/editor-kit/src/test-support/atlas-tile-grid";
+import { dispatchPointerEvent } from "@haptic/editor-kit/test-support/pointer-events";
+import { tapAtlasTile } from "@haptic/editor-kit/test-support/atlas-tile-grid";
 import { TilesetEditingProvider } from "../context/tileset-editing-context";
 import { TilesetAutotiles } from "./tileset-autotiles-window";
 import { TilesetEditor, TilesetPreview } from "./tileset-editor";

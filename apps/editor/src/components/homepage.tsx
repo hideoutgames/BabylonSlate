@@ -439,7 +439,7 @@ export function Homepage({
       className="homepage homepage-theme safe-frame safe-frame-top"
       data-testid="homepage"
     >
-      <style data-slate-home-styles>{homepageStyles}</style>
+      <style data-haptic-home-styles>{homepageStyles}</style>
       <aside className="homepage-sidebar">
         <div className="homepage-brand">
           <img src={brandWordmarkSrc()} alt="" />

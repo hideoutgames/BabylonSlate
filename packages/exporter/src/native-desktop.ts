@@ -4,8 +4,7 @@ import { SAFE_ZIP_MTIME } from "./zip-time";
 import { readZipEntries, readZipEntryData, writeZip, type ZipCopy } from "./zip-merge";
 
 /** Desktop platforms a web game can be packaged for, as `<platform>-<arch>`. */
-export const DESKTOP_GAME_TARGETS = ["windows-x64", "linux-x64"] as const;
-export type DesktopGameTarget = (typeof DESKTOP_GAME_TARGETS)[number];
+export type DesktopGameTarget = "windows-x64" | "linux-x64";
 
 export interface DesktopGamePackageInput {
   target: DesktopGameTarget;

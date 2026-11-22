@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   buildSettingArguments, iosBuildSettings, iosExportOptions, iosGameFileName, iosProjectFiles, type IosPackageFormat,
-} from "../../../packages/exporter/src/native-ios";
+} from "@haptic/exporter/native-ios";
 import { runCommand, type RunCommand } from "./mac-game-package";
 import { copyTree, writeFiles } from "./package-files";
 

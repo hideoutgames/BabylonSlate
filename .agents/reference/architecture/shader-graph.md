@@ -13,6 +13,7 @@ Material, Material Function and Material Instance documents: the Babylon-free IR
 - Search aliases come from one table (`MATERIAL_SEARCH_ALIASES`, merged into every node by `withSearchAliases`) plus a node's own `searchAliases`: other engines' names (append, one minus, panner, lerp) go there.
 - The **Particle Texture** node is removed (emitters have no texture). Old graphs that contain `input.particleTexture` report `material.unknownNode` and do not compile; there is no migration.
 - Not implemented: motion vectors, object IDs.
+- The graph algorithms Material and Particle graphs share live once in [`node-graph-core.ts`](../../../packages/core/src/node-graph-core.ts) (`@haptic/core`): node and edge sanitising, the first-edge index of input pins (`indexIncomingPinEdges`), `findPin`, and the lazy generic resolver (`createPinTypeResolver`: per-node memo, a node reached again while it resolves reads as a conflict). `createTypeResolver` supplies the catalog, Named Reroute types, Float for a wildcard pin and `resolveGenericType`; lowering reuses its resolver's incoming index for each graph. The operation budget (`MATERIAL_MAX_OPERATIONS`) stays here: only Material Function inlining can multiply a plan.
 
 ## Ownership
 

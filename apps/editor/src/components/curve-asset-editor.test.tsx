@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type { IDockviewPanelProps } from "dockview-react";
 import { KeybindProvider } from "../context/keybind-context";
-import { dispatchPointerEvent, stubPointerCapture } from "../../../../packages/editor-kit/src/test-support/pointer-events";
+import { dispatchPointerEvent, stubPointerCapture } from "@haptic/editor-kit/test-support/pointer-events";
 import { CurveAssetDetailsPanel, CurveAssetEditorPanel } from "./curve-asset-editor";
 
 const harness = vi.hoisted(() => ({

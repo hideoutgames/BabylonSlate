@@ -15,7 +15,7 @@ import {
   TraceTimelinePanel,
 } from "./trace-editor";
 import { TracePlaybackProvider } from "../context/trace-playback-context";
-import { dispatchPointerEvent } from "../../../../packages/editor-kit/src/test-support/pointer-events";
+import { dispatchPointerEvent } from "@haptic/editor-kit/test-support/pointer-events";
 
 const traceDocument = vi.hoisted(() => ({
   id: "trace:traces/session.htrace",

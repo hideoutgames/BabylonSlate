@@ -113,26 +113,26 @@ describe("Water material nodes", () => {
     const result = compile(host(), allNodes());
     expect(await result.ready).toEqual([]);
     const source = result.material.compiledShaders, [, fragment = ""] = source.split("// Fragment shader");
-    expect(source).not.toMatch(/\b[UAOS]\.slate|\bIN\.|\bU\.\w/);
+    expect(source).not.toMatch(/\b[UAOS]\.haptic|\bIN\.|\bU\.\w/);
     // GLSL rejects a sampler declared twice in one stage.
     const [vertex = ""] = source.split("// Fragment shader");
     const declarations = (stage: string, name: string) => stage.split(` ${name};`).length - 1;
-    for (const name of ["slateWaterFftSampler", "slateWaterFoamSampler", "slateWaterFieldSampler", "slateWaterContactSampler", "slateWaterSceneSampler", "slateWaterNodeEnvSampler", "slateWaterNodePlanarSampler"]) {
+    for (const name of ["hapticWaterFftSampler", "hapticWaterFoamSampler", "hapticWaterFieldSampler", "hapticWaterContactSampler", "hapticWaterSceneSampler", "hapticWaterNodeEnvSampler", "hapticWaterNodePlanarSampler"]) {
       expect(declarations(fragment, name), name).toBe(1);
     }
-    expect(declarations(vertex, "slateWaterFftSampler")).toBe(1);
+    expect(declarations(vertex, "hapticWaterFftSampler")).toBe(1);
     // Every preprocessor directive stands on its own line.
     expect(source).not.toMatch(/\bsw\w*[^\n]*\S#(ifdef|endif|if|else)\b/);
     for (const helper of ["swnFieldAt", "swnContactAt", "swSceneDepth", "swMarch", "swnEnvTap", "swnNoise", "swPlanarTexel"]) expect(fragment, helper).toContain(helper);
     // The march takes one sample per copy texel the ray crosses on screen, at most its steps, and the fades known before
     // it (grazing ripples, fog that leaves nothing of the water) gate it.
-    expect(march(fragment)).toMatch(/swSteps = clamp\(ceil\(length\(\(swN1 - swN0\) \* swEnd \* 0\.5 \/ swSceneTexelUv\(\)\)\), 1\.0, float\(SLATE_WATER_SSR_STEPS\)\);/);
+    expect(march(fragment)).toMatch(/swSteps = clamp\(ceil\(length\(\(swN1 - swN0\) \* swEnd \* 0\.5 \/ swSceneTexelUv\(\)\)\), 1\.0, float\(HAPTIC_WATER_SSR_STEPS\)\);/);
     expect(march(fragment)).toMatch(/if \(float\(swI\) > swSteps\) \{ break; \}\s+float swU = swEnd \* float\(swI\) \/ swSteps;/);
     expect(fragment).toMatch(/swnObjFade = [^;]*fwidth\(swnObjR\)[^;]*\* step\(0\.001, swnAirKeep\);/);
     expect(fragment).toMatch(/swnObj\.a = swnObj\.a \* swnObjFade;/);
     // The terrain and contact fields read the water mesh's data, the copy only with the pass's copy, the cube only with a cube.
     const sampler = (name: string) => ` ${name};`;
-    for (const [name, define] of [["slateWaterFieldSampler", "SLATE_WATER_SURFACE"], ["slateWaterSceneSampler", "SLATE_WATER_NODE_COPY"], ["slateWaterNodeEnvSampler", "SLATE_WATER_NODE_ENV"], ["slateWaterNodePlanarSampler", "SLATE_WATER_NODE_PLANAR"]] as const) {
+    for (const [name, define] of [["hapticWaterFieldSampler", "HAPTIC_WATER_SURFACE"], ["hapticWaterSceneSampler", "HAPTIC_WATER_NODE_COPY"], ["hapticWaterNodeEnvSampler", "HAPTIC_WATER_NODE_ENV"], ["hapticWaterNodePlanarSampler", "HAPTIC_WATER_NODE_PLANAR"]] as const) {
       expect(fragment).toMatch(new RegExp(`#ifdef ${define}\\s+[^#]*${sampler(name).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
     }
     expect(fragment).toContain("gl_FragCoord.xy");
@@ -152,7 +152,7 @@ describe("Water material nodes", () => {
     const [, fragment = ""] = result.material.compiledShaders.split("// Fragment shader");
     expect(fragment).toMatch(/\w+ = swEdgeFade \* swOpenFade;/);
     // Its shoreline under the waves comes from four terrain taps, whose slope softens gentle shores, as built-in water's.
-    expect(fragment).toMatch(/if \(slateWaterFieldStep\.w > 0\.0 && swnField\.w > [\d.]+\) \{/);
+    expect(fragment).toMatch(/if \(hapticWaterFieldStep\.w > 0\.0 && swnField\.w > [\d.]+\) \{/);
     expect(fragment).toMatch(/swShoreSlope = mix\(length\(swTerrainSlope\), 1\.0, swFineClamped\);/);
     expect(fragment).toMatch(/smoothstep\(0\.35, 1\.0, swShoreSlope\)/);
     // Beside the silhouette of something in front of the water, Water Scene Color and Water Depth Fade both take the copy
@@ -178,7 +178,7 @@ describe("Water material nodes", () => {
     expect(result.material.backFaceCulling).toBe(false);
     for (const kind of ["ocean", "lake", "river", "puddle", "global"] as const) {
       const body = createWaterMesh(scene, kind, normalizeWaterBody({ resolution: 8 }, kind), createDefaultWaterDefinition(), result.material);
-      expect(await definesFor(result.material, body), kind).toMatch(/^#define SLATE_WATER_GPU_WAVES$/m);
+      expect(await definesFor(result.material, body), kind).toMatch(/^#define HAPTIC_WATER_GPU_WAVES$/m);
       // It shows what lies below through the scene copy, which only a translucent Material can read.
       expect(result.material.needAlphaBlendingForMesh(body), kind).toBe(true);
       // A graph that reads terrain and contacts (its foam and depth) has the water mesh build them.
@@ -199,7 +199,7 @@ describe("Water material nodes", () => {
     vi.spyOn(effect, "setFloat4").mockImplementation((name, x, y, z, w) => { bound.set(name, [...bound.get(name) ?? [], [x, y, z, w]]); return effect; });
     result.material.bindForSubMesh(lake.computeWorldMatrix(true), lake, lake.subMeshes[0]!);
     // The Foam Color output reads its own uniform: every block that binds it writes the linear Foam Color.
-    const read = /(\w+) = (\w+)\.rgb;/.exec(result.material.compiledShaders.split("// Fragment shader")[1]!.match(/\w+ = slateWaterNode\w*Foam\w*\.rgb;/)![0])![2]!;
+    const read = /(\w+) = (\w+)\.rgb;/.exec(result.material.compiledShaders.split("// Fragment shader")[1]!.match(/\w+ = hapticWaterNode\w*Foam\w*\.rgb;/)![0])![2]!;
     const linear = new Color3(0.9, 0.5, 0.1).toLinearSpace(scene.getEngine().useExactSrgbConversions);
     const expected = [linear.r, linear.g, linear.b].map((v) => Number(v.toFixed(5)));
     expect(bound.get(read)!.map((value) => value.slice(0, 3).map((v) => Number(v.toFixed(5))))).toEqual(bound.get(read)!.map(() => expected));
@@ -236,7 +236,7 @@ describe("Water material nodes", () => {
       const effect = lake.subMeshes[0]!.effect!, bound = new Map<string, number[]>();
       vi.spyOn(effect, "setFloat4").mockImplementation((name, x, y, z, w) => { bound.set(name, [x, y, z, w]); return effect; });
       result.material.bindForSubMesh(lake.computeWorldMatrix(true), lake, lake.subMeshes[0]!);
-      expect(bound.get("slateWaterFieldStep")).toEqual([0.01, 0.01, 2, waves]);
+      expect(bound.get("hapticWaterFieldStep")).toEqual([0.01, 0.01, 2, waves]);
       lake.dispose();
     }
   });
@@ -251,7 +251,7 @@ describe("Water material nodes", () => {
     const neighbour = createWaterMesh(scene, "neighbour", normalizeWaterBody({ width: 24, length: 24, resolution: 16 }), red, builtInWaterMaterial(scene));
     neighbour.position.set(18, 0, 0);
     updateSceneWater(scene);
-    expect(await definesFor(result.material, lake)).toMatch(/^#define SLATE_WATER_NODE_BLEND$/m);
+    expect(await definesFor(result.material, lake)).toMatch(/^#define HAPTIC_WATER_NODE_BLEND$/m);
     const slot = meshWaterNodeSurface(lake)!.partners.findIndex((partner) => partner?.shallowColor[0] === 1);
     expect(slot).toBeGreaterThanOrEqual(0);
     const effect = lake.subMeshes[0]!.effect!, bound = new Map<string, number[]>();
@@ -259,8 +259,8 @@ describe("Water material nodes", () => {
     result.material.bindForSubMesh(lake.computeWorldMatrix(true), lake, lake.subMeshes[0]!);
     // That partner's slot carries the neighbour's Shallow Color, which the shader mixes in by the vertex's share.
     const linear = new Color3(1, 0.2, 0.2).toLinearSpace(scene.getEngine().useExactSrgbConversions);
-    expect(bound.get(`slateWaterNodeShallowColor${slot}`)!.slice(0, 3)).toEqual([linear.r, linear.g, linear.b].map((v) => expect.closeTo(v, 5)));
-    expect(result.material.compiledShaders).toMatch(new RegExp(`slateWaterNodeShallowColor${slot}\\.rgb \\* vSlateWaterNodeShares\\.`));
+    expect(bound.get(`hapticWaterNodeShallowColor${slot}`)!.slice(0, 3)).toEqual([linear.r, linear.g, linear.b].map((v) => expect.closeTo(v, 5)));
+    expect(result.material.compiledShaders).toMatch(new RegExp(`hapticWaterNodeShallowColor${slot}\\.rgb \\* vHapticWaterNodeShares\\.`));
   });
 
   it("compile without Water Waves, where Crest Foam and the per-pixel Normal fall back", async () => {
@@ -268,7 +268,7 @@ describe("Water material nodes", () => {
       [["waterFoam", "crestFoam", "roughness"], ["waterFoam", "foam", "metallic"], ["waterReflection", "color", "baseColor"], ["waterSceneColor", "color", "emissive"]]));
     expect(await result.ready).toEqual([]);
     const source = result.material.compiledShaders;
-    expect(source).not.toMatch(/swnFoam|slateWaterFftSampler|SLATE_WATER_GPU_WAVES \d/);
+    expect(source).not.toMatch(/swnFoam|hapticWaterFftSampler|HAPTIC_WATER_GPU_WAVES \d/);
     expect(source).toMatch(/swnN = normalize\(vec3\(0\.0, 1\.0, 0\.0\)\);/);
   });
 
@@ -279,11 +279,11 @@ describe("Water material nodes", () => {
     ordinary.material = result.material;
     const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ resolution: 8 }), createDefaultWaterDefinition(), result.material);
     const [plain, water] = [await definesFor(result.material, ordinary), await definesFor(result.material, lake)];
-    expect(plain).not.toMatch(/^#define SLATE_WATER_SURFACE$/m);
-    expect(water).toMatch(/^#define SLATE_WATER_SURFACE$/m);
+    expect(plain).not.toMatch(/^#define HAPTIC_WATER_SURFACE$/m);
+    expect(water).toMatch(/^#define HAPTIC_WATER_SURFACE$/m);
     // No view registered a scene copy for this pass: the copy features compile out.
-    expect(water).not.toMatch(/^#define SLATE_WATER_NODE_COPY$/m);
-    expect(water).toMatch(/^#define SLATE_WATER_SSR_STEPS 0$/m);
+    expect(water).not.toMatch(/^#define HAPTIC_WATER_NODE_COPY$/m);
+    expect(water).toMatch(/^#define HAPTIC_WATER_SSR_STEPS 0$/m);
   });
 
   it("give every Custom Material water mesh terrain and contact fields, which its cut reads for land above the water", async () => {
@@ -309,7 +309,7 @@ describe("Water material nodes", () => {
     updateSceneWater(scene);
     // Only water whose graph reads Water Reflection can take the view's mirror.
     expect([lake, river, dull, unreflecting].map(waterMeshReflectsObjects)).toEqual([true, true, false, false]);
-    const planar = /^#define SLATE_WATER_NODE_PLANAR$/m;
+    const planar = /^#define HAPTIC_WATER_NODE_PLANAR$/m;
     expect(await definesFor(result.material, lake)).toMatch(planar);
     for (const mesh of [river, dull]) expect(await definesFor(result.material, mesh), mesh.name).not.toMatch(planar);
     // No view drew a mirror: the planar uniform selects the march, and the sampler is still bound.
@@ -317,8 +317,8 @@ describe("Water material nodes", () => {
     vi.spyOn(effect, "setFloat4").mockImplementation((name, x, y, z, w) => { vectors.set(name, [x, y, z, w]); return effect; });
     vi.spyOn(effect, "setTexture").mockImplementation((name) => { textures.push(name); });
     result.material.bindForSubMesh(lake.computeWorldMatrix(true), lake, lake.subMeshes[0]!);
-    expect(vectors.get("slateWaterNodePlanar")?.[0]).toBe(0);
-    expect(textures).toContain("slateWaterNodePlanarSampler");
+    expect(vectors.get("hapticWaterNodePlanar")?.[0]).toBe(0);
+    expect(textures).toContain("hapticWaterNodePlanarSampler");
   });
 
   it("re-prepare a frozen Material's water defines when the Water quality changes or a volume tilts out of level", async () => {
@@ -362,14 +362,14 @@ describe("Water material nodes", () => {
 });
 
 /**
- * `source` as the level of Water Shading Detail draws it: only `#if SLATE_WATER_DETAIL >= n` blocks are evaluated (their
+ * `source` as the level of Water Shading Detail draws it: only `#if HAPTIC_WATER_DETAIL >= n` blocks are evaluated (their
  * `#else` too), every other directive and line is kept. GLSL Effects keep their conditionals for the driver.
  */
 function atDetail(source: string, level: number): string {
   const out: string[] = [], stack: { mine: boolean; parent: boolean; pass: boolean }[] = [];
   let keep = true;
   for (const line of source.split("\n")) {
-    const directive = line.trim(), mine = /^#if SLATE_WATER_DETAIL (>=|<) (\d)$/.exec(directive);
+    const directive = line.trim(), mine = /^#if HAPTIC_WATER_DETAIL (>=|<) (\d)$/.exec(directive);
     if (mine) {
       const pass = mine[1] === ">=" ? level >= Number(mine[2]) : level < Number(mine[2]);
       stack.push({ mine: true, parent: keep, pass });
@@ -411,7 +411,7 @@ describe("Water Shading Detail", () => {
     const { result, lake } = starter(scene);
     expect(await result.ready).toEqual([]);
     const effect = await programFor(result.material, lake);
-    expect(effect.defines).toMatch(new RegExp(`^#define SLATE_WATER_DETAIL ${value}$`, "m"));
+    expect(effect.defines).toMatch(new RegExp(`^#define HAPTIC_WATER_DETAIL ${value}$`, "m"));
     const fragment = atDetail(effect.fragmentSourceCode, value);
     expect([
       fragment.includes("swTerrainSlope"),
@@ -432,8 +432,8 @@ describe("Water Shading Detail", () => {
     expect(await result.ready).toEqual([]);
     updateSceneWater(scene);
     const defines = await definesFor(result.material, lake);
-    expect(defines).toMatch(/^#define SLATE_WATER_DETAIL 0$/m);
-    expect(defines).toMatch(/^#define SLATE_WATER_NODE_PLANAR$/m);
+    expect(defines).toMatch(/^#define HAPTIC_WATER_DETAIL 0$/m);
+    expect(defines).toMatch(/^#define HAPTIC_WATER_NODE_PLANAR$/m);
   });
 
   it("compiles nothing while the level is unchanged, a variant for another level and the first again when it returns", async () => {
@@ -455,7 +455,7 @@ describe("Water Shading Detail", () => {
     scene.incrementRenderId();
     const low = await programFor(result.material, lake);
     expect(low).not.toBe(medium);
-    expect(low.defines).toMatch(/^#define SLATE_WATER_DETAIL 0$/m);
+    expect(low.defines).toMatch(/^#define HAPTIC_WATER_DETAIL 0$/m);
     detail(scene, "medium");
     scene.incrementRenderId();
     expect(await programFor(result.material, lake)).toBe(medium);
@@ -470,11 +470,11 @@ describe("Water Cut", () => {
     expect(await result.ready).toEqual([]);
     // The base Material carries none of the cut: no removal code, uniforms or water defines.
     const base = result.material.compiledShaders;
-    expect(base).not.toMatch(/swRemoval|slateWater|DEPTHPREPASS|SLATE_WATER_EFFECTS_GEOMETRY/);
+    expect(base).not.toMatch(/swRemoval|hapticWater|DEPTHPREPASS|HAPTIC_WATER_EFFECTS_GEOMETRY/);
     const source = (await waterVariantOf(result)).compiledShaders, { vertex, fragment } = stages(source);
-    expect(source).not.toMatch(/\bU\.\w|\bIN\.|\b[AO]\.slate/);
+    expect(source).not.toMatch(/\bU\.\w|\bIN\.|\b[AO]\.haptic/);
     expect(fragment.split("float swRemoval(").length - 1).toBe(1);
-    for (let i = 0; i < 4; i++) expect(fragment).toContain(`uniform mat4 slateWaterRemoval${i};`);
+    for (let i = 0; i < 4; i++) expect(fragment).toContain(`uniform mat4 hapticWaterRemoval${i};`);
     // The depth pre-pass leaves at once; the colour pass discards only after the output is written.
     const prePass = new RegExp("#ifdef DEPTHPREPASS\\s+if \\((\\w+)\\) \\{ discard; \\}\\s+return;").exec(fragment);
     expect(prePass).not.toBeNull();
@@ -491,12 +491,12 @@ describe("Water Cut", () => {
     const { vertex, fragment } = stages((await waterVariantOf(result)).compiledShaders), clip = "gl_Position";
     const cull = vertex.lastIndexOf(`${clip}.z = 2.0 * ${clip}.w;`);
     expect(cull).toBeGreaterThan(vertex.lastIndexOf(`${clip} =`));
-    expect(vertex.slice(0, cull)).toMatch(/#if defined\(SLATE_WATER_GPU_WAVES\) && defined\(SLATE_WATER_BLEND\)\s+if \(min\([^#]*\)\) \{\s+$/);
+    expect(vertex.slice(0, cull)).toMatch(/#if defined\(HAPTIC_WATER_GPU_WAVES\) && defined\(HAPTIC_WATER_BLEND\)\s+if \(min\([^#]*\)\) \{\s+$/);
     // Water Foam reads the per-pixel height; the cut reads the vertex stage's, as built-in water's waterline does.
-    const heights = [...fragment.matchAll(/#ifdef SLATE_WATER_GPU_WAVES\s+swnHeight = ([\w.]+);/g)].map((match) => match[1]!.replace(/^fragmentInputs\./, ""));
+    const heights = [...fragment.matchAll(/#ifdef HAPTIC_WATER_GPU_WAVES\s+swnHeight = ([\w.]+);/g)].map((match) => match[1]!.replace(/^fragmentInputs\./, ""));
     expect(heights.some((name) => new RegExp(`\\b${name} = `).test(vertex))).toBe(true);
     // The depth pre-pass samples none of the waves' per-pixel spectrum (nor does `waterdebug waves off`).
-    expect(fragment).toMatch(/#ifndef DEPTHPREPASS\s+#ifndef SLATE_WATER_DEBUG_NO_WAVES\s+#ifdef SLATE_WATER_GPU_WAVES/);
+    expect(fragment).toMatch(/#ifndef DEPTHPREPASS\s+#ifndef HAPTIC_WATER_DEBUG_NO_WAVES\s+#ifdef HAPTIC_WATER_GPU_WAVES/);
   });
 
   it("compiles the depth pre-pass as its own variant, for water only", async () => {
@@ -526,7 +526,7 @@ describe("Water Cut", () => {
     const result = compile(host(), createDefaultMaterialDocument("Plain"));
     expect(await result.ready).toEqual([]);
     const { fragment } = stages((await waterVariantOf(result)).compiledShaders), target = "gl_FragData[0]";
-    const exempt = fragment.lastIndexOf("#ifdef SLATE_WATER_EFFECTS_GEOMETRY");
+    const exempt = fragment.lastIndexOf("#ifdef HAPTIC_WATER_EFFECTS_GEOMETRY");
     expect(exempt).toBeGreaterThan(fragment.lastIndexOf("* 0.5 + 0.5, 1.0);"));
     const after = fragment.slice(exempt);
     expect(after).toContain(`PREPASS_WORLD_NORMAL_INDEX == 0\n${target} = vec4(0.5, 0.5, 0.5, 1.0);`);
@@ -544,13 +544,13 @@ describe("Water Cut", () => {
     const spatial = engine.createRenderPassId("Spatial Geometry"), authored = engine.createRenderPassId("Post-process Geometry");
     registerSpatialGeometryPass(scene, spatial);
     try {
-      expect(await definesFor(drawn, water)).not.toContain("SLATE_WATER_EFFECTS_GEOMETRY");
+      expect(await definesFor(drawn, water)).not.toContain("HAPTIC_WATER_EFFECTS_GEOMETRY");
       engine.currentRenderPassId = spatial;
-      expect(await definesFor(drawn, water)).toContain("#define SLATE_WATER_EFFECTS_GEOMETRY\n");
-      expect(await definesFor(result.material, box)).not.toContain("SLATE_WATER_EFFECTS_GEOMETRY");
+      expect(await definesFor(drawn, water)).toContain("#define HAPTIC_WATER_EFFECTS_GEOMETRY\n");
+      expect(await definesFor(result.material, box)).not.toContain("HAPTIC_WATER_EFFECTS_GEOMETRY");
       // An authored post-process chain's geometry pass keeps the water's own surface, as it does built-in water's.
       engine.currentRenderPassId = authored;
-      expect(await definesFor(drawn, water)).not.toContain("SLATE_WATER_EFFECTS_GEOMETRY");
+      expect(await definesFor(drawn, water)).not.toContain("HAPTIC_WATER_EFFECTS_GEOMETRY");
     } finally {
       engine.currentRenderPassId = colour;
       unregisterSpatialGeometryPass(scene, spatial);
@@ -568,7 +568,7 @@ describe("Water Cut", () => {
     const { fragment } = stages((await waterVariantOf(result)).compiledShaders);
     const raise = fragment.indexOf("swnBright");
     expect(raise).toBeGreaterThan(-1);
-    expect(fragment.slice(0, raise)).toMatch(/#if defined\(SLATE_WATER_SURFACE\) && !defined\(IMAGEPROCESSINGPOSTPROCESS\)\s+\{\s+(float |var )$/);
+    expect(fragment.slice(0, raise)).toMatch(/#if defined\(HAPTIC_WATER_SURFACE\) && !defined\(IMAGEPROCESSINGPOSTPROCESS\)\s+\{\s+(float |var )$/);
     // The Scene Fog block mixes what the raise leaves.
     expect(fragment.lastIndexOf("= sceneFogKeep(")).toBeGreaterThan(raise);
     // An opaque Material covers everything already.
@@ -604,13 +604,13 @@ describe("Water Cut", () => {
     };
     bind(near);
     // A sphere 2 wide: shape code 2, then the half extents.
-    expect(vectors.get("slateWaterRemovalShape0")).toEqual([2, 1, 2, 2]);
-    expect(matrices.get("slateWaterRemoval0")!.getTranslation().asArray()).toEqual([-2, 0, -1]);
-    for (let i = 1; i < 4; i++) expect(vectors.get(`slateWaterRemovalShape${i}`), `slot ${i}`).toEqual([0, 0, 0, 0]);
+    expect(vectors.get("hapticWaterRemovalShape0")).toEqual([2, 1, 2, 2]);
+    expect(matrices.get("hapticWaterRemoval0")!.getTranslation().asArray()).toEqual([-2, 0, -1]);
+    for (let i = 1; i < 4; i++) expect(vectors.get(`hapticWaterRemovalShape${i}`), `slot ${i}`).toEqual([0, 0, 0, 0]);
     bind(far);
-    expect(vectors.get("slateWaterRemovalShape0")).toEqual([0, 0, 0, 0]);
+    expect(vectors.get("hapticWaterRemovalShape0")).toEqual([0, 0, 0, 0]);
     bind(box);
-    expect([...vectors.keys(), ...matrices.keys()].filter((name) => name.startsWith("slateWater"))).toEqual([]);
+    expect([...vectors.keys(), ...matrices.keys()].filter((name) => name.startsWith("hapticWater"))).toEqual([]);
   });
 });
 
@@ -640,9 +640,9 @@ describe("Water variant", () => {
     expect(result.material.attachedBlocks.some((block) => block instanceof WaterCutBlock || block instanceof WaterCoverageBlock)).toBe(false);
     expect(drawn.attachedBlocks.some((block) => block instanceof WaterCutBlock)).toBe(true);
     const base = await programFor(result.material, box);
-    expect(base.defines).not.toMatch(/SLATE_WATER/);
-    expect(base.getUniformNames().filter((name) => name.startsWith("slateWater"))).toEqual([]);
-    expect((await programFor(drawn, lake)).getUniformNames()).toContain("slateWaterRemoval0");
+    expect(base.defines).not.toMatch(/HAPTIC_WATER/);
+    expect(base.getUniformNames().filter((name) => name.startsWith("hapticWater"))).toEqual([]);
+    expect((await programFor(drawn, lake)).getUniformNames()).toContain("hapticWaterRemoval0");
     expect(result.setParameter("Shine", { kind: "float", value: 0.7 })).toBe(true);
     expect(result.material.getBlockByName(nodeBlockName(shiny(), "shine"))).toHaveProperty("value", 0.7);
     expect(drawn.getBlockByName(nodeBlockName(shiny(), "shine"))).toHaveProperty("value", 0.7);
@@ -727,7 +727,7 @@ describe("Water ownership", () => {
     const { global, ocean } = sea(scene);
     for (const mesh of [global, ocean]) {
       const effect = await programFor(mesh.material as NodeMaterial, mesh);
-      expect(effect.defines, mesh.name).toMatch(/^#define SLATE_WATER_OWNERSHIP$/m);
+      expect(effect.defines, mesh.name).toMatch(/^#define HAPTIC_WATER_OWNERSHIP$/m);
       expect(effect.fragmentSourceCode, mesh.name).toContain("swOwnership(");
     }
     const lake = createWaterMesh(scene, "lake", normalizeWaterBody({ width: 30, length: 20 }, "lake"), undefined, builtInWaterMaterial(scene));
@@ -738,8 +738,8 @@ describe("Water ownership", () => {
     updateSceneWater(scene);
     for (const mesh of [lake, river]) {
       const defines = await definesFor(mesh.material as NodeMaterial, mesh);
-      expect(defines, mesh.name).toMatch(/^#define SLATE_WATER_BLEND$/m);
-      expect(defines, mesh.name).not.toMatch(/^#define SLATE_WATER_OWNERSHIP$/m);
+      expect(defines, mesh.name).toMatch(/^#define HAPTIC_WATER_BLEND$/m);
+      expect(defines, mesh.name).not.toMatch(/^#define HAPTIC_WATER_OWNERSHIP$/m);
     }
   });
 
@@ -778,8 +778,8 @@ describe("Water debug switches", () => {
 
   it.each([
     ["lighting", /^#define HAPTIC_UNLIT$/m],
-    ["waves", /^#define SLATE_WATER_DEBUG_NO_WAVES$/m],
-    ["foam", /^#define SLATE_WATER_DEBUG_NO_FOAM$/m],
+    ["waves", /^#define HAPTIC_WATER_DEBUG_NO_WAVES$/m],
+    ["foam", /^#define HAPTIC_WATER_DEBUG_NO_FOAM$/m],
   ] as const)("draws water without its %s while switched off, and the same program as before once back on", async (part, define) => {
     const scene = host();
     overlook(scene);

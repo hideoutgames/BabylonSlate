@@ -51,7 +51,6 @@ export type {
 export {
   exportGame,
   zipExport,
-  unzipExport,
   parseGameManifest,
   defaultPlayerIndexHtml,
   SAFE_ZIP_MTIME,
@@ -86,7 +85,7 @@ export { createPreviewAssetClient, createPreviewAssetServer } from "./preview-as
 
 export { packedContentFromGame, packedPlayControls, packedBootControls, packedSourceControls, type PackedAudioLibrary, type PackedGameContent } from "./hydrate";
 export { gameSourceSubset, requiredGameAssets, type GameSourceContent } from "./source-content";
-export { DESKTOP_GAME_TARGETS, desktopGameNames, packageDesktopGame, type DesktopGameNames, type DesktopGamePackageInput, type DesktopGameTarget } from "./native-desktop";
+export { desktopGameNames, packageDesktopGame, type DesktopGameNames, type DesktopGamePackageInput, type DesktopGameTarget } from "./native-desktop";
 export { readZipEntries, writeZip, type ZipCopy, type ZipEntry } from "./zip-merge";
 export { APP_ICON_FILE, APP_ICON_SIZES, appIconPng, brandPlayerIndexHtml, encodeIcns, encodeIco, type AppIconImages } from "./app-icon";
 export { debianPackageName, debianVersion, packageLinuxDeb } from "./native-deb";

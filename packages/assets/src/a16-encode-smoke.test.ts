@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { A16_ENCODE_FIXTURES, A16_POLICY } from "@haptic/test-kit";
 import { read as readKtx2 } from "ktx-parse";
-import { createNodeBasisEncodeFn } from "./node-basis-encode";
+import { createNodeBasisEncodeFn } from "./test-support/node-basis-encode";
 import { DEFAULT_TEXTURE_ENCODE_SETTINGS } from "./texture-compression";
 import { isKtx2Bytes } from "./texture-loader";
 import { sniffKtx2Size } from "./ktx2-info";

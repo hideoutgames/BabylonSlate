@@ -21,7 +21,7 @@ import {
  * 1 all) lowers that threshold, most only at the waterline, so edge foam grows out of the whitecaps' soft streaky
  * shapes and follows the waves. Smooth noise at three scales in flowed world metres (`p`) breaks it into wisps where the
  * waves are calm, each faded where `foot` (metres per pixel) would alias it, and thin foam is partly clear (below High
- * Water Shading Detail, `SLATE_WATER_DETAIL` under 2, only the broadest scale). No cells, so no holes or rows.
+ * Water Shading Detail, `HAPTIC_WATER_DETAIL` under 2, only the broadest scale). No cells, so no holes or rows.
  *
  * `<prefix>ShoreFoamAmount(p, t, depth, width)` is the shore's amount: thick at the waterline, thinning to nothing where the
  * water is about 1.6 `width` deep (between 1 and 2.4 along the shore), with bands that wash in toward the shore, out of
@@ -110,22 +110,22 @@ if (${sceneZ} < ${waterZ}) {
  * highest crest) the waves cannot move the shoreline, so the stored rest distance stands: steep coasts keep their
  * shoreline, and the full-range depth's 16 cm steps never read as slopes (over a gentle deep floor they drew contour
  * rings of shore foam). Only real terrain takes this path: cells extended past an underwater landscape edge (alpha ramp)
- * have no floor slope to measure. Below High Water Shading Detail (`SLATE_WATER_DETAIL` under 2) the stored rest distance
- * stands everywhere, without the four taps, and the shore counts as steep. GLSL-shaped; reads `U.slateWaterFieldStep` and
- * `U.slateWaterFieldBounds`. The water nodes share it.
+ * have no floor slope to measure. Below High Water Shading Detail (`HAPTIC_WATER_DETAIL` under 2) the stored rest distance
+ * stands everywhere, without the four taps, and the shore counts as steep. GLSL-shaped; reads `U.hapticWaterFieldStep` and
+ * `U.hapticWaterFieldBounds`. The water nodes share it.
  */
 export function shorelineSource(o: { tap: string; uv: string; cond: string; depth: string; shore: string }): string {
   return `
 float swShoreSlope = 1.0;
 #if ${WATER_DETAIL_DEFINE} >= 2
 if (${o.cond}) {
-  vec2 swFieldStep = U.slateWaterFieldStep.xy;
+  vec2 swFieldStep = U.hapticWaterFieldStep.xy;
   vec4 swTapE = ${o.tap}(${o.uv} + vec2(swFieldStep.x, 0.0));
   vec4 swTapW = ${o.tap}(${o.uv} - vec2(swFieldStep.x, 0.0));
   vec4 swTapN = ${o.tap}(${o.uv} + vec2(0.0, swFieldStep.y));
   vec4 swTapS = ${o.tap}(${o.uv} - vec2(0.0, swFieldStep.y));
-  vec2 swCellMetres = max(swFieldStep / U.slateWaterFieldBounds.zw, vec2(0.000001));
-  vec2 swTerrainSlope = vec2(swTapE.b - swTapW.b, swTapN.b - swTapS.b) * (U.slateWaterFieldStep.z * 0.5) / swCellMetres;
+  vec2 swCellMetres = max(swFieldStep / U.hapticWaterFieldBounds.zw, vec2(0.000001));
+  vec2 swTerrainSlope = vec2(swTapE.b - swTapW.b, swTapN.b - swTapS.b) * (U.hapticWaterFieldStep.z * 0.5) / swCellMetres;
   float swFineClamped = max(smoothstep(0.93, 0.99, max(max(swTapE.b, swTapW.b), max(swTapN.b, swTapS.b))),
     1.0 - smoothstep(0.01, 0.07, min(min(swTapE.b, swTapW.b), min(swTapN.b, swTapS.b))));
   ${o.shore} = mix(clamp(${o.depth} / max(length(swTerrainSlope), 0.001), ${f(SHORE[0])}, ${f(SHORE[1])}), ${o.shore}, swFineClamped);
@@ -141,13 +141,13 @@ if (${o.cond}) {
  * (open-water edges, an ocean's outer edge or a lake drawn smaller than its basin, fade out instead of foaming), from
  * the terrain field's known-terrain weight `known`, its `on` weight and shoreline `shore`, the terrain's depth below the
  * surface `terrainDepth` and its slope `slope`, and the body's bank distance `bank` and depth `body`. GLSL-shaped; reads
- * `U.slateWaterFieldInfo`. The water nodes share it.
+ * `U.hapticWaterFieldInfo`. The water nodes share it.
  */
 export function waterEdgeSource(o: { known: string; on: string; shore: string; terrainDepth: string; slope: string; bank: string; body: string }): string {
   return `
 float swFieldShore = mix(${f(SHORE[1])}, ${o.shore}, ${o.on});
 float swKnown = ${o.known};
-float swOpenEdge = U.slateWaterFieldInfo.x * (1.0 - smoothstep(0.0, 0.1, swKnown));
+float swOpenEdge = U.hapticWaterFieldInfo.x * (1.0 - smoothstep(0.0, 0.1, swKnown));
 float swOpenAny = max(swOpenEdge, swKnown * smoothstep(0.5, 2.5, swFieldShore - max(0.0, ${o.bank})));
 float swOpenW = mix(${f(OPEN_EDGE_FADE_TERRAIN)}, ${f(OPEN_EDGE_FADE)}, swOpenEdge);
 float swBankV = mix(${o.bank}, max(${o.bank}, ${f(SHORE[1])}), swOpenAny);
@@ -220,10 +220,10 @@ export function fftTurnTensor(c: number, j: string): string {
 }
 
 /**
- * The screen-space march (`SLATE_WATER_SSR`). The reflected ray runs from
- * the eye-relative surface point until the march distance (`slateWaterScreen.w`), the screen edge or just short of
+ * The screen-space march (`HAPTIC_WATER_SSR`). The reflected ray runs from
+ * the eye-relative surface point until the march distance (`hapticWaterScreen.w`), the screen edge or just short of
  * the eye; samples are evenly spaced on screen along it, with depth interpolated perspective-correctly (also exact for
- * orthographic views): one per copy texel the ray crosses, at most `SLATE_WATER_SSR_STEPS` (a far ray converging on the
+ * orthographic views): one per copy texel the ray crosses, at most `HAPTIC_WATER_SSR_STEPS` (a far ray converging on the
  * horizon crosses a few).
  * - A sample is a hit when the ray lies behind the copy's depth there and crossed that depth during the step, not
  *   when it passes behind something in front of the whole step.
@@ -250,7 +250,7 @@ float swMarchAt(float swC0w, float swC1w, float swU) { return swU * swC0w / max(
 vec4 swMarch(vec3 swOrigin, vec3 swRay) {
   vec4 swC0 = viewProjection * vec4(swOrigin, 1.0);
   vec4 swDir = viewProjection * vec4(swRay, 0.0);
-  float swLength = min(slateWaterScreen.w, 0.9 * swC0.w / max(-swDir.w, 0.00001));
+  float swLength = min(hapticWaterScreen.w, 0.9 * swC0.w / max(-swDir.w, 0.00001));
   vec4 swC1 = swC0 + swDir * swLength;
   vec2 swN0 = swC0.xy / swC0.w;
   vec2 swN1 = swC1.xy / swC1.w;
@@ -307,7 +307,7 @@ vec4 swMarch(vec3 swOrigin, vec3 swRay) {
   float swThickHit = ${base} + ${slope} * swRayZ;
   vec4 swHit = swSceneTexel(swUv);
   vec2 swTexel = swSceneTexelUv();
-  if (swTexel.x > slateWaterScreen.x * 1.01) {
+  if (swTexel.x > hapticWaterScreen.x * 1.01) {
     // A downsampled copy keeps each texel's nearest depth but averages its colour: at a silhouette the texel blends
     // the object with what lies behind it, so the colour comes from the neighbour away from the farther side.
     float swFar = swHit.a + swThickHit;
@@ -441,7 +441,7 @@ export const FOAM_FAR_PATCHES = [6, 16] as const;
  * from the cascade's frame, read at the mip that matches the mesh spacing (so a coarse grid takes each cascade's filtered
  * average, never an aliased sample) and faded with eye distance (`distance`, a GLSL expression) by FFT-Ocean's LOD
  * (`SPECTRUM_LOD_SCALE`): small cascades stop moving far geometry the eye cannot resolve. Height scales by
- * `slateWaterFft.x` (Wave Scale while the spectrum is ready, else 0: flat until the first dispatch), the offset also by
+ * `hapticWaterFft.x` (Wave Scale while the spectrum is ready, else 0: flat until the first dispatch), the offset also by
  * λ (`.y`); the bank fade and blending then scale them. `normal` (a Custom Material's Water Waves node) also sums every
  * cascade's slopes and offset gradient (layer 2c + 1, as the fragment does) into `swvG` and `swvJ` for
  * `spectrumNormalSource`.
@@ -462,7 +462,7 @@ swvJ += ${fftTurnTensor(c, `vec3(swvSb${c}.z, swvSa${c}.w, swvSb${c}.w)`)} * swv
     return c === 0 ? code : ifFft(code, c + 1);
   }).join("");
   return `
-vec4 swvSp = U.slateWaterFft;
+vec4 swvSp = U.hapticWaterFft;
 float swvDist = max(${distance}, 0.001);${normal ? `
 vec2 swvG = vec2(0.0);
 vec3 swvJ = vec3(0.0);` : ""}${cascades}
@@ -473,7 +473,7 @@ swvD = swvD * (swvSp.x * swvSp.y);`;
 /**
  * The displaced surface's normal at the vertex (`swvNormal`, a Custom Material's Water Waves node): the summed slopes
  * through the Jacobian of the offset (FFT-Ocean's J⁻ᵀ∇H with the cross term), scaled as the displacement is (Wave Scale
- * and λ, the bank fade, a blend's height and offset shares), over the rest slope of `slateWaterBaseNormal`. Where the
+ * and λ, the bank fade, a blend's height and offset shares), over the rest slope of `hapticWaterBaseNormal`. Where the
  * surface folds the determinant is floored.
  */
 export function spectrumNormalSource(): string {
@@ -481,8 +481,8 @@ export function spectrumNormalSource(): string {
 float swvHs = 1.0;
 float swvDs = swvGain;
 #ifdef ${WATER_BLEND_DEFINE}
-swvHs = A.slateWaterBlend.x;
-swvDs = swvDs * A.slateWaterBlend.y;
+swvHs = A.hapticWaterBlend.x;
+swvDs = swvDs * A.hapticWaterBlend.y;
 #endif
 swvG = swvG * (swvSp.x * swvHs);
 swvJ = swvJ * (swvSp.x * swvSp.y * swvDs);
@@ -491,7 +491,7 @@ float swvJxz = swvJ.y;
 float swvJzz = 1.0 + swvJ.z;
 vec2 swvSlope = vec2(swvJzz * swvG.x - swvJxz * swvG.y, swvJxx * swvG.y - swvJxz * swvG.x) / max(swvJxx * swvJzz - swvJxz * swvJxz, 0.35);
 swvSlope = swvSlope / max(1.0, length(swvSlope) / ${f(SHADING_SLOPE_CAP)});
-vec3 swvBase = A.slateWaterBaseNormal;
+vec3 swvBase = A.hapticWaterBaseNormal;
 vec3 swvNormal = normalize(vec3(swvBase.x / max(swvBase.y, 0.001) - swvSlope.x, 1.0, swvBase.z / max(swvBase.y, 0.001) - swvSlope.y));`;
 }
 

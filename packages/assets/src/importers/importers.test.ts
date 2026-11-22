@@ -14,7 +14,7 @@ import {
   pickerImportAccept,
 } from "./index";
 import { buildBoxGlbFixture } from "../glb-geometry";
-import { buildMinimalGlbFixture } from "./glb-parse";
+import { buildMinimalGlbFixture } from "../test-support/glb-fixtures";
 import { gifHeader, webpHeader } from "../test-support/image-headers";
 
 describe("importers", () => {

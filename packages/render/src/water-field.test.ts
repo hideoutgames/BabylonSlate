@@ -104,7 +104,7 @@ describe("Water field", () => {
     let field: WaterField | undefined;
     try {
       const surface = MeshBuilder.CreateGround("water", { width: 20, height: 20 }, scene);
-      surface.metadata = { slateWater: true };
+      surface.metadata = { hapticWater: true };
       // A beach rising 0.15 m per metre across X, crossing the waterline at x = 0.
       const side = 20, heights = Float32Array.from({ length: (side + 1) ** 2 }, (_, i) => -1.5 + (i % (side + 1)) * 0.15);
       createLandscapeMesh(scene, "beach", { width: 20, depth: 20, subdivisions: side, heights });
@@ -127,7 +127,7 @@ describe("Water field", () => {
     let field: WaterField | undefined;
     try {
       const surface = MeshBuilder.CreateGround("water", { width: 20, height: 20 }, scene);
-      surface.metadata = { slateWater: true };
+      surface.metadata = { hapticWater: true };
       createLandscapeMesh(scene, "floor", { width: 30, depth: 30, subdivisions: 4, heights: new Float32Array(25).fill(-3) });
       // A rest height bending over metres (as a blend between bodies does), with no water beyond 8 m of the centre.
       let calls = 0;
@@ -157,7 +157,7 @@ describe("Water field", () => {
       // A river-sized body over a wide landscape: its cells are well over a metre, so a fixed 1 m margin would leave the
       // rim of the water inside the field's last three cells (where terrain depth fades out, drawing the rim as pale water).
       const surface = MeshBuilder.CreateGround("water", { width: 700, height: 60 }, scene);
-      surface.metadata = { slateWater: true };
+      surface.metadata = { hapticWater: true };
       createLandscapeMesh(scene, "floor", { width: 800, depth: 200, subdivisions: 4, heights: new Float32Array(25).fill(-3) });
       field = new WaterField(scene, { mesh: surface, unbounded: false, amplitude: 0.5, contactRange: 1, surfaceY: () => 0 });
       field.update();
@@ -175,7 +175,7 @@ describe("Water field", () => {
     const fill = (waterSize: number, floorSize: number) => {
       const engine = new NullEngine(), scene = new Scene(engine);
       const surface = MeshBuilder.CreateGround("water", { width: waterSize, height: waterSize }, scene);
-      surface.metadata = { slateWater: true };
+      surface.metadata = { hapticWater: true };
       createLandscapeMesh(scene, "floor", { width: floorSize, depth: floorSize, subdivisions: 4, heights: new Float32Array(25).fill(-4) });
       const field = new WaterField(scene, { mesh: surface, unbounded: false, amplitude: 0.5, contactRange: 1, surfaceY: () => 0 });
       try {
@@ -198,7 +198,7 @@ describe("Water field", () => {
     let field: WaterField | undefined;
     try {
       const surface = MeshBuilder.CreateGround("water", { width: 36, height: 8 }, scene);
-      surface.metadata = { slateWater: true };
+      surface.metadata = { hapticWater: true };
       // A coast rising 0.5 m per metre across X, crossing the rest waterline at x = 0 (rest depth -x / 2).
       const side = 40, heights = Float32Array.from({ length: (side + 1) ** 2 }, (_, i) => -10 + (i % (side + 1)) * 0.5);
       createLandscapeMesh(scene, "coast", { width: 40, depth: 40, subdivisions: side, heights });
@@ -222,7 +222,7 @@ describe("Water field", () => {
     try {
       // A 40 m floor 4 m under a 100 m body: the field covers the body, so most of it lies beyond the landscape.
       const surface = MeshBuilder.CreateGround("water", { width: 100, height: 100 }, scene);
-      surface.metadata = { slateWater: true };
+      surface.metadata = { hapticWater: true };
       createLandscapeMesh(scene, "floor", { width: 40, depth: 40, subdivisions: 4, heights: new Float32Array(25).fill(-4) });
       field = new WaterField(scene, { mesh: surface, unbounded: false, amplitude: 0.5, contactRange: 1, surfaceY: () => 0 });
       field.update();
@@ -253,7 +253,7 @@ describe("Water field", () => {
     try {
       // A 40 m tile in a 100 m body: dry (1 m up) along its west edge, 4 m under water along its east edge.
       const surface = MeshBuilder.CreateGround("water", { width: 100, height: 100 }, scene);
-      surface.metadata = { slateWater: true };
+      surface.metadata = { hapticWater: true };
       const side = 9, heights = Float32Array.from({ length: side * side }, (_, i) => [1, 1, 1, 1, -1.5, -4, -4, -4, -4][i % side]!);
       createLandscapeMesh(scene, "coast", { width: 40, depth: 40, subdivisions: side - 1, heights });
       field = new WaterField(scene, { mesh: surface, unbounded: false, amplitude: 0.5, contactRange: 1, surfaceY: () => 0 });
@@ -280,7 +280,7 @@ describe("Water field", () => {
     let field: WaterField | undefined;
     try {
       const surface = MeshBuilder.CreateGround("water", { width: 8, height: 8 }, scene);
-      surface.metadata = { slateWater: true };
+      surface.metadata = { hapticWater: true };
       createLandscapeMesh(scene, "deep floor", { width: 12, depth: 12, subdivisions: 4, heights: new Float32Array(25).fill(-45) });
       field = new WaterField(scene, { mesh: surface, unbounded: false, amplitude: 50, contactRange: 1, surfaceY: () => 0 });
       field.update();

@@ -42,7 +42,7 @@ export function TemplateLibrarySettings() {
     <SettingsSection id="library" title="Template Library">
       <div className="settings-row flex flex-col gap-2">
       <FieldDescription>
-        Shown in the project creator. Add an exported Slate project to create one.
+        Shown in the project creator. Add an exported Haptic project to create one.
       </FieldDescription>
       <div className="divide-y rounded-lg border px-3">
         {BUILT_IN_TEMPLATE_NAMES.map((name) => (

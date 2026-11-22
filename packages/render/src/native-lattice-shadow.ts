@@ -115,7 +115,7 @@ class NativeLatticeShadowDepthWrapper extends ShadowDepthWrapper {
     const coverage = [...defines];
     if (generation.texture) {
       if (!generation.texture.isReady()) return false;
-      if (generation.texture.getAlphaFromRGB) coverage.push("#define SLATE_NATIVE_OPACITY_RGB");
+      if (generation.texture.getAlphaFromRGB) coverage.push("#define HAPTIC_NATIVE_OPACITY_RGB");
     }
     return generation.wrapper.isReadyForSubMesh(subMesh, coverage, generator, instances, passId);
   }

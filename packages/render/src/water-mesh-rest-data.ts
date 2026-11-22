@@ -75,18 +75,18 @@ export function restDataRange(s: Surface, b: RestBuffers, world: Matrix, inverse
 
 /** Uploads the whole grid's rest inputs after `placeRestData` or a landed blend refresh wrote them. */
 export function uploadRestData(s: Surface, blended: boolean): void {
-  s.mesh.updateVerticesData("slateWaterFlow", s.flow);
-  s.mesh.updateVerticesData("slateWaterBaseNormal", s.baseNormals);
+  s.mesh.updateVerticesData("hapticWaterFlow", s.flow);
+  s.mesh.updateVerticesData("hapticWaterBaseNormal", s.baseNormals);
   if (blended) {
-    s.mesh.updateVerticesData("slateWaterBlend", s.blendData);
-    s.mesh.updateVerticesData("slateWaterBlendColors", s.blendColors);
+    s.mesh.updateVerticesData("hapticWaterBlend", s.blendData);
+    s.mesh.updateVerticesData("hapticWaterBlendColors", s.blendColors);
   }
   if (s.gpu) {
     // A static rest grid: the vertex shader adds every displacement.
     writeRestPositions(s, 0, s.base.length / 3);
     s.mesh.updateVerticesData(VertexBuffer.PositionKind, s.positions, false);
     s.mesh.updateVerticesData(VertexBuffer.NormalKind, s.normals);
-    s.mesh.updateVerticesData("slateWaterData", s.data);
+    s.mesh.updateVerticesData("hapticWaterData", s.data);
   }
   // CPU vertices resample at the next animation step even while the clock is paused.
   s.time = null;
@@ -130,9 +130,9 @@ export function uploadGlobalRows(s: Surface, begin: number, end: number): void {
   writeRestPositions(s, begin, end);
   uploadVertexRange(s.mesh, VertexBuffer.PositionKind, s.positions, 3, begin, end);
   uploadVertexRange(s.mesh, VertexBuffer.NormalKind, s.normals, 3, begin, end);
-  uploadVertexRange(s.mesh, "slateWaterData", s.data, 4, begin, end);
-  uploadVertexRange(s.mesh, "slateWaterFlow", s.flow, 3, begin, end);
-  uploadVertexRange(s.mesh, "slateWaterBaseNormal", s.baseNormals, 3, begin, end);
-  uploadVertexRange(s.mesh, "slateWaterBlend", s.blendData, 4, begin, end);
-  uploadVertexRange(s.mesh, "slateWaterBlendColors", s.blendColors, 2, begin, end);
+  uploadVertexRange(s.mesh, "hapticWaterData", s.data, 4, begin, end);
+  uploadVertexRange(s.mesh, "hapticWaterFlow", s.flow, 3, begin, end);
+  uploadVertexRange(s.mesh, "hapticWaterBaseNormal", s.baseNormals, 3, begin, end);
+  uploadVertexRange(s.mesh, "hapticWaterBlend", s.blendData, 4, begin, end);
+  uploadVertexRange(s.mesh, "hapticWaterBlendColors", s.blendColors, 2, begin, end);
 }

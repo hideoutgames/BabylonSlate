@@ -7,7 +7,7 @@ import type { CubeTexture } from "@babylonjs/core/Materials/Textures/cubeTexture
 import { EffectRenderer, EffectWrapper } from "@babylonjs/core/Materials/effectRenderer";
 import { withDrawingState } from "./engine-drawing-state";
 
-const shaderName = "slateEnvironmentBaseRadiance";
+const shaderName = "hapticEnvironmentBaseRadiance";
 {
   const vec2 = "vec2";
   const vec3 = "vec3";

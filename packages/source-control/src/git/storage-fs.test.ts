@@ -99,7 +99,7 @@ describe("StorageFs", () => {
 // A native transfer the system ends (the app killed in the background) can leave its staged file beside the object.
 describe("StorageFs on the mobile Documents tier", () => {
   it("leaves a staged transfer file out of the working copy Git reads for status", async () => {
-    const documents = new DocumentsStorageAdapter(createFakeDocumentsFs());
+    const documents = new DocumentsStorageAdapter({ fs: createFakeDocumentsFs() });
     await documents.openDocumentsProject("project");
     const fs = new StorageFs(documents);
     await git.init({ fs, dir: "/", defaultBranch: "main" });

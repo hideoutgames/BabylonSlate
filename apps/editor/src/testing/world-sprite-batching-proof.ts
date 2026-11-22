@@ -23,20 +23,12 @@ import {
 } from "@haptic/assets";
 import { SNAPSHOT_FLAG_VISIBLE } from "@haptic/bridge";
 import { normalizeRenderEffectsSettings, normalizeRenderingQuality, normalizeShadowSettings } from "@haptic/core";
-import { applyAuthoredLightProperties, compileMaterialPlan, configureEditorRenderingGroups } from "@haptic/render";
+import { applyAuthoredLightProperties, compileMaterialPlan, configureEditorRenderingGroups, applyAnimStateToScene, sceneAnimHostFromBinding, readEngineDrawCalls, ownedVisualTexturePreparation, encodeRgbaPng, ResourceCache, setSceneRenderSettings, applyAssignMesh, applySnapshotToScene, createSnapshotSceneBinding, disposeSnapshotBinding } from "@haptic/render";
 import { SceneRenderCoordinator } from "@haptic/render/scene-render-coordinator";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
 // The engine-wide registrations a shipped Engine loads before it exists (multiple render targets among them).
-import "../../../../packages/render/src/babylon-registrations";
-import { applyAnimStateToScene, sceneAnimHostFromBinding } from "../../../../packages/render/src/anim-apply";
-import { pendingDriverEffects } from "../../../../packages/render/src/driver-compile";
-import { readEngineDrawCalls } from "../../../../packages/render/src/draw-calls";
-import { ownedVisualTexturePreparation } from "../../../../packages/render/src/mesh-assets";
-import { encodeRgbaPng } from "../../../../packages/render/src/png-encode";
-import { ResourceCache } from "../../../../packages/render/src/resource-cache";
-import { setSceneRenderSettings } from "../../../../packages/render/src/scene-render-mode";
-import { applyAssignMesh, applySnapshotToScene, createSnapshotSceneBinding, disposeSnapshotBinding } from "../../../../packages/render/src/snapshot-apply";
-import { setSceneWorldSpriteBatching, worldSpriteBatchStats } from "../../../../packages/render/src/world-sprite-batcher";
+import "@haptic/render/babylon-registrations";
+import { pendingDriverEffects, setSceneWorldSpriteBatching, worldSpriteBatchStats } from "@haptic/render/editor-proofs";
 
 const WIDTH = 320;
 const HEIGHT = 200;

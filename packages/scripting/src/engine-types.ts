@@ -123,8 +123,6 @@ export const COLLISION_CHANNEL_MEMBERS = [
   "Triggers",
 ] as const;
 
-export type CollisionChannel = (typeof COLLISION_CHANNEL_MEMBERS)[number];
-
 export type EngineEnum = {
   id: string;
   name: string;

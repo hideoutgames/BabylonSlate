@@ -50,30 +50,12 @@ import type { FrameGraphRenderTarget } from "@babylonjs/core/FrameGraph/frameGra
 import { FrameGraphGeometryRendererTask } from "@babylonjs/core/FrameGraph/Tasks/Rendering/geometryRendererTask";
 import type { FrameGraphClearTextureTask } from "@babylonjs/core/FrameGraph/Tasks/Texture/clearTextureTask";
 import { Constants } from "@babylonjs/core/Engines/constants";
-import { retainAreaLightLookup } from "../../../../packages/render/src/area-light-resources";
-import { OwnedRectAreaLight } from "../../../../packages/render/src/area-rect-light";
-import { LogicalGeometryTask } from "../../../../packages/render/src/framegraph-logical-buffers";
-import { ManagedShadowObjectRendererTask } from "../../../../packages/render/src/framegraph-managed-shadows";
-import { pendingDriverEffects } from "../../../../packages/render/src/driver-compile";
-import { fullTargetClear } from "../../../../packages/render/src/full-target-clear";
-import { drawGeometryDepthSeed } from "../../../../packages/render/src/geometry-depth-seed";
-import { setMeshInstanceParameters } from "../../../../packages/render/src/instance-parameters";
-import { setSceneOutputScale } from "../../../../packages/render/src/scene-output-scale";
-import { GlSignatureRecorder, installGlSignature } from "../../../../packages/render/src/gpu-frame-probe";
-import { HapticLightingBlock } from "../../../../packages/render/src/haptic-lighting-block";
-import { createMirrorSurfaceMesh, mirrorDiagnostics } from "../../../../packages/render/src/mirrors";
-import { allowSceneScreenShadows } from "../../../../packages/render/src/render-settings";
-import { setSceneRenderSettings } from "../../../../packages/render/src/scene-render-mode";
-import { shadowAtlasDrawCounts } from "../../../../packages/render/src/shadow-atlas";
-import { findSceneShadowController, SceneShadowController } from "../../../../packages/render/src/shadow-controller";
+import { retainAreaLightLookup, OwnedRectAreaLight, LogicalGeometryTask, ManagedShadowObjectRendererTask, pendingDriverEffects, fullTargetClear, drawGeometryDepthSeed, setMeshInstanceParameters, setSceneOutputScale, GlSignatureRecorder, installGlSignature, HapticLightingBlock, createMirrorSurfaceMesh, mirrorDiagnostics, shadowAtlasDrawCounts, findSceneShadowController, SceneShadowController, AtlasCascadedShadowGenerator, ShadowMapRefresh, hasOwnerNotifiedGeometry } from "@haptic/render/editor-proofs";
+import { allowSceneScreenShadows } from "@haptic/render/render-settings";
+import { setSceneRenderSettings, createSpriteQuad, setSpriteQuadSize, createTilemapMeshes } from "@haptic/render";
 import { readShadowAtlasPages, type ShadowAtlasPageDigest } from "./shadow-atlas-readback";
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 import { createDefaultTilemapPayload, normalizeTilesetPayload, setTile } from "@haptic/assets";
-import { AtlasCascadedShadowGenerator } from "../../../../packages/render/src/shadow-atlas";
-import { ShadowMapRefresh } from "../../../../packages/render/src/shadow-map-refresh";
-import { hasOwnerNotifiedGeometry } from "../../../../packages/render/src/geometry-revision";
-import { createSpriteQuad, setSpriteQuadSize } from "../../../../packages/render/src/sprite-quad";
-import { createTilemapMeshes } from "../../../../packages/render/src/tilemap-mesh";
 
 /**
  * The shadow maps' savings as before them, from the current; returns the restore. Every cascade of a sun's atlas map

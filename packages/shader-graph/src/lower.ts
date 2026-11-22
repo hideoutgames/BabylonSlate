@@ -141,21 +141,13 @@ interface GraphLookup {
   incoming(nodeId: string, pinId: string): MaterialGraphEdge | undefined;
 }
 
-function lookupGraph(graph: Frame["graph"]): GraphLookup {
+/** `frame`'s nodes, the first of each id, and the incoming-edge index its resolver already holds for the graph. */
+function lookupGraph(frame: Frame): GraphLookup {
   const nodes = new Map<string, MaterialGraphNode>();
-  for (const node of graph.nodes) {
+  for (const node of frame.graph.nodes) {
     if (!nodes.has(node.id)) nodes.set(node.id, node);
   }
-  const incoming = new Map<string, Map<string, MaterialGraphEdge>>();
-  for (const edge of graph.edges) {
-    let pins = incoming.get(edge.targetNodeId);
-    if (!pins) incoming.set(edge.targetNodeId, (pins = new Map()));
-    if (!pins.has(edge.targetPinId)) pins.set(edge.targetPinId, edge);
-  }
-  return {
-    node: (nodeId) => nodes.get(nodeId),
-    incoming: (nodeId, pinId) => incoming.get(nodeId)?.get(pinId),
-  };
+  return { node: (nodeId) => nodes.get(nodeId), incoming: frame.resolver.incoming };
 }
 
 /** Widen a literal to the component count of `type`, splatting a scalar. */
@@ -375,7 +367,7 @@ function lowerWithinBudget(
   const lookups = new Map<Frame["graph"], GraphLookup>();
   function lookupOf(frame: Frame): GraphLookup {
     let lookup = lookups.get(frame.graph);
-    if (!lookup) lookups.set(frame.graph, (lookup = lookupGraph(frame.graph)));
+    if (!lookup) lookups.set(frame.graph, (lookup = lookupGraph(frame)));
     return lookup;
   }
 

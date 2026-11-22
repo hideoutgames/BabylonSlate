@@ -10,7 +10,7 @@ import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
 import { meshVertexWaves, WATER_GPU_WAVES_DEFINE } from "./water-material";
 
 /** Set for a mesh that carries the water vertex data: Water Surface and Water Waves read it. */
-export const WATER_SURFACE_DEFINE = "SLATE_WATER_SURFACE";
+export const WATER_SURFACE_DEFINE = "HAPTIC_WATER_SURFACE";
 
 /**
  * Babylon's depth pre-pass define (`DEPTHPREPASS`, as built-in water reads it), which the Water Cut block sets for a
@@ -20,12 +20,12 @@ export const WATER_DEPTH_PRE_PASS_DEFINE = "DEPTHPREPASS";
 
 /** Whether `mesh` is a water surface carrying the per-vertex data the water nodes read. */
 export function isWaterSurfaceMesh(mesh?: AbstractMesh): boolean {
-  return mesh?.isVerticesDataPresent("slateWaterData") === true && mesh.isVerticesDataPresent("slateWaterFlow");
+  return mesh?.isVerticesDataPresent("hapticWaterData") === true && mesh.isVerticesDataPresent("hapticWaterFlow");
 }
 
-/** Whether `mesh` is a water surface blending with its neighbours (`WATER_BLEND_DEFINE`: it carries `slateWaterBlend`). */
+/** Whether `mesh` is a water surface blending with its neighbours (`WATER_BLEND_DEFINE`: it carries `hapticWaterBlend`). */
 export function isBlendingWaterSurface(mesh?: AbstractMesh): boolean {
-  return isWaterSurfaceMesh(mesh) && mesh!.isVerticesDataPresent("slateWaterBlend");
+  return isWaterSurfaceMesh(mesh) && mesh!.isVerticesDataPresent("hapticWaterBlend");
 }
 
 /**
@@ -72,11 +72,11 @@ export class WaterSurfaceBlock extends NodeMaterialBlock {
   protected override _buildBlock(state: NodeMaterialBuildState): this {
     super._buildBlock(state);
     state.sharedData.blocksWithDefines.push(this);
-    declareWaterAttributes(state, WATER_SURFACE_DEFINE, [["slateWaterData", 4], ["slateWaterFlow", 3]]);
+    declareWaterAttributes(state, WATER_SURFACE_DEFINE, [["hapticWaterData", 4], ["hapticWaterFlow", 3]]);
     for (const [index, output] of this._outputs.entries()) {
       if (!output.hasEndpoints) continue;
       const zero = index === 4 ? "vec3(0.0)" : "0.0";
-      const source = index === 4 ? "slateWaterFlow" : `slateWaterData.${"xyzw"[index]}`;
+      const source = index === 4 ? "hapticWaterFlow" : `hapticWaterData.${"xyzw"[index]}`;
       state.compilationString += `${state._declareOutput(output)} = ${zero};\n#ifdef ${WATER_SURFACE_DEFINE}\n${output.associatedVariableName} = ${source};\n#endif\n`;
       const gpu = index === 0 ? this.gpuWaveHeight : index === 3 ? this.gpuTime : null;
       if (gpu?.isConnected) state.compilationString += `#ifdef ${WATER_GPU_WAVES_DEFINE}\n${output.associatedVariableName} = ${gpu.associatedVariableName};\n#endif\n`;

@@ -157,7 +157,7 @@ function createDialog(id = "blank") {
   fireEvent.click(screen.getByTestId(`create-project-${id}`));
 }
 
-describe("Slate project browser", () => {
+describe("Haptic project browser", () => {
   it("marks every project Local and only source-controlled projects Source Control", () => {
     renderHomepage({
       projects: [

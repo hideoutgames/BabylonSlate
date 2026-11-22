@@ -28,8 +28,8 @@ export function authoredShadowParticipation(
     node;
     node = node.parent
   ) {
-    if (node.metadata?.slateShadowParticipation)
-      return node.metadata.slateShadowParticipation as ShadowParticipation;
+    if (node.metadata?.hapticShadowParticipation)
+      return node.metadata.hapticShadowParticipation as ShadowParticipation;
   }
   return {};
 }

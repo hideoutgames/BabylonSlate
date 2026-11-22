@@ -1,7 +1,7 @@
 import { SAFE_ZIP_MTIME } from "./zip-time";
 import { err, ok, classIdForAssetPath, clampAudioScale, DEFAULT_LOOP_COUNT, normalizeSceneLayer, normalizeSortingLayers, normalizeGarbageCollectionIntervalTicks, normalizePlayFrameCap, normalizeRenderProjectSettings, normalizeFocusNavigationSettings, normalizeSceneLayerPostProcessStack, renderEffectsAssetGuids, consoleCommandMetadataFromGraph, normalizeCollisionPresets, isBuildPlatform, type Result } from "@haptic/core";
 import { collectAssetDependencyMetadata, complexCollisionModelGuids, cookComplexCollisionMesh, sceneLayerPostProcessAssetGuids, decodePackedAudioAsset, decodePackedModelAsset, encodePackedAudioAsset, mimeForAudioBytes, peekPackedAudioPayload, sha256Hex, type AssetDependencyClass } from "@haptic/assets";
-import { zipSync, unzipSync } from "fflate";
+import { zipSync } from "fflate";
 import {
   DEFAULT_FILE_COUNT_FAIL,
   DEFAULT_FILE_COUNT_WARN,
@@ -463,10 +463,6 @@ export function zipExport(artifact: ExportArtifact): Uint8Array {
     record[path] = data;
   }
   return zipSync(record, { level: 6, mtime: SAFE_ZIP_MTIME });
-}
-
-export function unzipExport(bytes: Uint8Array): Record<string, Uint8Array> {
-  return unzipSync(bytes);
 }
 
 const OUTDATED_MANIFEST = "rebuild this game with the current exporter.";

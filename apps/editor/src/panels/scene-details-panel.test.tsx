@@ -23,11 +23,11 @@ import {
   sceneLayerToEditorScene,
 } from "@haptic/core";
 import { AssetCreateProvider, TagProvider } from "@haptic/editor-kit";
-import { dispatchPointerEvent } from "../../../../packages/editor-kit/src/test-support/pointer-events";
+import { dispatchPointerEvent } from "@haptic/editor-kit/test-support/pointer-events";
 import { SceneDetailsPanel } from "./scene-details-panel";
 import { RENDERING_SETTINGS_SECTIONS } from "../components/rendering-settings-sections";
 import { AppSettingsProvider } from "../context/app-settings-context";
-import { MemoryAppSettingsStore } from "../../../../packages/vfs/src/test-support/memory-app-settings";
+import { MemoryAppSettingsStore } from "@haptic/vfs/test-support/memory-app-settings";
 import { persistableDocumentContent } from "../lib/scene-layer-document";
 import { diffSceneCommands, EditSession } from "@haptic/edit";
 import type { SceneShapeEditTarget } from "../context/scene-editing-context";

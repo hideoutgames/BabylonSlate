@@ -18,14 +18,9 @@ import type { Scene } from "@babylonjs/core/scene";
 import type { LayerCameraState } from "@haptic/core";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
 // The engine-wide registrations a shipped Engine loads before it exists (multiple render targets among them).
-import "../../../../packages/render/src/babylon-registrations";
-import { readEngineDrawCalls } from "../../../../packages/render/src/draw-calls";
-import { compileMaterialPlan } from "../../../../packages/render/src/material-compiler";
-import { sceneImagePages, setSceneDrawBatching, setSceneImagePages } from "../../../../packages/render/src/overlay-draw-batcher";
-import { SceneLayerCompositor } from "../../../../packages/render/src/scene-layer-compositor";
-import { buildSceneLayerHud } from "../../../../packages/render/src/scene-layer-hud-fixture";
-import { createSpriteQuad, setSpriteQuadUvs } from "../../../../packages/render/src/sprite-quad";
-import { setUnlitMaterial } from "../../../../packages/render/src/unlit-material";
+import "@haptic/render/babylon-registrations";
+import { readEngineDrawCalls, compileMaterialPlan, SceneLayerCompositor, createSpriteQuad, setSpriteQuadUvs } from "@haptic/render";
+import { sceneImagePages, setSceneDrawBatching, setSceneImagePages, buildSceneLayerHud, setUnlitMaterial } from "@haptic/render/editor-proofs";
 
 const WIDTH = 960;
 const HEIGHT = 540;

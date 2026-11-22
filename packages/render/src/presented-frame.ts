@@ -38,11 +38,6 @@ export async function whenPresentationFenceClear(engine: AbstractEngine, tick: (
   return performance.now() - start;
 }
 
-/** Submits the Engine's pending GPU work. Test hooks call it before a screenshot. */
-export async function whenSubmittedWorkDone(engine: AbstractEngine): Promise<void> {
-  engine.flushFramebuffer();
-}
-
 export type PresentedFrame = {
   completed: Promise<void>;
   cancel: () => void;

@@ -1,5 +1,5 @@
 import type { Plugin } from "vite";
-import { embeddedWasm, hostedWasmUrl } from "./vite-hosted-wasm";
+import { embeddedWasm, hostedWasmUrl } from "./vite-hosted-wasm.ts";
 
 /** Rapier 2D's compat glue inside `@dimforge/rapier2d-deterministic-compat`. */
 const RAPIER_COMPAT_GLUE = /[\\/]@dimforge[\\/]rapier2d-deterministic-compat[\\/]dist[\\/]rapier\.mjs$/;

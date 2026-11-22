@@ -12,12 +12,12 @@ import {
 } from "./water-shader-defines";
 
 /**
- * Vertex stage of `SLATE_WATER_GPU_WAVES`, at CUSTOM_VERTEX_UPDATE_WORLDPOS: the spectrum's displacement
+ * Vertex stage of `HAPTIC_WATER_GPU_WAVES`, at CUSTOM_VERTEX_UPDATE_WORLDPOS: the spectrum's displacement
  * (`spectrumVertexSource`) at this vertex's world rest point. The rest grid carries its mesh spacing in
- * `slateWaterData.x` (the spectrum's mip) and its bank distance in `.y` (the finite-body fade of the horizontal offset).
+ * `hapticWaterData.x` (the spectrum's mip) and its bank distance in `.y` (the finite-body fade of the horizontal offset).
  * Writes the displaced world position (the clip position, fog, shadows and clip planes follow it) and leaves the height
  * and offset for the varyings in `swvH` / `swvD`, so the fragment finds its rest point and contacts see the rendered
- * height. `slateWaterGridOffset` (xyz) is the world-space translation of the rest grid since its positions were uploaded
+ * height. `hapticWaterGridOffset` (xyz) is the world-space translation of the rest grid since its positions were uploaded
  * (Global Water's recentre, `waterGridOffset`): it is added before the rest point is taken, so the spectrum and bank terms
  * all see the translated grid. GLSL-shaped: `A.` attributes and `U.` uniforms are bound by `bindVertexSource`. It also
  * leaves `swvNormal` (`spectrumNormalSource`); `distance` is the eye-distance expression the spectrum's LOD reads.
@@ -25,20 +25,20 @@ import {
 function vertexWaveSource(distance: string): string {
   return `
 #ifdef ${WATER_GPU_WAVES_DEFINE}
-float swvSpacing = A.slateWaterData.x;
-worldPos = vec4(worldPos.xyz + U.slateWaterGridOffset.xyz, worldPos.w);
+float swvSpacing = A.hapticWaterData.x;
+worldPos = vec4(worldPos.xyz + U.hapticWaterGridOffset.xyz, worldPos.w);
 vec2 swvRest = worldPos.xz;
 float swvH = 0.0;
 vec2 swvD = vec2(0.0);${spectrumVertexSource(distance, true)}
-float swvFade = U.slateWaterSwellInfo.x;
+float swvFade = U.hapticWaterSwellInfo.x;
 #ifdef ${WATER_BLEND_DEFINE}
-swvFade = swvFade * A.slateWaterBlend.y;
+swvFade = swvFade * A.hapticWaterBlend.y;
 #endif
-float swvBankT = clamp(A.slateWaterData.y / max(swvFade, 0.000001), 0.0, 1.0);
+float swvBankT = clamp(A.hapticWaterData.y / max(swvFade, 0.000001), 0.0, 1.0);
 float swvGain = mix(1.0, swvBankT * swvBankT * (3.0 - 2.0 * swvBankT), step(0.000001, swvFade));${spectrumNormalSource()}
 #ifdef ${WATER_BLEND_DEFINE}
-swvH = swvH * A.slateWaterBlend.x;
-swvD = swvD * A.slateWaterBlend.y;
+swvH = swvH * A.hapticWaterBlend.x;
+swvD = swvD * A.hapticWaterBlend.y;
 #endif
 swvD = swvD * swvGain;
 worldPos = vec4(worldPos.xyz + vec3(swvD.x, swvH, swvD.y), worldPos.w);
@@ -54,13 +54,13 @@ worldPos = vec4(worldPos.xyz + vec3(swvD.x, swvH, swvD.y), worldPos.w);
  */
 const BLEND_CULL_CELLS = 2;
 const BLEND_CULL_MARGIN = 1;
-const BLEND_CULL = `if (min(A.slateWaterData.y, A.slateWaterBlend.z) < -(${f(BLEND_CULL_CELLS)} * A.slateWaterData.x + ${f(BLEND_CULL_MARGIN)})) {
+const BLEND_CULL = `if (min(A.hapticWaterData.y, A.hapticWaterBlend.z) < -(${f(BLEND_CULL_CELLS)} * A.hapticWaterData.x + ${f(BLEND_CULL_MARGIN)})) {
   SW_CLIP_POSITION.z = 2.0 * SW_CLIP_POSITION.w;
 }`;
 
 /**
  * The blend cull for the Water Cut block's vertex program, which the graph's Water Waves node
- * displaces (GPU waves only: there `slateWaterData.x` is the grid spacing).
+ * displaces (GPU waves only: there `hapticWaterData.x` is the grid spacing).
  */
 export function waterBlendCullSource(): string {
   return `#if defined(${WATER_GPU_WAVES_DEFINE}) && defined(${WATER_BLEND_DEFINE})\n${bindVertexSource(BLEND_CULL)
@@ -74,34 +74,34 @@ function bindVertexSource(code: string): string {
 
 /**
  * Uniforms the vertex displacement reads (`bindWaterVertexUniforms` sets them, with `WATER_FFT_SAMPLER`): the bank fade
- * (`slateWaterSwellInfo.x`), the grid offset and the spectrum's.
+ * (`hapticWaterSwellInfo.x`), the grid offset and the spectrum's.
  */
-export const WATER_VERTEX_WAVE_UNIFORMS: readonly string[] = ["slateWaterSwellInfo", "slateWaterGridOffset", ...FFT_UNIFORMS];
+export const WATER_VERTEX_WAVE_UNIFORMS: readonly string[] = ["hapticWaterSwellInfo", "hapticWaterGridOffset", ...FFT_UNIFORMS];
 /**
  * The surface's water clock in seconds (x) and its foam drift in metres per second (yz, `waterFoamDrift`), for a Custom
  * Material's Water Waves and Water Foam nodes (`WaterVertexWaves.bind`).
  */
-export const WATER_CLOCK_UNIFORM = "slateWaterClock";
+export const WATER_CLOCK_UNIFORM = "hapticWaterClock";
 let blockWaveSource: string | undefined;
 /**
- * The Water Waves node's vertex code: `vertexWaveSource`, bound, its eye distance from `slateWaterEye` (the camera's world position relative to the rest positions). It reads
+ * The Water Waves node's vertex code: `vertexWaveSource`, bound, its eye distance from `hapticWaterEye` (the camera's world position relative to the rest positions). It reads
  * and writes a `worldPos` vec4 (rest point in, displaced point out) and leaves `swvH` (height), `swvD` (horizontal offset)
- * and `swvNormal`, under `SLATE_WATER_GPU_WAVES`; it reads `slateWaterData` and `slateWaterBaseNormal`, and under
- * `SLATE_WATER_BLEND` `slateWaterBlend`, as attributes. Built once.
+ * and `swvNormal`, under `HAPTIC_WATER_GPU_WAVES`; it reads `hapticWaterData` and `hapticWaterBaseNormal`, and under
+ * `HAPTIC_WATER_BLEND` `hapticWaterBlend`, as attributes. Built once.
  */
 export function waterWaveBlockSource(): string {
-  blockWaveSource ??= stripShaderComments(bindVertexSource(vertexWaveSource("length(worldPos.xyz - U.slateWaterEye.xyz)")));
+  blockWaveSource ??= stripShaderComments(bindVertexSource(vertexWaveSource("length(worldPos.xyz - U.hapticWaterEye.xyz)")));
   return blockWaveSource;
 }
 
 /** The Water Waves node's eye position uniform (`waterWaveBlockSource`): the camera relative to the rest positions. */
-export const WATER_EYE_UNIFORM = "slateWaterEye";
+export const WATER_EYE_UNIFORM = "hapticWaterEye";
 /** The Water Waves node's foam terms: (Crest Foam, Foam Amount, the foam threshold `waterFoamThresholdOf`, 0). */
-export const WATER_NODE_FOAM_UNIFORM = "slateWaterNodeFoam";
+export const WATER_NODE_FOAM_UNIFORM = "hapticWaterNodeFoam";
 /** The Water Waves node's light: (direction toward the sun, Subsurface). */
-export const WATER_NODE_SUN_UNIFORM = "slateWaterNodeWaveSun";
+export const WATER_NODE_SUN_UNIFORM = "hapticWaterNodeWaveSun";
 /** Varying the Water Waves node's vertex stage hands its fragment stage: (bank gain × offset share, height share). */
-export const WATER_NODE_VARYING = "vSlateWaterWaves";
+export const WATER_NODE_VARYING = "vHapticWaterWaves";
 
 /**
  * The Water Waves node's vertex code that fills `WATER_NODE_VARYING` (`out`, the bound varying) from the mesh's bank
@@ -111,15 +111,15 @@ function nodeVaryingSource(out: string): string {
   return `
 #ifdef ${WATER_GPU_WAVES_DEFINE}
 {
-float swvFade = U.slateWaterSwellInfo.x;
+float swvFade = U.hapticWaterSwellInfo.x;
 float swvHs = 1.0;
 float swvDs = 1.0;
 #ifdef ${WATER_BLEND_DEFINE}
-swvFade = swvFade * A.slateWaterBlend.y;
-swvHs = A.slateWaterBlend.x;
-swvDs = A.slateWaterBlend.y;
+swvFade = swvFade * A.hapticWaterBlend.y;
+swvHs = A.hapticWaterBlend.x;
+swvDs = A.hapticWaterBlend.y;
 #endif
-float swvBankT = clamp(A.slateWaterData.y / max(swvFade, 0.000001), 0.0, 1.0);
+float swvBankT = clamp(A.hapticWaterData.y / max(swvFade, 0.000001), 0.0, 1.0);
 float swvGain = mix(1.0, swvBankT * swvBankT * (3.0 - 2.0 * swvBankT), step(0.000001, swvFade));
 ${out} = vec2(swvGain * swvDs, swvHs);
 }
@@ -167,14 +167,14 @@ swnFoamSum += ${f(WATER_FOAM_WEIGHTS[c]!)} * (1.0 - swnSt${c}) * swnSw${c} * swn
   return `
 #ifdef ${WATER_GPU_WAVES_DEFINE}
 {
-vec3 swnRestW = ${rest}.xyz + U.slateWaterGridOffset.xyz;
+vec3 swnRestW = ${rest}.xyz + U.hapticWaterGridOffset.xyz;
 vec2 swnRest = swnRestW.xz;
 vec2 swnRestDx = dFdx(swnRest);
 vec2 swnRestDy = dFdy(swnRest);
 // Metres of water one pixel spans, along its longer screen axis (the extent the hardware's mip choice follows).
 float swnPixel = max(length(swnRestDx), length(swnRestDy));
 float swnDist = max(length(swnRestW - U.${WATER_EYE_UNIFORM}.xyz), 0.001);
-vec4 swnSp = U.slateWaterFft;
+vec4 swnSp = U.hapticWaterFft;
 vec2 swnShares = ${varying};
 float swnTurbScale = swnSp.x * swnShares.x;
 vec2 swnGrad = vec2(0.0);
@@ -211,7 +211,7 @@ const bindFragmentSource = (code: string) => code.replace(/\bU\./g, "").replace(
 
 /** The Water Waves node's per-stage sources (`WaterWavesBlock`), built once. */
 export interface WaterWaveNodeSources {
-  /** Taps of each stage, under `SLATE_WATER_GPU_WAVES` (the block declares the samplers). */
+  /** Taps of each stage, under `HAPTIC_WATER_GPU_WAVES` (the block declares the samplers). */
   vertexHelpers: string;
   fragmentHelpers: string;
   /** The vertex code that fills the node's varying, given its bound name. */

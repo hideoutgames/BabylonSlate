@@ -578,11 +578,6 @@ const ENGINE_CLASS_GRAPHS: Readonly<Record<string, SerializedGraph>> = Object.fr
   }]),
 );
 
-/** Whether a Class graph key is an engine base's synthetic graph (`withEngineClassGraphs`), never a project asset. */
-export function isEngineClassGraphKey(classId: string): boolean {
-  return Object.hasOwn(ENGINE_CLASS_GRAPHS, classId);
-}
-
 /** `graphs` with the engine bases' overridable functions as parent graphs, as a fresh record. */
 export function withEngineClassGraphs(
   graphs: Readonly<Record<string, SerializedGraph>>,

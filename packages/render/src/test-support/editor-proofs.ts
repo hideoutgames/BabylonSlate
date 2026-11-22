@@ -1,0 +1,51 @@
+/**
+ * Render internals the editor's in-browser proofs (`apps/editor/src/testing`) drive directly. The proofs run only
+ * in test-mode builds; production code imports render through its other exports.
+ */
+export { setRectLightEmission } from "../area-emission-array";
+export { retainAreaLightLookup } from "../area-light-resources";
+export { OwnedRectAreaLight } from "../area-rect-light";
+export { checkedShader } from "../checked-shader";
+export { cullSceneByWhatShows } from "../cull-accuracy";
+export { createDepthTextureTarget } from "../depth-texture-target";
+export { pendingDriverEffects } from "../driver-compile";
+export { retainFilteredEnvironment } from "../environment-prefilter";
+export { LogicalGeometryTask } from "../framegraph-logical-buffers";
+export { ManagedShadowObjectRendererTask } from "../framegraph-managed-shadows";
+export { fullTargetClear } from "../full-target-clear";
+export { drawGeometryDepthSeed } from "../geometry-depth-seed";
+export { hasOwnerNotifiedGeometry } from "../geometry-revision";
+export { GEOMETRY_PASS_WITHOUT_COLOR } from "../geometry-surface-output-block";
+export { GlSignatureRecorder, installGlSignature } from "../gpu-frame-probe";
+export { HapticLightingBlock, setHapticLightLoopProof } from "../haptic-lighting-block";
+export { setHapticLightCulling } from "../haptic-lights";
+export { instanceParameterOf, prepareInstanceParameters, setMeshInstanceParameters } from "../instance-parameters";
+export { sceneInstancePool, setSceneInstancing } from "../instance-pool";
+export { isForwardLightExcluded, setAuthoredLightEnabled } from "../light-policy";
+export { add2DLight, add2DOccluder } from "../lights-2d";
+export { createMirrorSurfaceMesh, mirrorDiagnostics } from "../mirrors";
+export { loadModelContainer } from "../model-container";
+export { attachModelLods, generateModelLods } from "../model-lod";
+export { sceneImagePages, setSceneDrawBatching, setSceneImagePages } from "../overlay-draw-batcher";
+export { applyOverlayVisualStyle, enableOverlayVisualMaterial, overlayVisualStyle } from "../overlay-visual-style";
+export { poolModelLeaves } from "../pooled-model-leaves";
+export { createPooledPrimitiveVisual } from "../pooled-primitive-visual";
+export { pooledLeafOf, setActorMeshMaterial, setDrawnMaterial } from "../pooled-visuals";
+export { followsPose, setScenePoseBounds } from "../pose-bounds";
+export { isRevealPending } from "../reveal-pending";
+export { buildSceneLayerHud } from "../scene-layer-hud-fixture";
+export { setSceneOutputScale } from "../scene-output-scale";
+export { SCREEN_SHADOW_LEVELS } from "../screen-shadows";
+export { AtlasCascadedShadowGenerator, discardParkedShadowAtlas, isAtlasShadow, shadowAtlasDrawCounts, shadowAtlasRenderTarget, shadowAtlasTexture, shadowTileSize } from "../shadow-atlas";
+export { findSceneShadowController, sceneShadowController, SceneShadowController } from "../shadow-controller";
+export { ShadowMapRefresh } from "../shadow-map-refresh";
+export { type ShadowParticipation } from "../shadow-mesh-policy";
+export { type RetainedShadowDiagnostics, setRetainedShadowCasters } from "../shadow-retained-casters";
+export { type SpatialEffectsGraph } from "../spatial-effects-graph";
+export { warmSpawnables } from "../spawnable-warm";
+export { atlasImageProcessing, setUnlitMaterial, type UnlitBinding, type UnlitMaterialKey } from "../unlit-material";
+export { setSceneBindsPreviousEffects } from "../variant-swaps";
+export { allowSceneOcclusionCulling } from "../view-occlusion";
+export { retainWaterPlanarReflections } from "../water-planar-reflection";
+export { setSceneWorldDebug } from "../world-debug";
+export { setSceneWorldSpriteBatching, worldSpriteBatchStats } from "../world-sprite-batcher";

@@ -43,7 +43,7 @@ export async function runGpuPickProof(variant: GpuPickProofVariant = "bare") {
     plain.position.x = -2;
     plain.material = new StandardMaterial("Plain Material", scene);
 
-    // Slate node material moving the box 2 units right in the vertex shader.
+    // Haptic node material moving the box 2 units right in the vertex shader.
     const graph = createDefaultMaterialDocument(); graph.shadingModel = "unlit"; graph.boundsPadding = 3;
     graph.nodes.push(
       { id: "shift", type: "param.float", position: { x: 0, y: 0 }, properties: { name: "Shift", value: [2] } },

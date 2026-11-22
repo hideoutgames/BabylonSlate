@@ -65,8 +65,8 @@ export {
 export const contactRange = (water: WaterDefinition) => Math.max(1, Math.min(8, water.contactFoamWidth * 3));
 
 /** Each removal slot's (shape code, half extents) and inverse world matrix (`REMOVAL_HELPER`); the Water Cut block's too. */
-export const WATER_REMOVAL_SHAPE_UNIFORMS = Array.from({ length: WATER_REMOVAL_SLOTS }, (_, i) => `slateWaterRemovalShape${i}`);
-export const WATER_REMOVAL_UNIFORMS = Array.from({ length: WATER_REMOVAL_SLOTS }, (_, i) => `slateWaterRemoval${i}`);
+export const WATER_REMOVAL_SHAPE_UNIFORMS = Array.from({ length: WATER_REMOVAL_SLOTS }, (_, i) => `hapticWaterRemovalShape${i}`);
+export const WATER_REMOVAL_UNIFORMS = Array.from({ length: WATER_REMOVAL_SLOTS }, (_, i) => `hapticWaterRemoval${i}`);
 
 /**
  * The nearest `WATER_REMOVAL_SLOTS` of the render's enabled removal volumes (`WaterBindingData.removals`) that reach

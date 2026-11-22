@@ -10,7 +10,12 @@ export interface OwnedEffectRetirement {
   isReleased(): boolean;
 }
 
-/** Whether `effect`'s WebGL program is still linking in parallel, so nothing may delete it yet. */
+/**
+ * Whether `effect`'s WebGL program is still linking in parallel, so nothing may delete it yet. The Babylon patch's
+ * `DisposeOnceLinked` (`Materials/drawWrapper.js`) asks the same of the wrappers Babylon disposes itself, which a
+ * patched module cannot hand to this one; unlike `retireOwnedEffect` it releases after its 15 s timeout, as it has no
+ * owner to report to. `babylon-internals-contract.test.ts` checks that hunk is applied.
+ */
 function isLinking(effect: Effect | null | undefined): effect is Effect {
   if (!effect || effect.isDisposed) return false;
   const engine = effect.getEngine();
