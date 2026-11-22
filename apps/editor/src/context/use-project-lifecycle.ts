@@ -260,7 +260,7 @@ export function useProjectLifecycle({
 
   const attachEnginePlugins = useCallback(async (forNewProject = false) => {
     const storage = forNewProject
-      ? await (await ensureEnginePluginLibrary()).createStorageSnapshot()
+      ? await (await ensureEnginePluginLibrary()).createStorageSnapshot({ forNewProject: true })
       : await ensureEnginePluginStorage();
     projectService.setEnginePluginStorage(storage);
     projectService.setEngineExtensionStorage(forNewProject

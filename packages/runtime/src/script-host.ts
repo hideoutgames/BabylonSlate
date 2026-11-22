@@ -1,4 +1,4 @@
-import { loadExtensionGameLibraries, RandomStream, SaveGameError, type ExtensionLibraries, type SaveGameMigrationData, type SaveGameService } from "@haptic/core";
+import { loadExtensionGameLibraries, RandomStream, sourceUrlLabel, SaveGameError, type ExtensionLibraries, type SaveGameMigrationData, type SaveGameService } from "@haptic/core";
 import {
   interfaceHandlerKey,
   isCreatableObjectChain,
@@ -54,7 +54,7 @@ export function compiledScriptKey(script: Pick<CompiledScript, "assetGuid" | "cl
 }
 
 export function compiledScriptSourceLabel(script: Pick<CompiledScript, "assetGuid" | "classId">): string {
-  return `${script.assetGuid}~${encodeURIComponent(script.classId)}`;
+  return `${sourceUrlLabel(script.assetGuid)}~${encodeURIComponent(script.classId)}`;
 }
 
 /** A loaded module is reused only when its source and export list are both unchanged. */

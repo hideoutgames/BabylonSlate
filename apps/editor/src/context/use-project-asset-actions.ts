@@ -17,7 +17,7 @@ import {
 } from "../lib/plugin-ui";
 import type { DocumentService } from "../services/document-service";
 import type { ExportGameArtifactOptions } from "../services/export-game-artifact";
-import type { ProjectService } from "../services/project-service";
+import type { PluginImportOptions, ProjectService } from "../services/project-service";
 import type { SourceControlService } from "../services/source-control-service";
 import type { DocumentActions } from "./document-context-types";
 
@@ -71,8 +71,8 @@ export function useProjectAssetActions({
   );
 
   const importPlugin = useCallback(
-    async (bytes: Uint8Array, decision?: "keep" | "replace") => {
-      const result = await projectService.importPlugin(bytes, decision);
+    async (bytes: Uint8Array, decision?: "keep" | "replace", options?: PluginImportOptions) => {
+      const result = await projectService.importPlugin(bytes, decision, options);
       bump();
       return result;
     },

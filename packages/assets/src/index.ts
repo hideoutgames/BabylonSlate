@@ -60,6 +60,7 @@ export * from "./tilemap-chains";
 export * from "./tilemap-paint";
 export * from "./tilemap-selection";
 export * from "./importers";
+export * from "./execute-javascript-scan";
 export * from "./migration";
 export * from "./project-manifest";
 export * from "./payload-loader";

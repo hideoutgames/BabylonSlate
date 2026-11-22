@@ -1,3 +1,4 @@
+import { generatedCommentText } from "@haptic/core";
 import type { GraphNode, LogicGraph } from "./ir";
 import { findPin } from "./ir";
 import { isPureNode, type HoistBodyAnchor } from "./node-registry";
@@ -101,6 +102,11 @@ export type CodegenState = {
    */
   readonly outputDecls: Map<string, string>;
   isAsync: boolean;
+  /**
+   * Execute JavaScript nodes with a body that code generation reached: exactly the authored code
+   * this module carries, which Workspace Trust gates (`CompileResult.executeJavaScriptNodes`).
+   */
+  readonly executeJavaScriptNodes: Set<string>;
 };
 
 /**
@@ -154,6 +160,7 @@ export function createCodegenState(
     epochFragments: [],
     outputDecls: new Map<string, string>(),
     isAsync: false,
+    executeJavaScriptNodes: new Set<string>(),
   };
 }
 
@@ -197,6 +204,18 @@ export function emitBody(
   const line = { text, anchor };
   s.body.push(line);
   return line;
+}
+
+/**
+ * Emit a `/* … *\/` comment line. Node ids and types are asset text, so the comment goes through
+ * `generatedCommentText`: nothing in it can end the comment and become code.
+ */
+export function emitComment(
+  s: CodegenState,
+  text: string,
+  anchor?: Omit<CompileAnchor, "line">,
+): BodyLine {
+  return emitBody(s, `  /* ${generatedCommentText(text)} */`, anchor);
 }
 
 /**

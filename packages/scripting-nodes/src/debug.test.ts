@@ -239,4 +239,37 @@ describe("Execute JavaScript", () => {
     const onBeginPlay = new Function(`"use strict";\n${body}\nreturn onBeginPlay;`)() as (ctx: unknown) => void;
     expect(() => onBeginPlay({})).toThrow(/(Invalid|Duplicate) JS identifier/);
   });
+  describe("reports the nodes whose code the module carries, for Workspace Trust", () => {
+    const registry = createDefaultNodeRegistry();
+    const graphWith = (body: unknown, wired: boolean): LogicGraph => ({
+      id: "g",
+      kind: "event",
+      nodes: [
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "js", "debug.executeJavaScript", { inputs: [], outputs: [], body }),
+      ],
+      edges: wired ? [edge("e1", "begin", "execOut", "js", "execIn")] : [],
+    });
+
+    it.each([
+      ["a body that runs", "ctx.log('hi');", true, ["js"]],
+      ["a comment, which is still code text", "// note", true, ["js"]],
+      ["a non-string body, compiled as its text", ["fetch('x')"], true, ["js"]],
+      ["an empty body", "", true, []],
+      ["a whitespace body", " \n\t", true, []],
+      ["an unrooted node, which compiles to nothing", "ctx.log('hi');", false, []],
+    ])("%s", (_label, body, wired, expected) => {
+      const compiled = compileGraph(graphWith(body, wired), { assetGuid: "a", registry });
+      expect(compiled.executeJavaScriptNodes).toEqual(expected);
+      expect(compiled.source.includes("--- user body ---")).toBe(wired);
+    });
+
+    it("reports nothing for a node a release compile strips", () => {
+      const graph = graphWith("ctx.log('hi');", true);
+      graph.nodes[1]!.properties.developmentOnly = true;
+      const compiled = compileGraph(graph, { assetGuid: "a", registry, stripDevelopmentOnly: true });
+      expect(compiled.source).not.toContain("--- user body ---");
+      expect(compiled.executeJavaScriptNodes).toEqual([]);
+    });
+  });
 });

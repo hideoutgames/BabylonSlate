@@ -88,6 +88,7 @@ import { ForceUnlockDialog } from "./source-control-force-unlock-dialog";
 import { ContentBrowserMoveDialog } from "./content-browser-move-dialog";
 import { ContentBrowserCopyProgressDialog } from "./content-browser-copy-progress-dialog";
 import { ImportProgressDialog } from "./import-progress-dialog";
+import { ExecuteJavaScriptImportDialog } from "./execute-javascript-import-dialog";
 import { ContentBrowserNewAssetDialog } from "./content-browser-new-asset-dialog";
 import { ContentBrowserSelectionActions } from "./content-browser-selection-actions";
 import { usePhoneLayout, usePhoneTouchSizing } from "../shell/use-platform-layout";
@@ -589,6 +590,8 @@ function ContentBrowserWorkspaceBody({
     handleImport,
     handleImportInputChange,
     progressDialogProps: importProgressDialogProps,
+    executeJavaScriptReview,
+    answerExecuteJavaScriptReview,
   } = useContentBrowserImportFlow({
     assetRegistry,
     selectedRoot,
@@ -1115,6 +1118,11 @@ function ContentBrowserWorkspaceBody({
 
 
       <ImportProgressDialog {...importProgressDialogProps} />
+      <ExecuteJavaScriptImportDialog
+        assets={executeJavaScriptReview}
+        onConfirm={() => answerExecuteJavaScriptReview(true)}
+        onCancel={() => answerExecuteJavaScriptReview(false)}
+      />
 
       <AssetPicker
         open={retargetPickerOpen}

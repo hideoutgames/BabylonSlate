@@ -1405,3 +1405,67 @@ describe("Play Scene Layer documents", () => {
     } finally { runtime.stop(); prepared.release(); loading.dispose(); }
   });
 });
+
+describe("Workspace Trust for Execute JavaScript", () => {
+  /** Two Scenes, each requiring its own Class; `Danger`'s compiled script carries an Execute JavaScript body. */
+  async function trustFixture() {
+    const storage = new MemoryStorageAdapter();
+    await storage.pickProjectFolder();
+    await storage.mkdir("assets");
+    const scenes = { "scene-safe": "safe", "scene-danger": "danger" } as const;
+    for (const [scene, script] of Object.entries(scenes)) {
+      await storage.writeBinary(`assets/${scene}.hasset`, await encodeHasset({ header: {
+        guid: scene, name: scene, type: "Scene", version: SCENE_SCHEMA_VERSION, engineVersion: "0.0.0", mode: "thin",
+        dependencies: [script], requiredDependencies: [script], dependencyMetadataVersion: 1, requiredVariableNames: [], payload: { actors: [] },
+      }, chunks: [] }));
+      await storage.writeBinary(`assets/${script}.hasset`, await encodeHasset({ header: {
+        guid: script, name: script === "danger" ? "Danger" : "Safe", type: "Class", version: 1, engineVersion: "0.0.0", mode: "thin",
+        dependencies: [], requiredDependencies: [], dependencyMetadataVersion: 1, requiredVariableNames: [], payload: { nodes: [], edges: [], members: [] },
+      }, chunks: [] }));
+    }
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const loading = createRegistryAssetLoadingService(registry, { projectId: "trust" });
+    const compile = vi.fn(async (required: ReadonlySet<string>) => ({
+      bundles: [...required].filter((guid) => guid === "safe" || guid === "danger").map((guid): ScriptBundleEntry => ({
+        assetGuid: guid, classId: guid, source: "export function start() {}", anchors: [], entryPoints: [],
+        ...(guid === "danger" ? { executeJavaScriptNodes: ["js"] } : {}),
+      })),
+      diagnostics: [],
+    }));
+    const host = (assertExecuteJavaScriptAllowed?: PlayAssetSourceHost["assertExecuteJavaScriptAllowed"]): PlayAssetSourceHost => ({
+      registry, project: createEmptyProject("Trust"), createScope: (owner: string) => loading.createScope(owner), compile,
+      ...(assertExecuteJavaScriptAllowed ? { assertExecuteJavaScriptAllowed } : {}),
+    });
+    return { host, loading };
+  }
+  const acquire = (host: PlayAssetSourceHost, guid: string) =>
+    acquirePlayAssetSources(host, [guid], { consumer: guid, signal: new AbortController().signal });
+
+  it("refuses every acquisition whose scripts carry Execute JavaScript, startup and later slots alike, and nothing else", async () => {
+    const { host, loading } = await trustFixture();
+    const asked: string[][] = [];
+    const untrusted = host((names) => {
+      asked.push([...names]);
+      throw new Error("not trusted");
+    });
+    const safe = await acquire(untrusted, "scene-safe");
+    expect(safe.game.scripts.map((script) => script.classId)).toEqual(["safe"]);
+    expect(asked).toEqual([]);
+    // A slot of the running session that brings Execute JavaScript in (a streamed Scene, a spawn) is refused too.
+    await expect(acquire(untrusted, "scene-danger")).rejects.toThrow("not trusted");
+    expect(asked).toEqual([["Danger"]]);
+    safe.release();
+    loading.dispose();
+  });
+
+  it("refuses Execute JavaScript when the host makes no trust decision, and runs it once trusted", async () => {
+    const { host, loading } = await trustFixture();
+    await expect(acquire(host(), "scene-danger")).rejects.toThrow(
+      "This project is not trusted on this computer, so the Execute JavaScript in Danger cannot run.");
+    const trusted = await acquire(host(() => {}), "scene-danger");
+    expect(trusted.game.scripts[0]?.executeJavaScriptNodes).toEqual(["js"]);
+    trusted.release();
+    loading.dispose();
+  });
+});

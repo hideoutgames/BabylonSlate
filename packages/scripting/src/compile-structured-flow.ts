@@ -18,6 +18,7 @@ import {
   loopCheck,
   trackEpochFragment,
   type BodyLine,
+  emitComment,
   type CodegenState,
   type EmitAlong,
   type ExecPath,
@@ -96,7 +97,7 @@ export function emitFlowSwitch(
   );
   const defaultTargets = execSuccessorEdges(s.index, node.id, meta.defaultPin);
   if (wiredCases.length === 0 && defaultTargets.length === 0) {
-    emitBody(s, `  /* ${node.typeId} ${node.id}: no exec outs */`, anchor);
+    emitComment(s, `${node.typeId} ${node.id}: no exec outs`, anchor);
     return true;
   }
   emitSwitchCases(
@@ -139,7 +140,7 @@ export function emitStructuredFlow(
     // flow.break_outside_loop; a bare `break;` would stop the module from parsing.
     const loop = s.loopStack.at(-1);
     if (!loop) {
-      emitBody(s, `  /* flow.break ${node.id}: not inside a loop */`, anchor);
+      emitComment(s, `flow.break ${node.id}: not inside a loop`, anchor);
       return true;
     }
     if (!loop.labeled) {

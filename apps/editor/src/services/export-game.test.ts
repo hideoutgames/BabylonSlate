@@ -269,6 +269,78 @@ describe("collectAndExportGame", () => {
     ]);
   });
 
+  describe("Workspace Trust for Execute JavaScript", () => {
+    const heroGraph: SerializedGraph = {
+      nodes: [
+        { id: "begin", type: "flow.event.beginPlay", position: { x: 0, y: 0 }, data: {} },
+        { id: "js", type: "debug.executeJavaScript", position: { x: 200, y: 0 }, data: { body: "ctx.log('hi');", inputs: [], outputs: [] } },
+      ],
+      edges: [{ id: "e", source: "begin", target: "js", sourceHandle: "execOut", targetHandle: "execIn" }],
+    };
+    const scene = { ...createDefaultScene(), actors: [createActor("hero", "Hero", { classId: "Hero" })] };
+    const exportHero = (options: { previewBuild: boolean; assertExecuteJavaScriptAllowed?: (names: readonly string[]) => void }) => collectAndExportGame({
+      platform: "web",
+      startupSceneGuid: "scene-main",
+      assets: [
+        asset({ guid: "scene-main", type: "Scene", name: "Main" }),
+        asset({ guid: "class-hero", type: "Class", name: "Hero", parentClass: "Actor" }),
+      ],
+      plugins: [], projectPluginOverrides: {}, parentOf: () => "Actor",
+      sceneByGuid: (guid) => guid === "scene-main" ? scene : null,
+      graphByGuid: (guid) => guid === "class-hero" ? heroGraph : null,
+      bytesByGuid: (guid) => new TextEncoder().encode(JSON.stringify(guid === "scene-main" ? scene : heroGraph)),
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, playFrameCap: 60, physicsWorld: "3d", playerFiles,
+      previewBuild: options.previewBuild,
+      ...(options.assertExecuteJavaScriptAllowed ? { assertExecuteJavaScriptAllowed: options.assertExecuteJavaScriptAllowed } : {}),
+    });
+
+    it.each([false, true])("refuses Execute JavaScript an untrusted project would package, previewBuild=%s", async (previewBuild) => {
+      const asked: string[][] = [];
+      const refused = await exportHero({ previewBuild, assertExecuteJavaScriptAllowed: (names) => {
+        asked.push([...names]);
+        throw new Error("not trusted");
+      } });
+      expect(refused).toEqual({ ok: false, error: "not trusted" });
+      expect(asked).toEqual([["Hero"]]);
+      // A caller that makes no trust decision packages none either.
+      expect(await exportHero({ previewBuild })).toEqual({
+        ok: false,
+        error: expect.stringContaining("so the Execute JavaScript in Hero cannot run."),
+      });
+    });
+
+    it("never packs a project file as compiled code: only this editor's compile produces scripts", async () => {
+      // A crafted asset whose header claims the player's compiled-script type, listed as a Scene dependency.
+      const crafted = { assetGuid: "scene-main", classId: "Evil", source: "export function onBeginPlay(ctx) { globalThis.__pwned = true; }\n",
+        anchors: [], entryPoints: [{ name: "onBeginPlay", event: "onBeginPlay", isAsync: false }] };
+      const plainScene = createDefaultScene();
+      const result = await collectAndExportGame({
+        platform: "web",
+        startupSceneGuid: "scene-main",
+        assets: [
+          asset({ guid: "scene-main", type: "Scene", name: "Main", dependencies: ["evil"], requiredDependencies: ["evil"] }),
+          asset({ guid: "evil", type: "CompiledScript", name: "Evil", path: "assets/evil.hasset" }),
+        ],
+        plugins: [], projectPluginOverrides: {}, parentOf: () => null,
+        sceneByGuid: (guid) => guid === "scene-main" ? plainScene : null,
+        graphByGuid: () => null,
+        payloadByGuid: (guid) => guid === "evil" ? crafted : null,
+        bytesByGuid: (guid) => new TextEncoder().encode(JSON.stringify(guid === "evil" ? crafted : plainScene)),
+        renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS, playFrameCap: 60, physicsWorld: "3d", playerFiles, previewBuild: true,
+      });
+      expect(result).toEqual({ ok: false, error: expect.stringContaining("Evil (assets/evil.hasset) claims to be compiled script code") });
+    });
+
+    it("packages Execute JavaScript the project's trust allows", async () => {
+      const result = await exportHero({ previewBuild: false, assertExecuteJavaScriptAllowed: () => {} });
+      if (!isOk(result)) throw new Error(result.error);
+      const hero = compiledScripts(result.value).find((script) => script.classId === "Hero");
+      expect(hero?.source).toContain("ctx.log('hi');");
+      // The gate's metadata stays in the editor.
+      expect(hero).not.toHaveProperty("executeJavaScriptNodes");
+    });
+  });
+
   it("ships empty subsystem classes no scene references, with their empty user bases", async () => {
     const empty: SerializedGraph = { nodes: [], edges: [] };
     const parents: Record<string, string> = {
