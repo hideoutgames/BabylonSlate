@@ -16,12 +16,8 @@ import {
   projectContentRoot,
   type ChunkInput,
 } from "@haptic/assets";
-<<<<<<< HEAD
 import { encodeHasset } from "@haptic/assets/hasset";
-import { acquirePlayAssetSources, createMergedPlaySourceControls, emptyPlaySourceControls, mergePreparedPlaySources, playDocumentOverrides, requiredProjectAssets, type PlayAssetSourceHost } from "./play-asset-sources";
-=======
 import { acquirePlayAssetSources, acquirePlayStartupSources, createMergedPlaySourceControls, emptyPlaySourceControls, mergePreparedPlaySources, playDocumentOverrides, requiredProjectAssets, type PlayAssetSourceHost } from "./play-asset-sources";
->>>>>>> hideout/fervent-carson-jrkgm5
 import type { OpenDocument } from "./document-service";
 import { PlayRequiredAssetError } from "./play-asset-problems";
 
