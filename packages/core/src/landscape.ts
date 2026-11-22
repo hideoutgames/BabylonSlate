@@ -576,13 +576,6 @@ export class LandscapeSculptSession {
   }
 }
 
-/** One dab on a copy of `terrain`; `terrain` itself when the dab cannot apply. */
-export function sculptLandscape(terrain: LandscapeProperties, x: number, z: number, brush: LandscapeBrush): LandscapeProperties {
-  const session = new LandscapeSculptSession(terrain);
-  session.dab(x, z, brush);
-  return session.hasChanges ? session.liveProperties() : terrain;
-}
-
 /** Resample a heightfield when its resolution changes, preserving the authored shape and paint weights. */
 export function resizeLandscape(terrain: LandscapeProperties, subdivisions: number): LandscapeProperties {
   const nextSub = Math.round(finite(subdivisions, 64, 4, 256));
