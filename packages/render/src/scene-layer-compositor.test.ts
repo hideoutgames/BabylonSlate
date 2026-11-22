@@ -24,6 +24,7 @@ import { applyOverlayUnlitMaterial } from "./overlay-texture-quad";
 import { layerCanvas } from "./scene-layer-canvas-fixtures";
 import { sceneGlyphAtlas } from "./text2d-glyph-atlas";
 import { LayerImageAtlas } from "./layer-image-atlas";
+import { copyLayerFrameStats } from "./layer-frame-stats";
 import type { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
 
 
@@ -1227,8 +1228,125 @@ describe("SceneLayerCompositor", () => {
       world();
       compositor.render();
       engine.endFrame();
-      return { ...compositor.frameStats, beforeWorld: { ...compositor.frameStats.beforeWorld } };
+      return copyLayerFrameStats(compositor.frameStats);
     }
+
+    /**
+     * Gives `engine` a WebGL context that does nothing, and clears and draws that reach it as a WebGL Engine's do: the
+     * Engine's states applied first, then the GL calls. The depth-stencil clears that reached it, by target.
+     */
+    function webGlCalls(engine: NullEngine): { depthClears: string[]; draws: () => number } {
+      const reached: string[] = [];
+      let bound: unknown = null;
+      const gl = new Proxy({} as Record<string, unknown>, {
+        get: (target, name) => {
+          if (name in target) return target[name as string];
+          // The constants Babylon's states read off the context.
+          const constant = ({ DEPTH_TEST: 0x0b71, STENCIL_TEST: 0x0b90, SCISSOR_TEST: 0x0c11, CULL_FACE: 0x0b44, BLEND: 0x0be2,
+            FRAMEBUFFER: 0x8d40, DRAW_FRAMEBUFFER: 0x8ca9 } as Record<string, number>)[name as string];
+          if (constant !== undefined) return constant;
+          if (typeof name === "string" && /^[A-Z0-9_]+$/.test(name)) return 0;
+          if (name === "getParameter") return (parameter: number) =>
+            parameter === 0x0b72 ? true : parameter === 0x0b98 || parameter === 0x8ca5 ? 0xff : parameter === 0x0b73 ? 1 : parameter === 0x0b91 ? 0 : null;
+          if (name === "isEnabled") return () => false;
+          if (name === "bindFramebuffer") return (_target: number, framebuffer: unknown) => { bound = framebuffer; };
+          if (name === "clear") return (mask: number) => { if (mask & 0x500) reached.push(bound ? "target" : "backbuffer"); };
+          return () => {};
+        },
+      });
+      Object.defineProperty(engine, "_gl", { value: gl, configurable: true, writable: true });
+      const binding = engine as unknown as { _bindUnboundFramebuffer(framebuffer: unknown): void; _currentFramebuffer: unknown };
+      const bind = binding._bindUnboundFramebuffer;
+      binding._bindUnboundFramebuffer = (framebuffer) => {
+        if (binding._currentFramebuffer !== framebuffer) (engine as unknown as { _gl: { bindFramebuffer(target: number, framebuffer: unknown): void } })._gl.bindFramebuffer(0x8d40, framebuffer);
+        bind(framebuffer);
+      };
+      const glOf = () => (engine as unknown as { _gl: Record<string, (...args: unknown[]) => void> })._gl;
+      const clear = (color: unknown, backBuffer: boolean, depth: boolean, stencil = false, stencilClearValue = 0) => {
+        engine.applyStates();
+        glOf().clearDepth!(1);
+        glOf().clearStencil!(stencilClearValue);
+        glOf().clear!((color && backBuffer ? 0x4000 : 0) | (depth ? 0x100 : 0) | (stencil ? 0x400 : 0));
+      };
+      engine.clear = clear;
+      // As a WebGL Engine's: through the Engine's own clear (so the layer counters see it once).
+      engine.clearAttachments = (color, _attachments, clearColor, clearDepth, clearStencil, stencilClearValue) =>
+        (engine.clear as typeof clear)(color, clearColor, clearDepth, clearStencil, stencilClearValue);
+      let draws = 0;
+      engine.drawElementsType = () => { engine.applyStates(); draws += 1; glOf().drawElements!(); };
+      // The Engine's next state changes all reach the context, as on a fresh WebGL Engine.
+      engine.wipeCaches(true);
+      return { depthClears: reached, draws: () => draws };
+    }
+
+    it("leaves out a layer's depth-stencil clear the backbuffer already holds, with the same draws, while skipped clears are on", async () => {
+      const engine = webGlBinding();
+      const { depthClears, draws } = webGlCalls(engine);
+      const compositor = new SceneLayerCompositor({ engine });
+      await layersOver(engine, compositor, ["hud", "menu", "toast"]);
+      // The world's clear of colour, depth and stencil (as its output pass folds them in, or a loading frame clears).
+      const world = () => engine.clear(new Color4(0, 0, 0, 1), true, true, true);
+      frame(engine, compositor, world);
+      depthClears.length = 0;
+      const drawn = draws();
+      const skipped = frame(engine, compositor, world);
+      expect(draws() - drawn).toBe(3);
+      // The first layer finds the world's clear; each layer's quad writes depth, so the next two clear.
+      expect(skipped).toMatchObject({ scenes: 3, depthClears: 3, backbuffer: { depthClears: 3, elided: 1 } });
+      expect(depthClears).toEqual(["backbuffer", "backbuffer", "backbuffer"]);
+      compositor.skipClears = false;
+      depthClears.length = 0;
+      const every = frame(engine, compositor, world);
+      expect(every).toMatchObject({ scenes: 3, depthClears: 3, backbuffer: { depthClears: 4, elided: 0 } });
+      expect(depthClears).toHaveLength(4);
+      // The same draws either way.
+      expect(skipped.scenes).toBe(every.scenes);
+      // A layer whose draws write no depth leaves the next layer's clear out too.
+      compositor.skipClears = true;
+      for (const mesh of compositor.layers()[1]!.scene.meshes) if (mesh.material) mesh.material.disableDepthWrite = true;
+      expect(frame(engine, compositor, world).backbuffer).toEqual({ clears: 2, depthClears: 2, elided: 2 });
+      // A world that clears only colour (its output pass outside a frame that folds) leaves the first layer's clear in.
+      expect(frame(engine, compositor, () => engine.clear(new Color4(0, 0, 0, 1), true, false, false)).backbuffer.elided).toBe(1);
+      await compositor.dispose();
+    });
+
+    it("follows the Engine's draws only during its layer pass, a pass that throws included", async () => {
+      const engine = webGlBinding();
+      const draw = engine.drawElementsType;
+      const compositor = new SceneLayerCompositor({ engine });
+      await layersOver(engine, compositor, ["hud"]);
+      const during: unknown[] = [];
+      const render = vi.spyOn(SceneRenderCoordinator.prototype, "render").mockImplementation(() => {
+        during.push(engine.drawElementsType);
+        throw new Error("layer failed");
+      });
+      expect(() => frame(engine, compositor)).toThrow("layer failed");
+      render.mockRestore();
+      expect(during[0]).not.toBe(draw);
+      // The world frame's draws are the Engine's own.
+      expect(engine.drawElementsType).toBe(draw);
+      engine.endFrame();
+      await compositor.dispose();
+    });
+
+    it("skips no clear while the shared stack has a pass or the clears are off", async () => {
+      const engine = webGlBinding();
+      const { depthClears } = webGlCalls(engine);
+      const compositor = new SceneLayerCompositor({ engine, attachLayerPostProcess: () => ({ dispose: () => {} }) });
+      compositor.setPostProcess([{ id: "glow", materialGuid: "glow", enabled: true }]);
+      await layersOver(engine, compositor, ["hud", "menu"]);
+      const world = () => engine.clear(new Color4(0, 0, 0, 1), true, true, true);
+      frame(engine, compositor, world);
+      depthClears.length = 0;
+      expect(frame(engine, compositor, world).backbuffer.elided).toBe(0);
+      compositor.setPostProcess([]);
+      compositor.depthClears = false;
+      await compositor.prepare("hud", () => {});
+      await compositor.prepare("menu", () => {});
+      frame(engine, compositor, world);
+      expect(frame(engine, compositor, world).backbuffer).toMatchObject({ depthClears: 1, elided: 0 });
+      await compositor.dispose();
+    });
 
     it("counts each layer Scene rendered over the world and its depth-stencil clear, with no framebuffer change", async () => {
       const engine = webGlBinding();

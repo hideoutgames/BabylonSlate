@@ -1271,6 +1271,8 @@ function initializeEngine(
       "upscale.output": sceneRenderingSettings(scene).fsrOutputAtView ? "view" : "device",
       // Whether a Scene Layer drawn over the world clears depth and stencil first (`layerdebug clears`).
       "layers.clears": sceneLayerCompositor?.depthClears === false ? "off" : "on",
+      // Whether a layer leaves out a depth-stencil clear the backbuffer already holds (`layerdebug skipclears`).
+      "layers.skipclears": sceneLayerCompositor?.skipClears === false ? "off" : "on",
       // Whether each frame Play presents directly is copied into its held image (`heldimage`).
       "presentation.held": heldImage ? "on" : "off",
       // Whether Play invalidates the backbuffer's depth and stencil at the end of each frame (`backbufferdiscard`).
@@ -3451,9 +3453,12 @@ function initializeEngine(
         heldImage = command.enabled;
         scheduler.invalidate("asset");
       }
-      if (command.type === "setLayerDebug" && sceneLayerCompositor && sceneLayerCompositor.depthClears !== command.enabled) {
-        sceneLayerCompositor.depthClears = command.enabled;
-        scheduler.invalidate("asset");
+      if (command.type === "setLayerDebug" && sceneLayerCompositor) {
+        const key = command.part === "clears" ? "depthClears" : "skipClears";
+        if (sceneLayerCompositor[key] !== command.enabled) {
+          sceneLayerCompositor[key] = command.enabled;
+          scheduler.invalidate("asset");
+        }
       }
       if (command.type === "setFsrDebug" && setSceneFsrOutputDebug(scene, command.output)) scheduler.invalidate("asset");
       if (command.type === "setGpuProbeDebug") {
