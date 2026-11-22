@@ -1,6 +1,6 @@
 import { useRef, useState, useSyncExternalStore } from "react";
 import type { ExtensionCodeFile, ExtensionDescriptor } from "@haptic/assets";
-import { NamePromptDialog } from "@haptic/editor-kit";
+import { LabelHint, NamePromptDialog } from "@haptic/editor-kit";
 import { pickImportFiles } from "@haptic/vfs";
 import { Button } from "@haptic/ui/components/button";
 import { Badge } from "@haptic/ui/components/badge";
@@ -18,6 +18,7 @@ import type { EditorExtensionCommandDescriptor } from "../lib/editor-extension-h
 import { resolvePluginIcon } from "../lib/plugin-icons";
 import { ExtensionCommandDialog, ExtensionEditorDialog, ExtensionExportDialog } from "./project-extension-dialogs";
 import { SettingsSection } from "./settings-section";
+import { useProjectExtensionTrust } from "./use-project-extension-trust";
 
 export function ProjectExtensionsSettings() {
   const { updateProjectSettings } = useDocumentActions();
@@ -34,6 +35,7 @@ export function ProjectExtensionsSettings() {
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<{ message: string; retry(): void } | null>(null);
   const pendingRef = useRef(false);
+  const trust = useProjectExtensionTrust();
   const overrides = projectDocument?.settings.extensionOverrides ?? {};
 
   const run = async (label: string, action: () => Promise<void>) => {
@@ -63,6 +65,16 @@ export function ProjectExtensionsSettings() {
     <SettingsSection id="installed" title="Installed Extensions">
       <div className="settings-row flex flex-col gap-2">
       <FieldDescription>TypeScript or JavaScript tools for the editor. An extension with Editor Only off also adds a game library and content to Play and packaged games.</FieldDescription>
+      {snapshot.entries.some((entry) => entry.source === "project") ? <Field orientation="horizontal" data-testid="settings-extension-trust">
+        <FieldContent>
+          <LabelHint hint="Lets the Extensions that came with this project run on this computer, in the editor, Play and packaged games.">
+            <FieldLabel htmlFor="settings-extension-trust-switch">Trust Project Extensions</FieldLabel>
+          </LabelHint>
+          {!trust.trusted && snapshot.untrusted.length > 0 ? <FieldDescription>Not running: {snapshot.untrusted.join(", ")}</FieldDescription> : null}
+        </FieldContent>
+        <Switch id="settings-extension-trust-switch" aria-label="Trust Project Extensions" checked={trust.trusted} disabled={Boolean(pending) || !trust.ready}
+          onCheckedChange={(checked) => void run(checked ? "Trusting Project Extensions" : "Revoking Trust", () => trust.setTrusted(checked))} />
+      </Field> : null}
       {pending ? <p role="status">{pending}…</p> : null}
       {error ? <Alert variant="destructive"><AlertTitle>Extension Action Failed</AlertTitle><AlertDescription>{error.message}<Button variant="outline" size="sm" disabled={Boolean(pending)} onClick={error.retry}>Retry</Button></AlertDescription></Alert> : null}
       {snapshot.diagnostics.length > 0 ? <Alert><AlertTitle>Extension Diagnostics</AlertTitle><AlertDescription><ul className="list-disc pl-4">{snapshot.diagnostics.map((message, index) => <li key={`${index}:${message}`}>{message}</li>)}</ul></AlertDescription></Alert> : null}

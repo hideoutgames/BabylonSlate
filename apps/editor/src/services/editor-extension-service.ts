@@ -2,7 +2,7 @@ import { ENGINE_VERSION, platformSymbols, type BuildPlatform, type ExtensionGame
 import {
   applyExtensionImport, createExtensionSettings, discoverEngineExtensions,
   discoverProjectExtensions, encodeExtensionSettings, exportExtensionZip,
-  EXTENSION_CODE_DIR, EXTENSION_SOURCE_MAX_BYTES, inspectHextension, isExtensionCodePath,
+  EXTENSION_CODE_DIR, EXTENSION_MANIFEST_FILE, EXTENSION_SOURCE_MAX_BYTES, inspectHextension, isExtensionCodePath,
   isExtensionPackagePath, normalizeExtensionSettings, resolveExtensionFieldValues,
   planExtensionImport, readExtensionCodeFiles, resolveExtensionGraph, shadowEngineExtensions,
   uniqueExtensionFolderName, writeProjectExtension,
@@ -44,6 +44,25 @@ export interface ExtensionSnapshot {
   /** Asset types of the enabled packages, in dependency order. */
   assetTypes: ExtensionAssetTypeDescriptor[];
   diagnostics: string[];
+  /** Whether this project's own Extensions may run on this computer (Workspace Trust). */
+  trusted: boolean;
+  /** Display names of enabled Project Extensions held back because the project is not trusted. */
+  untrusted: string[];
+}
+
+/**
+ * The Workspace Trust key of a project: the folder it is opened from and its
+ * project GUID. A copy of a trusted project in another folder, or another
+ * project placed in a trusted folder, has a different key and is not trusted.
+ */
+export function projectExtensionTrustKey(folderId: string, projectGuid: string): string {
+  return JSON.stringify([folderId, projectGuid]);
+}
+
+/** Why Play, Preview Build or export cannot link a project's gameplay Extensions. */
+export function untrustedExtensionsMessage(names: readonly string[]): string {
+  return `Project Extensions are not trusted on this computer, so ${names.join(", ")} cannot run. `
+    + "Choose Trust Project Extensions in Project Settings > Project Extensions if you trust this project.";
 }
 
 export interface EditorExtensionWriteOptions {
@@ -67,8 +86,17 @@ export class EditorExtensionService {
   private overrides: ExtensionOverrides = {};
   private settingValues: ExtensionSettingValues = {};
   private listeners = new Set<() => void>();
-  private state: ExtensionSnapshot = { entries: [], commands: [], assetTypes: [], diagnostics: [] };
+  private state: ExtensionSnapshot = { entries: [], commands: [], assetTypes: [], diagnostics: [], trusted: false, untrusted: [] };
   private fingerprint = "";
+  /**
+   * Workspace Trust for the open project: until it is trusted on this
+   * computer, its own Extensions (`extensions/`) never run, in the editor, in
+   * Play or in a package. Engine Extensions (bundled, or added to this
+   * computer's library by its user) always may.
+   */
+  private trusted = false;
+  /** The trust key of a project this editor created in this session, which needs no prompt. */
+  private createdTrustKey: string | null = null;
   /** Extensions active in the current host, which the fingerprint describes. */
   private started = new Set<string>();
   private mutation: Promise<unknown> = Promise.resolve();
@@ -186,11 +214,35 @@ export class EditorExtensionService {
     return entry;
   }
 
-  refresh(overrides = this.overrides): Promise<void> {
-    return this.serialize(() => this.refreshNow(overrides));
+  /** The open project's Workspace Trust key, or null with no folder open. */
+  projectTrustKey(projectGuid: string): string | null {
+    const folder = this.storage.getCurrentFolder();
+    return folder ? projectExtensionTrustKey(folder.id, projectGuid) : null;
   }
-  private async refreshNow(overrides: ExtensionOverrides): Promise<void> {
+  /** Records that this editor just created the open project, so it is trusted without asking. */
+  noteCreatedProject(projectGuid: string): void {
+    this.createdTrustKey = this.projectTrustKey(projectGuid);
+  }
+  /** Whether `key` names a project this editor created in this session. */
+  createdHere(key: string): boolean {
+    return key === this.createdTrustKey;
+  }
+  /** Revoking trust in a project created in this session revokes it for good. */
+  forgetCreatedProject(): void {
+    this.createdTrustKey = null;
+  }
+
+  /**
+   * Rediscovers packages and activates the enabled ones. `trusted` is the
+   * open project's Workspace Trust; without it, Project Extensions are listed
+   * but never run. It defaults to the value of the previous refresh.
+   */
+  refresh(overrides = this.overrides, trusted = this.trusted): Promise<void> {
+    return this.serialize(() => this.refreshNow(overrides, trusted));
+  }
+  private async refreshNow(overrides: ExtensionOverrides, trusted = this.trusted): Promise<void> {
     this.overrides = { ...overrides };
+    this.trusted = trusted;
     try {
       const entries = shadowEngineExtensions(
         await discoverProjectExtensions(this.storage),
@@ -215,14 +267,20 @@ export class EditorExtensionService {
       this.order = graph.order;
       this.syncNodes(graph.order);
       await this.syncContentRoots(graph.order);
-      const fingerprint = JSON.stringify([entries, modules, overrides]);
+      // Revoking trust stops every running Project Extension.
+      const fingerprint = JSON.stringify([entries, modules, overrides, trusted]);
       if (fingerprint !== this.fingerprint) {
         await this.resetHost();
         this.fingerprint = fingerprint;
       }
+      const untrusted: string[] = [];
       // Unchanged packages keep running; only those that did not start are retried.
       for (const { entry, files } of modules) {
         if (this.started.has(entry.extensionGuid)) continue;
+        if (entry.source === "project" && !trusted) {
+          untrusted.push(entry.settings.displayName);
+          continue;
+        }
         if (entry.settings.extensionDependencies.some((dependency) => !this.started.has(dependency.guid))) {
           diagnostics.push(`${entry.settings.displayName}: a required Extension failed to start.`);
           continue;
@@ -234,6 +292,7 @@ export class EditorExtensionService {
       }
       this.packageDiagnostics = diagnostics;
       this.publishAssetTypes(graph.order);
+      this.state = { ...this.state, trusted, untrusted };
       this.publishHostState(entries);
     } catch (cause) {
       await this.resetHost();
@@ -243,6 +302,7 @@ export class EditorExtensionService {
       await this.syncContentRoots([]).catch(() => undefined);
       this.packageDiagnostics = [String(cause)];
       this.publishAssetTypes([]);
+      this.state = { ...this.state, trusted, untrusted: [] };
       this.publishHostState([]);
       throw cause;
     }
@@ -252,6 +312,8 @@ export class EditorExtensionService {
     return this.serialize(async () => {
       await this.resetHost();
       this.fingerprint = "";
+      this.trusted = false;
+      this.state = { ...this.state, trusted: false, untrusted: [] };
       this.overrides = {};
       this.cleanupDiagnostics = [];
       this.packageDiagnostics = [];
@@ -332,13 +394,23 @@ export class EditorExtensionService {
         }
         await this.storage.writeBinary(entry.settingsPath, encodeExtensionSettings(normalized));
       } catch (cause) {
+        // Every file is restored on its own, so one failed restore never leaves the others changed.
+        const restoreFailures: string[] = [];
+        const restore = async (path: string, operation: () => Promise<void>) => {
+          try { await operation(); }
+          catch (failure) { restoreFailures.push(`${path}: ${failure instanceof Error ? failure.message : String(failure)}`); }
+        };
         for (const [path, source] of previous) {
           const full = `${entry.folderPath}/${path}`;
-          if (source === null) { if (await this.storage.exists(full)) await this.storage.remove(full); }
-          else await this.storage.writeText(full, source);
+          await restore(path, async () => {
+            if (source === null) { if (await this.storage.exists(full)) await this.storage.remove(full); }
+            else await this.storage.writeText(full, source);
+          });
         }
-        await this.storage.writeBinary(entry.settingsPath, previousManifest);
-        throw cause;
+        await restore(EXTENSION_MANIFEST_FILE, () => this.storage.writeBinary(entry.settingsPath, previousManifest));
+        if (restoreFailures.length === 0) throw cause;
+        const message = cause instanceof Error ? cause.message : String(cause);
+        throw new Error(`${message} Some files could not be restored: ${restoreFailures.join("; ")}`, { cause });
       }
       this.fingerprint = "";
       await this.refreshNow(this.overrides);
@@ -370,6 +442,9 @@ export class EditorExtensionService {
       const libraries: ExtensionGameLibrary[] = [];
       const symbols = platformSymbols(target.platform, { editor: target.editor });
       const gameplay = gameplayExtensions(order);
+      // Play, Preview Build and packages never link code the project's Workspace Trust holds back.
+      const untrusted = this.trusted ? [] : gameplay.filter((entry) => entry.source === "project");
+      if (untrusted.length > 0) throw new Error(untrustedExtensionsMessage(untrusted.map((entry) => entry.settings.displayName)));
       const listed = gameplay.some((entry) => entry.settings.contributes.assetTypes?.some((type) => !type.editorOnly))
         ? [...await this.services.assets.list()].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
         : [];

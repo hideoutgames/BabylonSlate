@@ -11,7 +11,25 @@ const harness = vi.hoisted(() => ({
   service: null as EditorExtensionService | null,
   overrides: {} as ExtensionOverrides,
   pick: vi.fn(),
+  trusted: [] as string[],
 }));
+
+vi.mock("../context/app-settings-context", async () => {
+  const { defaultEngineSettings } = await import("@haptic/vfs");
+  return {
+    useAppSettings: () => ({
+      settings: { ...defaultEngineSettings(), trustedProjectExtensions: harness.trusted },
+      version: 1,
+      hydrated: true,
+      updateSettings: async (mutate: (settings: ReturnType<typeof defaultEngineSettings>) => void) => {
+        const next = { ...defaultEngineSettings(), trustedProjectExtensions: [...harness.trusted] };
+        mutate(next);
+        harness.trusted = next.trustedProjectExtensions;
+      },
+      updateDebuggerDefaults: async () => {},
+    }),
+  };
+});
 
 vi.mock("@haptic/vfs", async (importOriginal) => ({
   ...await importOriginal<typeof import("@haptic/vfs")>(),
@@ -27,6 +45,7 @@ vi.mock("../context/document-context", async () => {
     const [project, setProject] = projectState.use();
     return {
       extensionService: harness.service,
+      projectGuid: "project-guid",
       projectDocument: project,
       updateProjectSettings: (patch: { extensionOverrides: ExtensionOverrides }) => {
         harness.overrides = patch.extensionOverrides;
@@ -66,7 +85,8 @@ beforeEach(async () => {
     code: { read: (path) => storage.readText(path), write: (path, value) => storage.writeText(path, value) },
     materials: { convertGlsl: convertGlslToMaterial },
   });
-  await harness.service.refresh();
+  // This computer trusts the test project.
+  await harness.service.refresh(undefined, true);
 });
 
 afterEach(async () => {
@@ -76,6 +96,21 @@ afterEach(async () => {
 });
 
 describe("ProjectExtensionsSettings", () => {
+  it("trusts and revokes this project's Extensions on this computer, keyed by its folder and GUID", async () => {
+    harness.trusted = [];
+    render(<ProjectExtensionsSettings />);
+    const trust = screen.getByRole("switch", { name: "Trust Project Extensions" });
+    expect(trust.getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(trust);
+    const key = harness.service!.projectTrustKey("project-guid")!;
+    await waitFor(() => expect(harness.trusted).toEqual([key]));
+    cleanup();
+
+    render(<ProjectExtensionsSettings />);
+    fireEvent.click(screen.getByRole("switch", { name: "Trust Project Extensions" }));
+    await waitFor(() => expect(harness.trusted).toEqual([]));
+  });
+
   it("keeps healthy commands usable and lets users delete a malformed package", async () => {
     await storage.mkdir("extensions/Broken", true);
     await storage.writeText("extensions/Broken/extension.json", "{}");

@@ -770,6 +770,7 @@ export class ProjectService {
           }
         }
         this.projectGuid = guid;
+        // Templates are imported archives that may carry Extensions, so a project made from one starts untrusted.
         await this.projectPlugins.installEnginePluginDefaultsIfNeeded();
         return this.loadCurrentProject();
       },
@@ -1253,6 +1254,8 @@ export class ProjectService {
     const appearance = normalizeProjectAppearance(renderOptions?.appearance);
     if (appearance) document.metadata.appearance = appearance;
     this.projectGuid = newGuid();
+    // Its Extensions are copies of this computer's Engine Extensions: the new project starts trusted.
+    this.extensions.noteCreatedProject(this.projectGuid);
     this.loadedTextureSettings = document.settings.textures;
     this.textures.setSourceControlEnabled((document.settings.sourceControl?.mode ?? "off") !== "off");
     this.projectPlugins.setOverrides(document.settings.pluginOverrides ?? {});

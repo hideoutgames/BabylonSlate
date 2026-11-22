@@ -4,12 +4,17 @@ import {
   useProjectState,
   useRegistryState,
 } from "../context/document-context";
+import { useProjectExtensionTrust } from "./use-project-extension-trust";
 
-/** Mirrors editor utility startup: activates editor entries; Play links gameplay libraries separately. */
+/**
+ * Mirrors editor utility startup: activates editor entries; Play links gameplay libraries separately.
+ * Project Extensions run only once this computer trusts the project (Workspace Trust).
+ */
 export function EditorExtensionsRuntime() {
   const { getOpenDocuments } = useDocumentActions();
   const { projectDocument } = useProjectState();
   const { extensionService, projectGuid } = useRegistryState();
+  const { ready, trusted, persisted, setTrusted } = useProjectExtensionTrust();
   const overrides = JSON.stringify(projectDocument?.settings.extensionOverrides ?? {});
   useEffect(() => {
     if (!extensionService) return;
@@ -25,10 +30,15 @@ export function EditorExtensionsRuntime() {
   useEffect(() => {
     extensionService?.setSettingValues(JSON.parse(settingValues));
   }, [extensionService, settingValues]);
+  // A project created here is trusted from the start; record it so that lasts across restarts.
   useEffect(() => {
-    if (!extensionService || !projectGuid) return;
-    void extensionService.refresh(JSON.parse(overrides)).catch(() => { /* Settings displays startup diagnostics. */ });
-  }, [extensionService, projectGuid, overrides]);
+    if (ready && trusted && !persisted) void setTrusted(true).catch(() => { /* Retried on the next change. */ });
+  }, [ready, trusted, persisted, setTrusted]);
+  useEffect(() => {
+    // Waits for Engine Settings, which hold the trust, so nothing runs before the answer is known.
+    if (!extensionService || !projectGuid || !ready) return;
+    void extensionService.refresh(JSON.parse(overrides), trusted).catch(() => { /* Settings displays startup diagnostics. */ });
+  }, [extensionService, projectGuid, overrides, ready, trusted]);
   useEffect(() => () => {
     void extensionService?.close();
   }, [extensionService, projectGuid]);
