@@ -95,9 +95,11 @@ export type CloseProjectResult =
  * How a Save All ended. `saved` wrote everything; `locked` wrote everything
  * except documents someone else holds a source control lock on, which stay
  * unsaved. Nothing was written for `authoring-locked` (Play or a Simulation
- * holds the project) or `no-document` (no project is open).
+ * holds the project), `recovery-pending` (the recovery choice is still open:
+ * a save now would move the saved base the recovered edits replay onto) or
+ * `no-document` (no project is open).
  */
-export type SaveAllOutcome = "saved" | "locked" | "authoring-locked" | "no-document";
+export type SaveAllOutcome = "saved" | "locked" | "authoring-locked" | "recovery-pending" | "no-document";
 
 /** What a Save All the user asked for was for: Play and Preview Build cannot start while documents stay unsaved. */
 export type SaveFailedPurpose = "save" | "play" | "preview";

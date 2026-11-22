@@ -44,6 +44,7 @@ import { createPlayContentService, GRAPH_SIGNATURE_KINDS } from "../services/pla
 import { attachEditGestureBoundaries } from "../services/edit-gesture-boundaries";
 import { ProjectService } from "../services/project-service";
 import { DocumentTransitionGate } from "../services/document-transition-gate";
+import { setEncodeQueuePauseReason } from "../services/encode-queue-pause";
 import {
   SourceControlService,
 } from "../services/source-control-service";
@@ -192,6 +193,21 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const [projectDocument, setProjectDocument] = useRefState(projectDocumentRef);
   const projectSaveState = useRef(new ProjectSaveState());
   const [recoveryAvailable, setRecoveryAvailable] = useState(false);
+  /**
+   * `recoveryAvailable` for code outside render: while the recovery choice is
+   * open, Save All refuses, Auto-Save waits and background Texture encodes
+   * pause, so no project document is written before Recover or Discard.
+   */
+  const recoveryPendingRef = useRef(false);
+  const resumeAfterRecoveryRef = useRef<() => void>(() => {});
+  const setRecoveryPending = useCallback((available: boolean) => {
+    const was = recoveryPendingRef.current;
+    recoveryPendingRef.current = available;
+    setRecoveryAvailable(available);
+    setEncodeQueuePauseReason("recovery", available);
+    if (was && !available) resumeAfterRecoveryRef.current();
+  }, []);
+  useEffect(() => () => setEncodeQueuePauseReason("recovery", false), []);
   const [recoveryNotice, setRecoveryNotice] = useState<RecoveryNotice | null>(null);
   /** Re-renders the provider after service state its slices read changed (edits, tabs, saves). */
   const [, setContextTick] = useState(0);
@@ -475,6 +491,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     cancelDebouncedSave,
     enqueueProjectWrite,
     scheduleDebouncedSave,
+    resumeAfterRecovery,
     saveAll,
     saveProjectNow,
     actions: saveActions,
@@ -491,7 +508,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     setLastCompiledSignature,
     sourceControlRef,
     bump,
+    recoveryPendingRef,
   });
+  resumeAfterRecoveryRef.current = resumeAfterRecovery;
 
   // The edit pipeline (apply*, Undo / Redo, Simulation apply, journal append
   // and recovery replay, prefab sync). Every input is stable, so it is built
@@ -510,9 +529,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
         onHistoryCleared: noteUndoHistoryCleared,
         registryTick: () => registryTickRef.current,
         isProjectDirty: () => projectSaveState.current.isDirty(projectDocumentRef.current),
-        onRecoveryResolved: () => setRecoveryAvailable(false),
+        onRecoveryResolved: () => setRecoveryPending(false),
       }),
-    [bump, documentService, ensureDerived, journalBuffer, noteUndoHistoryCleared, projectService, scheduleDebouncedSave],
+    [bump, documentService, ensureDerived, journalBuffer, noteUndoHistoryCleared, projectService, scheduleDebouncedSave, setRecoveryPending],
   );
 
   // Its layout effect follows the external-change hook's.
@@ -576,7 +595,7 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
     projectSaveState,
     setProjectDocument,
     setRoute,
-    setRecoveryAvailable,
+    setRecoveryAvailable: setRecoveryPending,
     setRecoveryNotice,
     setDocumentOpenError,
     setPublishNotice,

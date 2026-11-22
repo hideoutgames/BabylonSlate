@@ -66,7 +66,7 @@ While a Simulation runs, or while Play is stopped at a breakpoint or error ([Sto
 Haptic records your edits as you work. If the app closes before you save, you can get them back:
 
 - On the Homepage, **Recover Previous Session?** offers **Recover** and **Dismiss**.
-- In the editor, **Recover Unsaved Edits?** opens before you can edit and offers **Recover Edits** and **Discard**.
+- In the editor, **Recover Unsaved Edits?** opens before you can edit and offers **Recover Edits** and **Discard**. Until you choose, nothing is saved, auto-save included; saving resumes as soon as you do.
 
 Recovered edits are replayed onto your saved files. If a document changed after the project opened (for example, Haptic updated it to match a Class), **Replace Changes Since Opening?** lists it: **Recover Edits** replaces those changes with the recovered edits, and **Cancel** goes back to the choice. A document saved since the project opened can't be recovered, and its edits from the last session are discarded.
 
