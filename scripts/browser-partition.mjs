@@ -45,10 +45,13 @@ export function partitionTests(entries, count) {
  * Why a spec file's tests must run in one shard, or null when each test may run in any shard. The config runs files
  * fully parallel, so Playwright already treats the tests of any other file as independent; these constructs order
  * tests or share state between them: serial or default-mode suites (`describe.serial`, any `describe.configure`),
- * file-level hooks (`beforeAll` / `afterAll` run once per worker in each shard) and module-level `let` / `var`. A
- * match in a comment or string only keeps a file whole, which is always safe.
+ * file-level hooks (`beforeAll` / `afterAll` run once per worker in each shard), module-level `let` / `var`, and an
+ * explicit `// browser-partition: keep-whole` comment. A match in a comment or string only keeps a file whole, which
+ * is always safe.
  */
 export function wholeFileReason(source) {
+  // A spec whose tests share state some other way (a helper module's cache one test fills and another reads) says so.
+  if (/\bbrowser-partition:\s*keep-whole\b/.test(source)) return "keep-whole marker";
   if (/\bdescribe\s*\.\s*serial\b/.test(source)) return "serial suite";
   if (/\.\s*configure\s*\(/.test(source)) return "describe.configure";
   if (/\b(?:beforeAll|afterAll)\s*\(/.test(source)) return "file-level hook";

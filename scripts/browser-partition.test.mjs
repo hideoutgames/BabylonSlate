@@ -271,6 +271,10 @@ test("files that order tests or share state between them stay whole", () => {
   assert.equal(wholeFileReason("test.afterAll(async () => {});"), "file-level hook");
   assert.equal(wholeFileReason("import x from 'y';\nlet project: string;\n"), "module-level mutable state");
   assert.equal(
+    wholeFileReason("// browser-partition: keep-whole (the second test reads the project the first creates)\nconst ids = new Map();\n"),
+    "keep-whole marker",
+  );
+  assert.equal(
     wholeFileReason(
       'test.use({ hasTouch: true });\ntest.beforeEach(async () => {});\nconst LIMIT = 3;\ntest("a", async () => {\n  let local = 0;\n});\n',
     ),
