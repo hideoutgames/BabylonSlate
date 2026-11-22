@@ -44,10 +44,11 @@ describe("SceneLayer focus navigation", () => {
     const low3 = f.add("low-3", 6, 0);
     f.tick();
     expect(f.navigation.getFocused()).toBe(dialogB.component);
-    // An idle tick admits the two actors of the owning layer once each, never the four under it.
+    // An idle tick with the focus in the topmost layer revalidates the focused target alone: it admits its actor once,
+    // never the owning layer's other actor or the four under it.
     f.canRunCalls.length = 0;
     f.tick();
-    expect(f.canRunCalls).toEqual(["dialog-a", "dialog-b"]);
+    expect(f.canRunCalls).toEqual(["dialog-b"]);
     // Tab order is the owning layer's targets in world order.
     expect(f.navigation.advance(true)).toBe(dialogA.component);
     // With the top layer's targets gone, the next layer down owns navigation: the walk goes that far and no further.
@@ -65,6 +66,45 @@ describe("SceneLayer focus navigation", () => {
     expect(f.navigation.advance(true)).toBe(low1.component);
     expect(f.navigation.advance()).toBe(low2.component);
     expect(f.navigation.advance()).toBe(low3.component);
+  });
+
+  it("revalidates the focus on idle ticks from the focused target, and still loses it to whatever the full walk would", () => {
+    // The breaks: an idle tick that rebuilds every candidate's transform and bounds, or one that keeps a focus the walk
+    // would drop (a hidden target, a layer drawn above it) or reads a moved target's old bounds.
+    const f = fixture();
+    let measured: string[] = [];
+    const navigation = new SceneLayerFocusNavigation(f.world, undefined, {
+      canRun: () => true,
+      event: (_actor, component, event) => f.events.push(`${component.guid}:${event}`),
+      bounds: (actor) => (measured.push(actor.guid), { x: actor.transform.position.x, y: 0, width: 1, height: 1 }),
+    });
+    const tick = (events: RawInputEvent[] = []) => navigation.tick(events, f.resolver.resolve(events, 0.1), 0.1);
+    const a = f.add("a", 0, 0, { focusInitial: true });
+    const b = f.add("b", 3, 0);
+    const c = f.add("c", 6, 0);
+    tick();
+    expect(navigation.getFocused()).toBe(a.component);
+    measured = [];
+    tick();
+    tick();
+    expect(measured).toEqual(["a", "a"]);
+    // Moved while idle, the focus keeps its new place: the next move starts from there.
+    a.actor.transform.position = { x: 7, y: 0, z: 0 };
+    tick();
+    tick(tap("ArrowLeft"));
+    expect(navigation.getFocused()).toBe(c.component);
+    // Hidden on an idle tick, the focus is lost there, as the walk loses it.
+    c.actor.setVariable("visible", false);
+    tick();
+    expect(f.events.slice(-1)).toEqual(["c-focus:onFocusLeave"]);
+    expect(navigation.getFocused()).toBeNull();
+    // A layer drawn above takes navigation on the first idle tick it has a target.
+    c.actor.setVariable("visible", true);
+    navigation.setFocus(b.component);
+    const dialog = f.world.createSceneLayer({ assetGuid: "dialog", zOrder: 9 });
+    const ok = f.add("ok", 0, 0, { focusInitial: true }, dialog.guid);
+    tick();
+    expect(navigation.getFocused()).toBe(ok.component);
   });
 
   it("gives a target under the owning layer its first focused value once, when it can first take focus", () => {
