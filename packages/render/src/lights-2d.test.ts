@@ -91,6 +91,18 @@ describe("pack2DLights", () => {
       .toEqual({ count: 0, ambient: [1, 1, 1], limited: [], shadowed: [] });
     expect(out.every((value) => value === 0)).toBe(true);
   });
+
+  it("rewrites everything a previous pack left, though it returns the same object", () => {
+    const shadowedLights = Array.from({ length: LIGHT_2D_MAXIMUM + 2 }, (_, index) => record({ radius: 1 }, index, 0));
+    const first = pack2DLights([...shadowedLights, record({ lightKind: "global", color: [1, 1, 1], intensity: 2 })], { ...lit, shadows: true }, words());
+    expect([first.count, first.ambient, first.limited.length, first.shadowed.length]).toEqual([LIGHT_2D_MAXIMUM, [2, 2, 2], 2, 8]);
+    const lone = record({ castShadows: false });
+    const second = pack2DLights([lone], lit, words());
+    expect(second).toBe(first);
+    expect(second).toEqual({ count: 1, ambient: [0, 0, 0], limited: [], shadowed: [] });
+    expect(pack2DLights([lone], { ...lit, lightsEnabled: false }, words())).toEqual({ count: 0, ambient: [1, 1, 1], limited: [], shadowed: [] });
+    expect(pack2DLights([lone], lit, words()).ambient).toEqual([0, 0, 0]);
+  });
 });
 
 describe("2D shadow casters", () => {
@@ -118,6 +130,8 @@ describe("2D shadow casters", () => {
     // Straight right of the light (bin 256), shadow starts where the ray leaves the mover: 3.5 of 10.
     expect(map(256)).toBeCloseTo(0.35, 2);
     expect(mover.occluder.world[0]!.minX).toBe(2.5);
+    const outline = mover.occluder.world[0]!;
+    const points = outline.points;
     for (const entry of [...still, mover]) entry.looks.count = 0;
     // Frames in which nothing moves look at no caster.
     for (let frame = 0; frame < 5; frame++) write2DLights(scene);
@@ -126,11 +140,25 @@ describe("2D shadow casters", () => {
     setOccluderPose(mover.occluder, 5, 0, 0);
     write2DLights(scene);
     expect(mover.occluder.world[0]!.minX).toBe(4.5);
+    // Posed again in place: the same outline and points array, holding the new pose.
+    expect(mover.occluder.world[0]).toBe(outline);
+    expect(outline.points).toBe(points);
+    expect([...points]).toEqual([4.5, -0.5, 5.5, -0.5, 5.5, 0.5, 4.5, 0.5]);
     expect(map(256)).toBeCloseTo(0.55, 2);
     expect(still.reduce((sum, entry) => sum + entry.looks.count, 0)).toBe(0);
     // So is one whose outlines were replaced, and one that turned.
     setOccluderShapes(mover.occluder, [{ closed: true, points: square.map((value) => value * 2) }]);
     write2DLights(scene);
+    expect(map(256)).toBeCloseTo(0.6, 2);
+    expect(mover.occluder.world[0]!.points).toBe(points);
+    // Outlines of another point count, or more of them, get arrays of their own; fewer drop the rest.
+    setOccluderShapes(mover.occluder, [{ closed: true, points: [-1, -1, 1, -1, 0, 1] }, { closed: false, points: [0, 3, 0, 4] }]);
+    write2DLights(scene);
+    expect(mover.occluder.world.map((shape) => [shape.closed, shape.points.length])).toEqual([[true, 6], [false, 4]]);
+    expect(mover.occluder.world[0]!.points).not.toBe(points);
+    setOccluderShapes(mover.occluder, [{ closed: true, points: square.map((value) => value * 2) }]);
+    write2DLights(scene);
+    expect(mover.occluder.world).toHaveLength(1);
     expect(map(256)).toBeCloseTo(0.6, 2);
     setOccluderPose(mover.occluder, 5, 0, Math.PI / 4);
     write2DLights(scene);

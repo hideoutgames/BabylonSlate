@@ -1,5 +1,5 @@
 import type { CommandMessage } from "@haptic/bridge";
-import { newGuid, normalizeSceneLayer, normalizeSceneLayerPostProcessStack, remapSceneStreamingReferences, sameLayerCameraState, updateLayerCameraState, type SerializedActor, type SerializedSceneLayer } from "@haptic/core";
+import { newGuid, normalizeSceneLayerPostProcessStack, remapSceneStreamingReferences, sameLayerCameraState, updateLayerCameraState, type SerializedActor, type SerializedSceneLayer } from "@haptic/core";
 import type { RegisteredPostProcess } from "./scene-post-process";
 import { hydrateScenePropertyReferences, sceneLayerAssetClassId, type Actor, type EngineObject, type LifecycleHooks, type SceneLayer, type SceneLayerPostProcessing, type World } from "@haptic/object-model";
 import type { RuntimeAssetPreloads } from "./asset-preloads";
@@ -54,7 +54,7 @@ interface SceneLayersHost {
   deferModelsReady(): boolean;
   /** The host acknowledges the loading paint itself (`notifyLoadingPainted`). */
   deferLoadingPaint(): boolean;
-  /** The Scene Layer document of an asset guid, when loaded. */
+  /** The normalized Scene Layer document of an asset guid, when loaded; shared, so read-only. */
   document(assetGuid: string): SerializedSceneLayer | undefined;
   /** Lifecycle of a layer instance's SceneLayerScript (`SceneLayer:<guid>`). */
   embeddedScriptHooks(): LifecycleHooks;
@@ -431,8 +431,10 @@ export class SceneLayers implements RuntimeSubsystem {
     };
     checkpoint();
     const guid = String(assetGuid ?? "").trim();
-    const raw = this.host.document(guid);
-    if (!raw) {
+    // Library documents arrive normalized (`normalizeSceneLayer` where Play or the player
+    // reads them) and every instance shares them: read them, never change them.
+    const document = this.host.document(guid);
+    if (!document) {
       this.host.emit({
         type: "log",
         severity: "warning",
@@ -442,7 +444,6 @@ export class SceneLayers implements RuntimeSubsystem {
       });
       return null;
     }
-    const document = normalizeSceneLayer({ ...raw, actors: [], folders: [] });
     // Each instance is an object of its asset's class and runs its SceneLayerScript.
     const classId = sceneLayerAssetClassId(guid);
     world.classRegistry.ensure({ id: classId, parentClassId: "SceneLayer", kind: "object", variables: [], implementedInterfaces: [] });
@@ -457,7 +458,7 @@ export class SceneLayers implements RuntimeSubsystem {
       tickOnPause: document.settings.tickOnPause,
     });
     this.host.markUnsupportedInstance(layer.guid);
-    this.host.addLayerPhysics(layer.guid, guid, document.settings, Array.isArray(raw.actors) ? raw.actors : []);
+    this.host.addLayerPhysics(layer.guid, guid, document.settings, document.actors);
     ownedLayer = layer;
     work?.layers.push(layer);
     const actors: Actor[] = [];
@@ -489,10 +490,7 @@ export class SceneLayers implements RuntimeSubsystem {
       // Return the live loading identity before actor remapping or realization.
       yield;
       checkpoint();
-      const serializedActors = normalizeSceneLayer(raw).actors;
-      yield;
-      checkpoint();
-      const remapped = yield* remapLayerActors(serializedActors, layer.guid);
+      const remapped = yield* remapLayerActors(document.actors, layer.guid);
       for (const serialized of remapped) {
         checkpoint();
         const actor = this.host.createActor(serialized, layer.guid);

@@ -40,7 +40,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
-import { pinDefaultPropertyKey } from "@haptic/scripting";
+import { editMathExpressionFormula, pinDefaultPropertyKey } from "@haptic/scripting";
 import { PinDefaultEditorContext } from "./pin-default-editor-context";
 import { inlinePinDefaultStorageValue } from "./pin-default-value";
 import { ClipboardPasteIcon, CopyIcon, PlusIcon, Trash2Icon, UnlinkIcon, WaypointsIcon } from "lucide-react";
@@ -4080,11 +4080,23 @@ function GraphEditorCanvas({
     emitChange(next, current.edges);
   }, [emitChange]);
 
+  // A Math Expression formula typed on the node: the formula, its pins and the wires that follow a
+  // renamed variable (or go with a removed one) are one change, so one undo step.
+  const onFormulaCommit = useCallback((nodeId: string, formula: string) => {
+    if (readOnlyRef.current) return;
+    const current = graphStateRef.current;
+    const next = editMathExpressionFormula(current.nodes, current.edges, nodeId, formula,
+      (node) => typeof node.data.__nodeType === "string" ? node.data.__nodeType : (node.type ?? ""));
+    if (!next) return;
+    commitGraph(next.nodes, next.edges);
+  }, [commitGraph]);
+
   const contextValue = useMemo(
     () => ({
       pendingPin,
       onPinTap,
       onPinDefaultChange: pinDefaultsDisabled ? undefined : onPinDefaultChange,
+      onFormulaCommit: readOnly ? undefined : onFormulaCommit,
       renderPinDefaultEditor,
       connectedInputs,
       nodeErrorCount,
@@ -4126,6 +4138,8 @@ function GraphEditorCanvas({
       onNavigateRequest,
       onPinTap,
       onPinDefaultChange,
+      onFormulaCommit,
+      readOnly,
       pinDefaultsDisabled,
       renderPinDefaultEditor,
       connectedInputs,

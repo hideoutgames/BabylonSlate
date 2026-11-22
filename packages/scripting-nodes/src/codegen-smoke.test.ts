@@ -12,6 +12,8 @@ const PROPERTIES = {
   enumGuid: "enum-team",
   members: [{ name: "Red", value: 1 }],
   value: "Red",
+  // Math Expression has no pins until it has a formula.
+  formula: "y = a * 2",
 };
 
 function mockCtx(
