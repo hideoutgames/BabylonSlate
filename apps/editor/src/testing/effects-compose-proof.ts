@@ -10,6 +10,8 @@
  * draw in passes of their own by default and in one pass with `mergedMarches` (`worlddebug mergedmarches on`,
  * `merged-marches.ts`), so a spec can compare the two byte for byte. `marches-fog-idle` has no density and
  * no Fog Volume (the fog march idles), `marches-sun-unshadowed` a sun that casts no shadows (the screen shadows idle).
+ * With `pairedBlurs` (`worlddebug pairedblurs on`, `paired-blurs.ts`) each axis's ambient occlusion and reflection blurs
+ * draw in one pass; `blurs` holds the four blur targets as their passes leave them, so a spec can compare the two.
  */
 import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
 import { Engine } from "@babylonjs/core/Engines/engine";
@@ -55,6 +57,8 @@ export type EffectsComposeCapture = {
   /** The ambient occlusion march's and the volumetric march's targets, as the pass that writes each leaves it. */
   occlusion: EffectsReadback | null;
   fog: EffectsReadback | null;
+  /** The ambient occlusion and reflection blurs' targets, by stage name, as the pass that writes each leaves it. */
+  blurs: Record<string, EffectsReadback | null>;
   /** The frame's GL passes and texels covered, and its graph tasks. */
   passes: number;
   texelsCovered: number;
@@ -89,7 +93,13 @@ function png(pixels: Uint8Array): string {
   return canvas.toDataURL("image/png");
 }
 
-export async function runEffectsComposeProof(variant: EffectsComposeVariant, largeWorld = false, mergedMarches = false): Promise<EffectsComposeCapture> {
+/** The blur stages `EffectsComposeCapture.blurs` reads. */
+export const EFFECTS_BLUR_STAGES = [
+  "Scene Ambient Occlusion Blur X", "Scene Ambient Occlusion Blur Y", "Scene Reflections Blur X", "Scene Reflections Blur Y",
+] as const;
+
+export async function runEffectsComposeProof(variant: EffectsComposeVariant, largeWorld = false, mergedMarches = false,
+  pairedBlurs = false): Promise<EffectsComposeCapture> {
   const canvas = document.createElement("canvas");
   canvas.width = WIDTH;
   canvas.height = HEIGHT;
@@ -107,6 +117,7 @@ export async function runEffectsComposeProof(variant: EffectsComposeVariant, lar
     scene.activeCamera = camera;
     allowSceneScreenShadows(scene, () => true);
     if (mergedMarches) setSceneWorldDebug(scene, "mergedmarches", true);
+    if (pairedBlurs) setSceneWorldDebug(scene, "pairedblurs", true);
     const marches = variant.startsWith("marches");
     const ao = variant === "ao" || variant === "ao-fog" || variant === "all" || marches;
     const reflections = variant === "reflections" || variant === "all" || variant === "marches";
@@ -223,6 +234,15 @@ export async function runEffectsComposeProof(variant: EffectsComposeVariant, lar
       const observer = target.writer.onAfterTaskExecute.add(() => { marchTargets[key] = read(target.output); });
       observers.push(() => target.writer.onAfterTaskExecute.remove(observer));
     }
+    // The blurs' targets as their pass leaves them: each in its own pass, or two in each paired pass.
+    const blurs: Record<string, EffectsReadback | null> = {};
+    for (const name of EFFECTS_BLUR_STAGES) {
+      const target = spatial.stageTargets.find((entry) => entry.name === name);
+      if (!target) continue;
+      blurs[name] = null;
+      const observer = target.writer.onAfterTaskExecute.add(() => { blurs[name] = read(target.output); });
+      observers.push(() => target.writer.onAfterTaskExecute.remove(observer));
+    }
     const recorder = new GlSignatureRecorder();
     let record: ReturnType<GlSignatureRecorder["endFrame"]> = null;
     try {
@@ -260,6 +280,7 @@ export async function runEffectsComposeProof(variant: EffectsComposeVariant, lar
       screenShadows,
       occlusion: marchTargets.occlusion,
       fog: marchTargets.fog,
+      blurs,
       passes: frameRecord?.passes ?? 0,
       texelsCovered: frameRecord?.texelsCovered ?? 0,
       passList: recorder.stats()?.structures[0]?.passes ?? [],
