@@ -40,6 +40,10 @@ export function compiledModuleBody({ source, entryPoints }: CompiledModuleSource
   // Blank just the export keywords: strings, comments, templates, regexp
   // bodies, line numbers and all declaration columns remain untouched.
   let body = source;
+  // The compiler's own first-line `//# sourceURL=` comment would rename the whole file a game's scripts module holds
+  // it in (engines take the last such comment), so it becomes an empty comment; Editor Play appends its own directive.
+  const header = /^\/\/# sourceURL=haptic:\/\/\/[^\n]*/.exec(body);
+  if (header) body = `//${" ".repeat(header[0].length - 2)}${body.slice(header[0].length)}`;
   for (const start of exportOffsets.sort((a, b) => b - a)) body = `${body.slice(0, start)}      ${body.slice(start + 6)}`;
   const members = names.map((name) => `[${JSON.stringify(name)}]: ${name}`).join(",");
   return `${body}\nreturn {${members}};`;

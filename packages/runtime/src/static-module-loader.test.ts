@@ -70,6 +70,39 @@ describe("exported game scripts", () => {
     expect(scenario.logs("Probe")).toEqual(["18"]);
   });
 
+  it("keeps a script's hoisted loop-guard and location constants working inside the static module", async () => {
+    const graph: LogicGraph = {
+      id: "event-graph", kind: "event",
+      nodes: [
+        graphNode(registry, "begin", "flow.event.beginPlay"),
+        graphNode(registry, "loop", "flow.forLoop", { "default:firstIndex": 1, "default:lastIndex": 3 }),
+        graphNode(registry, "log", "debug.log", { category: "Probe" }),
+      ],
+      edges: [wire("begin", "execOut", "loop", "execIn"), wire("loop", "loopBody", "log", "execIn"), wire("loop", "index", "log", "message")],
+    };
+    const script = compileClassScript({ registry, classId: "Counter", graph });
+    // The compiler hoists module-scope constants (the loop guard's helpers and locations); they become the module
+    // function's own, evaluated once when the script loads.
+    expect(script.source).toMatch(/^const __loopBound /m);
+    const scenario = await startGraphScenario({
+      scripts: [{ ...script, source: "" }],
+      actors: [createActor("counter", "Counter", { classId: "Counter" })],
+      runtime: { moduleLoader: createStaticModuleLoader(writtenModule(writeGameScriptsModule([script], []))) },
+    });
+    scenario.stop();
+    expect(scenario.diagnostics()).toEqual([]);
+    expect(scenario.logs("Probe")).toEqual(["1", "2", "3"]);
+  });
+
+  it("leaves no compiler source label in the module, which would rename the whole file in stack frames", () => {
+    const script = compileClassScript({ registry, classId: "Hero", graph: bodyGraph("result = \"//# sourceURL=haptic:///authored.js\";") });
+    expect(script.source.startsWith("//# sourceURL=haptic:///")).toBe(true);
+    const text = writeGameScriptsModule([script], []);
+    expect(text.split("\n").filter((line) => line.startsWith("//# sourceURL="))).toEqual([]);
+    // Authored text is never touched.
+    expect(text).toContain("//# sourceURL=haptic:///authored.js");
+  });
+
   it("names the failing node of a script in the shared module from the module's own stack frame", async () => {
     const throwing = compileClassScript({ registry, classId: "Thrower", graph: bodyGraph("throw new Error(\"boom from the module\");") });
     const quiet = compileClassScript({ registry, classId: "Quiet", graph: bodyGraph("result = \"ok\";") });
