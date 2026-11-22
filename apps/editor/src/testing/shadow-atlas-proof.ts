@@ -27,7 +27,7 @@ import {
 import { applyAuthoredLightProperties, compileMaterialPlan, setSceneRenderSettings, largeWorldEngineOptions } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey } from "@haptic/shader-graph";
-import { discardParkedShadowAtlas } from "../../../../packages/render/src/shadow-atlas";
+import { discardParkedShadowAtlas } from "@haptic/render/editor-proofs";
 import { readShadowAtlasPages, type ShadowAtlasPageDigest } from "./shadow-atlas-readback";
 
 export type ShadowAtlasCapture = {

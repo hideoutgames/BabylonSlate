@@ -25,8 +25,8 @@ import {
 import { applyAuthoredLightProperties, compileMaterialPlan, largeWorldEngineOptions, setSceneRenderSettings } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey, type MaterialBlendMode } from "@haptic/shader-graph";
-import { allowSceneScreenShadows } from "../../../../packages/render/src/render-settings";
-import { setUnlitMaterial } from "../../../../packages/render/src/unlit-material";
+import { allowSceneScreenShadows } from "@haptic/render/render-settings";
+import { setUnlitMaterial } from "@haptic/render/editor-proofs";
 
 export const LARGE_WORLD_PROOF_SIZE = { width: 320, height: 200 } as const;
 

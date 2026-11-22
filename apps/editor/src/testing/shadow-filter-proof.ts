@@ -17,8 +17,7 @@ import { normalizeRenderingQuality, normalizeShadowSettings, type ShadowSettings
 import { applyAuthoredLightProperties, compileMaterialPlan, setSceneRenderSettings } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey } from "@haptic/shader-graph";
-import { setSceneBindsPreviousEffects } from "../../../../packages/render/src/variant-swaps";
-import { shadowAtlasTexture, shadowTileSize } from "../../../../packages/render/src/shadow-atlas";
+import { setSceneBindsPreviousEffects, shadowAtlasTexture, shadowTileSize } from "@haptic/render/editor-proofs";
 
 const WIDTH = 160;
 /** An 8-bit sRGB channel in linear light. */

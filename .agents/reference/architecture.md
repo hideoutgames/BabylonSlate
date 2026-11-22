@@ -2,7 +2,7 @@
 
 One-page map of Haptic for contributors: where code lives, how data flows, and the coding, performance and gesture rules every change must keep.
 
-Product decisions and their reasons: [engine-plan.md](engine-plan.md). Per-subsystem notes: [architecture/](architecture/). Package import boundaries are enforced by `no-restricted-imports` in `eslint.config.js`; read them there. Code identifiers keep the `@haptic/*` scope.
+Product decisions and their reasons: [engine-plan.md](engine-plan.md). Per-subsystem notes: [architecture/](architecture/). Package import boundaries are enforced by `no-restricted-imports` in `eslint.config.js`; read them there. A workspace imports another only by package name and a declared export, never by a relative path into its `src` or into another app; each package exposes its test helpers as `@haptic/<package>/test-support/<file>`, outside its root barrel. Code identifiers keep the `@haptic/*` scope.
 
 ## Package map
 
@@ -31,7 +31,8 @@ Product decisions and their reasons: [engine-plan.md](engine-plan.md). Per-subsy
 | [ui](../../packages/ui/src/) | shadcn primitives and design tokens |
 | [editor-kit](../../packages/editor-kit/src/) | Reusable editor components and touch hooks: property grid, tree view, pickers, panel frame, context menu, `SelectableText`, `WindowedList` |
 | [graph-ui](../../packages/graph-ui/src/) | React Flow editor shell shared by every node graph |
-| [test-kit](../../packages/test-kit/src/) | Golden-file helpers, fixtures, deterministic and multi-transport harnesses |
+| [test-kit](../../packages/test-kit/src/) | Golden-file helpers, encode and environment fixtures, the deterministic scenario harness |
+| [build-config](../../packages/build-config/src/) | Vite plugins the editor and player builds share: hosted Havok, Rapier and Recast wasm, unused Babylon modules, default skybox copy |
 
 | App or folder | Role |
 | --- | --- |

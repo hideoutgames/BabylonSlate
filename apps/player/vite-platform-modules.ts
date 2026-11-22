@@ -1,5 +1,5 @@
 import type { Plugin, Rolldown } from "vite";
-import { platformModuleCondition } from "../../packages/core/src/platform-directives";
+import { platformModuleCondition } from "@haptic/core/platform-directives";
 import { packageOfModuleId } from "./vite-bundled-packages";
 
 /** The list packaging reads to leave other platforms' modules out (`selectPlayerRuntimeFiles`). */

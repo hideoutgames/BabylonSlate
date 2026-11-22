@@ -13,14 +13,10 @@ import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
 import { Scene } from "@babylonjs/core/scene";
 import { normalizeRenderingQuality, normalizeShadowSettings } from "@haptic/core";
-import { compileMaterialPlan, createPrimitiveMesh, RENDERING_GROUP, setSceneRenderSettings } from "@haptic/render";
+import { compileMaterialPlan, createPrimitiveMesh, RENDERING_GROUP, setSceneRenderSettings, applyWorldVisualGroup } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
-import { instanceParameterOf, prepareInstanceParameters } from "../../../../packages/render/src/instance-parameters";
-import { sceneInstancePool, setSceneInstancing } from "../../../../packages/render/src/instance-pool";
-import { createPooledPrimitiveVisual } from "../../../../packages/render/src/pooled-primitive-visual";
-import { pooledLeafOf, setActorMeshMaterial } from "../../../../packages/render/src/pooled-visuals";
-import { applyWorldVisualGroup } from "../../../../packages/render/src/sorting";
+import { instanceParameterOf, prepareInstanceParameters, sceneInstancePool, setSceneInstancing, createPooledPrimitiveVisual, pooledLeafOf, setActorMeshMaterial } from "@haptic/render/editor-proofs";
 
 const WIDTH = 160;
 const HEIGHT = 90;

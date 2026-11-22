@@ -13,8 +13,8 @@ import {
   STARTER_CONTENT_PLUGIN_GUID,
 } from "@haptic/assets";
 import { encodeHasset } from "@haptic/assets/hasset";
-import { unpackEnginePluginZip } from "../../../../packages/assets/src/test-support/engine-plugins";
-import { createEmptyProjectFiles } from "../../../../packages/assets/src/test-support/project-files";
+import { unpackEnginePluginZip } from "@haptic/assets/test-support/engine-plugins";
+import { createEmptyProjectFiles } from "@haptic/assets/test-support/project-files";
 import { MemoryStorageAdapter } from "@haptic/vfs";
 import { ProjectService } from "./project-service";
 import { EnginePluginLibrary } from "../lib/engine-plugin-library";

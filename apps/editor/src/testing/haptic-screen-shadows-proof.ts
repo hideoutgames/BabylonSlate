@@ -26,9 +26,8 @@ import {
 import { applyAuthoredLightProperties, compileMaterialPlan, setSceneRenderSettings } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey } from "@haptic/shader-graph";
-import { setSceneBindsPreviousEffects } from "../../../../packages/render/src/variant-swaps";
-import { allowSceneScreenShadows, sceneRenderingSettings } from "../../../../packages/render/src/render-settings";
-import { SCREEN_SHADOW_LEVELS } from "../../../../packages/render/src/screen-shadows";
+import { setSceneBindsPreviousEffects, SCREEN_SHADOW_LEVELS } from "@haptic/render/editor-proofs";
+import { allowSceneScreenShadows, sceneRenderingSettings } from "@haptic/render/render-settings";
 
 type Capture = { name: string; pixels: number[]; screenShadows: boolean };
 /** Per pixel: the surface hit (floor, ramp, other, glass-covered floor) and whether a caster blocks its sun within reach. */

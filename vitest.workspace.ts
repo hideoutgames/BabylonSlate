@@ -41,6 +41,7 @@ export default defineConfig({
             "packages/exporter/**/*.test.ts",
             "packages/source-control/**/*.test.ts",
             "packages/test-kit/**/*.test.ts",
+            "packages/build-config/**/*.test.ts",
             "apps/docs/**/*.test.ts",
             "apps/player/**/*.test.ts",
             "apps/desktop/**/*.test.ts",

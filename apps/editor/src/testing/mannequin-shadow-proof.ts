@@ -3,8 +3,8 @@ import { Ray } from "@babylonjs/core/Culling/ray";
 import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { Scene } from "@babylonjs/core/scene";
-import { sceneShadowController } from "../../../../packages/render/src/shadow-controller";
-import type { ShadowParticipation } from "../../../../packages/render/src/shadow-mesh-policy";
+import { sceneShadowController } from "@haptic/render/editor-proofs";
+import type { ShadowParticipation } from "@haptic/render/editor-proofs";
 
 const names = new Set(["head", "torso", "arm-left", "arm-right", "leg-left", "leg-right"]);
 const originals = new WeakMap<Scene, Map<AbstractMesh, ShadowParticipation | undefined>>();

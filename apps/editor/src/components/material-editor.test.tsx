@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import type { IDockviewPanelProps } from "dockview-react";
 import type { ReactNode } from "react";
 import { receiveActiveAppSettingsUpdate } from "../context/app-settings-context";
-import { dispatchPointerEvent } from "../../../../packages/editor-kit/src/test-support/pointer-events";
+import { dispatchPointerEvent } from "@haptic/editor-kit/test-support/pointer-events";
 import { GraphInteractionSettingsContext } from "@haptic/graph-ui";
 import { AssetRegistry, projectContentRoot } from "@haptic/assets";
 import { MemoryStorageAdapter } from "@haptic/vfs";

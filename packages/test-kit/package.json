@@ -12,11 +12,10 @@
     "test": "node ../../scripts/run-tests.mjs unit packages/test-kit"
   },
   "dependencies": {
-    "@haptic/object-model": "workspace:*",
-    "@haptic/runtime": "workspace:*"
+    "@haptic/object-model": "workspace:*"
   },
   "devDependencies": {
-    "@haptic/bridge": "workspace:*",
-    "typescript": "~6.0.3"
+    "typescript": "~6.0.3",
+    "vitest": "^4.1.12"
   }
 }

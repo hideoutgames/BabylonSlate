@@ -18,9 +18,8 @@ import { normalizeRenderingQuality, normalizeShadowSettings } from "@haptic/core
 import { applyAuthoredLightProperties, compileMaterialPlan, setSceneRenderSettings } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey } from "@haptic/shader-graph";
-import { setSceneBindsPreviousEffects } from "../../../../packages/render/src/variant-swaps";
-import { setAuthoredLightEnabled } from "../../../../packages/render/src/light-policy";
-import type { AtlasCascadedShadowGenerator } from "../../../../packages/render/src/shadow-atlas";
+import { setSceneBindsPreviousEffects, setAuthoredLightEnabled } from "@haptic/render/editor-proofs";
+import type { AtlasCascadedShadowGenerator } from "@haptic/render/editor-proofs";
 import { floorShadowMask } from "./haptic-contact-shadow-proof";
 
 /** Per floor pixel: 1 drawn in shadow (under half the sun's light), 0 lit, -1 off the floor. */

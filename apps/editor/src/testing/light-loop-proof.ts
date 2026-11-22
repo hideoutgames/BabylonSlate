@@ -20,9 +20,7 @@ import { normalizeRenderingQuality, normalizeShadowSettings, type RenderMode } f
 import { applyAuthoredLightProperties, compileMaterialPlan, setSceneRenderSettings } from "@haptic/render";
 import { ForwardSceneFrameGraph } from "@haptic/render/framegraph-forward-scene";
 import { createDefaultMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
-import { setHapticLightLoopProof } from "../../../../packages/render/src/haptic-lighting-block";
-import { setHapticLightCulling } from "../../../../packages/render/src/haptic-lights";
-import { isForwardLightExcluded } from "../../../../packages/render/src/light-policy";
+import { setHapticLightLoopProof, setHapticLightCulling, isForwardLightExcluded } from "@haptic/render/editor-proofs";
 
 const COLUMNS = 8;
 const ROWS = 6;

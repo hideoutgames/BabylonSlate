@@ -4,7 +4,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer } from "vite";
 import { describe, expect, it } from "vitest";
-import { ENGINE_BILLBOARD_FILES } from "../../packages/render/src/default-billboard/urls";
+import { engineDefaultSkyboxVitePlugin } from "@haptic/build-config";
+import { ENGINE_BILLBOARD_FILES } from "@haptic/render/default-billboard-files";
 import {
   FEATURE_TEST_ENGINE_CONTENT,
   FEATURE_TEST_SLOTS_MANIFEST,
@@ -12,7 +13,6 @@ import {
 import { engineBillboardsVitePlugin } from "./vite-engine-billboards";
 import { featureTestEngineContentVitePlugin } from "./vite-engine-content";
 import { enginePluginsVitePlugin } from "./vite-engine-plugins";
-import { engineDefaultSkyboxVitePlugin } from "./vite-engine-skybox";
 import { kenneyMannequinVitePlugin } from "./vite-kenney-mannequin";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "../..");
