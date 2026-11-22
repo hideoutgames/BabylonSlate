@@ -27,10 +27,12 @@ import {
   createAppSettingsStore,
   createDerivedStorage,
   createStorage,
+  getHostPlatform,
   isTestModeEnabled,
   ENGINE_SETTINGS_CHANGED_EVENT,
   type EngineSettings,
 } from "@haptic/vfs";
+import { automaticBlobSweepAllowed, scheduleAutomaticBlobSweep } from "../lib/automatic-blob-sweep";
 import type { ProjectStorage } from "@haptic/core";
 import {
   DocumentService,
@@ -1021,6 +1023,13 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   const assetRegistry = projectService.registry;
   const extensionService = projectService.extensions;
   const projectGuid = projectService.guid;
+  // Clean Unused Project Storage on its own, once the editor shows an opened project, where this editor is its only writer.
+  useEffect(() => {
+    if (route !== "editor" || !projectGuid) return;
+    const webLocks = typeof navigator !== "undefined" && "locks" in navigator && navigator.locks !== undefined;
+    if (!automaticBlobSweepAllowed(getHostPlatform(), projectService.storagePort.getCurrentFolder(), webLocks)) return;
+    return scheduleAutomaticBlobSweep(projectService);
+  }, [projectGuid, projectService, route]);
   const pluginDescriptors = projectService.plugins;
   const pluginDiagnostics = projectService.pluginGraphDiagnostics;
   const showPluginContent = documentService.getState().showPluginContent === true;

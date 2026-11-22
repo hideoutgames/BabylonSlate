@@ -45,7 +45,7 @@ import type { AssetThumbnailWriteIdentity } from "../lib/asset-thumbnail-revisio
 import type { DocumentAuthoringLock, DocumentService, DocumentIdentityListener, OpenDocument } from "../services/document-service";
 import type { DocumentTransitionGate } from "../services/document-transition-gate";
 import type { PlayScriptCompileOptions } from "../services/play-content-service";
-import type { PluginImportResult, ProjectService } from "../services/project-service";
+import type { BlobReclaimResult, PluginImportResult, ProjectService } from "../services/project-service";
 import type { SimulationDocumentTransaction } from "../services/simulation-document";
 import type { SourceControlService } from "../services/source-control-service";
 import type { SourceControlSyncService, TransferMonitor } from "../services/source-control-sync";
@@ -195,6 +195,8 @@ export interface DocumentContextValue {
   /** Writes a file of a project's editor state in derived storage. */
   writeProjectDerivedText: (projectGuid: string, name: string, text: string) => Promise<void>;
   retryFailedTextureEncoding: () => Promise<number>;
+  /** Project Settings' Clean Unused Project Storage, as the project's only writer (`ProjectService.reclaimUnusedBlobs`). */
+  reclaimUnusedProjectStorage: () => Promise<BlobReclaimResult>;
   prepareAreaEmission: ProjectService["prepareAreaEmission"];
   /** Converts an environment Texture's kept `.hdr` again at another Face Size; false when nothing was written. */
   reconvertHdrEnvironment: ProjectService["reconvertHdrEnvironment"];

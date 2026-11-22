@@ -151,6 +151,7 @@ function inertDocuments(current: () => DocumentsValue | undefined): DocumentsVal
     readProjectDerivedText: async () => null,
     writeProjectDerivedText: async () => {},
     retryFailedTextureEncoding: async () => 0,
+    reclaimUnusedProjectStorage: async () => ({ status: "reclaimed", files: 0, bytes: 0, stopped: false }),
     prepareAreaEmission: resolved,
     reconvertHdrEnvironment: async () => true,
     collectPlayAreaEmissions: async () => new Map(),
