@@ -66,6 +66,13 @@ describe("Extension graph nodes", () => {
       wire("wait", "saved", "logSaved", "message"),
     ] };
     const compiled = compileGraph(graph, { assetGuid: "game", registry });
+    // Every call into the Extension's game code needs a trusted project, a pure one too.
+    expect(compiled.trustGatedNodes).toEqual(expect.arrayContaining([
+      { nodeId: "add", kind: "extension", title: "Add Scores" },
+      { nodeId: "split", kind: "extension", title: "Split Name" },
+      { nodeId: "wait", kind: "extension", title: "Wait For Save" },
+    ]));
+    expect(compiled.trustGatedNodes).toHaveLength(3);
     const logs: string[] = [];
     const ctx = { formatValue: String, log: (_severity: string, _category: string, message: string) => logs.push(message) };
 
@@ -75,6 +82,16 @@ describe("Extension graph nodes", () => {
 
     const missing = await loadCompiledModule(compiled, "game-missing");
     await expect((missing.run as (context: unknown) => Promise<void>)(ctx)).rejects.toThrow("Extension library scores has no function add.");
+  });
+
+  it("each need a trusted project, whatever the Extension declares, as registration marks them", () => {
+    const registry = createDefaultNodeRegistry();
+    const builtIn = new Set(registry.list().map((definition) => definition.id));
+    syncExtensionNodes(registry, [extension(), { ...extension(), extensionGuid: "engine-guid", source: "engine", readOnly: true,
+      settings: { ...extension().settings, extensionGuid: "engine-guid", libraryName: "engineScores" } }]);
+    const registered = registry.list().filter((definition) => !builtIn.has(definition.id));
+    expect(registered).toHaveLength(6);
+    expect(registered.map((definition) => definition.trustGate)).toEqual(Array(6).fill("extension"));
   });
 
   it("are replaced when extensions change, leaving graph nodes of a removed extension as compile errors", () => {

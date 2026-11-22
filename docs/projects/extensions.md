@@ -31,13 +31,13 @@ Rows also show **Experimental**, **Beta** and **Gameplay** badges, the version, 
 
 ## Trust project extensions
 
-A project's own extensions, its [Editor Utility Objects](../scripting/editor-scripting.md) and its [Execute JavaScript](../scripting/javascript.md#trusted-projects) nodes are code that came with the project, for example from a repository you cloned or a folder someone sent you. Haptic does not run them until you trust the project on this computer.
+A project's own extensions, its [Editor Utility Objects](../scripting/editor-scripting.md), and its [Execute JavaScript](../scripting/javascript.md#trusted-projects), [Open URL](../scripting/class/open-url.md) and [extension](#graph-nodes) nodes are code that came with the project, for example from a repository you cloned or a folder someone sent you. Haptic does not run them until you trust the project on this computer.
 
-- When you open a project whose enabled extensions or registered Editor Utility Objects are not trusted, a banner says what is held back. It also appears, naming the assets, when Play, Preview Build or packaging stops because of Execute JavaScript. Choose **Trust Project** to run them, or **Not Now** to keep working without them.
+- When you open a project whose enabled extensions or registered Editor Utility Objects are not trusted, a banner says what is held back. It also appears, naming each node and its assets, when Play, Preview Build or packaging stops because of Execute JavaScript, Open URL or extension nodes. Choose **Trust Project** to run them, or **Not Now** to keep working without them.
 - You can trust a project, or take trust back, with **Trust This Project** in **Project Settings > Project Extensions** or under **Editor Utility Objects** in **Project Settings > General**. It is one switch for all three. Taking trust back stops extensions and Editor Utility Objects straight away.
-- Until you trust the project, its extensions add no commands, its Editor Utility Objects do not start (the **Output Log** says why), and Play, Simulate, Preview Build and packaging stop with a message if a gameplay extension is enabled or what they would run contains Execute JavaScript.
+- Until you trust the project, its extensions add no commands, its Editor Utility Objects do not start (the **Output Log** says why), and Play, Simulate, Preview Build and packaging stop with a message if a gameplay extension is enabled or what they would run contains Execute JavaScript, Open URL or extension nodes.
 - Trust belongs to this computer and to the project's folder. A copy of the project in another folder, or a different project in the same folder, asks again. Projects you create from scratch in Haptic are trusted. Projects made from a template, cloned or opened from a folder are not.
-- Pulling changes into a trusted project keeps it trusted, including any new extension code or Execute JavaScript the changes bring. Review what you pull from people you do not know.
+- Pulling changes into a trusted project keeps it trusted, including any new extension code, Execute JavaScript or Open URL nodes the changes bring. Review what you pull from people you do not know.
 - Engine extensions always run: they come with Haptic or you added them to this computer yourself.
 
 Trust a project only if you trust where it came from.
@@ -325,6 +325,7 @@ export function setPresence(details, party) {
 - Pin types are `bool`, `int`, `float`, `string`, `vec2`, `vec3`, `vec4`, `rotator`, `quat`, `transform` and `color`. Inputs of `bool`, `int`, `float` and `string` can have a `default`.
 - Nodes appear in **Add Node** under their `category` (the extension's name if none) while the extension is enabled and **Editor Only** is off. Editor Scripting graphs and Animation Graphs do not offer them.
 - If the extension is disabled, set to Editor Only or removed, graphs keep its nodes, and **Compiler Results** lists each one as an error until the extension returns or you delete the node.
+- Every extension node, from a project extension or an Engine Extension, calls extension code, so it runs only in a [trusted project](#trust-project-extensions). In a project this computer does not trust, Play, Simulate, Preview Build and packaging stop with a message naming the node.
 
 ## Gameplay extensions
 

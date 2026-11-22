@@ -128,8 +128,8 @@ export class AnimGraphPreviewSession {
 
   /**
    * Loads the graph's compiled rule and pose-data scripts into a fresh host; the previous one keeps running until then.
-   * The preview runs on its own whenever its window shows, so it never loads a script carrying Execute JavaScript
-   * (rules and pose data compile only pure nodes, so none should): that code runs only in Play, under Workspace Trust.
+   * The preview runs on its own whenever its window shows, so it never loads a script carrying a trust-gated node
+   * (Execute JavaScript, or a pure Extension node a rule may hold): that code runs only in Play, under Workspace Trust.
    */
   async loadScripts(bundles: readonly ScriptBundleEntry[]): Promise<void> {
     const generation = ++this.hostGeneration;
@@ -137,7 +137,7 @@ export class AnimGraphPreviewSession {
     const host = new ScriptHost(previewHostServices());
     for (const script of bundles) {
       if (!prefixes.some((prefix) => script.classId.startsWith(prefix))) continue;
-      if (script.executeJavaScriptNodes?.length) continue;
+      if (script.trustGatedNodes?.length) continue;
       await host.load(script);
       if (generation !== this.hostGeneration) return;
     }

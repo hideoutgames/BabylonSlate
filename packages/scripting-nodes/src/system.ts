@@ -123,6 +123,7 @@ export const systemNodes: NodeDefinition[] = [
     category: "system",
     description: "Opens a web address in a new browser tab. Only http and https addresses open; the browser may block it without a recent tap or click.",
     searchAliases: ["link", "website", "browser", "web page", "hyperlink"],
+    trustGate: "openUrl",
     pins: () => [
       pin("execIn", "exec", "in", EXEC),
       pin("execOut", "then", "out", EXEC),

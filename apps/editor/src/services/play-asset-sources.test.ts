@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import v8 from "node:v8";
 import { runInNewContext } from "node:vm";
 import { describe, expect, it, vi } from "vitest";
-import { createActor, createDocumentRef, createEmptyProject, documentId, normalizeSceneLayer, SCENE_SCHEMA_VERSION } from "@haptic/core";
+import { createActor, createDocumentRef, createEmptyProject, documentId, normalizeSceneLayer, SCENE_SCHEMA_VERSION, type TrustGatedNode } from "@haptic/core";
 import { MemoryStorageAdapter } from "@haptic/vfs";
 import { createInProcessRuntime } from "@haptic/runtime";
 import type { CommandMessage, ScriptBundleEntry } from "@haptic/bridge";
@@ -24,6 +24,7 @@ import {
 import { encodeHasset } from "@haptic/assets/hasset";
 import { meshoptBoxGlb } from "@haptic/assets/test-support/meshopt-gltf";
 import { acquirePlayAssetSources, acquirePlayStartupSources, createMergedPlaySourceControls, emptyPlaySourceControls, mergePreparedPlaySources, playDocumentOverrides, playRootMotionTracks, requiredProjectAssets, type PlayAssetSourceHost } from "./play-asset-sources";
+import type { TrustGateFinding } from "./trust-gate";
 import type { AnimClipCatalogEntry } from "@haptic/anim-graph";
 import { playAnimClipCatalog } from "../lib/anim-clip-catalog";
 import type { OpenDocument } from "./document-service";
@@ -1473,8 +1474,15 @@ describe("Play Scene Layer documents", () => {
   });
 });
 
-describe("Workspace Trust for Execute JavaScript", () => {
-  /** Two Scenes, each requiring its own Class; `Danger`'s compiled script carries an Execute JavaScript body. */
+/** One trust-gated node of each kind, as the compiler records it. */
+const TRUST_GATED_NODES: TrustGatedNode[] = [
+  { nodeId: "js", kind: "executeJavaScript", title: "Execute JavaScript" },
+  { nodeId: "url", kind: "openUrl", title: "Open URL" },
+  { nodeId: "ext", kind: "extension", title: "Start Discord Rich Presence" },
+];
+
+describe.each(TRUST_GATED_NODES)("Workspace Trust for $title", (gated) => {
+  /** Two Scenes, each requiring its own Class; `Danger`'s compiled script carries the trust-gated node. */
   async function trustFixture() {
     const storage = new MemoryStorageAdapter();
     await storage.pickProjectFolder();
@@ -1496,42 +1504,42 @@ describe("Workspace Trust for Execute JavaScript", () => {
     const compile = vi.fn(async (required: ReadonlySet<string>) => ({
       bundles: [...required].filter((guid) => guid === "safe" || guid === "danger").map((guid): ScriptBundleEntry => ({
         assetGuid: guid, classId: guid, source: "export function start() {}", anchors: [], entryPoints: [],
-        ...(guid === "danger" ? { executeJavaScriptNodes: ["js"] } : {}),
+        ...(guid === "danger" ? { trustGatedNodes: [gated] } : {}),
       })),
       diagnostics: [],
     }));
-    const host = (assertExecuteJavaScriptAllowed?: PlayAssetSourceHost["assertExecuteJavaScriptAllowed"]): PlayAssetSourceHost => ({
+    const host = (assertTrustGatedNodesAllowed?: PlayAssetSourceHost["assertTrustGatedNodesAllowed"]): PlayAssetSourceHost => ({
       registry, project: createEmptyProject("Trust"), createScope: (owner: string) => loading.createScope(owner), compile,
-      ...(assertExecuteJavaScriptAllowed ? { assertExecuteJavaScriptAllowed } : {}),
+      ...(assertTrustGatedNodesAllowed ? { assertTrustGatedNodesAllowed } : {}),
     });
     return { host, loading };
   }
   const acquire = (host: PlayAssetSourceHost, guid: string) =>
     acquirePlayAssetSources(host, [guid], { consumer: guid, signal: new AbortController().signal });
 
-  it("refuses every acquisition whose scripts carry Execute JavaScript, startup and later slots alike, and nothing else", async () => {
+  it("refuses every acquisition whose scripts carry the node, startup and later slots alike, and nothing else", async () => {
     const { host, loading } = await trustFixture();
-    const asked: string[][] = [];
-    const untrusted = host((names) => {
-      asked.push([...names]);
+    const asked: TrustGateFinding[][] = [];
+    const untrusted = host((findings) => {
+      asked.push([...findings]);
       throw new Error("not trusted");
     });
     const safe = await acquire(untrusted, "scene-safe");
     expect(safe.game.scripts.map((script) => script.classId)).toEqual(["safe"]);
     expect(asked).toEqual([]);
-    // A slot of the running session that brings Execute JavaScript in (a streamed Scene, a spawn) is refused too.
+    // A slot of the running session that brings the node in (a streamed Scene, a spawn) is refused too.
     await expect(acquire(untrusted, "scene-danger")).rejects.toThrow("not trusted");
-    expect(asked).toEqual([["Danger"]]);
+    expect(asked).toEqual([[{ kind: gated.kind, title: gated.title, assets: ["Danger"] }]]);
     safe.release();
     loading.dispose();
   });
 
-  it("refuses Execute JavaScript when the host makes no trust decision, and runs it once trusted", async () => {
+  it("refuses the node when the host makes no trust decision, and runs it once trusted", async () => {
     const { host, loading } = await trustFixture();
     await expect(acquire(host(), "scene-danger")).rejects.toThrow(
-      "This project is not trusted on this computer, so the Execute JavaScript in Danger cannot run.");
+      `This project is not trusted on this computer, so the ${gated.kind === "extension" ? "Extension node " : ""}${gated.title} in Danger cannot run.`);
     const trusted = await acquire(host(() => {}), "scene-danger");
-    expect(trusted.game.scripts[0]?.executeJavaScriptNodes).toEqual(["js"]);
+    expect(trusted.game.scripts[0]?.trustGatedNodes).toEqual([gated]);
     trusted.release();
     loading.dispose();
   });

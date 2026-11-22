@@ -25,3 +25,4 @@ Opens a web address in a new browser tab.
 - Browsers block new tabs unless the player has just tapped or clicked, so run it from a button.
 - When the browser blocks it, nothing opens and the game continues.
 - In the Haptic desktop app, Play opens only Haptic's own pages and Preview Build opens nothing. Test other addresses in the web editor or an exported game.
+- A graph can open any address it builds, so Open URL runs only in a [trusted project](../javascript.md#trusted-projects). In a project this computer does not trust, Play, Simulate, Preview Build and packaging stop with a message, as they do for Execute JavaScript. Packaged games open addresses as before.

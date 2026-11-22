@@ -1,8 +1,7 @@
-import { EXECUTE_JAVASCRIPT_NODE_TYPE, hasExecuteJavaScriptBody } from "@haptic/core";
 import { instrumentJsLoops } from "@haptic/debugger";
 import type { GraphNode, GraphPin } from "./ir";
 import { findPin } from "./ir";
-import { isPureNode, type CodegenContext } from "./node-registry";
+import { isPureNode, trustGateOf, type CodegenContext } from "./node-registry";
 import { defaultValueLiteral, pinTypeEquals } from "./types";
 import { byReferenceArgument, isByReferenceFunctionInput, isWritableVariableOutput } from "./variable-references";
 import { jsIdent, localVariableIdent } from "./compile-events";
@@ -135,9 +134,9 @@ export function makeCtx(s: CodegenState, node: GraphNode, continuation?: (expres
   runOutput?: (expression: string, pinId: string) => void,
   boundArgs?: ReadonlyMap<string, string>): CodegenContext {
   // Every node's code generation starts here, so whatever reaches the module is recorded.
-  if (node.typeId === EXECUTE_JAVASCRIPT_NODE_TYPE && hasExecuteJavaScriptBody(node.properties.body)) {
-    s.executeJavaScriptNodes.add(node.id);
-  }
+  const definition = s.options.registry.get(node.typeId);
+  const trustGate = trustGateOf(definition, node);
+  if (trustGate && definition) s.trustGatedNodes.set(node.id, { nodeId: node.id, kind: trustGate, title: definition.title });
   return {
     graph: s.graph,
     node,

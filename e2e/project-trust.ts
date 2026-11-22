@@ -10,7 +10,8 @@ import { acceptUnsavedPlayPrompts } from "./unsaved-play";
 export async function expectPlayRefusedUntilTrusted(page: Page, assetNames: readonly string[]): Promise<void> {
   await acceptUnsavedPlayPrompts(page);
   await page.getByTestId("play-preview").click();
-  const reason = `so the Execute JavaScript in ${assetNames.join(", ")} cannot run`;
+  const listed = assetNames.length > 1 ? `${assetNames.slice(0, -1).join(", ")} and ${assetNames.at(-1)}` : assetNames[0];
+  const reason = `so the Execute JavaScript in ${listed} cannot run`;
   const logLine = page.getByTestId("output-log-line").filter({ hasText: reason });
   const failed = page.getByTestId("play-failed-dialog");
   await expect(logLine.or(failed).first()).toBeVisible({ timeout: 60_000 });

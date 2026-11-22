@@ -78,6 +78,6 @@ export function compilePoseDataGraph(graph: LogicGraph, options: CompileOptions)
     exportName: "evaluate",
     isAsync: false,
     entryPoints: [{ name: "evaluate", event: "onAnimPose", isAsync: false, nodeId: output?.id }],
-    executeJavaScriptNodes: [...s.executeJavaScriptNodes],
+    trustGatedNodes: [...s.trustGatedNodes.values()],
   };
 }
