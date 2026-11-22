@@ -1178,7 +1178,8 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
    *   subsystem's `cancelPending` (`RuntimeSubsystem` Stop phase 1; the Scene
    *   realizer last).
    * - Finalize the trace.
-   * - End the World: destroy live components, then `World.end`.
+   * - End the World: destroy live components, then `World.end`, then detach
+   *   the snapshot publisher's World observer.
    * - Release scripts: dispose ScriptHost, unregister script Classes, drop
    *   anchors, release Scene sources and forget the Play Scene and library.
    * - Dispose: clear owner queues and the Scene Layer table, then every
@@ -1218,6 +1219,7 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
       }
     }
     this.world.end();
+    this.snapshots.dispose();
     // Release scripts.
     this.scriptDebug.dispose();
     this.scriptHost.dispose();
