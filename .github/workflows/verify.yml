@@ -53,6 +53,8 @@ jobs:
       - run: pnpm test:tooling
       - run: pnpm test:distribution
       - run: pnpm typecheck
+      # Bundles the Electron main and preload scripts as desktop packaging does, which nothing else in Verify builds.
+      - run: pnpm --filter desktop build:host
       # ESLint's per-file cache: an entry is reused only for the same file content, ESLint and Node versions and
       # computed config. Plugin code is not part of it, so the lockfile hash is in every key. Only main saves it.
       - name: Restore the ESLint cache
@@ -68,6 +70,8 @@ jobs:
         with:
           path: .cache/eslint
           key: eslint-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ hashFiles('eslint.config.js') }}-${{ github.sha }}
+      # Type-aware promise rules read other files' types, so they never run from the per-file cache above.
+      - run: pnpm lint:promises
       - run: pnpm --filter docs-site build
 
   unit:

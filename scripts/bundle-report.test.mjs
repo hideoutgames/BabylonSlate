@@ -63,3 +63,71 @@ test("a missing build directory fails instead of reporting an empty bundle", () 
   assert.equal(result.stdout, "");
   assert.match(result.stderr, /Bundle directory not found/);
 });
+
+async function budgetFile(t, budgets) {
+  const dir = await mkdtemp(join(tmpdir(), "bundle-budgets-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const path = join(dir, "budgets.json");
+  await writeFile(path, JSON.stringify({ budgets }));
+  return path;
+}
+
+test("budgets measure the matching files' gzip total or largest file and pass within their limits", async (t) => {
+  const dir = await fixture(t);
+  await writeFile(join(dir, "assets", "other.js"), "b".repeat(1024));
+  await writeFile(join(dir, "root.js"), "c".repeat(8192));
+  const budgets = await budgetFile(t, [
+    { name: "Assets JS", root: dir, prefix: "assets/", extension: ".js", measure: "total", maxGzipBytes: 1_000_000 },
+    { name: "Largest JS", root: dir, extension: ".js", measure: "largest", maxGzipBytes: 1_000_000 },
+  ]);
+  const result = report("--json", "--budgets", budgets, dir);
+  assert.equal(result.status, 0, result.stderr);
+  const { reports, budgets: checked } = JSON.parse(result.stdout);
+  const gzip = Object.fromEntries(reports[0].files.map((file) => [file.path, file.gzip]));
+  // root.js is outside the assets/ prefix, and the wasm file has another extension.
+  assert.deepEqual(checked, [
+    { name: "Assets JS", gzip: gzip["assets/index.js"] + gzip["assets/other.js"], maxGzipBytes: 1_000_000, exceeded: false },
+    {
+      name: "Largest JS",
+      gzip: Math.max(gzip["assets/index.js"], gzip["assets/other.js"], gzip["root.js"]),
+      maxGzipBytes: 1_000_000,
+      exceeded: false,
+    },
+  ]);
+  const markdown = report("--budgets", budgets, dir);
+  assert.equal(markdown.status, 0, markdown.stderr);
+  assert.match(markdown.stdout, /\| Assets JS \| .+ \| 976\.6 KiB \| Within budget \|/);
+});
+
+test("a bundle over its budget still prints the whole report and fails", async (t) => {
+  const dir = await fixture(t);
+  const budgets = await budgetFile(t, [{ name: "Wasm", root: dir, extension: ".wasm", measure: "total", maxGzipBytes: 1 }]);
+  const result = report("--budgets", budgets, dir);
+  assert.equal(result.status, 1);
+  assert.match(result.stdout, /\| Wasm \| .+ \| 1 B \| \*\*Over budget\*\* \|/);
+  assert.match(result.stdout, /\*\*Total \(3 files\)\*\*/);
+  assert.match(result.stderr, /exceeds its size budget/);
+});
+
+test("a budget for an unmeasured directory, matching no file, or malformed fails instead of passing", async (t) => {
+  const dir = await fixture(t);
+  const cases = [
+    [[{ name: "Elsewhere", root: join(dir, "missing"), extension: ".js", measure: "total", maxGzipBytes: 10 }], /was not measured/],
+    [[{ name: "CSS", root: dir, extension: ".css", measure: "total", maxGzipBytes: 10 }], /matches no file/],
+    [[{ name: "Unknown measure", root: dir, extension: ".js", measure: "average", maxGzipBytes: 10 }], /Invalid budget/],
+    [[], /No budgets/],
+  ];
+  for (const [budgets, message] of cases) {
+    const result = report("--budgets", await budgetFile(t, budgets), dir);
+    assert.equal(result.status, 1, JSON.stringify(budgets));
+    assert.equal(result.stdout, "");
+    assert.match(result.stderr, message);
+  }
+  assert.match(report(dir, "--budgets").stderr, /needs a budget file/);
+});
+
+test("the committed Pages budgets are well formed and name the directories Preview measures", async () => {
+  const { readBudgets } = await import("./bundle-report.mjs");
+  const budgets = readBudgets(join(import.meta.dirname, "bundle-budgets.json"));
+  assert.deepEqual([...new Set(budgets.map((budget) => budget.root))].sort(), ["apps/editor/dist", "apps/player/dist"]);
+});

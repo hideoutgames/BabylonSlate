@@ -39,12 +39,12 @@ jobs:
           VITE_BASE_PATH: /BabylonSlate/
           # Windows and Linux players for packaging native games, served beside the editor.
           HAPTIC_GAME_SHELLS: windows-x64,linux-x64
-          VITE_TEST_MODE: "true"
+          # The production editor web users get: no test-mode storage, test hooks or browser proofs.
+          VITE_TEST_MODE: "false"
         run: pnpm --filter editor build
-      # Measurement only: no size thresholds, and a report failure never blocks deploy.
-      - name: Report bundle sizes
-        continue-on-error: true
-        run: node scripts/bundle-report.mjs apps/player/dist apps/editor/dist >> "$GITHUB_STEP_SUMMARY"
+      # The whole report goes to the summary; a bundle over its budget in scripts/bundle-budgets.json fails the deploy.
+      - name: Report bundle sizes and check budgets
+        run: node scripts/bundle-report.mjs --budgets scripts/bundle-budgets.json apps/player/dist apps/editor/dist >> "$GITHUB_STEP_SUMMARY"
       - name: Build docs site
         env:
           VITEPRESS_BASE: /BabylonSlate/docs/

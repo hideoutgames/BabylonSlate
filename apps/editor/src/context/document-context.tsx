@@ -791,6 +791,9 @@ export function DocumentProvider({ children }: { children: ReactNode }) {
   );
 
   useEffect(() => {
+    // Only a bundle that can enter Test Mode (the dev server, VITE_TEST_MODE or VITE_TEST_QUERY) keeps the hooks: the
+    // build folds this condition, so production output carries no test harness chunk.
+    if (!(import.meta.env.DEV || import.meta.env.VITE_TEST_MODE === "true" || import.meta.env.VITE_TEST_QUERY === "true")) return;
     if (!isTestModeEnabled()) return;
     // Test Mode only, so the hooks load on demand instead of with the app.
     let uninstall: (() => void) | undefined;
