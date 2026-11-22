@@ -151,16 +151,3 @@ test("static restores tsc's build info before the workspace typecheck and saves 
   assert.equal(steps[save].if, "github.event_name == 'push'");
   assert.equal(steps[restore].if, undefined);
 });
-
-test("the first browser shard checks the player bundle budget on its own build before its tests", async () => {
-  const { steps, strategy } = (await verifyWorkflow()).jobs.e2e;
-  const build = steps.findIndex((step) => step.run === "pnpm test:build");
-  const budget = steps.findIndex((step) => step.run === "node scripts/bundle-report.mjs --budget scripts/bundle-budget.json");
-  const tests = steps.findIndex((step) => step.run?.startsWith("pnpm test:e2e --partition="));
-  assert.ok(build >= 0 && build < budget && budget < tests, "build, budget, then tests");
-  // The same bundle mode as the tests, so test:e2e reuses the build the budget measured.
-  assert.deepEqual(steps[build].env, steps[tests].env);
-  assert.equal(steps[build].if, "matrix.shard == 1");
-  assert.equal(steps[budget].if, "matrix.shard == 1");
-  assert.ok(strategy.matrix.shard.includes(1));
-});

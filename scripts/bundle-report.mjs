@@ -1,20 +1,18 @@
 #!/usr/bin/env node
 // Measures built web output: every file's raw and gzip size, largest first,
-// plus totals. The report alone never fails on size.
+// plus totals, and optionally checks them against size budgets.
 //
 // Usage:
-//   node scripts/bundle-report.mjs [--json] [dist-dir ...]   # default apps/player/dist
-//   node scripts/bundle-report.mjs --budget <budget.json>     # gzip ceilings for named entries
+//   node scripts/bundle-report.mjs [--json] [--budgets <file>] [dist-dir ...]   # default apps/player/dist
 //
-// Markdown output is suitable for $GITHUB_STEP_SUMMARY. Report gzip sizes use
-// zlib's default level, close to a typical static host. The budget check gzips
-// at a fixed level of its own (`budgetGzipSize`) and fails when an entry is
-// missing or over its ceiling.
+// Markdown output is suitable for $GITHUB_STEP_SUMMARY. Gzip sizes use zlib's
+// default level, close to a typical static host. With --budgets, the report is
+// printed in full and the exit code is 1 when any budget is exceeded.
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
-import { constants, gzipSync } from "node:zlib";
+import { gzipSync } from "node:zlib";
 
 function listFiles(dir) {
   const out = [];
@@ -49,14 +47,61 @@ export function measureBundle(root) {
   return { root, files, total };
 }
 
+/**
+ * Reads a budget file: `{ "budgets": [{ name, root, prefix?, extension, measure, maxGzipBytes }] }`, where `measure`
+ * is `total` (the summed gzip size of the matching files) or `largest` (the largest matching file's gzip size).
+ */
+export function readBudgets(path) {
+  const { budgets } = JSON.parse(readFileSync(path, "utf8"));
+  if (!Array.isArray(budgets) || budgets.length === 0) throw new Error(`No budgets in ${path}`);
+  for (const budget of budgets) {
+    const valid =
+      typeof budget.name === "string" &&
+      typeof budget.root === "string" &&
+      (budget.prefix === undefined || typeof budget.prefix === "string") &&
+      typeof budget.extension === "string" &&
+      ["total", "largest"].includes(budget.measure) &&
+      Number.isSafeInteger(budget.maxGzipBytes) &&
+      budget.maxGzipBytes > 0;
+    if (!valid) throw new Error(`Invalid budget in ${path}: ${JSON.stringify(budget)}`);
+  }
+  return budgets;
+}
+
+/** Each budget's measured gzip size against its limit. A budget whose root was not measured, or matches no file, fails. */
+export function checkBudgets(reports, budgets) {
+  return budgets.map((budget) => {
+    const report = reports.find(({ root }) => resolve(root) === resolve(budget.root));
+    if (!report) throw new Error(`Budget "${budget.name}" names ${budget.root}, which was not measured`);
+    const files = report.files.filter(
+      ({ path }) => path.startsWith(budget.prefix ?? "") && path.endsWith(budget.extension),
+    );
+    if (files.length === 0) throw new Error(`Budget "${budget.name}" matches no file in ${budget.root}`);
+    const gzip =
+      budget.measure === "total"
+        ? files.reduce((sum, file) => sum + file.gzip, 0)
+        : Math.max(...files.map((file) => file.gzip));
+    return { name: budget.name, gzip, maxGzipBytes: budget.maxGzipBytes, exceeded: gzip > budget.maxGzipBytes };
+  });
+}
+
 export function formatBytes(bytes) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KiB`;
   return `${(bytes / 1024 ** 2).toFixed(2)} MiB`;
 }
 
-export function formatMarkdown(reports) {
+export function formatMarkdown(reports, budgetResults = []) {
   const lines = [];
+  if (budgetResults.length) {
+    lines.push("### Size budgets", "");
+    lines.push("| Budget | Gzip | Limit | Result |", "| --- | ---: | ---: | --- |");
+    for (const result of budgetResults)
+      lines.push(
+        `| ${result.name} | ${formatBytes(result.gzip)} | ${formatBytes(result.maxGzipBytes)} | ${result.exceeded ? "**Over budget**" : "Within budget"} |`,
+      );
+    lines.push("");
+  }
   for (const { root, files, total } of reports) {
     lines.push(`### Bundle sizes: \`${root}\``, "");
     lines.push("| File | Raw | Gzip |", "| --- | ---: | ---: |");
@@ -72,100 +117,28 @@ export function formatMarkdown(reports) {
   return lines.join("\n");
 }
 
-/**
- * The budget's gzip size: level 9 with zlib's default window, memory and strategy, so the size does not follow a
- * change of Node's default level. Node writes no file name and a zero modification time into the gzip header, so
- * the same bytes give the same size on every run with the same zlib.
- */
-export function budgetGzipSize(bytes) {
-  return gzipSync(bytes, {
-    level: 9,
-    windowBits: 15,
-    memLevel: 8,
-    strategy: constants.Z_DEFAULT_STRATEGY,
-  }).length;
-}
-
-const BUDGET_RULE =
-  "A change that legitimately grows an entry raises its ceiling in scripts/bundle-budget.json in the same pull request and says why in the description; one that shrinks an entry by more than the headroom lowers the ceiling.";
-
-/**
- * Checks each budgeted entry's gzip size against its ceiling. `budget.root` is relative to the budget file's
- * repository (its parent's parent), `budget.entries` maps a path inside the root to `{ gzip: ceilingBytes }`.
- */
-export function checkBudget(budget, repoDir) {
-  const problems = [];
-  const rows = [];
-  const entries = Object.entries(budget?.entries ?? {});
-  if (typeof budget?.root !== "string" || !entries.length)
-    throw new Error("Bundle budget needs a root and at least one entry");
-  const root = resolve(repoDir, budget.root);
-  for (const [path, limit] of entries) {
-    const ceiling = limit?.gzip;
-    if (!Number.isSafeInteger(ceiling) || ceiling <= 0) {
-      problems.push(`${path}: the budget has no gzip ceiling for this entry.`);
-      continue;
-    }
-    const file = join(root, path);
-    if (!statSync(file, { throwIfNoEntry: false })?.isFile()) {
-      problems.push(
-        `${path}: not found in ${budget.root}. Build the player first; an entry that was renamed moves its ceiling to the new name.`,
-      );
-      continue;
-    }
-    const gzip = budgetGzipSize(readFileSync(file));
-    const row = { path, gzip, ceiling, delta: gzip - ceiling };
-    rows.push(row);
-    if (gzip > ceiling)
-      problems.push(
-        `${path}: ${gzip} bytes gzip is over its ceiling of ${ceiling} bytes by ${gzip - ceiling} bytes (${formatBytes(gzip)} against ${formatBytes(ceiling)}).`,
-      );
-  }
-  return { rows, problems };
-}
-
-export function formatBudget({ rows, problems }) {
-  const lines = [
-    "### Bundle budget (gzip, level 9)",
-    "",
-    "| Entry | Gzip | Ceiling | Delta |",
-    "| --- | ---: | ---: | ---: |",
-    ...rows.map(
-      ({ path, gzip, ceiling, delta }) =>
-        `| \`${path}\` | ${gzip} B | ${ceiling} B | ${delta > 0 ? "+" : ""}${delta} B |`,
-    ),
-    "",
-  ];
-  if (problems.length)
-    lines.push("Over budget or missing:", ...problems.map((p) => `- ${p}`), "", BUDGET_RULE, "");
-  return lines.join("\n");
-}
-
+/** The report text, and whether any budget was exceeded. */
 export function main(argv) {
-  const budgetIndex = argv.indexOf("--budget");
-  if (budgetIndex >= 0) {
-    const path = argv[budgetIndex + 1];
-    if (!path || path.startsWith("-") || argv.length !== 2)
-      throw new Error("Usage: bundle-report.mjs --budget <budget.json>");
-    const file = resolve(path);
-    const result = checkBudget(
-      JSON.parse(readFileSync(file, "utf8")),
-      resolve(dirname(file), ".."),
-    );
-    const output = formatBudget(result);
-    if (result.problems.length) throw new Error(output);
-    return output;
+  const args = [...argv];
+  let budgetsPath = null;
+  const budgetsAt = args.indexOf("--budgets");
+  if (budgetsAt >= 0) {
+    budgetsPath = args[budgetsAt + 1];
+    if (!budgetsPath || budgetsPath.startsWith("-")) throw new Error("--budgets needs a budget file");
+    args.splice(budgetsAt, 2);
   }
-  const json = argv.includes("--json");
-  const unknown = argv.filter((arg) => arg.startsWith("-") && arg !== "--json");
+  const json = args.includes("--json");
+  const unknown = args.filter((arg) => arg.startsWith("-") && arg !== "--json");
   if (unknown.length) throw new Error(`Unknown option: ${unknown.join(", ")}`);
-  const roots = argv.filter((arg) => !arg.startsWith("-"));
+  const roots = args.filter((arg) => !arg.startsWith("-"));
   const reports = (roots.length ? roots : ["apps/player/dist"]).map(
     measureBundle,
   );
-  return json
-    ? `${JSON.stringify({ reports }, null, 2)}\n`
-    : formatMarkdown(reports);
+  const budgets = budgetsPath ? checkBudgets(reports, readBudgets(budgetsPath)) : [];
+  const text = json
+    ? `${JSON.stringify({ reports, budgets }, null, 2)}\n`
+    : formatMarkdown(reports, budgets);
+  return { text, exceeded: budgets.some((result) => result.exceeded) };
 }
 
 if (
@@ -173,7 +146,12 @@ if (
   import.meta.url === pathToFileURL(resolve(process.argv[1])).href
 ) {
   try {
-    process.stdout.write(main(process.argv.slice(2)));
+    const { text, exceeded } = main(process.argv.slice(2));
+    process.stdout.write(text);
+    if (exceeded) {
+      console.error("A bundle exceeds its size budget (scripts/bundle-budgets.json).");
+      process.exitCode = 1;
+    }
   } catch (error) {
     console.error(error instanceof Error ? error.message : error);
     process.exitCode = 1;

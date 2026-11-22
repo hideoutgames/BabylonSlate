@@ -12,10 +12,12 @@
  * saves); back on, sprites built afterwards batch again. `materialrecords` is off by default too: on, the Scene's graph
  * Materials compile again to read their parameters and literals from a per-Material uniform block (the Material record),
  * so Materials of one shape share a program, an opt-in that awaits a native-GPU proof that the picture is unchanged.
- * Debug only, never saved.
+ * `pairedblurs` is off by default too: on, the ambient occlusion and reflection blurs of each axis draw in one
+ * pass instead of two, a temporary measurement switch that awaits a native-GPU proof and the device Profile, after
+ * which it becomes the only path or is removed. Debug only, never saved.
  */
 export const WORLD_DEBUG_PARTS = [
   "world", "lighting", "shadowtaps", "locallights", "shading", "geometryonce", "geometryoncescissor", "mergedmarches",
-  "spritebatching", "materialrecords",
+  "spritebatching", "materialrecords", "pairedblurs",
 ] as const;
 export type WorldDebugPart = (typeof WORLD_DEBUG_PARTS)[number];

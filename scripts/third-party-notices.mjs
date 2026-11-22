@@ -5,15 +5,17 @@
 // recorded in scripts/third-party-notices/game-packages.json; the player build fails
 // when that list no longer matches its bundle.
 //
-// Writes two files:
+// Writes three files:
 // - apps/editor/public/legal/THIRD-PARTY-NOTICES.txt: what ships in exported games
 //   (the player copies legal/ into every export and Preview Build).
 // - apps/editor/src/lib/third-party-notices.json: everything the editor apps ship,
 //   shown in Manage Account > Application > Third-Party Notices.
+// - apps/desktop/src/third-party-source-links.json: the HTTPS source pages Third-Party
+//   Notices links to, which the desktop app lets the editor open in the system browser.
 //
 // Usage:
-//   node scripts/third-party-notices.mjs           # regenerate both files
-//   node scripts/third-party-notices.mjs --check   # fail when either file is stale
+//   node scripts/third-party-notices.mjs           # regenerate the files
+//   node scripts/third-party-notices.mjs --check   # fail when any file is stale
 //   node scripts/third-party-notices.mjs --from-player-build
 //     # after `pnpm --filter player build`: refresh game-packages.json, then regenerate
 
@@ -26,6 +28,7 @@ const dataDir = path.join(repoRoot, "scripts/third-party-notices");
 
 export const GAME_NOTICES_PATH = "apps/editor/public/legal/THIRD-PARTY-NOTICES.txt";
 export const EDITOR_NOTICES_PATH = "apps/editor/src/lib/third-party-notices.json";
+export const DESKTOP_SOURCE_LINKS_PATH = "apps/desktop/src/third-party-source-links.json";
 export const GAME_PACKAGES_PATH = "scripts/third-party-notices/game-packages.json";
 const PLAYER_BUNDLED_PACKAGES_PATH = "apps/player/dist/bundled-packages.json";
 
@@ -205,6 +208,20 @@ function editorNoticesJson(editorPackages, gameKeys) {
   return `${JSON.stringify({ packages, texts }, null, 1)}\n`;
 }
 
+/** Each listed package's source page, normalized, when it is an HTTPS address. */
+function sourceLinksJson(entries) {
+  const links = new Set();
+  for (const { source } of entries) {
+    try {
+      const url = new URL(source);
+      if (url.protocol === "https:") links.add(url.href);
+    } catch {
+      // Not an address (an SSH remote, say): Third-Party Notices cannot open it either.
+    }
+  }
+  return `${JSON.stringify([...links].sort(), null, 1)}\n`;
+}
+
 /** The generated file contents, keyed by repository-relative path. */
 export function generateThirdPartyNotices() {
   const game = packagesFor("game");
@@ -219,6 +236,7 @@ export function generateThirdPartyNotices() {
   return new Map([
     [GAME_NOTICES_PATH, gameNoticesText(game)],
     [EDITOR_NOTICES_PATH, editorNoticesJson(editor, gameKeys)],
+    [DESKTOP_SOURCE_LINKS_PATH, sourceLinksJson(editor)],
   ]);
 }
 

@@ -180,7 +180,7 @@ describe("Capacitor 8 Android host", () => {
     // Never Capacitor's shared task thread or the read-scope lock: a long transfer would stall every file operation.
     expect(java).toMatch(/public void transferFile\(PluginCall call\)[\s\S]*?transferExecutor\.execute\(/);
     expect(java).not.toMatch(/public void transferFile\(PluginCall call\)[\s\S]*?executeFileOperation\([\s\S]*?public void cancelTransfer/);
-    expect(java).toMatch(/private File documentsFile[\s\S]*?startsWith\("BabylonSlate\/projects\/"\)/);
+    expect(java).toMatch(/private File documentsFile[\s\S]*?startsWith\("Projects\/"\)/);
   });
 
   // The Java cannot be compiled here; these are the wiring contracts a device would show only at runtime.

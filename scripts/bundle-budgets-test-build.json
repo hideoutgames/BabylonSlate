@@ -1,0 +1,28 @@
+{
+  "$comment": "Gzip size budgets for the test-mode bundles every pull request builds (VITE_TEST_MODE=true, base /), checked by the first e2e shard in verify.yml after its browser tests, so a bundle regression fails before merge. Test-mode chunking differs from the production Pages build, which scripts/bundle-budgets.json covers after merge. Each limit is the measured size plus about 10%. When a change grows a bundle on purpose, build as the shard does (`VITE_TEST_MODE=true VITE_BASE_PATH=/ pnpm --filter player exec vite build && VITE_TEST_MODE=true VITE_BASE_PATH=/ pnpm --filter editor exec vite build`), rerun `node scripts/bundle-report.mjs --json --budgets scripts/bundle-budgets-test-build.json apps/player/dist apps/editor/dist`, and set the limit to the new size plus about 10% in the same change.",
+  "budgets": [
+    {
+      "name": "Player JavaScript",
+      "root": "apps/player/dist",
+      "extension": ".js",
+      "measure": "total",
+      "maxGzipBytes": 2850000
+    },
+    {
+      "name": "Editor JavaScript",
+      "root": "apps/editor/dist",
+      "prefix": "assets/",
+      "extension": ".js",
+      "measure": "total",
+      "maxGzipBytes": 7060000
+    },
+    {
+      "name": "Largest editor chunk",
+      "root": "apps/editor/dist",
+      "prefix": "assets/",
+      "extension": ".js",
+      "measure": "largest",
+      "maxGzipBytes": 515000
+    }
+  ]
+}

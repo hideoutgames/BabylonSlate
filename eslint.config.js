@@ -319,6 +319,7 @@ export default defineConfig(
       "apps/docs/.vitepress/dist",
       "apps/player/dist",
       "apps/editor/dist",
+      "apps/desktop/dist",
       // Vendored decoder builds: no rule applies to them, and parsing them costs seconds per run.
       "apps/editor/public/basis/basis_encoder.js",
       "apps/editor/public/draco/draco_wasm_wrapper_gltf.js",
@@ -330,7 +331,7 @@ export default defineConfig(
   {
     ...js.configs.recommended,
     // Node tooling: root scripts plus app-local scripts (apps/*/scripts).
-    files: ["**/scripts/**/*.mjs", "eslint.config.js"],
+    files: ["**/scripts/**/*.mjs", "eslint.config.js", "eslint.promises.config.js"],
     languageOptions: { globals: globals.node },
   },
   {

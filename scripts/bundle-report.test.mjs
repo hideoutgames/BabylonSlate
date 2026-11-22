@@ -4,7 +4,6 @@ import { spawnSync } from "node:child_process";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { gzipSync } from "node:zlib";
 
 const script = join(import.meta.dirname, "bundle-report.mjs");
 
@@ -65,66 +64,72 @@ test("a missing build directory fails instead of reporting an empty bundle", () 
   assert.match(result.stderr, /Bundle directory not found/);
 });
 
-/** A repository with a budget at scripts/bundle-budget.json and two built entries under dist/. */
-async function budgetFixture(t, entries) {
-  const repo = await mkdtemp(join(tmpdir(), "bundle-budget-"));
-  t.after(() => rm(repo, { recursive: true, force: true }));
-  await mkdir(join(repo, "scripts"));
-  await mkdir(join(repo, "dist"));
-  // Text that compresses, but not to almost nothing.
-  const page = Buffer.from(Array.from({ length: 3000 }, (_, i) => `const v${i} = ${(i * 7919) % 1000};\n`).join(""));
-  const worker = Buffer.from(Array.from({ length: 500 }, (_, i) => `self.w${i} = ${(i * 104729) % 977};\n`).join(""));
-  await writeFile(join(repo, "dist", "player.js"), page);
-  await writeFile(join(repo, "dist", "worker-entry.js"), worker);
-  // The budget's measure, computed here with plain zlib: gzip level 9.
-  const size = { page: gzipSync(page, { level: 9 }).length, worker: gzipSync(worker, { level: 9 }).length };
-  const budget = join(repo, "scripts", "bundle-budget.json");
-  await writeFile(budget, JSON.stringify({ root: "dist", entries: entries(size) }));
-  return { budget, size };
+async function budgetFile(t, budgets) {
+  const dir = await mkdtemp(join(tmpdir(), "bundle-budgets-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const path = join(dir, "budgets.json");
+  await writeFile(path, JSON.stringify({ budgets }));
+  return path;
 }
 
-test("the budget passes at or under each ceiling and reports size, ceiling and delta", async (t) => {
-  const { budget, size } = await budgetFixture(t, (s) => ({
-    "player.js": { gzip: s.page },
-    "worker-entry.js": { gzip: s.worker + 50 },
-  }));
-  const result = report("--budget", budget);
+test("budgets measure the matching files' gzip total or largest file and pass within their limits", async (t) => {
+  const dir = await fixture(t);
+  await writeFile(join(dir, "assets", "other.js"), "b".repeat(1024));
+  await writeFile(join(dir, "root.js"), "c".repeat(8192));
+  const budgets = await budgetFile(t, [
+    { name: "Assets JS", root: dir, prefix: "assets/", extension: ".js", measure: "total", maxGzipBytes: 1_000_000 },
+    { name: "Largest JS", root: dir, extension: ".js", measure: "largest", maxGzipBytes: 1_000_000 },
+  ]);
+  const result = report("--json", "--budgets", budgets, dir);
   assert.equal(result.status, 0, result.stderr);
-  assert.ok(result.stdout.includes(`| \`player.js\` | ${size.page} B | ${size.page} B | 0 B |`), result.stdout);
-  assert.ok(result.stdout.includes(`| \`worker-entry.js\` | ${size.worker} B | ${size.worker + 50} B | -50 B |`), result.stdout);
+  const { reports, budgets: checked } = JSON.parse(result.stdout);
+  const gzip = Object.fromEntries(reports[0].files.map((file) => [file.path, file.gzip]));
+  // root.js is outside the assets/ prefix, and the wasm file has another extension.
+  assert.deepEqual(checked, [
+    { name: "Assets JS", gzip: gzip["assets/index.js"] + gzip["assets/other.js"], maxGzipBytes: 1_000_000, exceeded: false },
+    {
+      name: "Largest JS",
+      gzip: Math.max(gzip["assets/index.js"], gzip["assets/other.js"], gzip["root.js"]),
+      maxGzipBytes: 1_000_000,
+      exceeded: false,
+    },
+  ]);
+  const markdown = report("--budgets", budgets, dir);
+  assert.equal(markdown.status, 0, markdown.stderr);
+  assert.match(markdown.stdout, /\| Assets JS \| .+ \| 976\.6 KiB \| Within budget \|/);
 });
 
-test("an entry over its ceiling fails with its size, ceiling, delta and the update rule", async (t) => {
-  const { budget, size } = await budgetFixture(t, (s) => ({
-    "player.js": { gzip: s.page - 1 },
-    "worker-entry.js": { gzip: s.worker },
-  }));
-  const result = report("--budget", budget);
-  assert.notEqual(result.status, 0);
-  assert.ok(
-    result.stderr.includes(`player.js: ${size.page} bytes gzip is over its ceiling of ${size.page - 1} bytes by 1 bytes`),
-    result.stderr,
-  );
-  assert.doesNotMatch(result.stderr, /worker-entry\.js: .* over/);
-  assert.match(result.stderr, /raises its ceiling in scripts\/bundle-budget\.json in the same pull request/);
+test("a bundle over its budget still prints the whole report and fails", async (t) => {
+  const dir = await fixture(t);
+  const budgets = await budgetFile(t, [{ name: "Wasm", root: dir, extension: ".wasm", measure: "total", maxGzipBytes: 1 }]);
+  const result = report("--budgets", budgets, dir);
+  assert.equal(result.status, 1);
+  assert.match(result.stdout, /\| Wasm \| .+ \| 1 B \| \*\*Over budget\*\* \|/);
+  assert.match(result.stdout, /\*\*Total \(3 files\)\*\*/);
+  assert.match(result.stderr, /exceeds its size budget/);
 });
 
-test("a missing entry file or a missing ceiling fails instead of passing unchecked", async (t) => {
-  const renamed = report(
-    "--budget",
-    (await budgetFixture(t, (s) => ({ "player.js": { gzip: s.page }, "worker-renamed.js": { gzip: s.worker } }))).budget,
-  );
-  assert.notEqual(renamed.status, 0);
-  assert.match(renamed.stderr, /worker-renamed\.js: not found in dist/);
+test("a budget for an unmeasured directory, matching no file, or malformed fails instead of passing", async (t) => {
+  const dir = await fixture(t);
+  const cases = [
+    [[{ name: "Elsewhere", root: join(dir, "missing"), extension: ".js", measure: "total", maxGzipBytes: 10 }], /was not measured/],
+    [[{ name: "CSS", root: dir, extension: ".css", measure: "total", maxGzipBytes: 10 }], /matches no file/],
+    [[{ name: "Unknown measure", root: dir, extension: ".js", measure: "average", maxGzipBytes: 10 }], /Invalid budget/],
+    [[], /No budgets/],
+  ];
+  for (const [budgets, message] of cases) {
+    const result = report("--budgets", await budgetFile(t, budgets), dir);
+    assert.equal(result.status, 1, JSON.stringify(budgets));
+    assert.equal(result.stdout, "");
+    assert.match(result.stderr, message);
+  }
+  assert.match(report(dir, "--budgets").stderr, /needs a budget file/);
+});
 
-  const unbudgeted = report(
-    "--budget",
-    (await budgetFixture(t, (s) => ({ "player.js": { gzip: s.page }, "worker-entry.js": {} }))).budget,
-  );
-  assert.notEqual(unbudgeted.status, 0);
-  assert.match(unbudgeted.stderr, /worker-entry\.js: the budget has no gzip ceiling/);
-
-  const none = report("--budget", (await budgetFixture(t, () => ({}))).budget);
-  assert.notEqual(none.status, 0);
-  assert.match(none.stderr, /at least one entry/);
+test("the committed Pages and test-build budgets are well formed and name the directories their workflows measure", async () => {
+  const { readBudgets } = await import("./bundle-report.mjs");
+  for (const file of ["bundle-budgets.json", "bundle-budgets-test-build.json"]) {
+    const budgets = readBudgets(join(import.meta.dirname, file));
+    assert.deepEqual([...new Set(budgets.map((budget) => budget.root))].sort(), ["apps/editor/dist", "apps/player/dist"], file);
+  }
 });

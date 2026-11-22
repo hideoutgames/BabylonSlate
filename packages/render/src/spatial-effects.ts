@@ -24,6 +24,9 @@ import {
 import { volumetricShader, volumetricSource } from "./volumetric-shader";
 import { ambientOcclusionBlurShader, ambientOcclusionShader, ambientOcclusionSource } from "./ambient-occlusion-shader";
 import type { MergedMarch } from "./merged-marches";
+import {
+  PAIRED_BLUR_SAMPLERS, PAIRED_BLUR_UNIFORMS, PAIRED_OCCLUSION_SAMPLER, pairedBlurName, pairedBlurShader, reflectionBlurOffset,
+} from "./paired-blurs";
 import { bindHapticLights } from "./haptic-lights";
 import { shadowAtlasTexture } from "./shadow-atlas";
 import { spatialComposeShader } from "./spatial-compose-shader";
@@ -54,8 +57,15 @@ class PreparedSSR extends ThinSSRPostProcess {
 export interface SpatialStage {
   /** Its pass's name and its target's. */
   name: string;
-  /** Its own pass's Effect: none for a march the merged pass draws (`march`). */
+  /** Its own pass's Effect: none for a march the merged pass draws (`march`) or a blur a paired pass draws (`paired`). */
   wrapper?: EffectWrapper;
+  /**
+   * An ambient occlusion blur drawn by a later stage's pass, the reflection blur of its axis, as that pass's second
+   * colour attachment (`paired-blurs.ts`), instead of in a pass of its own: its target, scale and format are its own.
+   */
+  paired?: boolean;
+  /** The `paired` stages, by index, whose targets this stage's pass also writes, as colour attachments 1 on. */
+  attachments?: number[];
   /**
    * A half-resolution march drawn by the Screen-Space Shadows pass beside their own march, into its own target
    * (`merged-marches.ts`), instead of in a pass of its own: its shader's parts and its program's inputs.
@@ -169,9 +179,10 @@ export function liveSceneEffectsKey(
   if (!camera || !hasSpatialEffects(plan)) return state.effectsKey;
   const size = camera.outputRenderTarget?.getSize();
   const engine = scene.getEngine();
-  // The geometry repeat (`geometryRepeat`) adds a task and its targets, and `worlddebug mergedmarches` merges the
-  // half-resolution marches into one pass or not: the graph builds again with them or without them.
-  return `${state.effectsKey}:${camera.uniqueId}:${camera.mode}:${size?.width ?? engine.getRenderWidth(true)}x${size?.height ?? engine.getRenderHeight(true)}:${resolveSceneRenderingQuality(scene).postprocessing.resolutionScale}:${geometryRepeat(scene)}:${worldDebugOff(scene, "mergedmarches") ? "separate" : "merged"}`;
+  // The geometry repeat (`geometryRepeat`) adds a task and its targets, `worlddebug mergedmarches` merges the
+  // half-resolution marches into one pass or not, and `worlddebug pairedblurs` pairs the blurs or not: the graph builds
+  // again with them or without them.
+  return `${state.effectsKey}:${camera.uniqueId}:${camera.mode}:${size?.width ?? engine.getRenderWidth(true)}x${size?.height ?? engine.getRenderHeight(true)}:${resolveSceneRenderingQuality(scene).postprocessing.resolutionScale}:${geometryRepeat(scene)}:${worldDebugOff(scene, "mergedmarches") ? "separate" : "merged"}:${worldDebugOff(scene, "pairedblurs") ? "separate" : "paired"}`;
 }
 
 type VolumetricPlan = NonNullable<SceneEffectsPlan["volumetricLighting"]>;
@@ -259,6 +270,11 @@ export function createSpatialStages(
    * occlusion and volumetric marches whose own target has exactly this size are then `march` stages, with no Effect.
    */
   mergedMarchSize?: { width: number; height: number },
+  /**
+   * `worlddebug pairedblurs on`: the ambient occlusion and reflection blurs of each axis draw in one pass when their
+   * targets are the same size (`paired-blurs.ts`).
+   */
+  pairBlurs = false,
 ): SpatialStage[] {
   if (spatialEffectsUnsupported(scene)) return [];
   const stages: SpatialStage[] = [];
@@ -275,6 +291,15 @@ export function createSpatialStages(
     Math.max(1, Math.round(width * scale)) === mergedMarchSize.width &&
     Math.max(1, Math.round(height * scale)) === mergedMarchSize.height;
   const reflections = plan.reflections;
+  /** A stage target's size at `scale` (`SpatialEffectsGraph`'s rounding). */
+  const targetSize = (scale: number) => `${Math.max(1, Math.round(width * scale))}x${Math.max(1, Math.round(height * scale))}`;
+  // The blurs pair only where both targets have one size on both axes, and only on WebGL: under WebGPU Babylon's own
+  // reflection blur is WGSL, which the GLSL paired program would not reproduce.
+  const paired = pairBlurs && !!plan.ambientOcclusion && !!reflections && !engine.isWebGPU &&
+    targetSize(Math.max(0.25, plan.ambientOcclusion.resolutionScale * quality)) ===
+    targetSize(Math.max(0.25, reflections.resolutionScale * quality));
+  /** The paired occlusion blurs' stage indices, and what each reads, by axis. */
+  const occlusionBlurs: Partial<Record<"X" | "Y", { stage: number; input: number }>> = {};
   // The one compose's inputs, which each effect adds: earlier stages' outputs, samplers, uniforms and their binding.
   const reads: Record<string, number> = {};
   const composeSamplers = ["depthSampler"];
@@ -326,6 +351,20 @@ export function createSpatialStages(
         },
       });
       for (const [axis, x, y] of [["X", texelWidth, 0], ["Y", 0, texelHeight]] as const) {
+        if (paired) {
+          // Drawn by the reflection blur of its axis (`paired-blurs.ts`), which binds its step; it reads the stage
+          // before it, as its own pass would.
+          occlusionBlurs[axis] = { stage: stages.length, input: stages.length - 1 };
+          stages.push({
+            name: `Scene Ambient Occlusion Blur ${axis}`,
+            paired: true,
+            scale,
+            format: Constants.TEXTUREFORMAT_R,
+            geometry: true,
+            bind: (effect) => effect.setFloat2("aoBlurStep", x, y),
+          });
+          continue;
+        }
         const blur = own(
           customWrapper(
             scene,
@@ -378,6 +417,30 @@ export function createSpatialStages(
         ["X", new Vector2(1, 0)],
         ["Y", new Vector2(0, 1)],
       ] as const) {
+        const pair = occlusionBlurs[axis];
+        if (pair) {
+          // One pass for this axis's two blurs (`paired-blurs.ts`): it reads the stage before it (the trace, then the
+          // X blur) as Babylon's blur does, and the occlusion blur's input as its own pass would (bilinear, as a source).
+          const wrapper = own(customWrapper(scene, pairedBlurName(axis), pairedBlurShader(), [...PAIRED_BLUR_UNIFORMS],
+            [...PAIRED_BLUR_SAMPLERS], failure));
+          const occlusionBlur = stages[pair.stage]!;
+          const [offsetX, offsetY] = reflectionBlurOffset(Math.max(1, Math.round(width * scale)),
+            Math.max(1, Math.round(height * scale)), direction);
+          stages.push({
+            name: `Scene Reflections Blur ${axis}`,
+            wrapper,
+            scale,
+            // The occlusion blur reads the view depth.
+            geometry: true,
+            reads: { [PAIRED_OCCLUSION_SAMPLER]: pair.input },
+            attachments: [pair.stage],
+            bind: (effect) => {
+              occlusionBlur.bind(effect);
+              effect.setFloat2("texelOffsetScale", offsetX, offsetY);
+            },
+          });
+          continue;
+        }
         const blur = own(
           new ThinSSRBlurPostProcess(
             `Scene Reflections Blur ${axis}`,

@@ -147,9 +147,19 @@ ${last(`${v4}(visibility, visibility, visibility, 1.0)`)}
  * occlusion texel along the blur axis; taps across a depth edge are rejected.
  */
 export function ambientOcclusionBlurShader(): string {
-  const { v2, v4, f, uv, u, decl, field, texture, sample, loop, output, main } = syntax();
+  const { header, body } = ambientOcclusionBlurSource();
+  return header + syntax().main(body);
+}
+
+/**
+ * The blur in parts, its declarations and main's body: it reads the occlusion from `source` and ends with `last` (its
+ * own pass's `gl_FragColor = value; return;` unless the paired blur pass gives its own, `paired-blurs.ts`).
+ */
+export function ambientOcclusionBlurSource(source = "textureSampler", last?: (value: string) => string): { header: string; body: string } {
+  const { v2, v4, f, uv, u, decl, field, texture, sample, loop, output } = syntax();
+  const end = last ?? output;
   const header = `varying vec2 vUV;
-${texture("textureSampler")}${texture("depthSampler")}${field(v2, "aoBlurStep")}
+${texture(source)}${texture("depthSampler")}${field(v2, "aoBlurStep")}
 `;
   const body = `
 ${decl(f, "centerDepth", `abs(${sample("depthSampler", uv)}.r)`)}
@@ -159,11 +169,11 @@ ${loop("i", -4, 5)} {
   ${decl(v2, "tap", `${uv} + ${u("aoBlurStep")} * ${f}(i)`)}
   ${decl(f, "tapDepth", `abs(${sample("depthSampler", "tap")}.r)`)}
   ${decl(f, "weight", `exp(-${f}(i * i) / 8.0) / (1.0 + 50.0 * abs(tapDepth - centerDepth) / max(centerDepth, 0.1))`)}
-  total += ${sample("textureSampler", "tap")}.r * weight;
+  total += ${sample(source, "tap")}.r * weight;
   weights += weight;
 }
 ${decl(f, "visibility", "total / max(weights, 0.000001)")}
-${output(`${v4}(visibility, visibility, visibility, 1.0)`)}
+${end(`${v4}(visibility, visibility, visibility, 1.0)`)}
 `;
-  return header + main(body);
+  return { header, body };
 }

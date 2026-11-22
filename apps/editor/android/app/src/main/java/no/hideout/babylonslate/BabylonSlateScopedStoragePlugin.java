@@ -313,11 +313,11 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
 
     /**
      * A file in app storage as `documents-adapter.ts` names it, in Capacitor's directory for it:
-     * `DATA` projects under `BabylonSlate/projects/`, `LIBRARY` app data under `Haptic/`; both in
+     * `DATA` projects under `Projects/`, `LIBRARY` app data under `Haptic/`; both in
      * filesDir, never outside it after resolving links.
      */
     private File appStorageFile(String directory, String rawPath) throws Exception {
-        String prefix = "DATA".equals(directory) ? "BabylonSlate/projects/" : "LIBRARY".equals(directory) ? "Haptic/" : null;
+        String prefix = "DATA".equals(directory) ? "Projects/" : "LIBRARY".equals(directory) ? "Haptic/" : null;
         if (prefix == null) throw new PluginFailure("Invalid app storage directory", "UNREACHABLE");
         String path = validatePath(rawPath, false);
         if (!path.startsWith(prefix)) throw new PluginFailure("Invalid app storage path", "UNREACHABLE");
@@ -1124,7 +1124,7 @@ public class BabylonSlateScopedStoragePlugin extends Plugin {
     private File documentsFile(PluginCall call) throws Exception {
         if (!"DATA".equals(call.getString("directory"))) throw new PluginFailure("Invalid Documents directory", "UNREACHABLE");
         String path = path(call, false);
-        if (!path.startsWith("BabylonSlate/projects/") || path.split("/").length < 4) throw new PluginFailure("Invalid Documents path", "UNREACHABLE");
+        if (!path.startsWith("Projects/") || path.split("/").length < 4) throw new PluginFailure("Invalid Documents path", "UNREACHABLE");
         File root = getContext().getFilesDir().getCanonicalFile();
         File target = new File(root, path).getCanonicalFile();
         if (!target.getPath().startsWith(root.getPath() + File.separator)) throw new PluginFailure("Path escapes project root", "UNREACHABLE");
