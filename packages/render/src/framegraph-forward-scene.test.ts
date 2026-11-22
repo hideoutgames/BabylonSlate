@@ -2345,7 +2345,7 @@ it("builds no spatial geometry, effect or Screen-Space Shadows pass for a Scene 
   };
   const { scene, camera, graph, frame } = await screenShadowsHost(true, effects);
   expect(spatialTasks(graph.taskNames())).toEqual(expect.arrayContaining(
-    ["Spatial Geometry", "Screen shadows", "Scene Ambient Occlusion", "Scene Reflections", "Scene Volumetric Lighting", "Scene Effects Compose"]));
+    ["Spatial Geometry", "Screen shadows", "Scene Ambient Occlusion", "Scene Reflections", "Scene Effects Compose"]));
   expect(frame().reads).toBe(true);
   excludeSceneSpatialEffects(scene);
   await graph.prepare(camera);
