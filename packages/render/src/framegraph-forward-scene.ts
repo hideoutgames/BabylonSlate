@@ -669,6 +669,12 @@ export class ForwardSceneFrameGraph {
     };
     this.drawableChanges = openRenderChangeReader(scene, RenderChange.Enabled | RenderChange.Visibility | RenderChange.Geometry);
     watch(scene.onNewMeshAddedObservable, (mesh) => {
+      // Babylon announces an added mesh on a later task: one that left the Scene before then (a visual replaced or
+      // despawned in the frame it was made) was removed already, and following it would keep it for the session.
+      if (mesh.isDisposed() || scene.meshes.indexOf(mesh) < 0) {
+        this.foundBeforeAnnounced.delete(mesh);
+        return;
+      }
       this.watchMesh(mesh);
       this.followDrawable(mesh);
       // Babylon announces an added mesh on a later task: a frame drawn before then found it by the Scene's mesh count
