@@ -22,11 +22,12 @@ type Presentation = {
   /** Whether this view may show the Engine canvas directly while it is the sole view (absent: it may). */
   allowDirect?: () => boolean;
   /**
-   * Whether a coherent frame shown directly is also copied into the view's held image (absent: it is). False (debug,
-   * `heldimage off`) skips the copy and drops the held image, so a later incoherent frame has nothing to put back and
-   * the view's own canvas shows through until the next coherent one.
+   * Whether the view holds its image lazily while shown directly (absent: it does not). A coherent frame is then not
+   * copied into the held image: the context preserves its drawing buffer, which keeps the shown image, and the owner
+   * calls `holdPresentedImage` before it writes a frame it will not present over it. A resize holds it by itself. Only
+   * a context that preserves its drawing buffer holds lazily; any other copies every coherent frame.
    */
-  holdsImage?: () => boolean;
+  holdsLazily?: () => boolean;
 };
 const presenters = new WeakMap<AbstractEngine, {
   views: Map<EngineView, Presentation>;
@@ -52,13 +53,36 @@ type DirectPresenter = {
   active: boolean;
   /** Inside a view step, which resizes and redraws by itself. */
   inStep: boolean;
+  /**
+   * The covered view whose shown image only the default framebuffer holds (its last presented frame was held lazily),
+   * or null. Its held image, once taken, is that image until the view presents again.
+   */
+  shownLazily: EngineView | null;
 };
 
 function createDirectPresenter(engine: AbstractEngine, storeFactory: (engine: AbstractEngine) => HeldImageStore | null): DirectPresenter | null {
   const source = engine.getRenderingCanvas();
   const store = source ? storeFactory(engine) : null;
   if (!source || !store) return null;
-  return { store, placement: createEngineCanvasPlacement(source, () => engine.isDisposed), active: false, inStep: false };
+  return { store, placement: createEngineCanvasPlacement(source, () => engine.isDisposed), active: false, inStep: false, shownLazily: null };
+}
+
+/** The covered view's shown image, while only the default framebuffer holds it and it is not held yet; else null. */
+function unheldShownImage(direct: DirectPresenter): EngineView | null {
+  const view = direct.shownLazily;
+  return view && direct.placement.view === view && !direct.store.size(view) ? view : null;
+}
+
+/**
+ * Before the owner of a lazily holding view (`Presentation.holdsLazily`) writes into the default framebuffer a frame it
+ * will not present (one it holds back): copies the shown image, which the buffer still holds, into the view's held
+ * image, so the step puts it back. Nothing is done when the view is not shown directly, or its image is already held.
+ */
+export function holdPresentedImage(engine: AbstractEngine, view: EngineView): void {
+  const direct = presenters.get(engine)?.direct;
+  const source = engine.getRenderingCanvas();
+  if (!direct || unheldShownImage(direct) !== view || !source?.width || !source.height) return;
+  direct.store.snapshot(view, source.width, source.height);
 }
 
 /**
@@ -107,16 +131,18 @@ function retainPresentation(engine: AbstractEngine, view: EngineView, presentati
     const views = new Map<EngineView, Presentation>();
     const direct = createDirectPresenter(engine, heldImageStoreFactory);
     /** Hand a view's held image to its own 2D canvas so it keeps its last frame without the Engine canvas. */
-    const freeze = (current: EngineView) => {
-      const size = direct?.store.size(current);
+    const freeze = (current: EngineView, inBuffer = direct !== null && unheldShownImage(direct) === current) => {
       const source = engine.getRenderingCanvas();
+      if (!direct || !source?.width || !source.height) return;
+      // Held lazily and not held since (`inBuffer`): the preserved drawing buffer is the shown image.
+      const size = inBuffer ? { width: source.width, height: source.height } : direct.store.size(current);
       const target = current.target;
-      const context = target.getContext("2d", VIEW_CANVAS_2D_ATTRIBUTES);
-      if (!direct || !size || !source?.width || !source.height || !context) return;
+      const context = size ? target.getContext("2d", VIEW_CANVAS_2D_ATTRIBUTES) : null;
+      if (!size || !context) return;
       // A store with nothing to hand over leaves the view canvas what it had.
-      if (!direct.store.restore(current, source.width, source.height)) return;
+      if (!inBuffer && !direct.store.restore(current, source.width, source.height)) return;
       engine.flushFramebuffer();
-      // The restore fills the canvas with the held image, scaled.
+      // The canvas holds the shown image, scaled.
       if (target.width !== size.width) target.width = size.width;
       if (target.height !== size.height) target.height = size.height;
       if (current.clearBeforeCopy) context.clearRect(0, 0, size.width, size.height);
@@ -126,6 +152,8 @@ function retainPresentation(engine: AbstractEngine, view: EngineView, presentati
       if (!direct || direct.placement.view !== current) return;
       if (keepImage) freeze(current);
       direct.placement.vacate();
+      // What the buffer shows next is no longer this view's.
+      if (direct.shownLazily === current) direct.shownLazily = null;
     };
     /** Each view's read sync (`freeze`), made once rather than on every frame it is shown. */
     const syncs = new WeakMap<EngineView, () => void>();
@@ -134,7 +162,9 @@ function retainPresentation(engine: AbstractEngine, view: EngineView, presentati
       if (!direct) return;
       let sync = syncs.get(current);
       if (!sync) syncs.set(current, (sync = () => freeze(current)));
-      if (!direct.placement.show(current, sync)) freeze(current);
+      // Read before a failed cover vacates the placement.
+      const inBuffer = direct.shownLazily === current && !direct.store.size(current);
+      if (!direct.placement.show(current, sync)) freeze(current, inBuffer);
     };
     const leaveDirect = () => {
       if (!direct?.active) return;
@@ -143,6 +173,7 @@ function retainPresentation(engine: AbstractEngine, view: EngineView, presentati
       direct.placement.park();
       // Copy steps keep the view canvases current; held images would go stale.
       direct.store.clear();
+      direct.shownLazily = null;
       direct.active = false;
     };
     const renderView = function (this: AbstractEngine, current: EngineView): boolean {
@@ -194,8 +225,14 @@ function retainPresentation(engine: AbstractEngine, view: EngineView, presentati
           const coherent = host.canCopy();
           const started = performance.now();
           if (coherent) {
-            if (host.holdsImage?.() !== false) direct.store.snapshot(current, source.width, source.height);
-            else direct.store.release(current);
+            if (direct.store.preserved && host.holdsLazily?.() === true) {
+              // The preserved drawing buffer keeps the shown image; it is copied only before a write that hides it.
+              direct.store.forget(current);
+              direct.shownLazily = current;
+            } else {
+              direct.store.snapshot(current, source.width, source.height);
+              direct.shownLazily = null;
+            }
             // The view canvas keeps the presented image's dimensions; it is drawn into only when it stops being covered.
             if (canvas.width !== source.width) canvas.width = source.width;
             if (canvas.height !== source.height) canvas.height = source.height;
@@ -208,6 +245,10 @@ function retainPresentation(engine: AbstractEngine, view: EngineView, presentati
             direct.placement.follow();
           } else if (direct.store.restore(current, source.width, source.height)) {
             // An incoherent frame: put the last coherent image back before the browser presents.
+            show(current);
+          } else if (direct.shownLazily === current && direct.placement.view === current) {
+            // Held lazily, and the frame wrote over the shown image before it was found incoherent (the world view's
+            // readiness changed during its draw), so nothing was held: it shows, a whole frame drawn as the next would be.
             show(current);
           } else {
             // Nothing coherent yet: let the view canvas show through.
@@ -237,6 +278,10 @@ function retainPresentation(engine: AbstractEngine, view: EngineView, presentati
     const sizeDescriptor = Object.getOwnPropertyDescriptor(engine, "setSize");
     const setSize = engine.setSize;
     const resizeWhileCovering = function (this: AbstractEngine, width: number, height: number, forceSetSize?: boolean): boolean {
+      // A resize reallocates (clears) the default framebuffer: a shown image only it holds is held first, in a step too.
+      const before = this.getRenderingCanvas();
+      const unheld = direct ? unheldShownImage(direct) : null;
+      if (unheld && before && (before.width !== width || before.height !== height)) direct!.store.snapshot(unheld, before.width, before.height);
       const changed = setSize.call(this, width, height, forceSetSize);
       const covered = direct?.placement.view;
       if (direct && covered && !direct.inStep) {
@@ -250,6 +295,7 @@ function retainPresentation(engine: AbstractEngine, view: EngineView, presentati
     const lost = direct ? engine.onContextLostObservable.add(() => {
       direct.placement.vacate();
       direct.store.clear(true);
+      direct.shownLazily = null;
       direct.active = false;
     }) : null;
     owner = { views, direct, release: () => {
@@ -275,6 +321,7 @@ function retainPresentation(engine: AbstractEngine, view: EngineView, presentati
         if (!engine.isDisposed) freeze(released);
         direct.placement.park();
       }
+      if (direct.shownLazily === released) direct.shownLazily = null;
       direct.store.release(released);
     } };
     presenters.set(engine, owner);

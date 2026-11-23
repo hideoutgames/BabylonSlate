@@ -7,11 +7,15 @@ type WebGlEngine = AbstractEngine & {
 };
 
 /**
- * Debug (`backbufferdiscard on`): tells the driver the backbuffer's depth and stencil are not needed after this frame,
- * so a tile-based GPU need not store them when the backbuffer's pass ends (the context keeps its drawing buffer, depth
- * and stencil included, between frames otherwise). It must run while the backbuffer is still the bound framebuffer and
- * its pass is open: right after the frame's last draw into it, before anything binds another framebuffer. Their
- * contents are undefined afterwards, so every later frame must clear them before it reads them.
+ * Tells the driver the backbuffer's depth and stencil are not needed after this frame, so a tile-based GPU need not
+ * store them when the backbuffer's pass ends (the context preserves its drawing buffer, depth and stencil included,
+ * between frames otherwise). Play calls it after each presented frame whose Scene Layers cleared depth and stencil
+ * before they read them. It must run while the backbuffer is still the bound framebuffer and its pass is open: right
+ * after the frame's last draw into it, before anything binds another framebuffer. Their contents are undefined
+ * afterwards, so every later reader clears them first in its own frame: a layer drawn over the world (the world output
+ * pass's merged clear, or the layer's own; `backbuffer-depth-tracker.ts` leaves a clear out only after one in the same
+ * frame), a loading frame (its full clear), the editor's views (their own clears); the shared layer stack's composite
+ * tests no depth.
  *
  * False, and nothing done, on WebGL1 or while Babylon has another framebuffer bound.
  */

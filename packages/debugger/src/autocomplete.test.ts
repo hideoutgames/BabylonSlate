@@ -80,7 +80,6 @@ describe("suggestConsoleCompletions", () => {
     ]);
     expect(suggestConsoleCompletions("he", registry.list())).toEqual([
       "heal",
-      "heldimage",
       "help",
     ]);
   });

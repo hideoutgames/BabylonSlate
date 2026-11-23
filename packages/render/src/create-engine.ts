@@ -26,7 +26,7 @@ import { FakeAudioPlaybackBackend } from "./audio-playback-backend";
 import { BabylonAudioPlaybackBackend } from "./babylon-audio-backend";
 import { createRttCanvasPresent } from "./rtt-canvas-present";
 import { directViewPresentationAllowed } from "./direct-view-presentation";
-import { admitRegisteredViewFrames, registeredViewIsEnabled, retainOffscreenFrameDispatch, setRegisteredViewEnabled, VIEW_CANVAS_2D_ATTRIBUTES, viewCanvasHasLayoutBox, viewPresentedDirectly } from "./registered-view-admission";
+import { admitRegisteredViewFrames, holdPresentedImage, registeredViewIsEnabled, retainOffscreenFrameDispatch, setRegisteredViewEnabled, VIEW_CANVAS_2D_ATTRIBUTES, viewCanvasHasLayoutBox, viewPresentedDirectly } from "./registered-view-admission";
 import { configureCutoutSorting, configureEditorRenderingGroups } from "./sorting";
 import { nodeMaterialTexturesSampleReady } from "./material-compiler";
 import { hasFogVolumes, removeFogVolumes, upsertFogVolumes } from "./fog-volumes";
@@ -843,10 +843,6 @@ function initializeEngine(
     if (worldLoading || pendingPresentations.size > 0 || hasPendingOwners() || performanceFeed.active || frameReportFeed.active ||
       presentedImageRequests.length > 0) scheduler.noteActivity();
   };
-  /** Debug (`backbufferdiscard`): whether Play invalidates the backbuffer's depth and stencil after its last draw of a frame. */
-  let backbufferDiscard = false;
-  /** Debug (`heldimage`): whether each frame Play presents directly is copied into its held image. */
-  let heldImage = true;
   /** Debug (`renderreset idle`): until then the view renders nothing, so the GPU idles with no resource changed. */
   let idleUntil = 0;
   const shouldRenderFrame = (now: number, loadingFrame?: boolean) => {
@@ -895,8 +891,8 @@ function initializeEngine(
       // A session created with `presentViewsDirectly` presents directly (the editor's project Engine, the exported
       // player's and Preview Build's); an Engine this view created for itself keeps copying into its view canvas.
       allowDirect: () => directViewPresentationAllowed(engine),
-      // Debug (`heldimage off`): Play, which draws every frame, skips the copy of each presented frame.
-      holdsImage: () => heldImage || !options.playMode,
+      // Play, which draws every frame, holds its image only before a frame it holds back (`holdPresentedImage` below).
+      holdsLazily: () => options.playMode === true,
       copied: (milliseconds) => {
         presentationStats.copyMs = milliseconds;
         acknowledgeFrameCopy(undefined, pendingPerformanceReceipt, milliseconds);
@@ -1305,10 +1301,6 @@ function initializeEngine(
       "layers.clears": sceneLayerCompositor?.depthClears === false ? "off" : "on",
       // Whether a layer leaves out a depth-stencil clear the backbuffer already holds (`layerdebug skipclears`).
       "layers.skipclears": sceneLayerCompositor?.skipClears === false ? "off" : "on",
-      // Whether each frame Play presents directly is copied into its held image (`heldimage`).
-      "presentation.held": heldImage ? "on" : "off",
-      // Whether Play invalidates the backbuffer's depth and stencil at the end of each frame (`backbufferdiscard`).
-      "backbuffer.depth": backbufferDiscard ? "discarded" : "kept",
     };
   };
   // `postprocessing off` stops drawing the post-processing passes' programs and the Material variants they draw; they
@@ -2548,6 +2540,8 @@ function initializeEngine(
     }) : null;
     admissionPreparationMs = 0;
     let coherentFrame = true;
+    /** Whether the world view's graph ran this frame, its output pass writing into the backbuffer. */
+    let worldDrewOutput = false;
     /** Why the world made this frame incoherent, for `heldFrames`. */
     let holdReason: string | undefined;
     beginEngineDrawCallFrame(engine);
@@ -2671,6 +2665,7 @@ function initializeEngine(
           ? frameScope.capture.stage(scene, { name: "World output", kind: "composition", sceneId: lastSceneAssetGuid },
             () => worldRenderer.render(true))
           : worldRenderer.render(pendingPresentations.has("world"));
+        worldDrewOutput = result.drewOutput === true;
         coherentFrame = result.rendered && (!frameScope || result.readyForPresentation);
         if (!coherentFrame) {
           holdReason = result.reason ?? (result.rendered ? HELD_FRAME_LABELS.unpresentable : HELD_FRAME_LABELS.invalidated);
@@ -2688,6 +2683,10 @@ function initializeEngine(
         }
       });
       else engine.clear(scene.clearColor, true, true, true);
+      // A frame held back before the world wrote its output: the backbuffer still holds the shown image, which the
+      // layers are about to draw over, so it is held now and put back at the step's end. A world that drew its output
+      // and then turned incoherent shows that frame instead (`registered-view-admission.ts`).
+      if (!coherentFrame && !worldDrewOutput && registeredView) holdPresentedImage(engine, registeredView);
       joysticks.refresh();
       uiControls.refresh();
       if (sceneLayerCompositor && !layersHidden) {
@@ -2717,8 +2716,10 @@ function initializeEngine(
         scheduler.noteActivity();
         return;
       }
-      // Debug (`backbufferdiscard on`): the backbuffer's pass is still open here, after the frame's last draw into it.
-      if (backbufferDiscard && !rttPresent) invalidateBackbufferDepthStencil(engine);
+      // The backbuffer's pass is still open here, after the frame's last draw into it: a frame whose layers cleared
+      // depth and stencil before they read them leaves nothing the next frame reads (`backbuffer-invalidate.ts`).
+      if (options.playMode && !rttPresent && sceneLayerCompositor && !layersHidden && sceneLayerCompositor.depthClears)
+        invalidateBackbufferDepthStencil(engine);
       if (rttPresent) {
         const owners = [...frameOwners];
         const copyStart = profileReceipt ? performance.now() : 0;
@@ -3590,14 +3591,6 @@ function initializeEngine(
         // Measured per rendered frame: a capped, held or skipped Engine frame submitted nothing of its own.
         const probe = engineGpuBusyProbe(engine, () => frameBackpressure.renderedThisFrame());
         if (command.enabled) probe?.start(); else probe?.stop();
-      }
-      if (command.type === "setBackbufferDiscardDebug" && options.playMode && backbufferDiscard !== command.enabled) {
-        backbufferDiscard = command.enabled;
-        scheduler.invalidate("asset");
-      }
-      if (command.type === "setHeldImageDebug" && heldImage !== command.enabled) {
-        heldImage = command.enabled;
-        scheduler.invalidate("asset");
       }
       if (command.type === "setLayerDebug" && sceneLayerCompositor) {
         const key = command.part === "clears" ? "depthClears" : "skipClears";

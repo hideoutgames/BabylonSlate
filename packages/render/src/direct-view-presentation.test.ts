@@ -2,7 +2,7 @@ import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import type { EngineView } from "@babylonjs/core/Engines/AbstractEngine/abstractEngine.views";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { setDirectViewPresentationEnabled, syncDirectViewCanvas, type HeldImageStore } from "./direct-view-presentation";
-import { admitRegisteredViewFrames, setHeldImageStoreFactoryForTests, setRegisteredViewEnabled } from "./registered-view-admission";
+import { admitRegisteredViewFrames, holdPresentedImage, setHeldImageStoreFactoryForTests, setRegisteredViewEnabled } from "./registered-view-admission";
 
 const mainDocument = {};
 
@@ -59,7 +59,7 @@ class FakeCanvas {
 }
 
 /** Held images are the Engine canvas pixel at snapshot time, per view. */
-function useFakeHeldImages() {
+function useFakeHeldImages(preserved = true) {
   const blits = { count: 0 };
   setHeldImageStoreFactoryForTests((engine) => {
     const source = engine.getRenderingCanvas() as unknown as FakeCanvas;
@@ -77,6 +77,8 @@ function useFakeHeldImages() {
         return true;
       },
       size: (view) => { const entry = held.get(view); return entry ? { width: entry.width, height: entry.height } : null; },
+      forget: (view) => { held.delete(view); },
+      preserved,
       release: (view) => { held.delete(view); },
       clear: () => { held.clear(); },
     };
@@ -96,11 +98,15 @@ function host() {
     const changed = source.width !== width || source.height !== height;
     source.width = width;
     source.height = height;
+    // A resize reallocates (clears) the drawing buffer.
+    if (changed) source.pixel = 0;
     return changed;
   });
-  const state = { color: 0, coherent: true, idle: false, drew: false, during: null as (() => void) | null };
+  const state = { color: 0, coherent: true, idle: false, drew: false, hold: false, during: null as (() => void) | null };
   engine.runRenderLoop(() => {
     if (state.idle) return;
+    // An owner that holds the frame back before it writes (Play's world view found unready) holds the shown image first.
+    if (state.hold && engine.activeView) holdPresentedImage(engine, engine.activeView);
     state.drew = true;
     source.pixel = state.color;
     state.during?.();
@@ -110,8 +116,8 @@ function host() {
     engine._renderViews();
     engine.endFrame();
   };
-  const draw = (color: number, coherent = true, during: (() => void) | null = null) => {
-    Object.assign(state, { color, coherent, idle: false, during });
+  const draw = (color: number, coherent = true, during: (() => void) | null = null, hold = false) => {
+    Object.assign(state, { color, coherent, idle: false, during, hold });
     frame();
   };
   /** A frame whose loop declines to draw (render on demand with nothing new). */
@@ -120,13 +126,13 @@ function host() {
     frame();
   };
   /** A view canvas in its own panel, admitted while it has a layout box (a hidden dock tab has none). */
-  const view = (target = new FakeCanvas(), options: { allowDirect?: () => boolean; holdsImage?: () => boolean } = {}) => {
+  const view = (target = new FakeCanvas(), options: { allowDirect?: () => boolean; holdsLazily?: () => boolean } = {}) => {
     const panel = target.parentNode ?? new FakeParent();
     if (!target.parentNode) panel.insertBefore(target, null);
     const registered = engine.registerView(target as unknown as HTMLCanvasElement, undefined, true);
     let copies = 0;
     const release = admitRegisteredViewFrames(engine, registered, () => target.clientWidth > 0, {
-      begin: () => { state.drew = false; }, canCopy: () => state.coherent, dirty: () => state.drew, allowDirect: options.allowDirect, holdsImage: options.holdsImage, copied: () => { copies++; },
+      begin: () => { state.drew = false; }, canCopy: () => state.coherent, dirty: () => state.drew, allowDirect: options.allowDirect, holdsLazily: options.holdsLazily, copied: () => { copies++; },
     });
     return { panel, target, view: registered, release, copies: () => copies };
   };
@@ -201,26 +207,77 @@ describe("direct view presentation", () => {
     } finally { a.release(); engine.dispose(); }
   });
 
-  it("skips the held image copy while a view does not hold its image, and holds it again after", () => {
+  it("holds a lazily holding view's image only before a frame its owner holds back, and keeps the image shown", () => {
     const blits = useFakeHeldImages();
     const { engine, source, draw, view } = host();
-    let holds = true;
-    const a = view(new FakeCanvas(), { holdsImage: () => holds });
+    const a = view(new FakeCanvas(), { holdsLazily: () => true });
     try {
       draw(0xff8040);
-      expect(blits.count).toBe(1);
-      holds = false;
       draw(0x40a0ff);
-      draw(0x10ff10);
       // Shown as drawn, with no copy made.
-      expect([blits.count, source.pixel, source.style.visibility, a.copies()]).toEqual([1, 0x10ff10, "visible", 3]);
-      // The image held before the switch is gone: an incoherent frame cannot put a stale one back.
-      draw(0x0000ff, false);
-      expect([blits.count, source.pixel]).toEqual([1, 0x0000ff]);
-      holds = true;
+      expect([blits.count, source.pixel, source.style.visibility, a.copies()]).toEqual([0, 0x40a0ff, "visible", 2]);
+      // Held back: the owner holds the shown image before it writes, and the step puts it back.
+      draw(0x0000ff, false, null, true);
+      expect([blits.count, source.pixel, source.style.visibility]).toEqual([2, 0x40a0ff, "visible"]);
+      // A second held frame in a row reuses the image held for the first.
+      draw(0x00ff00, false, null, true);
+      expect([blits.count, source.pixel]).toEqual([3, 0x40a0ff]);
+      // Presented again: the held image is stale, so a frame that wrote before it was found incoherent, with nothing
+      // held, shows as drawn rather than an older picture.
+      draw(0x10ff10);
+      draw(0xff00ff, false);
+      expect([blits.count, source.pixel, source.style.visibility]).toEqual([3, 0xff00ff, "visible"]);
+    } finally { a.release(); engine.dispose(); }
+  });
+
+  it("holds a lazily shown image before a resize reallocates the buffer, between steps and in one", () => {
+    const blits = useFakeHeldImages();
+    const { engine, source, draw, idle, view } = host();
+    const a = view(new FakeCanvas(), { holdsLazily: () => true });
+    try {
       draw(0xff8040);
-      draw(0x0000ff, false);
-      expect([blits.count, source.pixel]).toEqual([3, 0xff8040]);
+      engine.setSize(64, 48);
+      expect([blits.count, source.pixel]).toEqual([2, 0xff8040]);
+      draw(0x40a0ff);
+      // The view grew: its own step resizes (clears) the buffer before the loop declines to draw.
+      a.target.clientWidth = 48;
+      idle();
+      expect([source.width, source.pixel, source.style.visibility]).toEqual([48, 0x40a0ff, "visible"]);
+      // A size that does not change copies nothing.
+      const before = blits.count;
+      engine.setSize(source.width, source.height);
+      expect(blits.count).toBe(before);
+    } finally { a.release(); engine.dispose(); }
+  });
+
+  it("hands a released lazily holding view the image it shows, held or not", () => {
+    useFakeHeldImages();
+    const shown = host();
+    const a = shown.view(new FakeCanvas(), { holdsLazily: () => true });
+    shown.draw(0xff8040);
+    a.release();
+    expect(a.target.pixel).toBe(0xff8040);
+    shown.engine.dispose();
+    const heldBack = host();
+    const b = heldBack.view(new FakeCanvas(), { holdsLazily: () => true });
+    heldBack.draw(0xff8040);
+    heldBack.draw(0x0000ff, false, null, true);
+    b.release();
+    expect(b.target.pixel).toBe(0xff8040);
+    heldBack.engine.dispose();
+  });
+
+  it("copies every coherent frame of a lazily holding view whose context does not preserve its drawing buffer", () => {
+    const blits = useFakeHeldImages(false);
+    const { engine, source, draw, view } = host();
+    const a = view(new FakeCanvas(), { holdsLazily: () => true });
+    try {
+      draw(0xff8040);
+      draw(0x40a0ff);
+      expect(blits.count).toBe(2);
+      // Its owner's hold finds the image held already.
+      draw(0x0000ff, false, null, true);
+      expect([blits.count, source.pixel]).toEqual([3, 0x40a0ff]);
     } finally { a.release(); engine.dispose(); }
   });
 

@@ -150,9 +150,11 @@ export class BackbufferDepthTracker {
     const writesHeld = (!depth || depthValue === this.heldDepth) && (!stencil || stencilHeld === this.heldStencil);
     if (this.eliding && this.clean && writesHeld) {
       this.elided += 1;
-      if (color && backBuffer) this.clears += 1;
-      // The colour, and the states the clear applies, as before: only depth and stencil are left out.
-      call.call(engine, color, backBuffer, false, false, stencilValue);
+      if (color && backBuffer) {
+        this.clears += 1;
+        // The colour, and the states the clear applies, as before: only depth and stencil are left out.
+        call.call(engine, color, backBuffer, false, false, stencilValue);
+      } else applyClearStates(engine);
       return;
     }
     this.clears += 1;
@@ -171,6 +173,23 @@ export class BackbufferDepthTracker {
       this.height = engine.getRenderHeight(true);
     } else if (!(this.clean && writesHeld)) this.clean = false;
   }
+}
+
+type AttachmentEngine = AbstractEngine & { _pendingAttachments?: unknown; _flushAttachments?: () => void };
+
+/**
+ * What Babylon's `clear` does before its `gl.clear` (`ThinEngine.clear`): binds a deferred attachments restore and
+ * applies the cached states, the stencil from its global state. A clear left out whole still does this, so the context
+ * holds what it would after an empty clear, without the `gl.clear(0)` call.
+ */
+function applyClearStates(engine: AbstractEngine): void {
+  const own = engine as AttachmentEngine;
+  if (own._pendingAttachments) own._flushAttachments?.();
+  const composer = engine.stencilStateComposer;
+  const globalOnly = composer.useStencilGlobalOnly;
+  composer.useStencilGlobalOnly = true;
+  engine.applyStates();
+  composer.useStencilGlobalOnly = globalOnly;
 }
 
 const trackers = new WeakMap<object, BackbufferDepthTracker>();
