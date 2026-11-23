@@ -452,8 +452,11 @@ describe("formatFeatureTestCheckReport", () => {
       resolution: "885x591@1.33", backbuffer: "2360x1576", failed: [], settings, unsettled: { firstDraws: 0, compiling: 0, settleMs: 3000 }, drawPasses: passes,
       gpuBusy: { medianMs: gpu, p95Ms: gpu + 6, frames: 100, pollMs: 6.4 },
       presentation: { drawn: 40, held: 0, ms: 5000, heldReasons: {} },
-      shadowAtlas: { edge: 8192, maps: [{ mapSize: 2048, passes: 4 }, { mapSize: 2048, passes: 6 }] }, ...extra,
+      shadowAtlas: { edge: 8192, maps: [{ mapSize: 2048, passes: 4 }, { mapSize: 2048, passes: 6 }] },
+      // The synthetic CPU load after each row's window: the run's fastest 6.0 ms unless a row says otherwise.
+      cpuSynthetic: { minMs: 6, medianMs: 6.2, memoryMs: 9, value: 1 }, ...extra,
     } as FeatureTestBenchmarkSample);
+    const synth = (minMs: number) => ({ cpuSynthetic: { minMs, medianMs: minMs + 0.2, memoryMs: 9, value: 1 } });
     const noShadows = { ...settings, shadows: "off" };
     const report: FeatureTestCheckReport = {
       mode: "profile", startedAt: 0, durationMs: 360_000, cancelled: false, pageErrors: [],
@@ -466,8 +469,8 @@ describe("formatFeatureTestCheckReport", () => {
             resolution: { scale: 0.75, levelBefore: 1.25 },
           },
           benchmark: [
-            { ...sample("heavy warm-up 1", 44, 11, { drawPasses: undefined, atMs: 0 }), label: "warm-up 1", baseline: false, warmup: true, view: "heavy" },
-            { ...sample("heavy warm-up 2", 42, 10, { drawPasses: undefined, atMs: 10_000 }), label: "warm-up 2", baseline: false, warmup: true, view: "heavy" },
+            { ...sample("heavy warm-up 1", 44, 11, { drawPasses: undefined, atMs: 0, cpuSynthetic: undefined }), label: "warm-up 1", baseline: false, warmup: true, view: "heavy" },
+            { ...sample("heavy warm-up 2", 42, 10, { drawPasses: undefined, atMs: 10_000, cpuSynthetic: undefined }), label: "warm-up 2", baseline: false, warmup: true, view: "heavy" },
             sample("light baseline 1", 20, 6),
             // Its two baselines differ by 4 ms, more than its own 3 ms change.
             sample("light world hidden", 19, 6, { settings: { ...settings, "post.enabled": "false" } }),
@@ -475,9 +478,9 @@ describe("formatFeatureTestCheckReport", () => {
             sample("heavy baseline 1", 40, 10, { atMs: 60_000 }),
             sample("heavy world drawn once", 34, 9, { settings: noShadows, shadowAtlas: { edge: 0, maps: [] } }),
             sample("heavy baseline 2", 42, 11, { atMs: 80_000 }),
-            sample("heavy shadow passes off", 36, 9, { settings: { ...settings, "shadows.debug": "passes" } }),
+            sample("heavy shadow passes off", 36, 9, { settings: { ...settings, "shadows.debug": "passes" }, ...synth(7.2) }),
             sample("heavy baseline 3", 40, 10, { atMs: 100_000 }),
-            sample("heavy drift", 46, 12, { atMs: 300_000 }),
+            sample("heavy drift", 46, 12, { atMs: 300_000, ...synth(6.6) }),
           ] },
         session: null,
       }],
@@ -490,8 +493,18 @@ describe("formatFeatureTestCheckReport", () => {
     expect(lines).toContain("  Restored: every setting as before the first step");
     expect(lines).toContain("  Resolution held: scale 0.75 (level 1.33) for every row, the session's own scale; Play was at scaling level 1.25 before");
     // The control view's visits, unchanged, at their times into the sweep, and its change over the run.
-    expect(lines).toContain("  Drift (heavy view, revisited unchanged; at m:ss into the sweep, gpu busy / cpu ms): warm-up 1 0:00 44.0/11.0 · warm-up 2 0:10 42.0/10.0 · heavy baseline 1 1:00 40.0/10.0 · heavy baseline 2 1:20 42.0/11.0 · heavy baseline 3 1:40 40.0/10.0 · heavy drift 5:00 46.0/12.0");
-    expect(lines).toContain("  Drift first to last visit: gpu busy +2.0ms +5% · cpu +1.0ms +9%; discount a step's change by the drift around it");
+    // Each visit's cpu also scaled to the run's fastest synthetic CPU load (6.0 ms): the drift's 6.6 ms gives 12 x 6 / 6.6.
+    expect(lines).toContain("  Drift (heavy view, revisited unchanged; at m:ss into the sweep, gpu busy / cpu ms (cpu normalised to the run's fastest synthetic CPU load)): warm-up 1 0:00 44.0/11.0 (-) · warm-up 2 0:10 42.0/10.0 (-) · heavy baseline 1 1:00 40.0/10.0 (10.0) · heavy baseline 2 1:20 42.0/11.0 (11.0) · heavy baseline 3 1:40 40.0/10.0 (10.0) · heavy drift 5:00 46.0/12.0 (10.9)");
+    expect(lines).toContain("  Drift first to last visit: gpu busy +2.0ms +5% · cpu +1.0ms +9% · cpu normalised +0.9ms +9% (what remains once the CPU's own speed is taken out is ours); discount a step's change by the drift around it");
+    // The synthetic CPU load from the first row that ran it (6.0 ms) to the last (6.6 ms).
+    expect(lines).toContain("  CPU synthetic load first to last: +10% (6.0 > 6.6 ms, fastest repeat of the fixed load after each row's window)");
+    // Its column: the fastest and median repeat; none on a warm-up window.
+    expect(row("light baseline 1")).toContain("6.0ms   6.0/6.2    20.0 (26)");
+    expect(row("warm-up 1")).toContain("11.0ms  -          44.0 (50)");
+    // 7.2 ms is more than 15% slower than the fastest: CPU SLOW; the drift's 6.6 ms (10%) is not.
+    expect(row("heavy shadow passes off")).toContain("9.0ms   7.2/7.4    36.0 (42)");
+    expect(row("heavy shadow passes off")).toContain("  CPU SLOW · shadows.debug=passes");
+    expect(row("heavy drift")).not.toContain("CPU SLOW");
     // Against (20 + 24) / 2 in gpu busy; the baselines' spread is past the change.
     // Each row's world size and level beside the backbuffer the layers and the output draw into.
     expect(row("light world hidden")).toMatch(/-3\.0ms -14% {5}\+0\.0ms \+0% {6}885x591@1\.33 \/ 2360x1576 {2}post\.enabled=false · overlaps · UNSETTLED: its baselines differ by 4\.0 ms, more than its change/);
@@ -510,7 +523,7 @@ describe("formatFeatureTestCheckReport", () => {
       "      1. [FAST] light world hidden: -3.0ms -14% (20.0 > 19.0 > 24.0) · cpu +0.0ms +0% · overlaps · UNSETTLED",
       "    heavy:",
       "      1. [FAST] heavy world drawn once: -7.0ms -17% (40.0 > 34.0 > 42.0) · cpu -1.5ms -14% · overlaps",
-      "      2. [FAST] heavy shadow passes off: -5.0ms -12% (42.0 > 36.0 > 40.0) · cpu -1.5ms -14% · overlaps",
+      "      2. [FAST] [CPU SLOW] heavy shadow passes off: -5.0ms -12% (42.0 > 36.0 > 40.0) · cpu -1.5ms -14% · overlaps",
     ]);
   });
 

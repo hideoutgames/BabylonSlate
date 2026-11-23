@@ -526,8 +526,9 @@ async function saveDynamicMesh(ctx: FeatureTestContext): Promise<PlacedClass> {
 /**
  * Spawns a pooled runtime decal of a Decal Material Instance at its own location on Begin Play via the Spawn Decal
  * node, beside a Decal component of its own on a plate of its own (a decal in a Prefab, which its Prefab Preview shows).
- * Both Materials are Soft literals, so neither loads with the Class: the spawned decal appears, and the component's
- * Set Variable switch to the Multiply stain applies, once its Material loads, while Get Variable reads the new value at once.
+ * Both Materials are Soft literals, so neither loads with the Class: Load Assets (Async) loads them first, and then the
+ * decal spawns and the component's Set Variable switch to the Multiply stain applies at once, without an on-demand load
+ * warning; Get Variable reads the new value back.
  */
 async function saveDecalSpawner(ctx: FeatureTestContext): Promise<PlacedClass> {
   const decalMaterial = requireRef(ctx.assets.materials.decalLitInstance, "the decal Material Instance");
@@ -549,6 +550,7 @@ async function saveDecalSpawner(ctx: FeatureTestContext): Promise<PlacedClass> {
     components,
     nodes: [
       gNode("begin", "flow.event.beginPlay", 0, 0),
+      gNode("load-materials", "assets.asyncLoadMany", 160, 0, { "default:assets": [decalMaterial, stain] }),
       gNode("self-loc", "transform.getActorLocation", 0, 140),
       gNode("spawn", "decals.spawn", 320, 0, {
         "default:material": decalMaterial,
@@ -566,7 +568,8 @@ async function saveDecalSpawner(ctx: FeatureTestContext): Promise<PlacedClass> {
       }),
     ],
     edges: [
-      gWire("begin", "execOut", "spawn", "execIn"),
+      gWire("begin", "execOut", "load-materials", "execIn"),
+      gWire("load-materials", "completed", "spawn", "execIn"),
       gWire("self-loc", "location", "spawn", "location"),
       gWire("spawn", "execOut", "set-decal-material", "execIn"),
       gWire("set-decal-material", "execOut", "check-decal-material", "execIn"),

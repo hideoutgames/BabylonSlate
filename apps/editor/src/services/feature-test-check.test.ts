@@ -10,7 +10,7 @@ import {
   FEATURE_TEST_BREAKDOWN_BASES, FEATURE_TEST_BREAKDOWN_METHODS, FEATURE_TEST_BREAKDOWN_STEPS, featureTestBreakdownPlan, frameBound,
   frameStats, isBreakdownBaseline, runFeatureTestCheck, SATURATED_SHARE, settingsChanges, vsyncShares, warmDeviceMinutes,
   FEATURE_TEST_PROFILE_SCENES, featureTestBreakdownScenes, featureTestProfilePlan, featureTestProfileSequence, profileComparison, profileDrift,
-  profileRanking, profileResolutionPin, profileState, profileStep, PROFILE_WARMUP_WINDOWS,
+  profileRanking, profileResolutionPin, profileState, profileStep, PROFILE_WARMUP_WINDOWS, PROFILE_CPU_SYNTHETIC_ESTIMATE_MS,
   profileFrameState,
   type FeatureTestBenchmarkSample, type FeatureTestBreakdownInfo, type FeatureTestCheckDeps, type FeatureTestProfileState,
 } from "./feature-test-check";
@@ -1277,8 +1277,9 @@ describe("Profile", { timeout: 30_000 }, () => {
     });
     // Then the control view once more, unchanged, so the drift line spans the run.
     expect(sequence.at(-1)).toEqual({ label: "heavy drift", commands: ['possess "Profile Heavy Camera"'], baseline: true, view: "heavy" });
-    // Two 5 s warm-up windows at about 10 s, then the 3 s rows at about 8 s with their settle and probes: within twelve minutes.
-    expect(PROFILE_WARMUP_WINDOWS * 10 + sequence.length * 8).toBeLessThanOrEqual(720);
+    // Two 5 s warm-up windows at about 10 s, then the 3 s rows at about 8 s with their settle and probes, and each its
+    // synthetic CPU load: within twelve minutes.
+    expect(PROFILE_WARMUP_WINDOWS * 10 + sequence.length * (8 + PROFILE_CPU_SYNTHETIC_ESTIMATE_MS / 1000)).toBeLessThanOrEqual(720);
     expect(profileStep("light shadow passes off")).toMatchObject({ view: "light", fields: ["shadows.debug"] });
     expect(profileStep("heavy baseline 2")).toBeUndefined();
   });
@@ -1448,13 +1449,13 @@ describe("Profile", { timeout: 30_000 }, () => {
     expect(profileRanking(samples).map((group) => [group.view, group.steps.map((entry) => entry.label)])).toEqual([
       ["light", ["light MSAA off"]], ["heavy", ["heavy shadows off", "heavy post off"]], ["mirror", ["mirror captures off"]],
     ]);
-    // The control view's visits, unchanged, in run order: the warm-up, its baselines and the last visit.
+    // The control view's visits, unchanged, in run order: the warm-up, its baselines and the last visit (no synthetic CPU load ran: no normalised cpu).
     expect(profileDrift(samples)).toEqual([
-      { label: "warm-up 1", atMs: 0, gpuMs: 44, cpuMs: 11 },
-      { label: "heavy baseline 1", atMs: 40_000, gpuMs: 40, cpuMs: 10 },
-      { label: "heavy baseline 2", atMs: 60_000, gpuMs: 42, cpuMs: 11 },
-      { label: "heavy baseline 3", atMs: 80_000, gpuMs: 41, cpuMs: 10 },
-      { label: "heavy drift", atMs: 120_000, gpuMs: 46, cpuMs: 12 },
+      { label: "warm-up 1", atMs: 0, gpuMs: 44, cpuMs: 11, cpuNormalisedMs: null },
+      { label: "heavy baseline 1", atMs: 40_000, gpuMs: 40, cpuMs: 10, cpuNormalisedMs: null },
+      { label: "heavy baseline 2", atMs: 60_000, gpuMs: 42, cpuMs: 11, cpuNormalisedMs: null },
+      { label: "heavy baseline 3", atMs: 80_000, gpuMs: 41, cpuMs: 10, cpuNormalisedMs: null },
+      { label: "heavy drift", atMs: 120_000, gpuMs: 46, cpuMs: 12, cpuNormalisedMs: null },
     ]);
   });
 
@@ -1683,8 +1684,26 @@ describe("Profile", { timeout: 30_000 }, () => {
         } };
       },
     };
+    // The synthetic CPU load: each call is recorded with whether a window was sampling and the commands run before it.
+    let sampling = false;
+    const loads: { sampling: boolean; commands: number }[] = [];
+    probing.sampleFrames = async (ms, signal) => {
+      sampling = true;
+      try { return await deps.sampleFrames(ms, signal); } finally { sampling = false; }
+    };
+    probing.cpuSyntheticLoad = () => {
+      loads.push({ sampling, commands: editor.commands.length });
+      return { minMs: 6 + loads.length / 100, medianMs: 6.5, memoryMs: 9, value: 42 };
+    };
     const report = await runFeatureTestCheck({ mode: "profile", scenes: FEATURE_TEST_PROFILE_SCENES, signal: new AbortController().signal, deps: probing });
     const samples = report.scenes[0]!.play.benchmark;
+    // The synthetic CPU load ran once per probed row (every row but the warm-up windows and the samplers off row), never
+    // inside a sampled window, after the row's GPU probes and before its restore.
+    expect(loads).toHaveLength(samples.length - 3);
+    expect(loads.every((load) => !load.sampling)).toBe(true);
+    expect(loads.every((load) => editor.commands[load.commands - 1] === "gpuprobe off" && editor.commands[load.commands] === "quality reset")).toBe(true);
+    expect(samples.filter((sample) => !sample.cpuSynthetic).map((sample) => sample.label)).toEqual(["warm-up 1", "warm-up 2", "light samplers off"]);
+    expect(samples.find((sample) => sample.label === "light baseline 1")!.cpuSynthetic).toEqual({ minMs: 6.01, medianMs: 6.5, memoryMs: 9, value: 42 });
     // Every row carries the window's probes.
     expect(samples.every((sample) => sample.samplersOff || (sample.gpuProbe?.signature?.modal === "a1b2c3d4" && sample.gpuProbe.shadows?.atlasEdge === 8192 && sample.gpuProbe.raf?.perSecond === 60))).toBe(true);
     // Serialised frames follow every row but the warm-up windows.

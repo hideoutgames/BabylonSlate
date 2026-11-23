@@ -15,8 +15,11 @@ import {
   livePreserve,
   meanFrameMs,
   profileComparison,
+  profileCpuSlow,
+  profileCpuSyntheticDrift,
   profileDrift,
   profileFrameState,
+  PROFILE_CPU_SLOW_SHARE,
   profileRanking,
   profileStep,
   PROFILE_CONTROL_VIEW,
@@ -663,7 +666,7 @@ function profileNotes(samples: readonly FeatureTestBenchmarkSample[], sample: Fe
   const beyond = comparison && part && comparison.basis === part.basis ? comparison.change.ms - part.change.ms : null;
   const shadows = step?.fields?.some((field) => field.startsWith("shadows")) || (isBreakdownBaseline(sample) && sample === first);
   return [
-    sample.warmup ? "warm-up" : "", ...settingNotes(sample, first, step?.fields ?? []), step?.overlaps ? "overlaps" : "",
+    sample.warmup ? "warm-up" : "", profileCpuSlow(samples, sample) ? "CPU SLOW" : "", ...settingNotes(sample, first, step?.fields ?? []), step?.overlaps ? "overlaps" : "",
     comparison?.unsettled ? `UNSETTLED: its baselines differ by ${comparison.spread!.toFixed(1)} ms, more than its change` : "",
     comparison && comparison.after === null ? "one baseline" : "",
     comparison?.straddles ? "STRADDLES A STATE CHANGE: its baselines are in different states" : "",
@@ -719,12 +722,24 @@ function driftLines(samples: readonly FeatureTestBenchmarkSample[]): string[] {
   const lastGpu = visits.findLast((visit) => visit.gpuMs !== null)?.gpuMs ?? null;
   const firstCpu = visits.find((visit) => visit.cpuMs !== null)?.cpuMs ?? null;
   const lastCpu = visits.findLast((visit) => visit.cpuMs !== null)?.cpuMs ?? null;
+  const firstNormalised = visits.find((visit) => visit.cpuNormalisedMs !== null)?.cpuNormalisedMs ?? null;
+  const lastNormalised = visits.findLast((visit) => visit.cpuNormalisedMs !== null)?.cpuNormalisedMs ?? null;
+  const synthetic = profileCpuSyntheticDrift(samples);
   const change = (from: number | null, to: number | null) =>
     from === null || to === null || from === 0 ? "-" : `${to - from >= 0 ? "+" : ""}${(to - from).toFixed(1)}ms ${to - from >= 0 ? "+" : ""}${(((to - from) / from) * 100).toFixed(0)}%`;
   return [
-    `  Drift (${PROFILE_CONTROL_VIEW} view, revisited unchanged; at m:ss into the sweep, gpu busy / cpu ms): ${visits.map((visit) => `${visit.label} ${clock(visit.atMs)} ${value(visit.gpuMs)}/${value(visit.cpuMs)}`).join(" · ")}`,
-    `  Drift first to last visit: gpu busy ${change(firstGpu, lastGpu)} · cpu ${change(firstCpu, lastCpu)}; discount a step's change by the drift around it`,
+    `  Drift (${PROFILE_CONTROL_VIEW} view, revisited unchanged; at m:ss into the sweep, gpu busy / cpu ms (cpu normalised to the run's fastest synthetic CPU load)): ${visits.map((visit) => `${visit.label} ${clock(visit.atMs)} ${value(visit.gpuMs)}/${value(visit.cpuMs)} (${value(visit.cpuNormalisedMs)})`).join(" · ")}`,
+    `  Drift first to last visit: gpu busy ${change(firstGpu, lastGpu)} · cpu ${change(firstCpu, lastCpu)} · cpu normalised ${change(firstNormalised, lastNormalised)} (what remains once the CPU's own speed is taken out is ours); discount a step's change by the drift around it`,
+    synthetic
+      ? `  CPU synthetic load first to last: ${synthetic.percent >= 0 ? "+" : ""}${synthetic.percent.toFixed(0)}% (${synthetic.firstMs.toFixed(1)} > ${synthetic.lastMs.toFixed(1)} ms, fastest repeat of the fixed load after each row's window)`
+      : "  CPU synthetic load first to last: unmeasured",
   ];
+}
+
+/** A row's synthetic CPU load as fastest/median repeat in ms (`6.1/6.3`), or `-` where not run. */
+function cpuSyntheticText(sample: FeatureTestBenchmarkSample): string {
+  const load = sample.cpuSynthetic;
+  return load ? `${load.minMs.toFixed(1)}/${load.medianMs.toFixed(1)}` : "-";
 }
 
 function serialFrameText(sample: FeatureTestBenchmarkSample): string {
@@ -881,7 +896,7 @@ function profileLines(scene: FeatureTestCheckSceneResult): string[] {
   const drift = breakdownWarmupDrift(samples);
   const timed = samples.find((sample) => sample.gpuBusy);
   const lines = [
-    `  Profile at the session's quality tier and frame cap (${scene.play.profile?.frameCap ?? "?"} fps), about 14 minutes on a desktop: a short warm-up at the control view, then at fixed camera views every step twice between baselines, A B A B A, the camera held between them; each step and baseline sampled 3 s with gpubusy and the passive GPU probes once no shader is first drawn or compiling for 1 s, then probed with serialised frames, a burst and the pass timers before it is restored (GPU probes, below):`,
+    `  Profile at the session's quality tier and frame cap (${scene.play.profile?.frameCap ?? "?"} fps), about 14 minutes on a desktop: a short warm-up at the control view, then at fixed camera views every step twice between baselines, A B A B A, the camera held between them; each step and baseline sampled 3 s with gpubusy and the passive GPU probes once no shader is first drawn or compiling for 1 s, then probed with serialised frames, a burst, the pass timers and the synthetic CPU load before it is restored (GPU probes, below):`,
     `  Settings: ${first?.settings ? Object.entries(first.settings).map(([field, value]) => `${field} ${value}`).join(" · ") : "unknown"}`,
     `  Frames in flight: ${framesInFlightText(samples)}`,
     `  Resolution held: ${heldResolutionText(profile?.resolution ?? null)}`,
@@ -894,26 +909,26 @@ function profileLines(scene: FeatureTestCheckSceneResult): string[] {
     profile?.endChanges
       ? profile.endChanges.length ? `  NOT RESTORED at the end: ${profile.endChanges.join(", ")}` : "  Restored: every setting as before the first step"
       : "  Restored: not checked",
-    "  Legend: step labels start with their view (light: few draws; heavy: many draws, no Mirror on screen, the control view; mirror: Mirrors and capture monitors on screen) · mean, p95 = frame time (it lands on whole display intervals: read gpu busy) · intervals 1/2/3/4+ = % of the window's animation frames (rAF callbacks, held and skipped renders included) lasting 1, 2, 3, 4 or more display intervals, each rounded to the nearest whole interval of 16.7 ms (60 Hz): an even 40 fps reads about 50/50/0/0, 60 fps broken by long frames mostly 1 with a 3 or 4+ tail · cpu = median CPU frame cost · gpu busy = median (p95) GPU time per frame from fences (with a frame already queued it equals the frame period, in whole display intervals: a step's change in it is then not a cost) · serial = the serial probe's whole-frame GPU time, each frame rendered alone after the GPU finished the last · bound = gpu (frames over 1.5x the CPU cost), vsync (at 60 Hz) or cpu · draws = median (range) per frame · held = share of the view's attempts it held while sampled (notes: the top reasons) · change = gpu busy against the baselines of its view around the step (a baseline's: against its view's first), or mean frame time where gpu busy is missing (marked *) · cpu change = the same in CPU cost · work/frame = the world renderer's strict readiness checks, outline checks and shadow admissions (their ms) per drawn frame, and its graph builds while sampled · device free, app headroom = the device's free and inactive memory and what the app process may still allocate, as the sample ended · world / backbuffer = the world's render size @ its scaling level, and the backbuffer's size (Scene Layers and the output's upscale draw there) · atlas, maps = the shadow atlas edge and each map's size x tiles · overlaps = its saving is part of another step's; UNEXPECTED, NOT RESTORED, COMPILING and UNSETTLED (its two baselines differ by more than its change) mark a row not to trust",
+    "  Legend: step labels start with their view (light: few draws; heavy: many draws, no Mirror on screen, the control view; mirror: Mirrors and capture monitors on screen) · mean, p95 = frame time (it lands on whole display intervals: read gpu busy) · intervals 1/2/3/4+ = % of the window's animation frames (rAF callbacks, held and skipped renders included) lasting 1, 2, 3, 4 or more display intervals, each rounded to the nearest whole interval of 16.7 ms (60 Hz): an even 40 fps reads about 50/50/0/0, 60 fps broken by long frames mostly 1 with a 3 or 4+ tail · cpu = median CPU frame cost · cpu synth = the fixed synthetic CPU load run on the main thread after the row's window, fastest/median of its repeats in ms: the CPU's own speed then (CPU SLOW in notes = more than " + `${Math.round(PROFILE_CPU_SLOW_SHARE * 100)}` + "% slower than the run's fastest) · gpu busy = median (p95) GPU time per frame from fences (with a frame already queued it equals the frame period, in whole display intervals: a step's change in it is then not a cost) · serial = the serial probe's whole-frame GPU time, each frame rendered alone after the GPU finished the last · bound = gpu (frames over 1.5x the CPU cost), vsync (at 60 Hz) or cpu · draws = median (range) per frame · held = share of the view's attempts it held while sampled (notes: the top reasons) · change = gpu busy against the baselines of its view around the step (a baseline's: against its view's first), or mean frame time where gpu busy is missing (marked *) · cpu change = the same in CPU cost · work/frame = the world renderer's strict readiness checks, outline checks and shadow admissions (their ms) per drawn frame, and its graph builds while sampled · device free, app headroom = the device's free and inactive memory and what the app process may still allocate, as the sample ended · world / backbuffer = the world's render size @ its scaling level, and the backbuffer's size (Scene Layers and the output's upscale draw there) · atlas, maps = the shadow atlas edge and each map's size x tiles · overlaps = its saving is part of another step's; UNEXPECTED, NOT RESTORED, COMPILING and UNSETTLED (its two baselines differ by more than its change) mark a row not to trust",
     `  Timing: ${timed?.gpuBusy ? `gpu busy read as each Engine frame starts, every ${timed.gpuBusy.pollMs.toFixed(1)} ms (completion read at frame granularity: a frame whose GPU work ends before the next frame starts reads at least the time to that start)` : "no gpu busy (no fences)"}`,
-    `    ${pad("Step", 28)}${pad("fps", 5)}${pad("mean", 8)}${pad("p95", 7)}${pad("intervals 1/2/3/4+", 19)}${pad("cpu", 8)}${pad("gpu busy", 14)}${pad("serial", 8)}${pad("bound", 6)}${pad("draws", 14)}${pad("held", 6)}${pad("state", 6)}${pad("change", 16)}${pad("cpu change", 16)}${pad("world / backbuffer", 26)}notes`,
+    `    ${pad("Step", 28)}${pad("fps", 5)}${pad("mean", 8)}${pad("p95", 7)}${pad("intervals 1/2/3/4+", 19)}${pad("cpu", 8)}${pad("cpu synth", 11)}${pad("gpu busy", 14)}${pad("serial", 8)}${pad("bound", 6)}${pad("draws", 14)}${pad("held", 6)}${pad("state", 6)}${pad("change", 16)}${pad("cpu change", 16)}${pad("world / backbuffer", 26)}notes`,
   ];
   for (const sample of samples) {
     const mean = meanFrameMs(sample.frames);
     const busy = sample.gpuBusy ? `${sample.gpuBusy.medianMs.toFixed(1)} (${sample.gpuBusy.p95Ms.toFixed(0)})` : "-";
     const change = sample.warmup ? null : breakdownDelta(samples, sample);
     const cpu = profileComparison(samples, sample)?.cpu ?? (isBreakdownBaseline(sample) ? breakdownCpuDelta(samples, sample) : null);
-    lines.push(`    ${pad(sample.label, 28)}${pad(sample.frames ? sample.frames.fps.toFixed(0) : "-", 5)}${pad(mean !== null ? `${mean.toFixed(1)}ms` : "-", 8)}${pad(sample.frames ? `${sample.frames.p95Ms.toFixed(0)}ms` : "-", 7)}${pad(intervalsText(sample.frames), 19)}${pad(ms(sample.cpuMs), 8)}${pad(busy, 14)}${pad(serialFrameText(sample), 8)}${pad(frameBound(sample.frames, sample.cpuMs) ?? "-", 6)}${pad(sample.skipped ? "-" : sample.draws ? rangeText(sample.draws, 0) : String(sample.drawCalls), 14)}${pad(heldShareText(sample), 6)}${pad(profileFrameState(samples, sample) ?? "-", 6)}${pad(`${deltaText(change)}${change?.basis === "frame" ? "*" : ""}`, 16)}${pad(deltaText(cpu), 16)}${pad(sample.resolution ? `${sample.resolution} / ${sample.backbuffer ?? "?"}` : "-", 26)}${profileNotes(samples, sample, first)}`.trimEnd());
+    lines.push(`    ${pad(sample.label, 28)}${pad(sample.frames ? sample.frames.fps.toFixed(0) : "-", 5)}${pad(mean !== null ? `${mean.toFixed(1)}ms` : "-", 8)}${pad(sample.frames ? `${sample.frames.p95Ms.toFixed(0)}ms` : "-", 7)}${pad(intervalsText(sample.frames), 19)}${pad(ms(sample.cpuMs), 8)}${pad(cpuSyntheticText(sample), 11)}${pad(busy, 14)}${pad(serialFrameText(sample), 8)}${pad(frameBound(sample.frames, sample.cpuMs) ?? "-", 6)}${pad(sample.skipped ? "-" : sample.draws ? rangeText(sample.draws, 0) : String(sample.drawCalls), 14)}${pad(heldShareText(sample), 6)}${pad(profileFrameState(samples, sample) ?? "-", 6)}${pad(`${deltaText(change)}${change?.basis === "frame" ? "*" : ""}`, 16)}${pad(deltaText(cpu), 16)}${pad(sample.resolution ? `${sample.resolution} / ${sample.backbuffer ?? "?"}` : "-", 26)}${profileNotes(samples, sample, first)}`.trimEnd());
   }
   lines.push(...drawPassTable(samples, "Step", 28), ...cpuPassTable(samples, "Step", 28), ...longFrameLines(samples));
   lines.push(...gpuProbeLines(samples), ...serialSubmissionLines(samples), ...passTimerLines(samples), ...frameStructureLines(samples));
   lines.push(...webGlRowLines(samples));
-  lines.push("  Ranked by change at each view against baselines at its own GPU speed (synthetic load within 15%), the mean of its repeats (baseline > step > baseline), in the burst period where every row is GPU-bound (burst over 1.2x both its serial submission and the display interval; marked b), else the serial probe's frame time where the step and both its baselines have one and no serial frame stalled (submitted past 1.5x the window's CPU cost plus 2 ms; marked s), else gpu busy (* = mean frame time where gpu busy is missing); norm = the same with every row scaled to the run's fastest synthetic load; OTHER SPEED = no baseline ran at its speed, so the nearest were taken (a step that lightens the GPU's load can lower its clock by itself); ADDS WORK = the step adds work (the geometry pass drawn twice), ranked after the savings, largest first: its positive change is what that work costs:");
+  lines.push("  Ranked by change at each view against baselines at its own GPU speed (synthetic load within 15%), the mean of its repeats (baseline > step > baseline), in the burst period where every row is GPU-bound (burst over 1.2x both its serial submission and the display interval; marked b), else the serial probe's frame time where the step and both its baselines have one and no serial frame stalled (submitted past 1.5x the window's CPU cost plus 2 ms; marked s), else gpu busy (* = mean frame time where gpu busy is missing); norm = the same with every row scaled to the run's fastest synthetic load; CPU SLOW = the step or a baseline around it ran the synthetic CPU load more than 15% slower than the run's fastest, so its cpu change is partly the device's; OTHER SPEED = no baseline ran at its speed, so the nearest were taken (a step that lightens the GPU's load can lower its clock by itself); ADDS WORK = the step adds work (the geometry pass drawn twice), ranked after the savings, largest first: its positive change is what that work costs:");
   const ranking = profileRanking(samples);
   for (const group of ranking) {
     lines.push(`    ${group.view ?? "scene camera"}:`);
     group.steps.forEach((entry, index) => lines.push(
-      `      ${index + 1}. ${entry.state ? `[${entry.state}] ` : ""}${entry.label}: ${deltaText(entry.change)}${entry.basis === "frame" ? "*" : entry.basis === "serial" ? " s" : entry.basis === "burst" ? " b" : ""} (${abaText(entry)}${entry.repeats > 1 ? `, mean of ${entry.repeats}` : ""})${entry.normalised ? ` · norm ${deltaText(entry.normalised.change)}` : ""}${entry.speedMatched ? "" : " · OTHER SPEED"} · cpu ${deltaText(entry.cpu)}${entry.overlaps ? " · overlaps" : ""}${entry.adds ? " · ADDS WORK: + is its cost" : ""}${entry.unsettled ? " · UNSETTLED" : ""}${entry.after === null ? " · one baseline" : ""}`,
+      `      ${index + 1}. ${entry.state ? `[${entry.state}] ` : ""}${entry.cpuSlow ? "[CPU SLOW] " : ""}${entry.label}: ${deltaText(entry.change)}${entry.basis === "frame" ? "*" : entry.basis === "serial" ? " s" : entry.basis === "burst" ? " b" : ""} (${abaText(entry)}${entry.repeats > 1 ? `, mean of ${entry.repeats}` : ""})${entry.normalised ? ` · norm ${deltaText(entry.normalised.change)}` : ""}${entry.speedMatched ? "" : " · OTHER SPEED"} · cpu ${deltaText(entry.cpu)}${entry.overlaps ? " · overlaps" : ""}${entry.adds ? " · ADDS WORK: + is its cost" : ""}${entry.unsettled ? " · UNSETTLED" : ""}${entry.after === null ? " · one baseline" : ""}`,
     ));
   }
   if (!ranking.length) lines.push("    none measured");

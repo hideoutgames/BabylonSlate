@@ -114,10 +114,14 @@ export async function runProjectScene(options: {
     load.consoleCommands = views.consoleCommands;
 
     // Sources prepared later join the first ones, and the runtime takes the merged controls, as in Play.
+    // As Play's sources do (`markSourceReady`), prepared assets read Loaded, so a Soft reference loaded first is ready.
+    const publishReady = (required: ReadonlySet<string>) =>
+      runtime!.setAssetLoadStates([...required].map((guid) => ({ guid, state: "ready" as const })));
     const acquire = async (guids: readonly string[], consumer: string, signal: AbortSignal) => {
       const next = await acquirePlayAssetSources(host, guids, { consumer, signal: AbortSignal.any([signal, lifetime.signal]) });
       sets.push(next);
       for (const control of mergePreparedPlaySources(sets)!.controls) await applyRuntimeSourceControl(runtime!, control);
+      publishReady(next.required);
       return next;
     };
     const answer = (command: CommandMessage) => {
@@ -147,6 +151,7 @@ export async function runProjectScene(options: {
       },
     });
     for (const control of prepared.controls) await applyRuntimeSourceControl(runtime, control);
+    publishReady(prepared.required);
     const problems: string[] = [];
     await createPlayBootCoordinator().play(runtime).catch((error: unknown) => {
       problems.push(`Play did not start: ${error instanceof Error ? error.message : String(error)}`);

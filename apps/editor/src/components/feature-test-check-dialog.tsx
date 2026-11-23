@@ -47,6 +47,7 @@ import { reloadPage } from "../lib/preload-error-reload";
 import { FEATURE_TEST_CHECK_SCENES } from "../services/feature-test-check-scenes";
 import { FeatureTestCheckStatus } from "./feature-test-check-status";
 import { installFrameAttribution } from "../services/frame-attribution";
+import { runCpuSyntheticLoad } from "../lib/cpu-synthetic-load";
 import { liveGameWorkers } from "../services/game-worker-host";
 import { formatFeatureTestCheckReport } from "../lib/feature-test-check-report";
 import { collectDiagnosticEnvironment, copyText } from "../lib/diagnostic-info";
@@ -341,6 +342,7 @@ export function FeatureTestCheckDialog({ open, onOpenChange }: FeatureTestCheckD
       sleep,
       onProgress: (message) => { markSessionTrail(`check: ${message}`); setPhase({ kind: "running", message }); },
       attributeFrames: () => installFrameAttribution({ isRenderCallback, workers: liveGameWorkers }),
+      cpuSyntheticLoad: () => runCpuSyntheticLoad(() => performance.now()),
     };
     try {
       const report = await runFeatureTestCheck({

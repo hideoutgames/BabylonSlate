@@ -514,7 +514,12 @@ export function isUnlitMaterial(material: Material | null | undefined): material
   return !!material && instanceOf.has(material);
 }
 
-const tracked = new WeakSet<AbstractMesh>();
+/**
+ * The instance whose `meshes` lists each mesh `setUnlitMaterial` bound, kept apart from the mesh's Material: a mesh
+ * given another Material since (a 2D Material's fallback until its own Material loads) still leaves the list when it
+ * is disposed, instead of keeping the disposed mesh, and everything it holds, for the rest of the session.
+ */
+const memberOf = new WeakMap<AbstractMesh, UnlitInstance>();
 
 /**
  * Draws `mesh` with the unlit Material for `key`, bound to `binding`: what it samples and its colour, alpha and cutoff.
@@ -522,18 +527,19 @@ const tracked = new WeakSet<AbstractMesh>();
  */
 export function setUnlitMaterial(mesh: AbstractMesh, key: UnlitMaterialKey, binding: UnlitBinding): NodeMaterial {
   const material = unlitMaterial(mesh.getScene(), key);
-  const previous = mesh.material && instanceOf.get(mesh.material);
-  if (previous && previous.material !== material) previous.meshes.delete(mesh);
+  const instance = instanceOf.get(material)!;
+  const previous = memberOf.get(mesh);
+  if (previous && previous !== instance) previous.meshes.delete(mesh);
   setUnlitBinding(mesh, binding);
-  instanceOf.get(material)!.meshes.add(mesh);
-  if (mesh.material !== material) mesh.material = material;
-  if (!tracked.has(mesh)) {
-    tracked.add(mesh);
+  instance.meshes.add(mesh);
+  if (!previous) {
     mesh.onDisposeObservable.addOnce(() => {
-      const current = mesh.material && instanceOf.get(mesh.material);
-      current?.meshes.delete(mesh);
+      memberOf.get(mesh)?.meshes.delete(mesh);
+      memberOf.delete(mesh);
     });
   }
+  memberOf.set(mesh, instance);
+  if (mesh.material !== material) mesh.material = material;
   return material;
 }
 
