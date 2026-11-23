@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { NewRepositoryRequest, PublishOutcome } from "../services/source-control-publish";
 import {
   createProjectNameIssue,
+  createStepProgress,
   normalizeProjectFolderName,
   publishCreatedProject,
   randomProjectName,
@@ -20,6 +21,31 @@ describe("randomProjectName", () => {
     expect(randomProjectName(["Amber Apple Arcade"], () => 0)).toBe(
       "Amber Apple Arcade 2",
     );
+  });
+});
+
+describe("createStepProgress", () => {
+  it("reports 0 first, then each whole percent that is higher, ending at exactly 100", () => {
+    const percents: number[] = [];
+    const progress = createStepProgress(3, (percent) => percents.push(percent));
+    expect(percents).toEqual([0]);
+    progress.advance();
+    progress.advance();
+    expect(percents).toEqual([0, 33, 66]);
+    progress.advance();
+    expect(percents).toEqual([0, 33, 66, 100]);
+  });
+
+  it("never passes 100 or repeats a percent, even when steps outnumber the total", () => {
+    const percents: number[] = [];
+    const progress = createStepProgress(2, (percent) => percents.push(percent));
+    for (let step = 0; step < 5; step++) progress.advance();
+    expect(percents).toEqual([0, 50, 100]);
+    // Many steps share one percent: only the first of them reports it.
+    const fine: number[] = [];
+    const many = createStepProgress(1000, (percent) => fine.push(percent));
+    for (let step = 0; step < 1000; step++) many.advance();
+    expect(fine).toEqual(Array.from({ length: 101 }, (_, percent) => percent));
   });
 });
 

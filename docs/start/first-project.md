@@ -14,7 +14,7 @@ Create, open, save and close projects from the Homepage, the screen Haptic shows
 
 You can also start from a template directly: choose one under **Templates** in the Homepage sidebar to go straight to step 3. When you have no projects yet, the Homepage shows **Start Your First Project** with **Basic 3D**, **Basic 2D** and **Blank**, which do the same.
 
-While Haptic creates and opens the project, the loading screen names the step it is on: **Creating project**, **Opening project**, then **Preparing editor**. A Remote project adds **Initializing source control** while Haptic creates its repository and pushes it. Opening a project shows **Opening project** and **Preparing editor**.
+While Haptic creates and opens the project, the loading screen names the step it is on: **Creating Project…** with the percent of the work done so far (for example **Creating Project… 40%**), **Opening Project…**, then **Preparing Editor…**. A Remote project adds **Initializing Source Control…** while Haptic creates its repository and pushes it. Opening a project shows **Opening Project…** and **Preparing Editor…**.
 
 ## Starters
 

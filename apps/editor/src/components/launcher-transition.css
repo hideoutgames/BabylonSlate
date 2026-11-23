@@ -107,6 +107,8 @@
 .haptic-splash-status {
   color: var(--muted-foreground);
   font-size: 12px;
+  /* The creation's percent changes every step without shifting the text. */
+  font-variant-numeric: tabular-nums;
 }
 .haptic-splash-version {
   flex-shrink: 0;

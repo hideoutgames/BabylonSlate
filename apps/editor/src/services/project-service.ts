@@ -129,6 +129,7 @@ import {
   normalizeProjectFolderName,
   type BuiltInStarterKind,
   type CreateProjectOptions,
+  type StepProgress,
 } from "../lib/create-project";
 import type { UpdateListedProjectOptions } from "../lib/listed-projects";
 import { throwIfCancelled } from "@haptic/source-control";
@@ -783,6 +784,7 @@ export class ProjectService {
   async createEmptyProject(
     name?: string,
     options?: CreateProjectOptions,
+    progress?: StepProgress,
   ): Promise<ProjectLoadResult & { created: boolean }> {
     const projectName =
       name && name.trim()
@@ -796,15 +798,17 @@ export class ProjectService {
         return { ...(await this.loadCurrentProject()), created: false };
       }
       await assertEmptyProjectFolder(this.storage);
-      return { ...(await this.scaffoldNewProject(projectName, options.kind, options)), created: true };
+      progress?.advance();
+      return { ...(await this.scaffoldNewProject(projectName, options.kind, options, progress)), created: true };
     }
     const owned = await openOwnedDocumentsProject(this.storage, projectName);
     if (await this.storage.exists(PROJECT_FILE) && !owned.createdHere) {
       throw new Error("Name already exists.");
     }
     await assertEmptyProjectFolder(this.storage);
+    progress?.advance();
     const result = await scaffoldOwnedProject(this.storage, owned, () =>
-      this.scaffoldNewProject(projectName, options?.kind, options),
+      this.scaffoldNewProject(projectName, options?.kind, options, progress),
     );
     return { ...result, created: true };
   }
@@ -814,6 +818,7 @@ export class ProjectService {
     name: string;
     pickFolder?: boolean;
     appearance?: ProjectAppearance;
+    progress?: StepProgress;
   }): Promise<ProjectLoadResult> {
     const projectName = normalizeProjectFolderName(options.name);
     let owned: OwnedFolder | null = null;
@@ -829,12 +834,13 @@ export class ProjectService {
   private async scaffoldFromTemplate(
     owned: OwnedFolder | null,
     projectName: string,
-    options: { templateFiles: ProjectTreeFile[]; appearance?: ProjectAppearance },
+    options: { templateFiles: ProjectTreeFile[]; appearance?: ProjectAppearance; progress?: StepProgress },
   ): Promise<ProjectLoadResult> {
     if (await this.storage.exists(PROJECT_FILE) && !owned?.createdHere) {
       throw new Error("A project already exists in this folder.");
     }
     await assertEmptyProjectFolder(this.storage);
+    options.progress?.advance();
     const guid = newGuid();
     return scaffoldOwnedProject(
       this.storage,
@@ -845,6 +851,7 @@ export class ProjectService {
           destination: this.storage,
           guid,
           name: projectName,
+          onFileWritten: () => options.progress?.advance(),
         });
         // Template and imported projects bring no derived thumbnails; the editor generates them.
         requestProjectThumbnails(guid);
@@ -867,7 +874,10 @@ export class ProjectService {
         this.projectGuid = guid;
         // Templates are imported archives that may carry Extensions, so a project made from one starts untrusted.
         await this.projectPlugins.installEnginePluginDefaultsIfNeeded();
-        return this.loadCurrentProject();
+        options.progress?.advance();
+        const loaded = await this.loadCurrentProject();
+        options.progress?.advance();
+        return loaded;
       },
     );
   }
@@ -1308,6 +1318,7 @@ export class ProjectService {
       pixelArt?: boolean;
       appearance?: ProjectAppearance;
     },
+    progress?: StepProgress,
   ): Promise<ProjectLoadResult> {
     this.resetAssetLoading();
     const render: Partial<RenderProjectSettings> | undefined = renderOptions
@@ -1352,6 +1363,7 @@ export class ProjectService {
       document.graphs = [];
     }
     document.settings.startupSceneGuid = await this.guidForAsset(MAIN_SCENE_FILE);
+    progress?.advance();
     await this.saveProject(document, createEmptyLayouts());
     const stored = JSON.parse(
       await this.storage.readText(PROJECT_FILE),
@@ -1360,15 +1372,26 @@ export class ProjectService {
     stored.kind = "project";
     stored.version = this.migrations.currentVersion("Project");
     await this.storage.writeText(PROJECT_FILE, JSON.stringify(stored, null, 2));
+    progress?.advance();
     await this.projectPlugins.installEnginePluginDefaultsIfNeeded();
+    progress?.advance();
     await this.mountAssetRegistry();
+    progress?.advance();
     if (kind === "empty" || kind === "feature-test") {
       await createInputAssets(this.starterHost());
+      progress?.advance();
       // FeatureTest pins import scale so the workload ignores Engine Settings.
       await scaffoldKenneyMannequinEmpty(this.starterHost(), document, kind === "feature-test" ? 1 : undefined);
+      progress?.advance();
     }
-    if (kind === "feature-test") await scaffoldFeatureTest(this.starterHost(), document);
-    if (renderOptions?.pixelArt) await scaffoldPixelArtFonts(this.starterHost(), document);
+    if (kind === "feature-test") {
+      await scaffoldFeatureTest(this.starterHost(), document);
+      progress?.advance();
+    }
+    if (renderOptions?.pixelArt) {
+      await scaffoldPixelArtFonts(this.starterHost(), document);
+      progress?.advance();
+    }
     // Starter assets are written without thumbnails; the editor generates them.
     requestProjectThumbnails(this.projectGuid);
     return {
