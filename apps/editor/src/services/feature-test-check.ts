@@ -329,11 +329,7 @@ export function possessProfileView(view: FeatureTestProfileViewName): string {
  * - the passes that draw the world again: every geometry effect off, the geometry pass they read drawn a second time
  *   (`worlddebug geometryonce off`, a cost added: its positive change is one pass's cost) and that second pass under a
  *   1x1 scissor (`geometryoncescissor off`: its draws and vertices without its fragments), and all of them with the
- *   captures and Mirrors' live reflection at once (`world drawn once`);
- * - the full-screen passes joined, the picture unchanged: the half-resolution marches in the Screen-Space Shadows pass
- *   (`merged marches on`), each axis's ambient occlusion and reflection blurs in one pass (`paired blurs on`) and both
- *   (`worlddebug mergedmarches`, `pairedblurs`: temporary switches, off by default, that become the default or are
- *   removed by what these rows show on the devices).
+ *   captures and Mirrors' live reflection at once (`world drawn once`).
  *
  * A Profile step never changes a setting that releases the shadow atlas (`quality shadows enabled off`, a shadow level
  * or resolution change): `quality reset` would re-create it, a 256 MiB depth texture array, on top of the programs the
@@ -349,8 +345,7 @@ export function possessProfileView(view: FeatureTestProfileViewName): string {
  * baseline so a run that stops later still has it, then the world hidden, the shadow map passes and their splits, the
  * geometry effects together, and the world drawn once. `heavy` (many draws, no Mirror on screen; the control view) takes what follows the draws rather
  * than the pixels: the world hidden, the shadow map passes, the geometry effects together and the geometry pass drawn
- * twice, whole and scissored (where it draws the most), the world drawn once, and the passes joined: the merged marches,
- * the paired blurs and both: the measurement rows sit in the heavy view only, which draws the most passes and binds, so the run stays within the 720 s the unit test bounds its windows to. `mirror` (both Mirrors and the capture monitors on screen) takes
+ * twice, whole and scissored (where it draws the most), and the world drawn once: the measurement rows sit in the heavy view only, which draws the most passes and binds, so the run stays within the 720 s the unit test bounds its windows to. `mirror` (both Mirrors and the capture monitors on screen) takes
  * the captures, the Mirrors' reflection and the world drawn once.
  */
 export function featureTestProfilePlan(state: FeatureTestProfileState): FeatureTestBreakdownPlan {
@@ -399,16 +394,6 @@ export function featureTestProfilePlan(state: FeatureTestProfileState): FeatureT
   };
   // The Check's own samplers off for one window: whether they cause long frames (the iPhone's at any load).
   const samplersOff: FeatureTestBreakdownStep = { label: "samplers off", commands: [], samplersOff: true, repeats: 1 };
-  // The temporary measurement switches, off by default (`worlddebug mergedmarches`, `pairedblurs`), on: the same
-  // picture in fewer full-screen passes, so their change against the baselines is what fewer passes save. Each becomes
-  // the default or is removed by what this row shows on the devices.
-  const passesJoined = (label: string, parts: readonly string[]): FeatureTestBreakdownStep => ({
-    label, commands: parts.map((part) => `worlddebug ${part} on`), restore: parts.map((part) => `worlddebug ${part} off`),
-    fields: ["world.debug"], overlaps: true,
-  });
-  const mergedMarchesOn = passesJoined("merged marches on", ["mergedmarches"]);
-  const pairedBlursOn = passesJoined("paired blurs on", ["pairedblurs"]);
-  const bothJoined = passesJoined("merged marches + paired blurs on", ["mergedmarches", "pairedblurs"]);
   return {
     views: [
       {
@@ -419,7 +404,6 @@ export function featureTestProfilePlan(state: FeatureTestProfileState): FeatureT
       {
         name: "heavy", enter: [possessProfileView("heavy")], steps: [
           worldHidden, shadowPassesOff, geometryOff, geometryRepeat, geometryRepeatScissored, once,
-          mergedMarchesOn, pairedBlursOn, bothJoined,
         ],
       },
       {

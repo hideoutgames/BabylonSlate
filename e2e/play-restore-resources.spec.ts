@@ -21,7 +21,7 @@ type GlCounts = Record<string, number>;
 
 const ROUNDS = 4;
 const STEPS: readonly (readonly [readonly string[], readonly string[]])[] = [
-  [["worlddebug mergedmarches on"], ["quality reset", "quality resolution scale 1", "worlddebug mergedmarches off"]],
+  [["worlddebug geometryonce off"], ["quality reset", "quality resolution scale 1", "worlddebug geometryonce on"]],
   [["quality shadows medium"], ["quality reset", "quality resolution scale 1"]],
   [["rendertargets off"], ["quality reset", "quality resolution scale 1", "rendertargets on"]],
 ];

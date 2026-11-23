@@ -243,7 +243,7 @@ describe("Play quality changes", () => {
     for (let round = 0; round < 4; round++) {
       const builds = work().graphBuilds;
       for (const [step, restore] of [
-        [["worlddebug mergedmarches on"], ["quality reset", "worlddebug mergedmarches off"]],
+        [["worlddebug geometryonce off"], ["quality reset", "worlddebug geometryonce on"]],
         [["quality shadows medium"], ["quality reset"]],
         [["postprocessing off"], ["quality reset", "postprocessing on"]],
       ]) {

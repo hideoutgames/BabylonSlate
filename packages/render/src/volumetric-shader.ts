@@ -3,7 +3,6 @@ import { MAX_FOG_VOLUMES } from "./fog-volumes";
 import { HAPTIC_SHADOW_ATLAS, hapticShadowGlsl } from "./haptic-lighting-shader";
 import { HAPTIC_LIGHTS_GLSL } from "./haptic-lights";
 import { syntax } from "./ambient-occlusion-shader";
-import type { MarchEnds, MarchSource } from "./merged-marches";
 
 /**
  * One bounded single-scattering shader. It has `slots` light slots whatever
@@ -16,25 +15,6 @@ export function volumetricShader(
   steps: number,
   localVolumes = false,
 ): string {
-  const { header, functions, body } = volumetricSource(slots, steps, localVolumes);
-  return (
-    header +
-    functions +
-    `void main() { ${body} }`
-  );
-}
-
-/**
- * The march in parts (`MarchSource`), ending a pixel through `ends`: its own pass's `gl_FragColor = value;` unless the
- * merged pass gives its own (`merged-marches.ts`). It never ends one early.
- */
-export function volumetricSource(
-  slots: number,
-  steps: number,
-  localVolumes = false,
-  ends?: Pick<MarchEnds, "last">,
-): MarchSource {
-  const last = ends ? ends.last : (value: string) => `gl_FragColor = ${value};`;
   const { v2, v3, v4, f, u, decl, field, texture, sample, uv } = syntax();
   const m4 = "mat4";
   const array = (type: string, name: string, count: number) =>
@@ -230,7 +210,11 @@ for (int step = 0; step < ${steps}; step++) {
   scattering += transmittance * (1.0 - extinction) * illumination * ${u("volumeSettings")}.y;
   transmittance *= extinction;
 }
-${last(`${v4}(scattering, transmittance)`)}
+gl_FragColor = ${v4}(scattering, transmittance);
 `;
-  return { header, functions, body };
+  return (
+    header +
+    functions +
+    `void main() { ${body} }`
+  );
 }
