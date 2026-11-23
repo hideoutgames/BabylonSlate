@@ -445,7 +445,7 @@ function sceneLines(scene: FeatureTestCheckSceneResult, report: FeatureTestCheck
       ...verdicts.nonAdditive.map((text) => `  NON-ADDITIVE: ${text}; the changes do not add up, so do not sum them`),
       ...(verdicts.saturated ? [`  SATURATED: ${verdicts.saturated}; the GPU is saturated, so a change is not that feature's own cost`] : []),
       ...(verdicts.overCap ? [`  OVER CAP: ${verdicts.overCap}; the GPU may change speed there, so changes are not costs`] : []),
-      `  Legend: gpu busy = median (p95) GPU time per frame from fences, unaffected by display pacing · change = gpu busy against the baselines of the same camera around the step (a baseline's: against that camera's first; ${method === "add-one" ? "a step's is the feature's cost" : "a step's is what the feature saves"}), or mean frame time where gpu busy is missing (marked *) · vsync 1/2/3/4+ = % of frames lasting 1, 2, 3, 4+ display intervals · bound = gpu (frames over 1.5x the CPU cost), vsync (at the cap) or cpu · notes = settings the step changed and occlusion culled/tested · occluder tris · culling ms; UNEXPECTED, NOT RESTORED, COMPILING (shaders first drawn or compiling while sampled) and OVER mark a sample not to trust`,
+      `  Legend: gpu busy = median (p95) GPU time per frame from fences, unaffected by display pacing · change = gpu busy against the baselines of the same camera around the step (a baseline's: against that camera's first; ${method === "add-one" ? "a step's is the feature's cost" : "a step's is what the feature saves"}), or mean frame time where gpu busy is missing (marked *) · vsync 1/2/3/4+ = % of frames lasting 1, 2, 3, 4+ display intervals · bound = gpu (frames over 1.5x the CPU cost), vsync (at the cap) or cpu · notes = settings the step changed and occlusion culled/tested · occluder tris · culling ms; UNEXPECTED, NOT RESTORED, COMPILING (shaders first drawn or compiling while sampled), RESTORE LINKED (a later baseline whose restore gained programs) and OVER mark a sample not to trust`,
       `  Timing: ${timed?.gpuBusy ? `gpu busy read as each Engine frame starts, every ${timed.gpuBusy.pollMs.toFixed(1)} ms (completion read at frame granularity: a frame whose GPU work ends before the next frame starts reads at least the time to that start)` : "no gpu busy (no fences)"}`,
       `    ${pad("Step", 22)}${pad("fps", 5)}${pad("mean", 8)}${pad("p95", 7)}${pad("vsync 1/2/3/4+", 16)}${pad("gpu busy", 14)}${pad("change", 18)}${pad("cpu", 8)}${pad("bound", 6)}${pad("draws", 14)}notes`);
     for (const sample of play.benchmark) {
@@ -535,6 +535,12 @@ function settingNotes(
   const switched = sample.switched;
   if (switched && (switched.firstDraws > 0 || (switched.programs ?? 0) !== 0))
     notes.push(`switch: ${switched.firstDraws} first drawn (${switched.stalls} long), programs ${switched.programs === null ? "?" : `${switched.programs >= 0 ? "+" : ""}${switched.programs}`}, ${(switched.ms / 1000).toFixed(1)} s`);
+  // A baseline after its view's first (whose `enter` commands may draw what the view shows for the first time) returns
+  // to a state already drawn: a restore that still gained programs linked them right before its window (a program the
+  // Engine already had, made again), so its frames are not the state's. `programs` is the net change: a link and a
+  // release in the same switch read +0.
+  if (isBreakdownBaseline(sample) && !/(^| )baseline 1$/.test(sample.label) && (switched?.programs ?? 0) > 0)
+    notes.push(`RESTORE LINKED: programs +${switched!.programs}`);
   if (first?.settings && sample.settings && sample !== first) {
     const changes = settingsChanges(first.settings, sample.settings);
     const field = (change: string) => change.slice(0, change.indexOf("="));

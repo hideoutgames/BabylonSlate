@@ -32,7 +32,7 @@ import {
   type MaterialDocument,
 } from "@haptic/shader-graph";
 import { isBoundedMaterial, isDrawBatchMaterial, isDrawBatchTextMaterial } from "./draw-batch-world-block";
-import { acquireAuthoredMaterialVariant, compileMaterialPlan, isGpuTextureSampleReady, MATERIAL_BLOCK_PREFIX, PARTICLE_PROGRAM_CACHE_SIZE, prewarmMaterial } from "./material-compiler";
+import { acquireAuthoredMaterialVariant, compileMaterialPlan, isGpuTextureSampleReady, MATERIAL_BLOCK_PREFIX, NAMED_PROGRAM_CACHE_SIZE, prewarmMaterial } from "./material-compiler";
 import { fnv1a } from "@haptic/core";
 import { nodeBlockName } from "./test-support/material-node-blocks";
 import { materialProgramCensus } from "./material-program-census";
@@ -986,7 +986,7 @@ describe("material compiler", () => {
       const scene = host();
       const first = await particle(scene, 2);
       const second = await particle(scene, 4);
-      for (let index = 0; index < PARTICLE_PROGRAM_CACHE_SIZE - 2; index++) await particle(scene, 10 + index);
+      for (let index = 0; index < NAMED_PROGRAM_CACHE_SIZE - 2; index++) await particle(scene, 10 + index);
       // Adopting the first program makes the second the least recently used: the next new program pushes it out.
       expect((await particle(scene, 2)).buildId).toBe(first.buildId);
       await particle(scene, 9);

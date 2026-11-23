@@ -2754,3 +2754,49 @@ it("splits ForwardSceneFrameGraph for projected decals while the scene has autho
   }
 });
 
+// A replaced graph's decal split goes with it: its transparent pass holds an object renderer, a depth-peeling renderer
+// with its own full-screen quad, a scene uniform buffer and render pass ids, which each settings change or restore that
+// built the graph again once kept for the session.
+it("releases a replaced graph's decal split, holding the same GPU buffers after every rebuild", async () => {
+  const { DECAL_CLASS_ID, RENDER_QUALITY_PROFILES, decalBindings } = await import("@haptic/core");
+  const { clearDecals, upsertDecals } = await import("./decal-pass");
+  const { engine, scene, camera } = host();
+  camera.position.set(0, 2, -10);
+  camera.setTarget(new Vector3(0, 0, 0));
+  updateSceneRenderingSettings(scene, {
+    effects: { ...DEFAULT_RENDER_EFFECTS, toneMapping: "none" },
+    quality: { ...RENDER_QUALITY_PROFILES.low, postprocessing: { ...RENDER_QUALITY_PROFILES.low.postprocessing, antiAliasing: "off" } },
+  });
+  // The vertex and index buffers the Engine holds.
+  const buffers = new Set<object>();
+  for (const name of ["createVertexBuffer", "createDynamicVertexBuffer", "createIndexBuffer"] as const) {
+    const create = engine[name].bind(engine) as (...args: unknown[]) => object;
+    vi.spyOn(engine, name).mockImplementation(((...args: unknown[]) => {
+      const buffer = create(...args);
+      buffers.add(buffer);
+      return buffer;
+    }) as never);
+  }
+  const release = engine._releaseBuffer.bind(engine);
+  vi.spyOn(engine, "_releaseBuffer").mockImplementation((buffer) => {
+    const released = release(buffer);
+    if (released) buffers.delete(buffer);
+    return released;
+  });
+  const graph = new ForwardSceneFrameGraph(scene);
+  const root = new TransformNode("decal-actor", scene);
+  const held: number[] = [];
+  try {
+    for (let round = 0; round < 4; round++) {
+      upsertDecals(scene, "decal-actor", root, decalBindings([{ id: "d1", classId: DECAL_CLASS_ID, properties: { materialGuid: "scorch" } }]));
+      expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+      clearDecals(scene);
+      expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+      held.push(buffers.size);
+    }
+  } finally {
+    graph.dispose();
+  }
+  expect(new Set(held).size, `buffers held after each round: ${held.join(", ")}`).toBe(1);
+});
+

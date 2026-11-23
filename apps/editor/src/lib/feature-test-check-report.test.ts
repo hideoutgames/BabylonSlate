@@ -236,13 +236,16 @@ describe("formatFeatureTestCheckReport", () => {
         editor: { status: "ready", ms: 1000, phase: null, frames: null, error: null, gpu: null },
         play: { status: "loaded", ms: 2000, phase: null, frames: null, runtimeFps: null, snapshot: null, presentation: null, firstDraws: null, commands: [],
           benchmark: [
-            sample("baseline 1", 38),
+            // The first baseline's switch is its camera's first draw, not a restore.
+            sample("baseline 1", 38, { switched: { ms: 2_000, firstDraws: 3, stalls: 0, programs: 3 } }),
             sample("water reflections sky", 30, { settings: { ...settings, "water.reflections": "sky" } }),
             sample("water detail low", 36, {
               settings: { ...settings, "water.shadingDetail": "low", "water.reflections": "sky" }, switched: { ms: 37_400, firstDraws: 74, stalls: 6, programs: 74 },
             }),
             sample("water detail medium", 16.7, { cpuMs: 10, unsettled: { firstDraws: 3, compiling: 1, settleMs: 90_000 } }),
-            sample("baseline 2", 42, { settings: { ...settings, "post.enabled": "false" } }),
+            sample("baseline 2", 42, { settings: { ...settings, "post.enabled": "false" }, switched: { ms: 3_300, firstDraws: 1, stalls: 0, programs: 1 } }),
+            // A restore that links nothing new, though it first drew a variant the keep had let go: trusted.
+            sample("baseline 3", 38, { switched: { ms: 1_000, firstDraws: 1, stalls: 0, programs: 0 } }),
           ], logs: [] },
         session: null,
       }],
@@ -260,7 +263,11 @@ describe("formatFeatureTestCheckReport", () => {
     expect(row("water detail medium")).toContain("COMPILING: 3 first drawn, 1 compiling · no setting changed");
     expect(row("baseline 2")).toContain("+4.0ms +11%*");
     expect(row("baseline 2")).toContain("NOT RESTORED: post.enabled=false");
-    expect(row("baseline 1")).toMatch(/\+0\.0ms \+0%\* +14\.2ms {2}gpu {3}575 \(544-605\)$/);
+    // A later baseline whose restore linked a program again is not to trust; the first's and a +0 one's are.
+    expect(row("baseline 2")).toContain("RESTORE LINKED: programs +1");
+    expect(row("baseline 3")).not.toContain("RESTORE LINKED");
+    expect(row("baseline 1")).not.toContain("RESTORE LINKED");
+    expect(row("baseline 1")).toMatch(/\+0\.0ms \+0%\* +14\.2ms {2}gpu {3}575 \(544-605\) +switch: 3 first drawn \(0 long\), programs \+3, 2\.0 s$/);
     expect(lines.some((line) => line.includes("Highest tier"))).toBe(false);
     // Without fences: no GPU-busy times, and every change is in mean frame time (marked *).
     expect(lines).toContain("  Timing: no gpu busy (no fences)");

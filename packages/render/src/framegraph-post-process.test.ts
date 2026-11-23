@@ -70,6 +70,13 @@ function gainDocument() {
   return doc;
 }
 
+/** `gainDocument` adding the parameter instead of multiplying by it: other generated code. */
+function offsetDocument() {
+  const document = gainDocument();
+  document.nodes = document.nodes.map((node) => node.id === "multiply" ? { ...node, type: "math.add" } : node);
+  return document;
+}
+
 function textureDocument() {
   const document = gainDocument();
   document.nodes = document.nodes.map((node) =>
@@ -385,6 +392,42 @@ it("keeps a Material build's shader source while a newer pass compiles from it, 
   expect(ShaderStore.ShadersStore[`${fragment}PixelShader`]).toBeUndefined();
 });
 
+// Every graph build makes its own task for a stack entry, which acquires the Material under a key of its own and builds
+// it again. A settings change keeps the replaced build until its replacement is ready; a post-processing switch
+// disposes it first, while the Play keep holds its Effect (`keepPlayEffects`), which a pass of the same name then finds.
+it.each(["after", "before"] as const)("names every graph build's pass of a Material as its first, with the replaced build disposed %s the next builds", async (order) => {
+  const { engine, scene, library, graph, source, dispose: disposeFirst } = host([gainDocument()]);
+  await graph.buildAsync();
+  const compiled = () => Object.keys((engine as unknown as { _compiledEffects: Record<string, Effect> })._compiledEffects).length;
+  const program = engine.postProcesses[0]!.getEffect();
+  // As the Play keep does: the Effect outlives a pass disposed before the next build.
+  program._refCount += 1;
+  dispose.push(() => program.dispose());
+  const programs = compiled();
+  let retire = disposeFirst;
+  for (let build = 0; build < 5; build++) {
+    if (order === "before") retire();
+    const next = new FrameGraph(scene);
+    const color = next.textureManager.importTexture("Scene Color", source.getInternalTexture()!);
+    const task = new AuthoredPostProcessTask("Authored Post Process 0", {
+      frameGraph: next, library, materialGuid: "0", document: gainDocument(), sourceTexture: color, sceneColorTexture: color, resolutionScale: 1,
+    });
+    next.addTask(task);
+    const present = new FrameGraphCopyToBackbufferColorTask("Present", next);
+    present.sourceTexture = task.outputTexture;
+    next.addTask(present);
+    let ended = false;
+    const end = () => { if (ended) return; ended = true; task.dispose(); next.dispose(); };
+    dispose.push(end);
+    await next.buildAsync();
+    await next.whenReadyAsync();
+    if (order === "after") retire();
+    retire = end;
+    expect(engine.postProcesses.at(-1)!.getEffect(), `build ${build + 1}`).toBe(program);
+    expect(next.isReady(), `build ${build + 1}`).toBe(true);
+  }
+  expect(compiled()).toBe(programs);
+});
 it("disposal during deferred graph compilation cannot attach a late pass", async () => {
   const { tasks, engine, scene } = host([gainDocument()]);
   const pending = tasks[0]!.initAsync();
@@ -460,7 +503,8 @@ it.each(["replace", "update", "dispose", "deadline", "compile-error", "engine-di
         expect(shared._refCount).toBe(2);
       }
 
-      if (action === "replace") await task.replaceDocument(gainDocument());
+      // Other code: a replacement with the same code would share the pending program (`shareNamedProgram`).
+      if (action === "replace") await task.replaceDocument(offsetDocument());
       else if (action === "update") {
         const name = retiring.name as { vertex: string; fragment: string };
         retiringPass.updateEffect(`${retiring.defines}\n#define OWNED_REPLACEMENT`, retiring.getUniformNames(),
