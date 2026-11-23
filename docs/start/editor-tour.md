@@ -24,6 +24,7 @@ Every asset you open becomes a document tab.
 - The open scene sits next to it. Only one scene is open at a time; opening another scene replaces it and asks you to save first if needed.
 - Other documents scroll to the right. Hold a tab, then drag it to reorder.
 - The **Open Documents** menu at the end of the strip lists every tab and has **Close** for the active document and **Close Open Tab(s)**.
+- A text property opened in its own tab (see [Long text and code](#long-text-and-code)) is a tab too. It is never saved with the project's layout and closes when you select something else.
 
 ## Content Browser
 
@@ -66,6 +67,12 @@ Right-click or hold a property, or its name, in any **Inspector** for **Copy** a
 - An asset of a type the property takes. An empty asset property knows its types in component and node settings; elsewhere it takes only an asset of the type it already holds.
 
 **Copy** is unavailable when a property shows **Mixed Values**, and **Paste** in read-only Inspectors such as Play's. While you are typing in a text field, right-click shows the usual text menu instead.
+
+### Long text and code
+
+Multi-line properties, such as a text component's **Text**, a Math Expression's **Formula**, a **Function Body** or a plugin's **Description**, are edited right in the **Inspector**. The field keeps a fixed height and scrolls when the text is longer. Your change applies when you leave the field, and **Save All** includes text you are still typing.
+
+To edit with more room, tap the button next to the property name (**Open … in Tab**). The text opens full size in a new document tab named after the property and its asset, such as **Formula: Player Class**. Changes apply when you leave the editor or switch tabs, and the **Inspector** shows them. Closing the tab returns to the asset. The tab belongs to the property: it closes when you select something else, delete the item or close its asset.
 
 ## Windows and Focus
 

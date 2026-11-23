@@ -17,6 +17,8 @@ export type DocumentWorkingSetInput = {
   maxWarm?: number;
   /** Open document kinds so Scene tabs stay mounted while the tab is open. */
   documents?: readonly { id: string; kind: string }[];
+  /** Open tabs that stay mounted whatever their age: the documents an open Text Editor tab edits a field of. */
+  keepMounted?: readonly string[];
 };
 
 function openSceneIds(
@@ -31,9 +33,21 @@ function openSceneIds(
   return scenes;
 }
 
+/** Open Scenes and the `keepMounted` ids that are open: mounted whatever their age. */
+function alwaysMountedIds(
+  tabIds: ReadonlySet<string>,
+  documents: readonly { id: string; kind: string }[] | undefined,
+  keepMounted: readonly string[] | undefined,
+): Set<string> {
+  const ids = openSceneIds(tabIds, documents);
+  for (const id of keepMounted ?? []) if (tabIds.has(id)) ids.add(id);
+  return ids;
+}
+
 /**
  * Which open chrome tabs should keep their document workspace mounted.
- * Content Browser, the active tab, and open Scene documents always mount.
+ * Content Browser, the active tab, open Scene documents and `keepMounted`
+ * documents (a Text Editor tab's source, whose Inspector field owns the tab) always mount.
  * Other tabs stay warm until `idleMs` after `lastActiveAt`, capped at
  * `maxWarm` non-CB ids (open Scenes count toward that cap).
  */
@@ -45,7 +59,7 @@ export function selectMountedDocumentIds(
   const maxWarm = input.maxWarm ?? MAX_WARM_DOCUMENT_WORKSPACES;
   const open = new Set(input.tabIds);
   const mounted = new Set<string>();
-  const scenes = openSceneIds(open, input.documents);
+  const scenes = alwaysMountedIds(open, input.documents, input.keepMounted);
 
   if (open.has(contentBrowserId)) mounted.add(contentBrowserId);
   if (input.activeId && open.has(input.activeId)) mounted.add(input.activeId);
@@ -102,6 +116,7 @@ export function useDocumentWorkingSet(
   tabIds: readonly string[],
   activeId: string | null,
   documents: readonly { id: string; kind: string }[] = [],
+  keepMounted: readonly string[] = [],
 ): Set<string> {
   const clockRef = useRef(createIdleClock());
   const lastActiveAtRef = useRef(new Map<string, number>());
@@ -109,6 +124,7 @@ export function useDocumentWorkingSet(
   const [paused, setPaused] = useState(false);
   const [generation, setGeneration] = useState(0);
   const documentKey = documents.map((doc) => `${doc.id}:${doc.kind}`).join("\0");
+  const keepKey = keepMounted.join("\0");
 
   if (prevActiveRef.current !== activeId) {
     const now = clockRef.current.now();
@@ -140,8 +156,9 @@ export function useDocumentWorkingSet(
       lastActiveAt: lastActiveAtRef.current,
       now,
       documents,
+      keepMounted,
     });
-    const scenes = openSceneIds(new Set(tabIds), documents);
+    const scenes = alwaysMountedIds(new Set(tabIds), documents, keepMounted);
     let soonest = Number.POSITIVE_INFINITY;
     for (const id of mounted) {
       if (id === CONTENT_BROWSER_ID || id === activeId || scenes.has(id)) {
@@ -159,7 +176,7 @@ export function useDocumentWorkingSet(
     );
     return () => window.clearTimeout(timer);
     // tabIds / documents are hashed so a new array with the same ids does not reset the timer.
-  }, [tabIds.join("\0"), activeId, documentKey, paused, generation]);
+  }, [tabIds.join("\0"), activeId, documentKey, keepKey, paused, generation]);
 
   return selectMountedDocumentIds({
     tabIds,
@@ -167,5 +184,6 @@ export function useDocumentWorkingSet(
     lastActiveAt: lastActiveAtRef.current,
     now: clockRef.current.now(),
     documents,
+    keepMounted,
   });
 }

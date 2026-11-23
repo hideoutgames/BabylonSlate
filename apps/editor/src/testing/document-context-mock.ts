@@ -95,7 +95,7 @@ function inertExtensionService(): DocumentsValue["extensionService"] {
   return service as unknown as DocumentsValue["extensionService"];
 }
 
-const KINDS: readonly DocumentKind[] = ["content-browser", "source-control", ...ASSET_DOCUMENT_KINDS];
+const KINDS: readonly DocumentKind[] = ["content-browser", "source-control", "text-editor", ...ASSET_DOCUMENT_KINDS];
 
 /** One revision per `openDocuments` array: replacing the array advances every kind. */
 function revisionsFollowingDocuments(): (documents: unknown) => DocumentRevisions {
@@ -217,6 +217,7 @@ function inertDocuments(current: () => DocumentsValue | undefined): DocumentsVal
     pendingExclusiveScene: null,
     confirmExclusiveSceneOpen: resolved,
     cancelExclusiveSceneOpen: noop,
+    openTransientDocument: (ref) => `${ref.kind}:${ref.path}`,
     closeDocument: noop,
     closeDocumentsForPaths: noop,
     replaceClassReferencesBeforeDelete: resolved,

@@ -43,11 +43,12 @@ import {
   CONTENT_BROWSER_ID,
   isChromeDocumentId,
   isChromeDocumentKind,
+  isTransientDocumentKind,
   SOURCE_CONTROL_ID,
   type DocumentRef,
   type SerializedGraph,
 } from "@haptic/core";
-import { ChromeDocumentIcon } from "./chrome-document-icon";
+import { ChromeDocumentIcon, TextEditorDocumentIcon } from "./chrome-document-icon";
 import {
   ShortcutKeys,
   ToolbarOverflow,
@@ -154,6 +155,9 @@ const GitBenchmarkDialog = lazy(() =>
 function kindIcon(ref: DocumentRef, resolveVisual: DocumentTypeVisualResolver) {
   if (isChromeDocumentKind(ref.kind)) {
     return <ChromeDocumentIcon kind={ref.kind} className="size-4 shrink-0" />;
+  }
+  if (isTransientDocumentKind(ref.kind)) {
+    return <TextEditorDocumentIcon sessionId={ref.path} className="size-4 shrink-0" />;
   }
   const visual = resolveVisual(ref);
   return <TypeVisualIcon visual={visual} className="size-4 shrink-0" />;

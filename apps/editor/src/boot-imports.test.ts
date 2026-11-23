@@ -56,6 +56,13 @@ describe("editor boot imports", () => {
     expect(closure.filter((file) => CODE_EDITOR_IMPORT.test(readFileSync(join(SRC, file), "utf8")))).toEqual([]);
   });
 
+  it("keep the Text Editor tab's page out of the Editor route, which loads it with the first Text Editor tab", () => {
+    const closure = staticClosure("routes/editor-route.tsx");
+    // The workspace that mounts it is reached, so an empty result is a finding.
+    expect(closure).toContain("components/document-workspace.tsx");
+    expect(closure).not.toContain("components/text-editor-workspace.tsx");
+  });
+
   // The lazy Homepage route: the miniature editor in Theme Settings brings Dockview and the graph editor, and the
   // Feature Test Check's runner is needed only when a Breakdown waits to resume.
   it("keep the Theme Settings preview and the Feature Test Check runner out of the Homepage route", () => {

@@ -7,8 +7,9 @@ import {
   CONTENT_BROWSER_ID,
   isChromeDocumentId,
   isChromeDocumentKind,
+  isTransientDocumentKind,
 } from "@haptic/core";
-import { ChromeDocumentIcon } from "./chrome-document-icon";
+import { ChromeDocumentIcon, TextEditorDocumentIcon } from "./chrome-document-icon";
 import { TypeVisualIcon, ShortcutKeys, ariaKeyShortcuts, useTouchUi } from "@haptic/editor-kit";
 import { Button } from "@haptic/ui/components/button";
 import {
@@ -130,6 +131,8 @@ export function DocumentSwitcher({
               >
                 {isChromeDocumentKind(doc.ref.kind) ? (
                   <ChromeDocumentIcon kind={doc.ref.kind} />
+                ) : isTransientDocumentKind(doc.ref.kind) ? (
+                  <TextEditorDocumentIcon sessionId={doc.ref.path} />
                 ) : (
                   <TypeVisualIcon
                     visual={resolveVisual(doc.ref)}

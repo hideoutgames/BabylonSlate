@@ -13,7 +13,7 @@ import {
   timelineClipSummaries,
 } from "@haptic/core";
 import type {
-  DocumentKind,
+  AssetDocumentKind,
   SerializedGraph,
   SerializedScene,
   SerializedSceneLayer,
@@ -21,7 +21,6 @@ import type {
 import {
   assetTypeForDocumentKind,
   classHeaderMeta,
-  isAssetDocumentKind,
   isInputAssetType,
   normalizeInputAssetPayload,
   normalizePrefab,
@@ -210,8 +209,8 @@ export function suppliedChunkIds(chunks: readonly EncodableChunk[]): string[] {
   return [DOCUMENT_CHUNK_ID, ...chunks.filter((chunk) => !isCarriedChunk(chunk)).map((chunk) => chunk.id)];
 }
 
-export function fallbackDocumentType(kind: Exclude<DocumentKind, "content-browser" | "source-control">): string {
-  return isAssetDocumentKind(kind) ? assetTypeForDocumentKind(kind) : "Class";
+export function fallbackDocumentType(kind: AssetDocumentKind): string {
+  return assetTypeForDocumentKind(kind);
 }
 
 export function assetName(path: string): string {

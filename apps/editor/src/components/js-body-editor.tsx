@@ -1,14 +1,17 @@
 import { useEffect, useRef } from "react";
-import { Annotation, Compartment, EditorState } from "@codemirror/state";
+import { Annotation, Compartment, EditorState, Prec, type Extension } from "@codemirror/state";
 import { useEditorReadOnly } from "@haptic/editor-kit";
-import { EditorView, keymap, lineNumbers } from "@codemirror/view";
+import { EditorView, keymap, lineNumbers, tooltips, type Command, type KeyBinding } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { javascript } from "@codemirror/lang-javascript";
 import { syntaxHighlighting, bracketMatching } from "@codemirror/language";
 import { Button } from "@haptic/ui/components/button";
 import { codeHighlight, glslLanguage } from "./code-highlighting";
-import { autocompletion, closeCompletion, completionKeymap, startCompletion } from "@codemirror/autocomplete";
+import { acceptCompletion, autocompletion, closeCompletion, moveCompletionSelection, startCompletion } from "@codemirror/autocomplete";
 import { codeCompletions } from "./code-completion";
+import { useKeybindings } from "../context/keybind-context";
+import { codeMirrorKey } from "../lib/code-editor-keys";
+import type { EditorCommandId, ResolvedKeybinds } from "../lib/editor-keybinds";
 
 export type JsBodyEditorProps = {
   value: string;
@@ -17,6 +20,10 @@ export type JsBodyEditorProps = {
   names?: readonly string[];
   ariaLabel?: string;
   readOnly?: boolean;
+  /** Inline in an Inspector field: fills its parent, without the touch symbol bar. */
+  compact?: boolean;
+  /** Focus the editor once it has loaded. */
+  autoFocus?: boolean;
 };
 const externalValueSync = Annotation.define<boolean>();
 
@@ -36,6 +43,35 @@ function changedSpan(current: string, next: string): { from: number; to: number;
     nextEnd -= 1;
   }
   return { from, to: currentEnd, insert: next.slice(from, nextEnd) };
+}
+
+/** Moving through an open completion list; these keys are not rebindable. */
+const COMPLETION_NAVIGATION: readonly KeyBinding[] = [
+  { key: "ArrowDown", run: moveCompletionSelection(true) },
+  { key: "ArrowUp", run: moveCompletionSelection(false) },
+  { key: "PageDown", run: moveCompletionSelection(true, "page") },
+  { key: "PageUp", run: moveCompletionSelection(false, "page") },
+];
+
+/**
+ * The completion keys from the user's Keybinds (Code Editor). The editor owns
+ * them, as graph canvases own theirs: the window dispatcher skips text fields.
+ * Accept and Dismiss decline when no list is open, so the key keeps its
+ * editing meaning (Enter inserts a line); a Dismiss that closed a list stops
+ * there, so Escape does not also close a dialog around the editor.
+ */
+function completionKeys(bindings: ResolvedKeybinds): Extension {
+  const bind = (commandId: EditorCommandId, run: Command, stopPropagation = false): KeyBinding[] =>
+    (bindings.get(commandId) ?? [])
+      .map(codeMirrorKey)
+      .filter((key): key is string => key !== null)
+      .map((key) => ({ key, run, stopPropagation }));
+  return Prec.high(keymap.of([
+    ...bind("code.complete", startCompletion),
+    ...bind("code.acceptCompletion", acceptCompletion),
+    ...bind("code.dismissCompletion", closeCompletion, true),
+    ...COMPLETION_NAVIGATION,
+  ]));
 }
 
 const ACCESSORY = [
@@ -58,7 +94,7 @@ const ACCESSORY = [
  * Touch-friendly code body editor (CodeMirror 6). Screens render it through
  * `LazyCodeBodyEditor`, so CodeMirror loads only when a code body is shown.
  */
-export function CodeBodyEditor({ value, onChange, bodyLine, language, names = [], ariaLabel, readOnly: readOnlyProp = false }: JsBodyEditorProps & { language: "javascript" | "glsl" }) {
+export function CodeBodyEditor({ value, onChange, bodyLine, language, names = [], ariaLabel, readOnly: readOnlyProp = false, compact = false, autoFocus = false }: JsBodyEditorProps & { language: "javascript" | "glsl" }) {
   const inheritedReadOnly = useEditorReadOnly();
   const readOnly = readOnlyProp || inheritedReadOnly;
   const readOnlyRef = useRef(readOnly);
@@ -70,6 +106,9 @@ export function CodeBodyEditor({ value, onChange, bodyLine, language, names = []
   onChangeRef.current = onChange;
   const namesRef = useRef(names);
   namesRef.current = names;
+  const keybinds = useKeybindings();
+  const keybindsApplied = useRef(keybinds);
+  const completionKeysCompartment = useRef(new Compartment());
 
   useEffect(() => {
     if (!hostRef.current) return;
@@ -79,15 +118,20 @@ export function CodeBodyEditor({ value, onChange, bodyLine, language, names = []
         readOnlyCompartment.current.of([EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)]),
         EditorState.transactionFilter.of((transaction) => readOnlyRef.current && transaction.docChanged &&
           !transaction.annotation(externalValueSync) ? [] : transaction),
+        // Completion and other tooltips live in the document body, so a small host
+        // (the Inspector's fixed-height box, a scrolling panel) never clips them.
+        tooltips({ parent: document.body }),
         lineNumbers(),
         history(),
         language === "glsl" ? glslLanguage : javascript(),
         syntaxHighlighting(codeHighlight),
         bracketMatching(),
-        autocompletion(),
+        // Its built-in keys would also take Ctrl-Space, Enter and Escape; the Keybinds ones replace them.
+        autocompletion({ defaultKeymap: false }),
         (language === "glsl" ? glslLanguage : javascript().language).data.of({ autocomplete: (context: import("@codemirror/autocomplete").CompletionContext) => codeCompletions(context, language, namesRef.current) }),
         EditorView.contentAttributes.of({ "aria-label": ariaLabel ?? (language === "glsl" ? "GLSL Function Body" : "JavaScript Function Body") }),
-        keymap.of([{ key: "Escape", run: closeCompletion, stopPropagation: true }, ...completionKeymap, ...defaultKeymap, ...historyKeymap]),
+        completionKeysCompartment.current.of(completionKeys(keybindsApplied.current)),
+        keymap.of([...defaultKeymap, ...historyKeymap]),
         EditorView.updateListener.of((update) => {
           if (update.docChanged && !update.transactions.every((transaction) => transaction.annotation(externalValueSync))) {
             onChangeRef.current(update.state.doc.toString());
@@ -114,6 +158,7 @@ export function CodeBodyEditor({ value, onChange, bodyLine, language, names = []
     });
     const view = new EditorView({ state, parent: hostRef.current });
     viewRef.current = view;
+    if (autoFocus) view.focus();
     return () => {
       view.destroy();
       viewRef.current = null;
@@ -128,6 +173,12 @@ export function CodeBodyEditor({ value, onChange, bodyLine, language, names = []
     ]) });
     if (readOnly && viewRef.current) closeCompletion(viewRef.current);
   }, [readOnly]);
+
+  useEffect(() => {
+    if (!viewRef.current || keybindsApplied.current === keybinds) return;
+    keybindsApplied.current = keybinds;
+    viewRef.current.dispatch({ effects: completionKeysCompartment.current.reconfigure(completionKeys(keybinds)) });
+  }, [keybinds]);
 
   useEffect(() => {
     const view = viewRef.current;
@@ -164,7 +215,7 @@ export function CodeBodyEditor({ value, onChange, bodyLine, language, names = []
   };
 
   return (
-    <div className="flex min-h-40 min-w-0 flex-1 flex-col" data-testid={language === "glsl" ? "glsl-body-editor" : "js-body-editor"}>
+    <div className={compact ? "flex h-full min-h-0 min-w-0 flex-1 flex-col" : "flex min-h-40 min-w-0 flex-1 flex-col"} data-testid={language === "glsl" ? "glsl-body-editor" : "js-body-editor"}>
       <div
         ref={hostRef}
         // min-w-0: long lines scroll inside CodeMirror instead of widening the host.
@@ -172,7 +223,7 @@ export function CodeBodyEditor({ value, onChange, bodyLine, language, names = []
         // Selection intentionally enabled for code editing.
         style={{ userSelect: "text", WebkitUserSelect: "text" }}
       />
-      <div className="hidden flex-wrap gap-1 border-t p-1 pointer-coarse:flex" data-testid="js-accessory-bar">
+      {compact ? null : <div className="hidden flex-wrap gap-1 border-t p-1 pointer-coarse:flex" data-testid="js-accessory-bar">
         <Button type="button" variant="outline" size="touch" disabled={readOnly} onPointerDown={(event) => event.preventDefault()} onClick={() => { if (viewRef.current) { viewRef.current.focus(); startCompletion(viewRef.current); } }}>Complete</Button>
         {ACCESSORY.map((token) => (
           <Button
@@ -187,8 +238,7 @@ export function CodeBodyEditor({ value, onChange, bodyLine, language, names = []
             {token === "Tab" ? "⇥" : token}
           </Button>
         ))}
-      </div>
-      <div className="flex shrink-0 justify-between border-t bg-sidebar px-2 py-1 text-xs text-muted-foreground"><span>{language === "glsl" ? "GLSL" : "JavaScript"}</span><span>Ctrl+Space: Complete · Enter: Accept · Esc: Dismiss</span></div>
+      </div>}
     </div>
   );
 }

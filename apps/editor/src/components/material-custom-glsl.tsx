@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { LabelHint, MultilineTextField, PinListEditor, PropertyGrid, type PinListRow } from "@haptic/editor-kit";
-import { Field, FieldLabel, FieldDescription } from "@haptic/ui/components/field";
+import { MultilineTextField, PinListEditor, PropertyGrid, type PinListRow } from "@haptic/editor-kit";
+import { Field, FieldDescription } from "@haptic/ui/components/field";
 import { customGlslInterface, customGlslInterfaceError, type CustomGlslPin, type MaterialGraphNode } from "@haptic/shader-graph";
 import { LazyCodeBodyEditor, LazyGlslCodePreview } from "./lazy-code-editors";
+import { useTextEditorTab } from "../lib/use-text-editor-tab";
 
 const TYPES = ["float", "vec2", "vec3", "vec4"] as const;
 const INPUT_TYPES = [...TYPES, "texture"] as const;
@@ -33,6 +34,17 @@ export function MaterialCustomGlsl({ node, setProperties, bodyLine }: {
     setProperties({ [key]: key === "outputs" ? [pins.outputs[0]!, ...next] : next });
   };
   const primary = pins.outputs[0];
+  const names = [...pins.inputs, ...pins.outputs.slice(1)].map((pin) => pin.name);
+  const setBody = (body: string) => setProperties({ body });
+  const openInTab = useTextEditorTab({
+    fieldKey: `node:${node.id}:body`,
+    title: "Function Body",
+    mode: "glsl",
+    value: body,
+    onChange: setBody,
+    names,
+    error,
+  });
   return <div className="flex min-w-0 flex-col gap-2 px-3" data-testid="material-node-glsl-field">
     {primary ? <PropertyGrid rows={[
       { id: "result-name", kind: "text", label: "Return Name", value: primary.name, onChange: (name) => setProperties({ outputs: [{ ...primary, name }, ...pins.outputs.slice(1)] }) },
@@ -41,13 +53,9 @@ export function MaterialCustomGlsl({ node, setProperties, bodyLine }: {
     <PinListEditor title="Inputs" rows={pins.inputs} types={INPUT_TYPES} showDefault={false} showOptional={false} selectedId={selectedInput} onSelect={selectInput} onChange={(rows) => setPins("inputs", rows)} itemLabel="Input" testIdPrefix="custom-glsl-input" />
     <PinListEditor title="Additional Outputs" rows={pins.outputs.slice(1)} types={TYPES} showDefault={false} showOptional={false} selectedId={selectedOutput} onSelect={selectOutput} onChange={(rows) => setPins("outputs", rows)} itemLabel="Output" testIdPrefix="custom-glsl-output" />
     <Field data-invalid={!!error}>
-      <LabelHint hint={GLSL_SIGNATURE_HINT}>
-        <FieldLabel htmlFor="material-node-glsl">Function Body</FieldLabel>
-      </LabelHint>
-      <MultilineTextField code id="material-node-glsl" title="GLSL Function Body"
-        value={body} onChange={(body) => setProperties({ body })} data-testid="material-node-glsl"
-        renderPreview={(value) => <LazyGlslCodePreview value={value} />}
-        renderEditor={(value, onChange) => <LazyCodeBodyEditor value={value} onChange={onChange} language="glsl" bodyLine={bodyLine} names={[...pins.inputs, ...pins.outputs.slice(1)].map((pin) => pin.name)} />}
+      <MultilineTextField code label="Function Body" hint={GLSL_SIGNATURE_HINT}
+        value={body} onChange={setBody} onOpenInTab={openInTab} data-testid="material-node-glsl"
+        renderEditor={(value, onChange) => <LazyCodeBodyEditor compact value={value} onChange={onChange} language="glsl" bodyLine={bodyLine} names={names} />}
       />
       <FieldDescription data-testid="material-node-glsl-signature" className="sr-only">{GLSL_SIGNATURE_HINT}</FieldDescription>
       {error ? <FieldDescription role="alert">{error}</FieldDescription> : null}

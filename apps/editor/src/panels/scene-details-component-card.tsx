@@ -1,7 +1,6 @@
 import type { Dispatch, SetStateAction } from "react";
 import {
   InlineRenameInput,
-  MultilineTextField,
   NamedListEditor,
   PropertyGrid,
   TypeVisualIcon,
@@ -28,10 +27,7 @@ import {
   Trash2Icon,
 } from "lucide-react";
 import { Button } from "@haptic/ui/components/button";
-import {
-  Field,
-  FieldLabel,
-} from "@haptic/ui/components/field";
+import { ComponentTextField } from "../components/component-text-field";
 import { IconActionButton } from "../components/icon-action-button";
 import { NineSlicePreview } from "../components/nine-slice-preview";
 import { RagdollBoneNamesEditor } from "../components/ragdoll-bone-names-editor";
@@ -41,6 +37,16 @@ import type { SceneShapeEditTarget } from "../context/scene-editing-context";
 import type { NavBakeContextValue } from "../context/nav-bake-context";
 import type { classParentLookup } from "../lib/content-browser-helpers";
 import { renamedComponentName, type prefabComponentLabelParts } from "./add-component-catalog";
+
+/** The actor with one component's `text` property set. */
+function patchActorComponentText(actor: SerializedActor, componentId: string, text: string): SerializedActor {
+  return {
+    ...actor,
+    components: actor.components.map((candidate) => candidate.id === componentId
+      ? { ...candidate, properties: patchComponentProperties(candidate.properties, "text", text) }
+      : candidate),
+  };
+}
 
 /** Component card name; double-click or double-tap starts an inline rename. */
 function ComponentCardName({ title, onRename }: { title: string; onRename: () => void }) {
@@ -292,76 +298,30 @@ export function SceneComponentCard(props: SceneComponentCardProps) {
           ) : null}
           {showExtras && component.classId === "Text3DComponent" ? (
             <div className="p-2">
-              <Field>
-                <FieldLabel htmlFor={`text3d-text-${component.id}`}>
-                  Text
-                </FieldLabel>
-                <MultilineTextField
-                  id={`text3d-text-${component.id}`}
-                  title="Text"
-                  disabled={component.properties.editorOnly === true && actor.components.some((entry) => entry.id === component.parentId && entry.classId === "SceneStreamingComponent")}
-                  value={
-                    parseText3DProperties(component.properties).text
-                  }
-                  onChange={(value) =>
-                    updateActor((entry) => ({
-                      ...entry,
-                      components: entry.components.map((candidate) =>
-                        candidate.id === component.id
-                          ? {
-                              ...candidate,
-                              properties: patchComponentProperties(
-                                candidate.properties,
-                                "text",
-                                value,
-                              ),
-                            }
-                          : candidate,
-                      ),
-                    }))
-                  }
-                  data-testid={`text3d-text-${component.id}`}
-                />
-              </Field>
+              <ComponentTextField
+                key={`${actor.id}:${component.id}`}
+                fieldKey={`component:${actor.id}:${component.id}:text`}
+                id={`text3d-text-${component.id}`}
+                disabled={component.properties.editorOnly === true && actor.components.some((entry) => entry.id === component.parentId && entry.classId === "SceneStreamingComponent")}
+                value={parseText3DProperties(component.properties).text}
+                onChange={(value) => updateActor((entry) => patchActorComponentText(entry, component.id, value))}
+              />
             </div>
           ) : null}
           {showExtras &&
           (component.classId === "2DTextComponent" ||
             component.classId === "2DRichTextComponent") ? (
             <div className="p-2">
-              <Field>
-                <FieldLabel htmlFor={`text2d-text-${component.id}`}>
-                  Text
-                </FieldLabel>
-                <MultilineTextField
-                  id={`text2d-text-${component.id}`}
-                  title="Text"
-                  markup={component.classId === "2DRichTextComponent"}
-                  value={
-                    parseText2DProperties(component.properties, {
-                      rich: component.classId === "2DRichTextComponent",
-                    }).text
-                  }
-                  onChange={(value) =>
-                    updateActor((entry) => ({
-                      ...entry,
-                      components: entry.components.map((candidate) =>
-                        candidate.id === component.id
-                          ? {
-                              ...candidate,
-                              properties: patchComponentProperties(
-                                candidate.properties,
-                                "text",
-                                value,
-                              ),
-                            }
-                          : candidate,
-                      ),
-                    }))
-                  }
-                  data-testid={`text2d-text-${component.id}`}
-                />
-              </Field>
+              <ComponentTextField
+                key={`${actor.id}:${component.id}`}
+                fieldKey={`component:${actor.id}:${component.id}:text`}
+                id={`text2d-text-${component.id}`}
+                markup={component.classId === "2DRichTextComponent"}
+                value={parseText2DProperties(component.properties, {
+                  rich: component.classId === "2DRichTextComponent",
+                }).text}
+                onChange={(value) => updateActor((entry) => patchActorComponentText(entry, component.id, value))}
+              />
             </div>
           ) : null}
           {parameterRows.length ? (

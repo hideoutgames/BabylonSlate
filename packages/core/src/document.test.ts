@@ -364,6 +364,12 @@ describe("document ids and layouts", () => {
     });
   });
 
+  it("gives a Text Editor tab a session id that never parses back for restore", () => {
+    const id = documentId({ kind: "text-editor", path: "graph:assets/a.hasset#node:n1:formula" });
+    expect(id).toBe("text-editor:graph:assets/a.hasset#node:n1:formula");
+    expect(parseDocumentId(id)).toBeNull();
+  });
+
   it("starts with empty layouts", () => {
     expect(createEmptyLayouts()).toEqual({
       documents: {},

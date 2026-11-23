@@ -588,22 +588,22 @@ test.describe("P9 content systems", () => {
     await expect(
       page.getByTestId("material-node-glsl-signature"),
     ).toContainText("Return the primary output");
-    await glsl.click();
-    const glslEditor = page.getByRole("textbox", { name: "GLSL Function Body" });
+    // The body is edited inline in the Inspector; leaving the editor commits it.
+    const glslEditor = glsl.getByRole("textbox", { name: "GLSL Function Body" });
     await glslEditor.fill("norm");
     await glslEditor.press("End");
     await glslEditor.press("Control+Space");
-    await expect(page.getByRole("option", { name: "normalize", exact: true })).toBeVisible();
-    await glslEditor.press("Escape");
+    // The completion list shows in full over the 160px inline box: a click on it lands and applies it.
+    await page.getByRole("option", { name: "normalize", exact: true }).click();
+    await expect(glslEditor).toContainText("normalize");
     await glslEditor.fill("#define X 1");
-    await page.getByTestId("material-node-glsl-done").click();
+    await glslEditor.blur();
     await expect(
       page.getByTestId("material-diagnostic-material.customGlsl"),
     ).toBeVisible({ timeout: 10_000 });
-    await glsl.click();
     await glslEditor.fill("Mask = 0.5;\nreturn A + B;");
     await page.screenshot({ path: testInfo.outputPath("custom-glsl-editor.png") });
-    await page.getByTestId("material-node-glsl-done").click();
+    await glslEditor.blur();
     await expect(
       page.getByTestId("material-diagnostic-material.customGlsl"),
     ).toHaveCount(0);
@@ -626,16 +626,14 @@ test.describe("P9 content systems", () => {
       { timeout: 15_000 },
     );
     await graph.locator('.react-flow__node[data-id^="custom.glsl-"]').click();
-    await glsl.click();
     await glslEditor.fill("Mask = 0.5;\nreturn UndefinedSymbol;");
-    await page.getByTestId("material-node-glsl-done").click();
+    await glslEditor.blur();
     await expect(page.getByTestId("material-render")).toBeEnabled();
     await page.getByTestId("material-render").click();
     await expect(page.getByTestId("material-diagnostic-material.compile.glsl")).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId("material-diagnostic-material.compile.glsl")).toContainText("line 2");
-    await glsl.click();
     await glslEditor.fill("Mask = 0.5;\nreturn A + B;");
-    await page.getByTestId("material-node-glsl-done").click();
+    await glslEditor.blur();
     await expect(page.getByTestId("material-render")).toBeEnabled();
     await page.getByTestId("material-render").click();
     await expect(page.getByTestId("material-preview-canvas")).toHaveAttribute("data-status", "ready", { timeout: 15_000 });

@@ -6,7 +6,7 @@ The [Execute JavaScript](class/execute-javascript.md) node runs a short piece of
 
 1. In **Add Node**, search for **Execute JavaScript**. It is in the **Debug** category.
 2. Select the node. In the **Inspector**, add pins under **Inputs** and **Outputs**. Each pin has a name and a type, and can be **Single**, **Array** or **Map**.
-3. Tap **JavaScript Function Body** to open the code editor, write the code, then choose **Done**.
+3. Write the code in **Function Body** in the **Inspector**. The change applies when you leave the editor. For more room, tap the button next to **Function Body** to open it in its own tab ([Long text and code](../start/editor-tour.md#long-text-and-code)).
 
 The node keeps its execution input and output. Your pins appear between them.
 
@@ -58,7 +58,8 @@ The body is not sandboxed: it runs with the same access as the rest of your game
 
 ## Notes
 
-- On touch screens, the code editor shows a key bar with braces, brackets, parentheses, semicolons, quotes, comparison signs and **Tab**.
+- Press <kbd>Ctrl</kbd>+<kbd>Space</kbd> for suggestions, <kbd>Enter</kbd> to accept one and <kbd>Esc</kbd> to close the list. You can change these keys in **Engine Settings > Keybinds** ([Keyboard Shortcuts](../start/shortcuts.md#code-editor)).
+- On touch screens, the code editor shows a key bar with a **Complete** button, braces, brackets, parentheses, semicolons, quotes, comparison signs and **Tab**.
 - Only use code you trust, and review it in projects or plugins you import.
 - For most logic, regular nodes are easier to read and debug. Use this node for calculations or text handling that would need many nodes.
 - An Animation Graph's **Preview** never runs Execute JavaScript.

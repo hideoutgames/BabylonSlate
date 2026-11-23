@@ -370,6 +370,7 @@ export {
   MultilineTextField,
   type MultilineTextFieldProps,
 } from "./multiline-text-field";
+export { commitOnFocusLeave, flushTextDrafts, useTextDraft } from "./text-draft";
 export {
   NamePromptDialog,
   type NamePromptDialogProps,

@@ -2,7 +2,7 @@ import { isLockedEngineClassId } from "@haptic/object-model";
 import {
   documentKindForAssetType,
   PROJECT_FILE,
-  type DocumentKind,
+  type AssetDocumentKind,
   type ProjectDocument,
   type ProjectStorage,
   type SerializedGraph,
@@ -39,9 +39,9 @@ export interface ReferenceRepairHost extends Pick<ProjectService, "loadDocument"
   plugins(): readonly PluginDescriptor[];
   storageFor(path: string): ProjectStorage;
   /** The stored payload `loadDocument` starts from, without migration bookkeeping. */
-  readStoredAssetDocument(kind: Exclude<DocumentKind, "content-browser" | "source-control">, path: string): Promise<StoredDocument>;
+  readStoredAssetDocument(kind: AssetDocumentKind, path: string): Promise<StoredDocument>;
   /** What `loadDocument` makes of a stored payload. */
-  documentContent(kind: Exclude<DocumentKind, "content-browser" | "source-control">, raw: StoredDocument): DocumentContent;
+  documentContent(kind: AssetDocumentKind, raw: StoredDocument): DocumentContent;
 }
 
 async function planClassReferenceReplacements(
@@ -54,7 +54,7 @@ async function planClassReferenceReplacements(
   if (!registry) throw new Error("The asset registry is unavailable.");
   const assets = registry.list();
   const plans: Array<{
-    kind: Exclude<DocumentKind, "content-browser" | "source-control">;
+    kind: AssetDocumentKind;
     path: string;
     content: DocumentContent;
     parentClass: string | null;

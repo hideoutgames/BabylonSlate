@@ -10,7 +10,7 @@ Computes a formula of numbers and vectors that you type on the node. Its names b
 
 | Setting | Description |
 | --- | --- |
-| Formula | The formula. You can also type it on the node itself. |
+| Formula | The formula. You can also type it on the node itself, or open it in its own tab with the button next to **Formula** ([Long text and code](../../start/editor-tour.md#long-text-and-code)). |
 | Input Types | One row per input: **Auto** takes the type of the wire connected to it, or pick **Float**, **Vector2**, **Vector3** or **Vector4**. |
 
 ## Notes

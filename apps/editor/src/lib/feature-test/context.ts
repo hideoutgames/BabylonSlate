@@ -10,7 +10,7 @@ import {
   createText3DComponent,
   eulerDegreesToQuaternion,
   identitySerializedTransform,
-  type DocumentKind,
+  type AssetDocumentKind,
   type ProjectSettings,
   type SerializedActor,
   type SerializedComponent,
@@ -38,7 +38,7 @@ import {
 } from "./layout";
 
 export type Vec3 = [number, number, number];
-type SavedKind = Exclude<DocumentKind, "content-browser" | "source-control">;
+type SavedKind = AssetDocumentKind;
 
 /** Root of every FeatureTest asset, relative to the project `assets/` folder. */
 export const FEATURE_TEST_ROOT = "FeatureTest";

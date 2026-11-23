@@ -9,7 +9,8 @@ export type EditorCommandCategory =
   | "Timeline"
   | "Content Browser"
   | "Material"
-  | "Tilemap Paint";
+  | "Tilemap Paint"
+  | "Code Editor";
 
 export interface EditorCommandDefinition {
   id: EditorCommandId;
@@ -94,6 +95,10 @@ const COMMAND_LIST = [
   { id: "tilemapPaint.bucket", label: "Bucket Tool", category: "Tilemap Paint", defaultChords: ["G"] },
   { id: "tilemapPaint.stamp", label: "Stamp Tool", category: "Tilemap Paint", defaultChords: ["T"] },
   { id: "tilemapPaint.picker", label: "Picker Tool", category: "Tilemap Paint", defaultChords: ["I"] },
+  // Control on every platform: Command+Space is Spotlight on macOS.
+  { id: "code.complete", label: "Show Completions", category: "Code Editor", defaultChords: ["Ctrl+Space"] },
+  { id: "code.acceptCompletion", label: "Accept Completion", category: "Code Editor", defaultChords: ["Enter"] },
+  { id: "code.dismissCompletion", label: "Dismiss Completion", category: "Code Editor", defaultChords: ["Escape"] },
 ] as const;
 
 export type EditorCommandId = (typeof COMMAND_LIST)[number]["id"];
@@ -110,6 +115,7 @@ export const EDITOR_COMMAND_CATEGORIES: readonly EditorCommandCategory[] = [
   "Content Browser",
   "Material",
   "Tilemap Paint",
+  "Code Editor",
 ];
 
 /**
@@ -117,9 +123,12 @@ export const EDITOR_COMMAND_CATEGORIES: readonly EditorCommandCategory[] = [
  * (Bucket Tool and Toggle Snap Grid both default to G): Tilemap Paint acts
  * only while a Tilemap's Paint window has focus, and a Tilemap document has
  * no viewport, Timeline or Content Browser (one document shows at a time).
+ * Code Editor acts only with focus in a code editor, a text field where only
+ * `allowInTextInput` commands (General and Editing) still run.
  */
 const SEPARATE_CATEGORIES: ReadonlyMap<EditorCommandCategory, ReadonlySet<EditorCommandCategory>> = new Map([
   ["Tilemap Paint", new Set<EditorCommandCategory>(["Viewport", "Timeline", "Content Browser"])],
+  ["Code Editor", new Set<EditorCommandCategory>(["Documents", "Play", "Viewport", "Timeline", "Content Browser", "Material", "Tilemap Paint"])],
 ]);
 
 function actTogether(a: EditorCommandCategory | undefined, b: EditorCommandCategory | undefined): boolean {

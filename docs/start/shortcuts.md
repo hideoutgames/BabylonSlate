@@ -134,6 +134,16 @@ Preview Node acts in a Material's **Graph** when it has keyboard focus (tap or c
 
 These pick a tool in a Tilemap's [Paint](../assets/tilemap.md#editor) window while it has keyboard focus: tap or click the map first. They never act anywhere else, so <kbd>G</kbd> still toggles the snap grid in a Scene viewport and <kbd>S</kbd> still moves its camera.
 
+### Code Editor
+
+| Command | Shortcut |
+| --- | --- |
+| Show Completions | <kbd>Ctrl</kbd>+<kbd>Space</kbd> |
+| Accept Completion | <kbd>Enter</kbd> |
+| Dismiss Completion | <kbd>Esc</kbd> |
+
+These act in a code editor, such as an [Execute JavaScript](../scripting/javascript.md) body or a Custom GLSL function, while it has keyboard focus. <kbd>Ctrl</kbd> here is the Control key on every keyboard, Apple keyboards included. Accept Completion and Dismiss Completion act only while the list of suggestions is open; otherwise <kbd>Enter</kbd> starts a new line as usual. The arrow keys and <kbd>Page Up</kbd> / <kbd>Page Down</kbd> move through the list and cannot be rebound. A two-step shortcut does nothing in a code editor.
+
 ## When shortcuts work
 
 - Shortcuts are off while Play runs and while a dialog is open.
@@ -145,9 +155,9 @@ These pick a tool in a Tilemap's [Paint](../assets/tilemap.md#editor) window whi
 ## Change a shortcut
 
 1. Open **Engine Settings > Keybinds**. Commands are grouped as in the tables above.
-2. Select the shortcut next to a command, then press the new keys. For a two-step shortcut, press the second keys straight after the first. <kbd>Esc</kbd> cancels.
+2. Select the shortcut next to a command, then press the new keys. For a two-step shortcut, press the second keys straight after the first. <kbd>Esc</kbd> cancels, so it cannot be chosen as a new shortcut: use **Reset to Default** to give it back to Dismiss Completion.
 3. Use **Unassign** to remove a shortcut or **Reset to Default** to restore one. **Reset All** restores every shortcut.
 
-If a shortcut is already in use where the command works, or is the first step of another command's two-step shortcut, the row warns "Also used by" and names the other command. Tilemap Paint commands share keys with Viewport, Timeline and Content Browser commands without a warning, since those never work in a Tilemap. Viewport commands also warn when you choose W, A, S or D. Searching Engine Settings finds commands by name.
+If a shortcut is already in use where the command works, or is the first step of another command's two-step shortcut, the row warns "Also used by" and names the other command. Tilemap Paint commands share keys with Viewport, Timeline and Content Browser commands without a warning, since those never work in a Tilemap. Code Editor commands share keys without a warning with every command except the General and Editing ones, since only those can work while you type in a code editor. Viewport commands also warn when you choose W, A, S or D. Searching Engine Settings finds commands by name.
 
 Shortcuts are stored with Engine Settings on this device, not in the project.

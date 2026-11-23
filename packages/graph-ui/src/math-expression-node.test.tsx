@@ -91,6 +91,22 @@ describe("Math Expression node", () => {
     await waitFor(() => expect(getByTestId("math-expression-formula-input")).toBeTruthy());
   });
 
+  it("has a normal node's outline at rest and when selected", async () => {
+    const { container } = renderGraph();
+    const outline = ["border", "border-border", "shadow-sm", "rounded-lg"];
+    const selection = ["ring-2", "ring-primary"];
+    const shell = () => container.querySelector('.react-flow__node[data-id="src"] [data-node-role]') as HTMLElement;
+    const has = (element: HTMLElement, classes: string[]) => classes.every((name) => element.classList.contains(name));
+    expect(has(shell(), outline) && has(card(container), outline)).toBe(true);
+    expect(has(card(container), selection)).toBe(false);
+    fireEvent.click(card(container));
+    await waitFor(() => expect(has(card(container), selection)).toBe(true));
+    expect(card(container).classList.contains("anim-state-node-selected")).toBe(false);
+    fireEvent.click(shell());
+    await waitFor(() => expect(has(shell(), selection)).toBe(true));
+    expect(has(card(container), selection)).toBe(false);
+  });
+
   it("shows a formula error with its position and keeps the last formula's pins", () => {
     const { container, getByTestId } = renderGraph({}, { nodes: [mathNode("mx", { formula: "y = a +", pinFormula: "y = a + b" })], edges: [] });
     expect(getByTestId("math-expression-error").textContent).toBe("Line 1, column 8: Expected a number, a name or '(' but found the end of the formula");

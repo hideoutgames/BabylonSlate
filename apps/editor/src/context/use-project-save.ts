@@ -8,6 +8,7 @@ import type {
   SerializedSceneLayer,
 } from "@haptic/core";
 import { isAssetDocumentKind } from "@haptic/core";
+import { flushTextDrafts } from "@haptic/editor-kit";
 import { truncateJournal } from "@haptic/assets";
 import { journalDiscardLine } from "@haptic/edit";
 import type { FileLock } from "@haptic/source-control";
@@ -338,8 +339,13 @@ export function useProjectSave({
    */
   const saveProject = useCallback(() => runSaveAll(), [runSaveAll]);
   /** Save All the user asked for: documents someone else has locked are listed in Save Failed. */
-  const saveAll = useCallback((purpose: SaveFailedPurpose = "save") =>
-    runSaveAll({ reportLocked: purpose }), [runSaveAll]);
+  const saveAll = useCallback((purpose: SaveFailedPurpose = "save") => {
+    // Text still being typed (focus in an Inspector field or a Text Editor tab, as with Ctrl/Cmd+S)
+    // commits first: the edits apply synchronously, before the queued save reads any content.
+    // Auto-save does not, so it never commits text mid-typing.
+    flushTextDrafts();
+    return runSaveAll({ reportLocked: purpose });
+  }, [runSaveAll]);
 
   const scheduleDebouncedSave = useCallback(() => {
     // Auto-Save off: nothing saves on its own, and an interval already waiting

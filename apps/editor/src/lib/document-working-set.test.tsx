@@ -55,6 +55,27 @@ describe("document working set", () => {
     expect(mounted).toEqual(new Set([CB, "scene:S"]));
   });
 
+  it("keeps a Text Editor tab's source document mounted past the grace and the warm cap", () => {
+    const text = "text-editor:graph:A#node:n:formula";
+    const mounted = selectMountedDocumentIds({
+      tabIds: ids(CB, "graph:A", "graph:B", "graph:C", "graph:D", text),
+      activeId: text,
+      lastActiveAt: new Map([
+        ["graph:A", 0],
+        ["graph:B", DOCUMENT_IDLE_UNMOUNT_MS],
+        ["graph:C", DOCUMENT_IDLE_UNMOUNT_MS],
+        ["graph:D", DOCUMENT_IDLE_UNMOUNT_MS],
+      ]),
+      now: DOCUMENT_IDLE_UNMOUNT_MS + 1,
+      keepMounted: ["graph:A", "graph:closed"],
+      maxWarm: 3,
+    });
+    expect(mounted.has("graph:A")).toBe(true);
+    // Only open tabs mount; the kept source takes a warm slot like an open Scene.
+    expect(mounted.has("graph:closed")).toBe(false);
+    expect(mounted).toEqual(new Set([CB, text, "graph:A", "graph:B"]));
+  });
+
   it("does not mount a Scene that is no longer an open tab", () => {
     const mounted = selectMountedDocumentIds({
       tabIds: ids(CB, "graph:A"),

@@ -1,6 +1,6 @@
 import { useCallback, useMemo, type RefObject } from "react";
 import type { AssetDocumentKind, ProjectDocument } from "@haptic/core";
-import { documentId, removeAlwaysPackageFolders, isChromeDocumentKind } from "@haptic/core";
+import { documentId, removeAlwaysPackageFolders, isAssetDocumentKind } from "@haptic/core";
 import {
   clearDeletedAssetRefs,
   clearDeletedRefsFromProjectSettings,
@@ -123,7 +123,7 @@ export function useAssetFileOperations({
     const schemas = collectGraphTypeSchemas();
     const definitionFields = (guid: string) => schemas.structs?.[guid]?.fields;
     const openChanges = documentService.getOpenDocumentsOrdered().flatMap((doc) => {
-      if (isChromeDocumentKind(doc.ref.kind) || doc.ref.kind === "trace" || !doc.content) return [];
+      if (!isAssetDocumentKind(doc.ref.kind) || doc.ref.kind === "trace" || !doc.content) return [];
       const asset = registry?.getByPath(doc.ref.path);
       if (asset && deletingGuids.has(asset.header.guid)) return [];
       const walked = replaceClassAssetReferences(doc.content, replacements, definitionFields);
@@ -178,7 +178,7 @@ export function useAssetFileOperations({
       const schemas = collectGraphTypeSchemas();
       const definitionFields = (definitionGuid: string) => schemas.structs?.[definitionGuid]?.fields;
       const openChanges = documentService.getOpenDocumentsOrdered().flatMap((doc) => {
-        if (!doc.content || isChromeDocumentKind(doc.ref.kind) || doc.ref.kind === "trace") return [];
+        if (!doc.content || !isAssetDocumentKind(doc.ref.kind) || doc.ref.kind === "trace") return [];
         const walked = replaceClassAssetReferences(doc.content, replacements, definitionFields);
         if (!walked.changed) return [];
         const asset = registry.getByPath(doc.ref.path);
@@ -213,7 +213,7 @@ export function useAssetFileOperations({
       // while the rename wrote can add a reference the walk above missed.
       const rewritten = new Set(openChanges.map(({ doc }) => doc.id));
       for (const open of documentService.getOpenDocumentsOrdered()) {
-        if (!open.content || isChromeDocumentKind(open.ref.kind) || open.ref.kind === "trace") continue;
+        if (!open.content || !isAssetDocumentKind(open.ref.kind) || open.ref.kind === "trace") continue;
         const walked = replaceClassAssetReferences(open.content, replacements, definitionFields);
         if (!walked.changed) continue;
         documentService.applyFileRewrite(open.id, walked.value);
@@ -269,7 +269,7 @@ export function useAssetFileOperations({
         refuse: (path) => lockedWriteRefusal(sourceControlRef.current, path),
       });
       for (const doc of documentService.getOpenDocumentsOrdered()) {
-        if (isChromeDocumentKind(doc.ref.kind) || !doc.content) continue;
+        if (!isAssetDocumentKind(doc.ref.kind) || !doc.content) continue;
         await onProgress?.(doc.ref.path);
         const walked = clearDeletedAssetRefs(
           doc.content,

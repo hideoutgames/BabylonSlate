@@ -1,132 +1,115 @@
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
+import { PictureInPicture2Icon } from "lucide-react";
 import { Button } from "@haptic/ui/components/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@haptic/ui/components/dialog";
+import { FieldLabel } from "@haptic/ui/components/field";
 import { Textarea } from "@haptic/ui/components/textarea";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@haptic/ui/components/tooltip";
 import { cn } from "@haptic/ui/lib/utils";
-import { MarkupAutocompleteTextarea } from "./markup-autocomplete";
+import { useEditorReadOnly } from "./editor-read-only";
+import { LabelHint } from "./label-hint";
+import { commitOnFocusLeave, useTextDraft } from "./text-draft";
+
+/** The pop-out button's icon, chosen in this one place. */
+const OpenInTabIcon = PictureInPicture2Icon;
 
 export type MultilineTextFieldProps = {
+  /** The property name shown above the field. */
+  label: string;
+  /** Optional `LabelHint` tooltip for the label. */
+  hint?: string;
   value: string;
+  /** Called with the committed text: when focus leaves the field, or on unmount with a pending draft. */
   onChange: (value: string) => void;
-  title: string;
-  description?: string;
   disabled?: boolean;
+  /** Markup text (2D Rich Text): monospace inline. The tag catalog is in the Text Editor tab, not inline. */
   markup?: boolean;
+  /** Code styling and the taller fixed height. */
+  code?: boolean;
+  /** Id of the inline editor control; the label's `htmlFor`. */
   id?: string;
   className?: string;
-  code?: boolean;
-  renderPreview?: (value: string) => ReactNode;
+  /** Replaces the default inline editor. Receives the draft and a draft setter. */
   renderEditor?: (value: string, onChange: (value: string) => void) => ReactNode;
+  /** Present: the Open {label} in Tab button is shown beside the label. */
+  onOpenInTab?: () => void;
   "data-testid"?: string;
 };
 
-/** Read-only Details trigger that opens a large modal multiline editor. */
+/**
+ * A multi-line Inspector property edited in place at a fixed height (it
+ * scrolls inside itself), with a label row and, given `onOpenInTab`, a
+ * button that opens the value full size in its own document tab.
+ */
 export function MultilineTextField({
+  label,
+  hint,
   value,
   onChange,
-  title,
-  description,
   disabled,
   markup,
+  code,
   id,
   className,
-  code,
-  renderPreview,
   renderEditor,
+  onOpenInTab,
   "data-testid": testId,
 }: MultilineTextFieldProps) {
-  const [open, setOpen] = useState(false);
-  const [draft, setDraft] = useState(value);
-  // Seed only when the editor opens; a value change while open keeps the typing.
-  const openEditor = () => {
-    setDraft(value);
-    setOpen(true);
-  };
-
-  const finish = () => {
-    if (!open) return;
-    if (draft !== value) onChange(draft);
-    setOpen(false);
-  };
-
-  const preview = value.trim() ? value : "Empty";
+  const readOnly = useEditorReadOnly();
+  const { draft, setDraft, commit } = useTextDraft(value, onChange);
   const editorTestId = testId ? `${testId}-editor` : undefined;
+  const height = code ? "h-40" : "h-24";
+  const fieldLabel = <FieldLabel htmlFor={id}>{label}</FieldLabel>;
+  const openLabel = `Open ${label} in Tab`;
 
   return (
-    <>
-      <Button
-        type="button"
-        variant="outline"
-        id={id}
-        disabled={disabled}
-        className={cn(
-          "h-auto min-h-16 w-full items-start justify-start whitespace-pre-wrap py-2 text-left font-normal",
-          !value.trim() && "text-muted-foreground",
-          className,
-        )}
-        onClick={openEditor}
-        data-testid={testId}
-      >
-        {renderPreview ? renderPreview(value) : <span className="line-clamp-4 break-words">{preview}</span>}
-      </Button>
-      <Dialog
-        open={open}
-        onOpenChange={(next) => {
-          if (!next) finish();
-          else if (!open) openEditor();
-        }}
-      >
-        <DialogContent
-          className={cn("editor-dialog-large max-w-none sm:max-w-none", code && "rounded-md")}
-          bodyClassName="flex flex-col gap-0 overflow-hidden p-0"
-          data-testid={testId ? `${testId}-dialog` : undefined}
-        >
-          <DialogHeader className={cn("shrink-0 border-b pr-14", code ? "min-h-11 px-3 py-2" : "min-h-14 px-4 py-3")}>
-            <DialogTitle>{title}</DialogTitle>
-            {description ? (
-              <DialogDescription>{description}</DialogDescription>
-            ) : null}
-          </DialogHeader>
-          <div className={cn("flex min-h-0 flex-1 flex-col", !code && "p-4")}>
-            {renderEditor ? renderEditor(draft, setDraft) : markup ? (
-              <MarkupAutocompleteTextarea
-                id={id ? `${id}-editor` : undefined}
-                value={draft}
-                onChange={setDraft}
-                disabled={disabled}
-                className="min-h-0 flex-1 font-mono text-sm"
-                data-testid={editorTestId}
-              />
-            ) : (
-              <Textarea
-                id={id ? `${id}-editor` : undefined}
-                value={draft}
-                disabled={disabled}
-                className="min-h-0 flex-1"
-                onChange={(event) => setDraft(event.target.value)}
-                data-testid={editorTestId}
-              />
-            )}
-          </div>
-          <DialogFooter className="m-0 pt-3">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={finish}
-              data-testid={testId ? `${testId}-done` : undefined}
+    <div
+      className={cn("flex min-w-0 flex-col gap-2", className)}
+      data-testid={testId}
+      onBlur={commitOnFocusLeave(commit)}
+    >
+      <div className="flex min-w-0 items-center gap-1" data-testid={testId ? `${testId}-label-row` : undefined}>
+        {hint ? <LabelHint hint={hint}>{fieldLabel}</LabelHint> : fieldLabel}
+        {onOpenInTab ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="size-6 min-w-6 px-0 text-muted-foreground pointer-coarse:size-[var(--touch-target)]"
+                  aria-label={openLabel}
+                  // Leaving for the tab commits first, so the tab opens on the text just typed.
+                  onClick={() => {
+                    commit();
+                    onOpenInTab();
+                  }}
+                  data-testid={testId ? `${testId}-open-tab` : undefined}
+                />
+              }
             >
-              Done
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
+              <OpenInTabIcon aria-hidden="true" />
+            </TooltipTrigger>
+            <TooltipContent>{openLabel}</TooltipContent>
+          </Tooltip>
+        ) : null}
+      </div>
+      {renderEditor ? (
+        <div className={cn("flex min-w-0 flex-col overflow-hidden rounded-lg border border-input", height)}>
+          {renderEditor(draft, setDraft)}
+        </div>
+      ) : (
+        <Textarea
+          id={id}
+          value={draft}
+          disabled={disabled}
+          readOnly={readOnly}
+          spellCheck={markup || code ? false : undefined}
+          className={cn("min-h-0 resize-none field-sizing-fixed", (markup || code) && "font-mono", code && "text-xs", height)}
+          onChange={(event) => setDraft(event.target.value)}
+          data-testid={editorTestId}
+        />
+      )}
+    </div>
   );
 }

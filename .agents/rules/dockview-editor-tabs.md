@@ -1,6 +1,6 @@
 # DockView asset editor tabs
 
-An asset editor tab is a **DockView** document (`DockviewShell`), so its panels resize, dock beside each other and can take extra tabs later. Every document kind belongs in `DOCKVIEW_KINDS`; there is no non-DockView fallback page. The toolbar **Windows** menu works only for kinds in `DockviewDocumentKind`, so a disabled Windows menu or a missing panel means the wiring is incomplete.
+An asset editor tab is a **DockView** document (`DockviewShell`), so its panels resize, dock beside each other and can take extra tabs later. Every asset document kind belongs in `DOCKVIEW_KINDS`; there is no non-DockView fallback page. The toolbar **Windows** menu works only for kinds in `DockviewDocumentKind`, so a disabled Windows menu or a missing panel means the wiring is incomplete.
 
 ## Required wiring, in one change
 
@@ -19,3 +19,4 @@ An asset editor tab is a **DockView** document (`DockviewShell`), so its panels 
 - Never use shadcn `Tabs` or hand-rolled split panes as the document layout. Nested `Tabs` may switch mutually exclusive modes inside one panel.
 - Scene and Scene Layer modes (`SceneModeSelect` in the action bar) mount one DockView surface per mode, saved separately in `layout.json` (`scene-document-layout.ts`); a Scene Layer layout saved flat before it had modes restores as its Design surface.
 - Content Browser stays a pinned chrome tab, not a DockView document.
+- Every *asset* document kind is DockView. The transient Text Editor tab (`text-editor`) is a plain page, not a DockView document, and is not in `DOCKVIEW_KINDS` ([document tab lifecycle](../reference/architecture/command-layer.md#document-tab-lifecycle)).

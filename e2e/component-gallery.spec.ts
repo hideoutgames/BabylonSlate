@@ -82,13 +82,11 @@ test("gallery primitives, dialogs, and editor composites", async ({ page }) => {
     await expect(page.getByTestId("gallery-search-dropdown")).toBeVisible();
     await page.keyboard.press("Escape");
 
-    await expect(page.getByTestId("gallery-markup-autocomplete")).toBeVisible();
-    await page.getByTestId("gallery-markup-autocomplete").click();
-    await expect(
-      page.getByTestId("gallery-markup-autocomplete-editor-suggestions"),
-    ).toBeVisible();
-    await expect(page.getByTestId("search-item-tag:b")).toBeVisible();
-    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("gallery-multiline-text-editor")).toBeVisible();
+    await expect(page.getByTestId("gallery-multiline-text-open-tab")).toBeVisible();
+    // Inline, markup is a plain fixed-height field; the tag catalog is in the Text Editor tab.
+    await page.getByTestId("gallery-multiline-text-editor").click();
+    await expect(page.getByTestId("search-item-tag:b")).toHaveCount(0);
 
     await page.getByRole("button", { name: "Open search dialog" }).click();
     await expect(page.getByTestId("gallery-search-dialog")).toBeVisible();

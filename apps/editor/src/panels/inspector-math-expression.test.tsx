@@ -4,30 +4,37 @@ import type { SerializedGraph } from "@haptic/core";
 import { MathExpressionDetails } from "./inspector-math-expression";
 import { commitMathExpressionFormula } from "../lib/math-expression-edit";
 
+vi.mock("../context/document-workspace-context", () => ({
+  useDocumentWorkspace: () => ({ documentId: "graph:assets/Test.class.hasset" }),
+}));
+vi.mock("../context/document-context", async () =>
+  (await import("../testing/document-context-mock")).documentContextMock(() => ({})),
+);
+
 afterEach(cleanup);
 
 describe("Math Expression Details", () => {
-  it("edits the formula in the dialog and commits it once, on Done", () => {
+  it("edits the formula inline and commits it once, when focus leaves the field", () => {
     const onFormula = vi.fn();
-    render(<MathExpressionDetails data={{ formula: "y = a * 2" }} onFormula={onFormula} onPatch={() => {}} />);
-    expect(screen.getByTestId("math-expression-formula-field").textContent).toBe("y = a * 2");
-    fireEvent.click(screen.getByTestId("math-expression-formula-field"));
-    const editor = screen.getByTestId("math-expression-formula-field-editor");
+    render(<MathExpressionDetails nodeId="mx" data={{ formula: "y = a * 2" }} onFormula={onFormula} onPatch={() => {}} />);
+    const editor = screen.getByTestId("math-expression-formula-field-editor") as HTMLTextAreaElement;
+    expect(editor.value).toBe("y = a * 2");
+    expect(screen.getByLabelText("Formula")).toBe(editor);
     fireEvent.change(editor, { target: { value: "y = a * 3" } });
     fireEvent.change(editor, { target: { value: "y = b * 3" } });
     expect(onFormula).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByTestId("math-expression-formula-field-done"));
+    fireEvent.blur(editor, { relatedTarget: document.body });
     expect(onFormula.mock.calls).toEqual([["y = b * 3"]]);
   });
 
   it("shows the formula's error with its position", () => {
-    render(<MathExpressionDetails data={{ formula: "y = (a", pinFormula: "y = a" }} onFormula={() => {}} onPatch={() => {}} />);
+    render(<MathExpressionDetails nodeId="mx" data={{ formula: "y = (a", pinFormula: "y = a" }} onFormula={() => {}} onPatch={() => {}} />);
     expect(screen.getByTestId("math-expression-formula-error").textContent).toBe("Line 1, column 7: Expected ')' but found the end of the formula");
   });
 
   it("gives each input a type row that follows its wire (Auto) until a type is chosen", async () => {
     const onPatch = vi.fn();
-    render(<MathExpressionDetails data={{ formula: "y = p * s", wiredInputTypes: { p: "vec3" }, "default:in_s": 2 }} onFormula={() => {}} onPatch={onPatch} />);
+    render(<MathExpressionDetails nodeId="mx" data={{ formula: "y = p * s", wiredInputTypes: { p: "vec3" }, "default:in_s": 2 }} onFormula={() => {}} onPatch={onPatch} />);
     expect(screen.getByTestId("property-math-input-type-p").textContent).toContain("Auto");
     expect(screen.getByText("Vector3")).toBeTruthy();
     fireEvent.click(screen.getByTestId("property-math-input-type-s"));
@@ -38,7 +45,7 @@ describe("Math Expression Details", () => {
   });
 
   it("shows no type rows for a formula without inputs", () => {
-    render(<MathExpressionDetails data={{ formula: "y = pi" }} onFormula={() => {}} onPatch={() => {}} />);
+    render(<MathExpressionDetails nodeId="mx" data={{ formula: "y = pi" }} onFormula={() => {}} onPatch={() => {}} />);
     expect(screen.queryByTestId("property-math-input-type-pi")).toBeNull();
   });
 });
