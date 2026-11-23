@@ -1,14 +1,17 @@
 import { useEffect, useRef } from "react";
-import { Annotation, Compartment, EditorState } from "@codemirror/state";
+import { Annotation, Compartment, EditorState, Prec, type Extension } from "@codemirror/state";
 import { useEditorReadOnly } from "@haptic/editor-kit";
-import { EditorView, keymap, lineNumbers, tooltips } from "@codemirror/view";
+import { EditorView, keymap, lineNumbers, tooltips, type Command, type KeyBinding } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { javascript } from "@codemirror/lang-javascript";
 import { syntaxHighlighting, bracketMatching } from "@codemirror/language";
 import { Button } from "@haptic/ui/components/button";
 import { codeHighlight, glslLanguage } from "./code-highlighting";
-import { autocompletion, closeCompletion, completionKeymap, startCompletion } from "@codemirror/autocomplete";
+import { acceptCompletion, autocompletion, closeCompletion, moveCompletionSelection, startCompletion } from "@codemirror/autocomplete";
 import { codeCompletions } from "./code-completion";
+import { useKeybindings } from "../context/keybind-context";
+import { codeMirrorKey } from "../lib/code-editor-keys";
+import type { EditorCommandId, ResolvedKeybinds } from "../lib/editor-keybinds";
 
 export type JsBodyEditorProps = {
   value: string;
@@ -17,7 +20,7 @@ export type JsBodyEditorProps = {
   names?: readonly string[];
   ariaLabel?: string;
   readOnly?: boolean;
-  /** Inline in an Inspector field: fills its parent, without the status line or the touch symbol bar. */
+  /** Inline in an Inspector field: fills its parent, without the touch symbol bar. */
   compact?: boolean;
   /** Focus the editor once it has loaded. */
   autoFocus?: boolean;
@@ -40,6 +43,35 @@ function changedSpan(current: string, next: string): { from: number; to: number;
     nextEnd -= 1;
   }
   return { from, to: currentEnd, insert: next.slice(from, nextEnd) };
+}
+
+/** Moving through an open completion list; these keys are not rebindable. */
+const COMPLETION_NAVIGATION: readonly KeyBinding[] = [
+  { key: "ArrowDown", run: moveCompletionSelection(true) },
+  { key: "ArrowUp", run: moveCompletionSelection(false) },
+  { key: "PageDown", run: moveCompletionSelection(true, "page") },
+  { key: "PageUp", run: moveCompletionSelection(false, "page") },
+];
+
+/**
+ * The completion keys from the user's Keybinds (Code Editor). The editor owns
+ * them, as graph canvases own theirs: the window dispatcher skips text fields.
+ * Accept and Dismiss decline when no list is open, so the key keeps its
+ * editing meaning (Enter inserts a line); a Dismiss that closed a list stops
+ * there, so Escape does not also close a dialog around the editor.
+ */
+function completionKeys(bindings: ResolvedKeybinds): Extension {
+  const bind = (commandId: EditorCommandId, run: Command, stopPropagation = false): KeyBinding[] =>
+    (bindings.get(commandId) ?? [])
+      .map(codeMirrorKey)
+      .filter((key): key is string => key !== null)
+      .map((key) => ({ key, run, stopPropagation }));
+  return Prec.high(keymap.of([
+    ...bind("code.complete", startCompletion),
+    ...bind("code.acceptCompletion", acceptCompletion),
+    ...bind("code.dismissCompletion", closeCompletion, true),
+    ...COMPLETION_NAVIGATION,
+  ]));
 }
 
 const ACCESSORY = [
@@ -74,6 +106,9 @@ export function CodeBodyEditor({ value, onChange, bodyLine, language, names = []
   onChangeRef.current = onChange;
   const namesRef = useRef(names);
   namesRef.current = names;
+  const keybinds = useKeybindings();
+  const keybindsApplied = useRef(keybinds);
+  const completionKeysCompartment = useRef(new Compartment());
 
   useEffect(() => {
     if (!hostRef.current) return;
@@ -91,10 +126,12 @@ export function CodeBodyEditor({ value, onChange, bodyLine, language, names = []
         language === "glsl" ? glslLanguage : javascript(),
         syntaxHighlighting(codeHighlight),
         bracketMatching(),
-        autocompletion(),
+        // Its built-in keys would also take Ctrl-Space, Enter and Escape; the Keybinds ones replace them.
+        autocompletion({ defaultKeymap: false }),
         (language === "glsl" ? glslLanguage : javascript().language).data.of({ autocomplete: (context: import("@codemirror/autocomplete").CompletionContext) => codeCompletions(context, language, namesRef.current) }),
         EditorView.contentAttributes.of({ "aria-label": ariaLabel ?? (language === "glsl" ? "GLSL Function Body" : "JavaScript Function Body") }),
-        keymap.of([{ key: "Escape", run: closeCompletion, stopPropagation: true }, ...completionKeymap, ...defaultKeymap, ...historyKeymap]),
+        completionKeysCompartment.current.of(completionKeys(keybindsApplied.current)),
+        keymap.of([...defaultKeymap, ...historyKeymap]),
         EditorView.updateListener.of((update) => {
           if (update.docChanged && !update.transactions.every((transaction) => transaction.annotation(externalValueSync))) {
             onChangeRef.current(update.state.doc.toString());
@@ -136,6 +173,12 @@ export function CodeBodyEditor({ value, onChange, bodyLine, language, names = []
     ]) });
     if (readOnly && viewRef.current) closeCompletion(viewRef.current);
   }, [readOnly]);
+
+  useEffect(() => {
+    if (!viewRef.current || keybindsApplied.current === keybinds) return;
+    keybindsApplied.current = keybinds;
+    viewRef.current.dispatch({ effects: completionKeysCompartment.current.reconfigure(completionKeys(keybinds)) });
+  }, [keybinds]);
 
   useEffect(() => {
     const view = viewRef.current;
@@ -196,7 +239,6 @@ export function CodeBodyEditor({ value, onChange, bodyLine, language, names = []
           </Button>
         ))}
       </div>}
-      {compact ? null : <div className="flex shrink-0 justify-between border-t bg-sidebar px-2 py-1 text-xs text-muted-foreground"><span>{language === "glsl" ? "GLSL" : "JavaScript"}</span><span>Ctrl+Space: Complete · Enter: Accept · Esc: Dismiss</span></div>}
     </div>
   );
 }

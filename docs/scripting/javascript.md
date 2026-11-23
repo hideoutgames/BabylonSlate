@@ -57,7 +57,8 @@ The body is not sandboxed: it runs with the same access as the rest of your game
 
 ## Notes
 
-- On touch screens, the code editor shows a key bar with braces, brackets, parentheses, semicolons, quotes, comparison signs and **Tab**.
+- Press <kbd>Ctrl</kbd>+<kbd>Space</kbd> for suggestions, <kbd>Enter</kbd> to accept one and <kbd>Esc</kbd> to close the list. You can change these keys in **Engine Settings > Keybinds** ([Keyboard Shortcuts](../start/shortcuts.md#code-editor)).
+- On touch screens, the code editor shows a key bar with a **Complete** button, braces, brackets, parentheses, semicolons, quotes, comparison signs and **Tab**.
 - Only use code you trust, and review it in projects or plugins you import.
 - For most logic, regular nodes are easier to read and debug. Use this node for calculations or text handling that would need many nodes.
 - An Animation Graph's **Preview** never runs Execute JavaScript.
