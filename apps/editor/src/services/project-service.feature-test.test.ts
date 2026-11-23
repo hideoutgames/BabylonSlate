@@ -570,6 +570,8 @@ describe("FeatureTest starter", () => {
       expect(run.problems).toEqual([]);
       expect(run.tickIndex).toBe(PLAY_TICKS);
       for (const line of HEARD[scene.name] ?? []) expect(run.logs.filter((log) => log.includes(line)), line).not.toEqual([]);
+      // The decal spawner loads its Soft decal Materials first (Load Assets (Async)): no on-demand load warns for them.
+      expect(run.logs.filter((log) => log.includes("FT_MatDecal") && log.includes("was not loaded with this"))).toEqual([]);
     }, 120_000);
   }
 });

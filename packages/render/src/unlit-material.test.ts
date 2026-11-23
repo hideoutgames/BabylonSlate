@@ -381,6 +381,15 @@ describe("unlit Material", () => {
     other.dispose();
     expect(material.getActiveTextures()).not.toContain(blue);
     expect(material.hasTexture(blue)).toBe(false);
+    // A mesh given another Material since (a 2D Material's fallback until its own Material arrives) leaves too when it
+    // is disposed, rather than staying listed, with everything it holds, for the rest of the session.
+    const green = texture(target);
+    const replaced = MeshBuilder.CreatePlane("replaced", {}, target);
+    setUnlitMaterial(replaced, world, binding({ texture: green }));
+    replaced.material = unlitMaterial(target, solid);
+    replaced.dispose();
+    expect(material.getActiveTextures()).not.toContain(green);
+    expect(material.hasTexture(green)).toBe(false);
   });
 
   it("gives the outline, capture and shadow passes variants, deforms by lattice, and keeps the stock shadow path", async () => {

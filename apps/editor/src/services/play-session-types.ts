@@ -105,7 +105,7 @@ export interface PlaySession {
   snapshotMismatches: () => number | null;
   /** Session-only Play/Preview fps cap; does not write `project.json`. */
   setFrameCap: (fps: number) => void;
-  /** Actor guids spawned this session (authored scene + explicit runtime spawns). */
+  /** Actor guids spawned this session (authored scene + explicit runtime spawns); kept in test builds only, else empty. */
   spawnedActorGuids: () => readonly string[];
   executeConsoleCommand: (
     line: string,

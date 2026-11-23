@@ -1156,6 +1156,24 @@ it("limits a strict probe to the meshes a change named, for a view that asked fo
   }
 });
 
+it("follows no mesh that left the Scene before Babylon announced it", async () => {
+  const { scene, camera } = host();
+  const graph = new ForwardSceneFrameGraph(scene);
+  try {
+    expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
+    // A visual made and replaced in one frame (a pool group's source, a label redrawn): Babylon announces the
+    // addition on a later task, after the mesh was disposed.
+    const replaced = MeshBuilder.CreateBox("replaced", {}, scene);
+    replaced.dispose();
+    const kept = MeshBuilder.CreateBox("kept", {}, scene);
+    await vi.waitFor(() => expect(kept.onMaterialChangedObservable.hasObservers()).toBe(true));
+    // Watching the disposed mesh would keep it, and the graph's observer on it, for the rest of the session.
+    expect(replaced.onMaterialChangedObservable.hasObservers()).toBe(false);
+  } finally {
+    graph.dispose();
+  }
+});
+
 it("asks a source's batch when an instance leaves or joins it, and no other mesh", async () => {
   const { scene, camera } = host();
   const kept = MeshBuilder.CreateBox("kept", {}, scene);

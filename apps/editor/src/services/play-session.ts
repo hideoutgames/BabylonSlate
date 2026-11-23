@@ -1,5 +1,5 @@
 import { createSaveStorageServer, createSessionSaveStorage, markSessionTrail, markSessionTrailStatus } from "@haptic/core";
-import { createSaveGameStorage } from "@haptic/vfs";
+import { createSaveGameStorage, isTestModeEnabled } from "@haptic/vfs";
 import type { ScalabilityAcknowledgement } from "@haptic/core";
 import {
   type createPlayPauseGate,
@@ -431,7 +431,10 @@ export function startPlaySession(options: PlaySessionOptions): PlaySession {
   const workerDiagnostics = new SessionDiagnosticAggregator();
   const hostDiagnostics = new SessionDiagnosticAggregator();
 
+  // Every actor spawned this session, oldest first: a test build's readout. Elsewhere nothing reads it, so it is not
+  // kept (a session that keeps spawning would grow it without end).
   const spawnedActorGuids: string[] = [];
+  const recordSpawns = isTestModeEnabled();
   const sourceTracker = createPlaySourceTracker({
     options,
     handle,
@@ -616,9 +619,7 @@ export function startPlaySession(options: PlaySessionOptions): PlaySession {
     if (command.type === "simulationBlocking") handle.setSceneStreamingPaused(command.blocking);
     if (command.type === "snapshotLayout" && runtime)
       snapBuf = new Float32Array(snapshotFloatCount(command.capacity));
-    if (command.type === "spawn") {
-      spawnedActorGuids.push(command.actorGuid);
-    }
+    if (command.type === "spawn" && recordSpawns) spawnedActorGuids.push(command.actorGuid);
     if (
       command.type === "snapshotLayout" ||
       shouldForwardPlayEngineCommand(command.type)
