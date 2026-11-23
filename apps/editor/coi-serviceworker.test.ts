@@ -34,6 +34,7 @@ function bootstrap() {
     chrome: {},
     document: { currentScript: { src: "https://editor.example/coi-serviceworker.js" } },
     location: { reload },
+    coiReloading: undefined as boolean | undefined,
     coi: {
       shouldRegister: () => true,
       shouldDeregister: () => false,
@@ -68,10 +69,13 @@ describe("COI service worker bootstrap", () => {
 
     app.serviceWorker.dispatchEvent(new Event("controllerchange"));
     expect(app.reload).not.toHaveBeenCalled();
+    expect(app.window.coiReloading).toBeUndefined();
     app.serviceWorker.controller = controller();
     app.serviceWorker.dispatchEvent(new Event("controllerchange"));
     app.serviceWorker.dispatchEvent(new Event("controllerchange"));
     expect(app.reload).toHaveBeenCalledTimes(1);
+    // The page's chunk loads read it, so loads this reload cancels are not taken for a newer deploy.
+    expect(app.window.coiReloading).toBe(true);
   });
 
   it("observes worker control acquired before registration resolves", async () => {
