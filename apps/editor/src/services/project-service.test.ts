@@ -957,7 +957,7 @@ describe("project round-trip", () => {
     if (!supportsDeleteProject) Object.defineProperty(storage, "deleteProject", { value: undefined });
     await storage.openDocumentsProject("Interrupted");
     await storage.writeText(".haptic-creating", "Project creation in progress\n");
-    await storage.writeText(PROJECT_FILE, JSON.stringify(createEmptyProject("Interrupted")));
+    // Stopped before it wrote its project.json.
     await storage.mkdir("assets", true);
     await storage.writeText("assets/PreviousTemplate.txt", "interrupted template content");
     await storage.releaseFolder();
@@ -968,6 +968,48 @@ describe("project round-trip", () => {
     expect(await storage.exists("assets/PreviousTemplate.txt")).toBe(false);
     expect((await service.listProjects()).map((project) => project.name)).toEqual(["Interrupted"]);
     await expect(service.createEmptyProject("Interrupted")).rejects.toThrow(/already exists/);
+  });
+
+  it("keeps a project whose folder holds a leftover creation marker beside its project.json, and removes only the marker", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    await storage.openDocumentsProject("Kept");
+    await storage.writeText(".haptic-creating", "Project creation in progress\n");
+    await storage.writeText(PROJECT_FILE, JSON.stringify(createEmptyProject("Kept")));
+    await storage.mkdir("assets", true);
+    await storage.writeText("assets/Work.txt", "the user's work");
+    await storage.releaseFolder();
+    const service = new ProjectService(storage);
+    // Create, a template, Import and Clone under the same name each leave the project as it is.
+    await expect(service.createEmptyProject("Kept", { kind: "blank" })).rejects.toThrow("Name already exists.");
+    await expect(service.createFromTemplate({ name: "Kept", templateFiles: [] })).rejects.toThrow("A project already exists in this folder.");
+    await expect(service.cloneProject({ name: "Kept", repositoryUrl: "https://example.test/kept.git", branch: "main", clone: async () => {} }))
+      .rejects.toThrow("A project with this name already exists.");
+    await storage.openDocumentsProject("Kept");
+    expect(await storage.readText("assets/Work.txt")).toBe("the user's work");
+    expect(await storage.exists(PROJECT_FILE)).toBe(true);
+    expect(await storage.exists(".haptic-creating")).toBe(false);
+  });
+
+  it("reports a listed project whose files are gone as missing, without scaffolding a new one under its name", async () => {
+    const storage = new MemoryStorageAdapter("documents");
+    const service = new ProjectService(storage);
+    await service.createEmptyProject("Gone", { kind: "blank" });
+    const handle = storage.getCurrentFolder()!;
+    await service.closeProject();
+    // Its files are deleted outside the editor; the list still names it.
+    await storage.openKnownFolder(handle);
+    for (const entry of await storage.readdir(".")) await storage.remove(entry.name);
+    await storage.releaseFolder();
+    await expect(service.openListedProject(handle)).rejects.toThrow('The files of "Gone" are missing: its folder is gone or holds no project.json.');
+    expect(storage.getCurrentFolder()).toBeNull();
+    await storage.openKnownFolder(handle);
+    expect(await storage.readdir(".")).toEqual([]);
+    await storage.releaseFolder();
+    // A folder that holds other files is the same: missing, not "choose an empty folder".
+    await storage.openKnownFolder(handle);
+    await storage.writeText("notes.txt", "x");
+    await storage.releaseFolder();
+    await expect(service.openListedProject(handle)).rejects.toThrow('The files of "Gone" are missing');
   });
 
   it("refuses to create a named project over a pre-existing folder's files", async () => {

@@ -1,3 +1,5 @@
+import { recordSessionTrailEvent, SessionTrailEventKind } from "@haptic/core";
+
 const RELOADED_KEY = "haptic:preload-error-reloaded";
 
 type PreloadErrorTarget = Pick<
@@ -33,12 +35,28 @@ export class ChunkLoadError extends Error {
 }
 
 /**
+ * Every reload of the page the editor makes: records `reason` in the session trail first, synchronously, so the next
+ * report can tell a reload of ours from a page the system stopped.
+ */
+export function reloadPage(reason: string, target: Pick<PreloadErrorTarget, "location"> = window): void {
+  recordSessionTrailEvent(SessionTrailEventKind.reload, reason);
+  target.location.reload();
+}
+
+/**
  * Loads the deployed build into this tab: the one reload for an editor whose build a newer deploy replaced, whether a
  * lazy chunk could not load (automatically, once per session, or the user's Reload Editor) or a Play worker's files
- * are gone (the user's Reload Editor).
+ * are gone (the user's Reload Editor). `reason` is what the session trail records.
  */
-export function reloadForNewBuild(target: Pick<PreloadErrorTarget, "location"> = window): void {
-  target.location.reload();
+export function reloadForNewBuild(reason: string, target: Pick<PreloadErrorTarget, "location"> = window): void {
+  reloadPage(reason, target);
+}
+
+/** What a `vite:preloadError` failed on: its error's message, which names the chunk's or stylesheet's URL. */
+function preloadFailure(event: Event): string {
+  const payload = (event as Event & { payload?: unknown }).payload;
+  if (payload instanceof Error) return payload.message;
+  return payload === undefined ? "an import (no detail)" : String(payload);
 }
 
 /**
@@ -57,13 +75,20 @@ export function installPreloadErrorReload(
   target: PreloadErrorTarget = window,
 ): () => void {
   const onPreloadError = (event: Event) => {
+    const failed = preloadFailure(event);
     if (target.coiReloading) {
+      recordSessionTrailEvent(SessionTrailEventKind.chunk, `${failed}; cancelled: the isolation service worker's reload had begun`);
       event.preventDefault();
       return;
     }
-    if (!claimReload(target)) return;
+    if (!claimReload(target)) {
+      recordSessionTrailEvent(SessionTrailEventKind.chunk, `${failed}; no reload: this session already reloaded once (or has no session storage)`);
+      return;
+    }
+    // Recorded before the reload, which may end the page at once.
+    recordSessionTrailEvent(SessionTrailEventKind.chunk, `${failed}; reloading the page`);
     event.preventDefault();
-    reloadForNewBuild(target);
+    reloadForNewBuild("a failed chunk import", target);
   };
   target.addEventListener("vite:preloadError", onPreloadError);
   return () => target.removeEventListener("vite:preloadError", onPreloadError);

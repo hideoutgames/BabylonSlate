@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { recordErrorScreen } from "../lib/page-error-trail";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -37,6 +38,10 @@ export function SaveFailedDialog() {
   const shown = useRetainedValue(saveFailed, EMPTY);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
+  const failedCount = saveFailed?.documents.length ?? 0;
+  useEffect(() => {
+    if (failedCount) recordErrorScreen("Save Failed", `${failedCount} document${failedCount === 1 ? "" : "s"} locked by someone else were not saved`);
+  }, [failedCount]);
   const ignore = () => {
     setError(false);
     dismissSaveFailed();

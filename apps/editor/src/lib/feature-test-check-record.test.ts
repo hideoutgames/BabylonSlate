@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { FeatureTestCheckReport } from "../services/feature-test-check";
-import { resetSessionTrail } from "@haptic/core";
+import type { FeatureTestCheckReport, FeatureTestStoppedSession } from "../services/feature-test-check";
+import { resetSessionTrail, sessionTrailEvents } from "@haptic/core";
 import {
   clearUnfinishedCheck, formatOtherBuildCheck, loadCheckEnded, loadSavedCheck, loadSavedCheckRecord, saveCheckEnded, saveUnfinishedCheck,
-  withStoppedSessions,
+  saveUnfinishedCheckBody, saveUnfinishedCheckSamples, withStoppedSessions,
 } from "./feature-test-check-record";
-import { formatFeatureTestCheckReport } from "./feature-test-check-report";
+import { profileReportFixture } from "../testing/profile-report-fixture";
+import { formatFeatureTestCheckReport, stopCause } from "./feature-test-check-report";
 import { startSessionTrail } from "./session-trail-record";
 
 const report: FeatureTestCheckReport = {
@@ -50,7 +51,7 @@ describe("the unfinished Feature Test Check", () => {
       appVersion: "1.2.3", userAgent: "iPad", platform: "iPad", touchPoints: 5, devicePixelRatio: 2, screen: "1180x820", viewport: "1180x820", cores: 6, memoryGb: null,
     }).split("\n");
     expect(lines[1]).toBe("Result: 0/1 scenes passed · DID NOT FINISH · took 41.0 s");
-    expect(lines[2]).toBe("Did not finish: the app stopped (a crash or reload) while main: benchmarking high.");
+    expect(lines[2]).toBe("Did not finish: the app stopped (a crash or reload) while main: benchmarking high; its page left no trail to say why.");
     expect(lines.slice(-3)).toEqual([
       "Resources before it stopped (last 2 samples, oldest first):",
       "  30.0 s   300 shaders · Play drawn 900, held 0 · 120 textures (400 MB) · app 1500 MB · device free 900 MB · main: benchmarking medium",
@@ -66,9 +67,16 @@ describe("the unfinished Feature Test Check", () => {
     };
     const lastAlive = Date.UTC(2026, 10, 9, 23, 57, 0);
     let stopTrail: (() => void) | undefined;
-    /** This page a minute after another page's trail was last renewed, with that page's record in storage. */
-    function afterAFreeze(marks: { at: number; stage: string }[]) {
-      const trails = new Map([["haptic:session-trail:froze", JSON.stringify({ alive: lastAlive, marks })]]);
+    type Event = FeatureTestStoppedSession["events"][number];
+    /**
+     * This page `laterMs` (a minute by default) after another page's trail was last renewed, with that page's record
+     * in storage, and the stopped check's record naming that page as the one it ran in.
+     */
+    function afterAFreeze(marks: { at: number; stage: string }[], events?: Event[], laterMs = 60_000, others: Record<string, object> = {}) {
+      const trails = new Map([
+        ["haptic:session-trail:froze", JSON.stringify({ alive: lastAlive, marks, ...(events ? { events } : {}) })],
+        ...Object.entries(others).map(([page, trail]) => [`haptic:session-trail:${page}`, JSON.stringify(trail)] as [string, string]),
+      ]);
       stopTrail = startSessionTrail({
         storage: {
           get length() { return trails.size; },
@@ -77,7 +85,7 @@ describe("the unfinished Feature Test Check", () => {
           setItem: (key, value) => { trails.set(key, value); },
           removeItem: (key) => { trails.delete(key); },
         },
-        now: () => lastAlive + 60_000,
+        now: () => lastAlive + laterMs,
         setInterval: () => 0,
         clearInterval: () => {},
         watchPage: () => () => {},
@@ -89,6 +97,12 @@ describe("the unfinished Feature Test Check", () => {
       stopTrail = undefined;
       resetSessionTrail();
     });
+    /** The record a check that stopped at `step` left, written by its page (`page`) before it stopped. */
+    function stoppedCheckRanIn(page: string, step: string) {
+      saveUnfinishedCheck({ step, report, resources: [] });
+      const RECORD = "haptic:feature-test-check:unfinished";
+      store.set(RECORD, JSON.stringify({ ...JSON.parse(store.get(RECORD)!), page }));
+    }
 
     it("tells where the page of a stopped check was, and goes on telling until a check that ran to its end has", () => {
       const marks = [
@@ -97,16 +111,21 @@ describe("the unfinished Feature Test Check", () => {
         { at: lastAlive, stage: "play: disposing" },
       ];
       afterAFreeze(marks);
-      saveUnfinishedCheck({ step: "main: stopping Play", report, resources: [] });
+      stoppedCheckRanIn("froze", "main: stopping Play");
       const restored = loadSavedCheck()!;
-      expect(restored.stoppedSessions).toEqual([{ lastAliveAt: lastAlive, marks }]);
-      expect(formatFeatureTestCheckReport(restored, environment).split("\n").slice(-6)).toEqual([
+      expect(restored.stoppedSessions).toEqual([{ page: "froze", lastAliveAt: lastAlive, marks, events: [] }]);
+      const lines = formatFeatureTestCheckReport(restored, environment).split("\n");
+      const nothing = "nothing recorded: the system stopped the page (no error, reload, close or hide was recorded before it; a WebKit content process killed for memory, or a crash, looks like this)";
+      expect(lines[2]).toBe(`Did not finish: the app stopped while main: stopping Play: ${nothing}.`);
+      expect(lines.slice(-8)).toEqual([
         "",
         "A session stopped without closing (a freeze, a crash or a force close), last alive 2026-11-09T23:57:00.000Z.",
+        `Why: ${nothing}.`,
         "Its last stages, each with how long before that it was reached:",
         "    41.2 s  check: main: benchmarking ultra",
         "     0.4 s  check: main: stopping Play",
         "     0.0 s  play: disposing",
+        "It recorded no error, reload, error screen, lost context or page event.",
       ]);
       // A finished check's report tells of it once more, and it is forgotten.
       expect(withStoppedSessions(report).stoppedSessions).toHaveLength(1);
@@ -117,12 +136,130 @@ describe("the unfinished Feature Test Check", () => {
     it("lists a stopped session's last 24 stages", () => {
       afterAFreeze(Array.from({ length: 26 }, (_, index) => ({ at: lastAlive - (25 - index) * 1_000, stage: `stage ${index}` })));
       const lines = formatFeatureTestCheckReport(withStoppedSessions(report), environment).split("\n");
-      expect(lines.slice(-25, -22)).toEqual([
+      expect(lines.slice(-26, -23)).toEqual([
         "Its last stages, each with how long before that it was reached (2 earlier omitted):",
         "    23.0 s  stage 2",
         "    22.0 s  stage 3",
       ]);
-      expect(lines.at(-1)).toBe("     0.0 s  stage 25");
+      expect(lines.at(-2)).toBe("     0.0 s  stage 25");
+    });
+
+    it("names a failed chunk import and the reload it made, from the check's own page whose trail ended with a close", () => {
+      const events: Event[] = [
+        { at: lastAlive - 480_000, first: lastAlive - 480_000, kind: "uncaught error", detail: "TypeError: a is null", count: 1 },
+        { at: lastAlive - 300, first: lastAlive - 300, kind: "chunk import failed", detail: "Failed to fetch dynamically imported module: https://example.test/assets/x-1a2b3c.js; reloading the page", count: 1 },
+        { at: lastAlive - 200, first: lastAlive - 200, kind: "reload", detail: "a failed chunk import", count: 1 },
+        { at: lastAlive, first: lastAlive, kind: "page", detail: "closed (pagehide, persisted false)", count: 1 },
+      ];
+      // Three seconds after the reload: the trail is fresh, and ends as an ordinary close does. Another page that
+      // closed in the ordinary way, as long ago, is no stopped session.
+      afterAFreeze([{ at: lastAlive - 2_000, stage: "check: heavy baseline 17" }, { at: lastAlive, stage: "page: closed" }], events, 3_000, {
+        "closed-normally": { alive: lastAlive - 60_000, marks: [{ at: lastAlive - 60_000, stage: "page: closed" }], events: [] },
+      });
+      stoppedCheckRanIn("froze", "heavy baseline 17");
+      const restored = loadSavedCheck()!;
+      expect(restored.stoppedSessions!.map((session) => session.page)).toEqual(["froze"]);
+      const lines = formatFeatureTestCheckReport(restored, environment).split("\n");
+      expect(lines[2]).toBe("Did not finish: the app stopped while heavy baseline 17: a failed chunk import (Failed to fetch dynamically imported module: https://example.test/assets/x-1a2b3c.js; reloading the page), then the page reloaded itself, 0.3 s before the last sign of life.");
+      expect(lines.slice(-10)).toEqual([
+        "A session ended with its page closed or put away (a reload counts), last alive 2026-11-09T23:57:00.000Z.",
+        "Why: a failed chunk import (Failed to fetch dynamically imported module: https://example.test/assets/x-1a2b3c.js; reloading the page), then the page reloaded itself, 0.3 s before the last sign of life.",
+        "Its last stages, each with how long before that it was reached:",
+        "     2.0 s  check: heavy baseline 17",
+        "     0.0 s  page: closed",
+        "What it recorded (errors, reloads, error screens, contexts, the page's lifecycle), each with how long before that it happened:",
+        "   480.0 s  uncaught error: TypeError: a is null",
+        "     0.3 s  chunk import failed: Failed to fetch dynamically imported module: https://example.test/assets/x-1a2b3c.js; reloading the page",
+        "     0.2 s  reload: a failed chunk import",
+        "     0.0 s  page: closed (pagehide, persisted false)",
+      ]);
+    });
+
+    it("names the latest recent cause by kind, and leaves an error the page ran on after out of it", () => {
+      const session = (events: Event[], last = "play: running"): FeatureTestStoppedSession => ({
+        page: "p", lastAliveAt: 100_000, marks: [{ at: 99_000, stage: last }], events,
+      });
+      const event = (kind: string, detail: string, at: number, count = 1): Event => ({ at, first: at - 1_000 * (count - 1), kind, detail, count });
+      // An error eight minutes before is not why: nothing recorded since.
+      expect(stopCause(session([event("uncaught error", "TypeError: a is null", 100_000 - 480_000)])))
+        .toMatch(/^nothing recorded: the system stopped the page/);
+      expect(stopCause(session([event("uncaught error", "TypeError: a is null", 95_000), event("context lost", "play: loss 1 of this view", 98_000)])))
+        .toBe("the WebGL context was lost (play: loss 1 of this view), 2.0 s before the last sign of life");
+      expect(stopCause(session([event("context lost", "play: loss 1 of this view", 97_000), event("error screen", "Couldn't Load Haptic: Error: boom", 99_000)])))
+        .toBe("the WebGL context was lost (play: loss 1 of this view), 3.0 s before the last sign of life");
+      expect(stopCause(session([event("unhandled rejection", "Error: lost", 99_500, 4)])))
+        .toBe("an unhandled rejection: Error: lost, 0.5 s before the last sign of life");
+      expect(stopCause(session([event("page", "hidden", 99_000)], "page: hidden"))).toBe("the page was put away (hidden) and did not come back");
+      expect(stopCause(session([event("page", "closed (pagehide, persisted false)", 100_000)], "page: closed")))
+        .toBe("the page was closed, reloaded or navigated away by the browser or the user (closed (pagehide, persisted false)), with no reload of the editor's own");
+      // A reload the user began fails in-flight imports: those, and the reload they make, are its consequence.
+      const unload = event("page", "unloading (beforeunload: a reload or navigation)", 99_000);
+      expect(stopCause(session([unload, event("chunk import failed", "x.js; reloading the page", 99_100), event("reload", "a failed chunk import", 99_100)], "page: closed")))
+        .toBe("the page was reloaded or navigated away by the browser or the user (beforeunload, 1.0 s before the last sign of life), with no reload of the editor's own");
+      // A reload of ours begins its own unload.
+      expect(stopCause(session([event("reload", "Reload on Couldn't Load Haptic", 98_900), unload], "page: closed")))
+        .toBe("the editor reloaded the page itself (Reload on Couldn't Load Haptic), 1.1 s before the last sign of life");
+      // A hang the page came back from qualifies the stop, it does not replace it.
+      expect(stopCause(session([event("stall", "the page did not run for 12 s", 97_000)])))
+        .toMatch(/^nothing recorded: the system stopped the page .*; it had hung shortly before \(the page did not run for 12 s, 3\.0 s before the last sign of life\)$/);
+    });
+  });
+
+  describe("stored as a report and a samples record", () => {
+    const BODY = "haptic:feature-test-check:unfinished";
+    const SAMPLES = "haptic:feature-test-check:unfinished-samples";
+
+    it("writes samples without touching the report, and loads both back as one unfinished report", () => {
+      saveUnfinishedCheckBody("main: measuring heavy baseline 3", report);
+      const body = store.get(BODY);
+      saveUnfinishedCheckSamples([sample(30_000, "main: measuring heavy baseline 3", 400)]);
+      saveUnfinishedCheckSamples([sample(30_000, "main: measuring heavy baseline 3", 400), sample(32_000, "main: measuring heavy step 2", 410)]);
+      expect(store.get(BODY)).toBe(body);
+      const restored = loadSavedCheck()!;
+      expect(restored.unfinished?.step).toBe("main: measuring heavy baseline 3");
+      expect(restored.unfinished?.resources.map((entry) => entry.atMs)).toEqual([30_000, 32_000]);
+      // Clearing removes both, so a new check never shows the last one's samples.
+      clearUnfinishedCheck();
+      expect(store.has(BODY) || store.has(SAMPLES)).toBe(false);
+    });
+
+    it("keeps only the last 60 samples", () => {
+      saveUnfinishedCheckBody("x", report);
+      saveUnfinishedCheckSamples(Array.from({ length: 75 }, (_, index) => sample(index * 2_000, "x", 400)));
+      expect(loadSavedCheck()!.unfinished!.resources.map((entry) => entry.atMs).slice(0, 2)).toEqual([30_000, 32_000]);
+    });
+
+    it("round-trips a 70-row Profile exactly, storing what its rows repeat once, within a bound that catches growth", () => {
+      const sizes = [10, 35, 70].map((rows) => {
+        const profile = profileReportFixture(rows);
+        saveUnfinishedCheckBody("main: measuring heavy drift", profile);
+        const restored = loadSavedCheck()!;
+        // Every row as it was: the pool is lossless.
+        expect(restored.scenes).toEqual(profile.scenes);
+        expect(formatFeatureTestCheckReport(restored, environment)).toBe(formatFeatureTestCheckReport(
+          { ...profile, unfinished: { step: "main: measuring heavy drift", resources: [] } }, environment));
+        return { stored: store.get(BODY)!.length, whole: JSON.stringify(profile).length };
+      });
+      // About 14.6 K characters a row as the rows hold them; stored, about half (measured 0.08, 0.25 and 0.48 M).
+      expect(sizes[2]!.whole).toBeGreaterThan(900_000);
+      expect(sizes[2]!.stored).toBeLessThan(600_000);
+      expect(sizes[2]!.stored / sizes[2]!.whole).toBeLessThan(0.6);
+    });
+
+    it("never throws into the check when storage refuses a write, and records it once in the session trail", () => {
+      vi.stubGlobal("localStorage", {
+        getItem: () => null, removeItem: () => {}, setItem: () => { throw new DOMException("full", "QuotaExceededError"); },
+      });
+      resetSessionTrail();
+      for (let step = 0; step < 3; step++) {
+        expect(() => saveUnfinishedCheckBody(`step ${step}`, report)).not.toThrow();
+        expect(() => saveUnfinishedCheckSamples([])).not.toThrow();
+      }
+      const storage = sessionTrailEvents().filter((event) => event.kind === "storage");
+      expect(storage.map((event) => [event.detail, event.count])).toEqual([
+        ["the Feature Test Check's record (haptic:feature-test-check:unfinished) could not be saved: QuotaExceededError", 3],
+        ["the Feature Test Check's record (haptic:feature-test-check:unfinished-samples) could not be saved: QuotaExceededError", 3],
+      ]);
     });
   });
 
@@ -158,7 +295,7 @@ describe("the unfinished Feature Test Check", () => {
     const lines = text.split("\n");
     expect(lines[0]).toBe("Written by another build of the editor (index-0ld8u1ld.js): this build may misread it.");
     expect(lines[2]).toBe("Result: 0/1 scenes passed · DID NOT FINISH · took 41.0 s");
-    expect(lines[3]).toBe("Did not finish: the app stopped (a crash or reload) while main: benchmarking high.");
+    expect(lines[3]).toBe("Did not finish: the app stopped (a crash or reload) while main: benchmarking high; its page left no trail to say why.");
     expect(restored?.unfinished?.step).toBe("main: benchmarking high");
     // Shown again on the next open: nothing deleted it.
     expect(shown().text).toBe(text);
@@ -209,6 +346,9 @@ describe("the unfinished Feature Test Check", () => {
     expect(store.has(RECORD)).toBe(false);
     vi.stubGlobal("localStorage", { getItem: () => { throw new Error("denied"); }, setItem: () => { throw new Error("full"); }, removeItem: () => { throw new Error("denied"); } });
     expect(() => saveUnfinishedCheck({ step: "x", report, resources: [] })).not.toThrow();
+    // The session trail tells the next report that the record could not be kept.
+    expect(sessionTrailEvents().map((event) => `${event.kind}: ${event.detail}`))
+      .toContain("storage: the Feature Test Check's record (haptic:feature-test-check:unfinished) could not be saved: Error");
     expect(loadSavedCheck()).toBeNull();
     expect(() => clearUnfinishedCheck()).not.toThrow();
   });

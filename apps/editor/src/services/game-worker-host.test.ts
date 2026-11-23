@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BridgeHostMessage, BridgeWorkerMessage, CommandMessage } from "@haptic/bridge";
+import { resetSessionTrail, sessionTrailEvents } from "@haptic/core";
 import { createGameWorkerHost, preloadPrewarmedGameWorkerPhysics, prewarmGameWorker } from "./game-worker-host";
 
 class FakeWorker {
@@ -164,6 +165,9 @@ it("leaves a started worker's uncaught errors to its own runtime diagnostics", (
   FakeWorker.instance.receive({ channel: "ready" });
   FakeWorker.instance.onerror?.({ message: "TypeError: x is undefined", preventDefault() {} } as unknown as ErrorEvent);
   expect(failures).toEqual([]);
+  // It still reaches the session trail, for a report of a page that stops after it.
+  expect(sessionTrailEvents().at(-1)).toMatchObject({ kind: "game worker", detail: "error after its start: TypeError: x is undefined" });
+  resetSessionTrail();
 });
 
 describe("prewarmed session worker", () => {

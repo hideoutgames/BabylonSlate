@@ -6,6 +6,7 @@ import {
   type CommandMessage,
   type ControlMessage,
 } from "@haptic/bridge";
+import { recordSessionTrailEvent, SessionTrailEventKind } from "@haptic/core";
 import type { RawInputEvent } from "@haptic/input";
 import { encodeInputEvents } from "@haptic/input";
 
@@ -94,17 +95,24 @@ function spawnGameWorkerHost(): GameWorkerHost {
   const fail = (message: string) => {
     if (terminated || failure !== null) return;
     failure = message;
+    recordSessionTrailEvent(SessionTrailEventKind.worker, `failed: ${message}`);
     clearTimeout(startTimer);
     for (const handler of failureHandlers) handler(message);
   };
   // A module worker that fails to fetch, parse or evaluate reports it only here: its own handlers never installed.
   // Once started, the worker reports its own uncaught errors as runtime diagnostics, and Play goes on.
   worker.onerror = (event: ErrorEvent) => {
+    // Recorded either way: an error that reaches here after the start is one the worker's own handlers missed.
+    const where = event.filename ? ` (${event.filename}:${event.lineno ?? 0}:${event.colno ?? 0})` : "";
+    recordSessionTrailEvent(SessionTrailEventKind.worker, `error${started ? " after its start" : ""}: ${event.message || "no message"}${where}`);
     if (started) return;
     event.preventDefault?.();
     fail(describeWorkerError(event));
   };
-  worker.onmessageerror = () => fail("The Play worker could not read a message from the game runtime.");
+  worker.onmessageerror = () => {
+    recordSessionTrailEvent(SessionTrailEventKind.worker, "messageerror: a message could not be read");
+    fail("The Play worker could not read a message from the game runtime.");
+  };
   const startTimer = setTimeout(() => {
     if (!started) fail(`The Play worker did not start within ${GAME_WORKER_START_TIMEOUT_MS / 1000} seconds: its module never finished loading.`);
   }, GAME_WORKER_START_TIMEOUT_MS);

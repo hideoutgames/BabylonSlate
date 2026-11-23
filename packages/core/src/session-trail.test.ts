@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  markSessionTrail, markSessionTrailStatus, resetSessionTrail, SESSION_TRAIL_MARKS, sessionTrail, setSessionTrailSink,
+  markSessionTrail, markSessionTrailStatus, recordSessionTrailEvent, resetSessionTrail, SESSION_TRAIL_EVENTS,
+  SESSION_TRAIL_MARKS, sessionTrail, sessionTrailEvents, setSessionTrailSink,
   type SessionTrailMark,
 } from "./session-trail";
 
@@ -59,5 +60,57 @@ describe("the session trail", () => {
     setSessionTrailSink(() => { throw new Error("storage full"); });
     expect(() => markSessionTrail("play: starting")).not.toThrow();
     expect(stages(sessionTrail())).toEqual(["play: starting"]);
+  });
+});
+
+describe("the session trail's events", () => {
+  it("hands a new event to the sink at once, and counts a repeat without writing", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000);
+    let writes = 0;
+    setSessionTrailSink(() => { writes += 1; });
+    writes = 0;
+    recordSessionTrailEvent("error", "TypeError: x is undefined");
+    expect(writes).toBe(1);
+    vi.setSystemTime(2_000);
+    recordSessionTrailEvent("reload", "a failed chunk import");
+    vi.setSystemTime(3_000);
+    recordSessionTrailEvent("error", "TypeError: x is undefined");
+    recordSessionTrailEvent("error", "TypeError: x is undefined");
+    expect(writes).toBe(2);
+    // The repeat moved to the end, with its first and latest times.
+    expect(sessionTrailEvents()).toEqual([
+      { at: 2_000, first: 2_000, kind: "reload", detail: "a failed chunk import", count: 1 },
+      { at: 3_000, first: 1_000, kind: "error", detail: "TypeError: x is undefined", count: 3 },
+    ]);
+  });
+
+  it("writes a burst of varying errors only a few at a time, and drops errors before a reload for room", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(10_000);
+    let writes = 0;
+    setSessionTrailSink(() => { writes += 1; });
+    writes = 0;
+    recordSessionTrailEvent("reload", "a failed chunk import");
+    for (let frame = 0; frame < 100; frame++) recordSessionTrailEvent("uncaught error", `TypeError at frame ${frame}`);
+    // The reload, then four errors of the burst; the rest wait for the host's next write.
+    expect(writes).toBe(5);
+    // A new window writes again, and a reload is never held back.
+    vi.setSystemTime(15_000);
+    recordSessionTrailEvent("uncaught error", "TypeError at frame 100");
+    recordSessionTrailEvent("context lost", "play: loss 1 of this view");
+    expect(writes).toBe(7);
+    expect(sessionTrailEvents()).toHaveLength(SESSION_TRAIL_EVENTS);
+    expect(sessionTrailEvents().filter((event) => event.kind !== "uncaught error").map((event) => event.kind)).toEqual(["reload", "context lost"]);
+  });
+
+  it("keeps the newest events, each cut to a bounded length, and survives many marks", () => {
+    recordSessionTrailEvent("error", "x".repeat(5_000));
+    for (let index = 0; index < SESSION_TRAIL_EVENTS + 2; index++) recordSessionTrailEvent("error", `error ${index}`);
+    for (let index = 0; index < SESSION_TRAIL_MARKS * 2; index++) markSessionTrail(`stage ${index}`);
+    expect(sessionTrailEvents()).toHaveLength(SESSION_TRAIL_EVENTS);
+    expect(sessionTrailEvents()[0]!.detail).toBe("error 2");
+    recordSessionTrailEvent("error", "y".repeat(5_000));
+    expect(sessionTrailEvents().at(-1)!.detail.length).toBeLessThanOrEqual(600);
   });
 });

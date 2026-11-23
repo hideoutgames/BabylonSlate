@@ -58,6 +58,7 @@ import {
 } from "../services/play-session";
 import type { GameSessionOwner, GameSessionTicket } from "../services/game-session-owner";
 import { finishPlaySessionWithTrace } from "../lib/play-trace-spill";
+import { recordErrorScreen } from "../lib/page-error-trail";
 import { attachLifecyclePause } from "@haptic/render/lifecycle-pause";
 import {
   applyLiveEngineSettings,
@@ -540,6 +541,8 @@ function PlayOverlayView({
   const [inputMode, setInputMode] = useState<"game" | "edit">("game");
   const [inputPending, setInputPending] = useState(false);
   const [controlError, setControlError] = useState<string | null>(null);
+  // The red message under Play's controls: recorded for the next report as it shows.
+  useEffect(() => { if (controlError) recordErrorScreen("Play controls", controlError); }, [controlError]);
   const inputModeRef = useRef<"game" | "edit">("game");
   const inputSequenceRef = useRef(0);
   const [statsOpen, setStatsOpen] = useState(false);
