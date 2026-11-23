@@ -3,7 +3,11 @@ const RELOADED_KEY = "haptic:preload-error-reloaded";
 type PreloadErrorTarget = Pick<
   Window,
   "addEventListener" | "removeEventListener" | "sessionStorage"
-> & { location: Pick<Location, "reload"> };
+> & {
+  location: Pick<Location, "reload">;
+  /** Set by `coi-serviceworker.js` once its isolation reload has begun. */
+  coiReloading?: boolean;
+};
 
 /** True once per session; false when this session already reloaded or storage is unavailable. */
 function claimReload(target: PreloadErrorTarget): boolean {
@@ -43,11 +47,20 @@ export function reloadForNewBuild(target: Pick<PreloadErrorTarget, "location"> =
  * first one in a session reloads the page for a consistent build; later ones
  * reach the error boundary of what needed the chunk: a route's Reload, or a
  * document's Retry and Reload Editor.
+ *
+ * A load that fails while the isolation service worker reloads the page (a
+ * first visit) is not a missing chunk: the browser cancelled it, as WebKit does
+ * with in-flight module imports. It is cancelled without a reload of its own,
+ * so the session keeps its one reload for a newer deploy.
  */
 export function installPreloadErrorReload(
   target: PreloadErrorTarget = window,
 ): () => void {
   const onPreloadError = (event: Event) => {
+    if (target.coiReloading) {
+      event.preventDefault();
+      return;
+    }
     if (!claimReload(target)) return;
     event.preventDefault();
     reloadForNewBuild(target);

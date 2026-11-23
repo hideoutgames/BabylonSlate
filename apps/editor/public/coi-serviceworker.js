@@ -103,6 +103,9 @@ if (typeof window === 'undefined') {
             const reloadOnce = () => {
                 if (reloading) return;
                 reloading = true;
+                // Local change: tell the page its isolation reload has begun. A browser may fail the loads the reload
+                // cancels (WebKit fails in-flight module imports), which are not a lazy chunk missing from the build.
+                window.coiReloading = true;
                 n.serviceWorker.removeEventListener("controllerchange", onControllerChange);
                 !coi.quiet && console.log("Reloading page to make use of COOP/COEP Service Worker.");
                 coi.doReload();
