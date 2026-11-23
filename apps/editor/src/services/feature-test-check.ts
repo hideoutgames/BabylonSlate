@@ -4,6 +4,7 @@ import type { FrameAttribution, LongFrameAttribution } from "./frame-attribution
 import type { PlayProbe, ViewportProbe } from "./runtime-probes";
 import { RENDER_QUALITY_PROFILES, SHADOW_PROFILES } from "@haptic/core";
 import { describeError } from "../lib/diagnostic-info";
+import type { CpuSyntheticLoad } from "../lib/cpu-synthetic-load";
 import { FEATURE_TEST_CHECK_SCENES } from "./feature-test-check-scenes";
 import { FEATURE_TEST_MAIN_CAMERA, FEATURE_TEST_PROFILE_VIEWS } from "../lib/feature-test/layout";
 
@@ -660,6 +661,8 @@ export interface ProfileComparison {
   repeats: number;
   /** Its baselines ran at its own GPU speed (`PROFILE_SPEED_BIN`); false where none did and the nearest were taken. */
   speedMatched: boolean;
+  /** The step or a baseline it was compared with ran its synthetic CPU load slow (`profileCpuSlow`). */
+  cpuSlow: boolean;
 }
 
 export type ProfileBasis = "burst" | "serial" | "gpu" | "frame";
@@ -714,6 +717,50 @@ export function profileReferenceSpeed(samples: readonly FeatureTestBenchmarkSamp
   const loads = samples.flatMap((sample) => syntheticMs(sample) ?? []);
   return loads.length ? Math.min(...loads) : null;
 }
+
+/** A row's synthetic CPU load (`FeatureTestBenchmarkSample.cpuSynthetic`): its fastest compute repeat in ms; null unmeasured. */
+export function cpuSyntheticMs(sample: FeatureTestBenchmarkSample): number | null {
+  const value = sample.cpuSynthetic?.minMs;
+  return value === undefined || !(value > 0) ? null : value;
+}
+
+/** The run's fastest synthetic CPU load: the CPU speed a normalised CPU cost is scaled to; null where none was measured. */
+export function profileCpuReferenceSpeed(samples: readonly FeatureTestBenchmarkSample[]): number | null {
+  const loads = samples.flatMap((sample) => cpuSyntheticMs(sample) ?? []);
+  return loads.length ? Math.min(...loads) : null;
+}
+
+/** A row whose synthetic CPU load ran more than this share slower than the run's fastest ran on a slowed CPU (CPU SLOW). */
+export const PROFILE_CPU_SLOW_SHARE = 0.15;
+
+/** Whether a row's synthetic CPU load ran more than `PROFILE_CPU_SLOW_SHARE` slower than the run's fastest. */
+export function profileCpuSlow(samples: readonly FeatureTestBenchmarkSample[], sample: FeatureTestBenchmarkSample): boolean {
+  const load = cpuSyntheticMs(sample), reference = profileCpuReferenceSpeed(samples);
+  return load !== null && reference !== null && load > reference * (1 + PROFILE_CPU_SLOW_SHARE);
+}
+
+/** A row's CPU frame cost scaled to the run's fastest synthetic CPU load: what it would cost at that speed; null unmeasured. */
+export function profileCpuNormalised(samples: readonly FeatureTestBenchmarkSample[], sample: FeatureTestBenchmarkSample): number | null {
+  const load = cpuSyntheticMs(sample), reference = profileCpuReferenceSpeed(samples);
+  return load === null || reference === null || sample.cpuMs === null ? null : sample.cpuMs * (reference / load);
+}
+
+/**
+ * The run's synthetic CPU load from the first row that ran it to the last, in run order: how far the device's CPU speed
+ * moved over the run; null without two.
+ */
+export function profileCpuSyntheticDrift(samples: readonly FeatureTestBenchmarkSample[]): { firstMs: number; lastMs: number; percent: number } | null {
+  const loads = samples.flatMap((sample) => cpuSyntheticMs(sample) ?? []);
+  if (loads.length < 2) return null;
+  const firstMs = loads[0]!, lastMs = loads.at(-1)!;
+  return { firstMs, lastMs, percent: ((lastMs - firstMs) / firstMs) * 100 };
+}
+
+/**
+ * A row's estimated cost of its synthetic CPU load (`runCpuSyntheticLoad`, about 70 ms on a desktop), with room for a
+ * tablet several times slower: what a Profile's plan adds per probed row.
+ */
+export const PROFILE_CPU_SYNTHETIC_ESTIMATE_MS = 500;
 
 /** Whether two rows ran at the same GPU speed; true where either has no synthetic load (nothing to tell them apart). */
 function sameSpeed(a: FeatureTestBenchmarkSample, b: FeatureTestBenchmarkSample): boolean {
@@ -810,6 +857,7 @@ export function profileComparison(samples: readonly FeatureTestBenchmarkSample[]
       overlaps: profileStep(sample.label)?.overlaps === true,
       adds: profileStep(sample.label)?.adds === true,
       state: straddles ? null : beforeState, straddles, normalised, repeats: 1, speedMatched,
+      cpuSlow: [before, sample, after].some((entry) => entry !== undefined && profileCpuSlow(samples, entry)),
     };
   }
   return null;
@@ -860,6 +908,7 @@ function mergeRepeats(a: ProfileComparison, b: ProfileComparison): ProfileCompar
     } : a.normalised ?? b.normalised,
     repeats: total,
     speedMatched: a.speedMatched && b.speedMatched,
+    cpuSlow: a.cpuSlow || b.cpuSlow,
   };
 }
 
@@ -870,12 +919,17 @@ export interface ProfileDriftVisit {
   atMs: number | null;
   gpuMs: number | null;
   cpuMs: number | null;
+  /** The visit's CPU cost scaled to the run's fastest synthetic CPU load (`profileCpuNormalised`): what remains is ours. */
+  cpuNormalisedMs: number | null;
 }
 
 /** Every visit of a Profile's control view (`PROFILE_CONTROL_VIEW`) in run order: its warm-up windows and its baselines. */
 export function profileDrift(samples: readonly FeatureTestBenchmarkSample[]): ProfileDriftVisit[] {
   return samples.filter((sample) => sample.view === PROFILE_CONTROL_VIEW && (sample.warmup || isBreakdownBaseline(sample)) && sample.frames)
-    .map((sample) => ({ label: sample.label, atMs: sample.atMs ?? null, gpuMs: sample.gpuBusy?.medianMs ?? null, cpuMs: sample.cpuMs }));
+    .map((sample) => ({
+      label: sample.label, atMs: sample.atMs ?? null, gpuMs: sample.gpuBusy?.medianMs ?? null, cpuMs: sample.cpuMs,
+      cpuNormalisedMs: profileCpuNormalised(samples, sample),
+    }));
 }
 
 /**
@@ -1096,6 +1150,11 @@ export interface FeatureTestBenchmarkSample {
   longFrames?: LongFrameAttribution;
   /** Sampled with the Check's own samplers off (`FeatureTestBreakdownStep.samplersOff`): frames only. */
   samplersOff?: boolean;
+  /**
+   * The fixed synthetic CPU load, run on the main thread after the row's window (`FeatureTestCheckDeps.cpuSyntheticLoad`):
+   * how fast the CPU ran then, whatever the view asked of it; absent where not run.
+   */
+  cpuSynthetic?: CpuSyntheticLoad;
 }
 
 type GpuProbeDiagnostics = NonNullable<RenderDiagnostics["gpuProbe"]>;
@@ -1445,6 +1504,11 @@ export interface FeatureTestCheckDeps {
   attributeFrames?: () => FrameAttribution;
   /** Set by the Check while its attribution runs: the long frames between two readings of `now`. */
   longFrames?: (fromMs: number, toMs: number) => LongFrameAttribution;
+  /**
+   * Runs the fixed synthetic CPU load once (`runCpuSyntheticLoad`): a Profile calls it after each probed row's window,
+   * with its GPU probes, before the row's restore. Absent: rows carry none.
+   */
+  cpuSyntheticLoad?: () => CpuSyntheticLoad;
 }
 
 export interface FeatureTestCheckTimeouts {
@@ -2230,6 +2294,12 @@ async function benchmarkProfiles(
    * `gpuprobe off` takes the recorder off the context again before the row's restore.
    */
   const probed = async <T extends FeatureTestBenchmarkSample>(serial: boolean, sampleWindow: () => Promise<T>): Promise<T> => {
+    const sample = await probedGpu(serial, sampleWindow);
+    // The synthetic CPU load, outside the window and before the restore, beside the GPU's.
+    if (profileMode && serial && deps.cpuSyntheticLoad && !signal.aborted) sample.cpuSynthetic = deps.cpuSyntheticLoad();
+    return sample;
+  };
+  const probedGpu = async <T extends FeatureTestBenchmarkSample>(serial: boolean, sampleWindow: () => Promise<T>): Promise<T> => {
     if (!profileMode || !(await run("gpuprobe on")).success) return sampleWindow();
     try {
       const sample = await sampleWindow();
