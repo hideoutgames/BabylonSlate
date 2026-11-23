@@ -27,7 +27,8 @@ import {
   loadCheckEnded,
   loadSavedCheckRecord,
   saveCheckEnded,
-  saveUnfinishedCheck,
+  saveUnfinishedCheckBody,
+  saveUnfinishedCheckSamples,
   unfinishedCheckChars,
   withStoppedSessions,
 } from "../lib/feature-test-check-record";
@@ -308,7 +309,8 @@ export function FeatureTestCheckDialog({ open, onOpenChange }: FeatureTestCheckD
       if (!running || !record.report) return;
       record.resources.push(resources);
       if (record.resources.length > MAX_CHECK_RESOURCE_SAMPLES) record.resources.shift();
-      saveUnfinishedCheck({ step: record.step, report: record.report, resources: record.resources });
+      // Only the samples' own small record: the report, which grows with the check, is written once per step.
+      saveUnfinishedCheckSamples(record.resources);
     };
     const sampler = setInterval(() => { void sample(); }, RESOURCE_SAMPLE_MS);
     const pageErrors: string[] = [];
@@ -343,7 +345,12 @@ export function FeatureTestCheckDialog({ open, onOpenChange }: FeatureTestCheckD
     try {
       const report = await runFeatureTestCheck({
         mode, scenes, deps, signal: controller.signal, pageErrors: () => [...pageErrors], breakdown,
-        onStep: (step, partial) => { record.step = step; record.report = earlier ? mergeBreakdownPasses(earlier, partial) : partial; void sample(); },
+        onStep: (step, partial) => {
+          record.step = step;
+          record.report = earlier ? mergeBreakdownPasses(earlier, partial) : partial;
+          saveUnfinishedCheckBody(step, record.report);
+          void sample();
+        },
       });
       return { report, error: null };
     } catch (error) {

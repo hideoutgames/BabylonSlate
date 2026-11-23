@@ -3,8 +3,9 @@ import type { FeatureTestCheckReport, FeatureTestStoppedSession } from "../servi
 import { resetSessionTrail, sessionTrailEvents } from "@haptic/core";
 import {
   clearUnfinishedCheck, formatOtherBuildCheck, loadCheckEnded, loadSavedCheck, loadSavedCheckRecord, saveCheckEnded, saveUnfinishedCheck,
-  withStoppedSessions,
+  saveUnfinishedCheckBody, saveUnfinishedCheckSamples, withStoppedSessions,
 } from "./feature-test-check-record";
+import { profileReportFixture } from "../testing/profile-report-fixture";
 import { formatFeatureTestCheckReport, stopCause } from "./feature-test-check-report";
 import { startSessionTrail } from "./session-trail-record";
 
@@ -201,6 +202,64 @@ describe("the unfinished Feature Test Check", () => {
       // A hang the page came back from qualifies the stop, it does not replace it.
       expect(stopCause(session([event("stall", "the page did not run for 12 s", 97_000)])))
         .toMatch(/^nothing recorded: the system stopped the page .*; it had hung shortly before \(the page did not run for 12 s, 3\.0 s before the last sign of life\)$/);
+    });
+  });
+
+  describe("stored as a report and a samples record", () => {
+    const BODY = "haptic:feature-test-check:unfinished";
+    const SAMPLES = "haptic:feature-test-check:unfinished-samples";
+
+    it("writes samples without touching the report, and loads both back as one unfinished report", () => {
+      saveUnfinishedCheckBody("main: measuring heavy baseline 3", report);
+      const body = store.get(BODY);
+      saveUnfinishedCheckSamples([sample(30_000, "main: measuring heavy baseline 3", 400)]);
+      saveUnfinishedCheckSamples([sample(30_000, "main: measuring heavy baseline 3", 400), sample(32_000, "main: measuring heavy step 2", 410)]);
+      expect(store.get(BODY)).toBe(body);
+      const restored = loadSavedCheck()!;
+      expect(restored.unfinished?.step).toBe("main: measuring heavy baseline 3");
+      expect(restored.unfinished?.resources.map((entry) => entry.atMs)).toEqual([30_000, 32_000]);
+      // Clearing removes both, so a new check never shows the last one's samples.
+      clearUnfinishedCheck();
+      expect(store.has(BODY) || store.has(SAMPLES)).toBe(false);
+    });
+
+    it("keeps only the last 60 samples", () => {
+      saveUnfinishedCheckBody("x", report);
+      saveUnfinishedCheckSamples(Array.from({ length: 75 }, (_, index) => sample(index * 2_000, "x", 400)));
+      expect(loadSavedCheck()!.unfinished!.resources.map((entry) => entry.atMs).slice(0, 2)).toEqual([30_000, 32_000]);
+    });
+
+    it("round-trips a 70-row Profile exactly, storing what its rows repeat once, within a bound that catches growth", () => {
+      const sizes = [10, 35, 70].map((rows) => {
+        const profile = profileReportFixture(rows);
+        saveUnfinishedCheckBody("main: measuring heavy drift", profile);
+        const restored = loadSavedCheck()!;
+        // Every row as it was: the pool is lossless.
+        expect(restored.scenes).toEqual(profile.scenes);
+        expect(formatFeatureTestCheckReport(restored, environment)).toBe(formatFeatureTestCheckReport(
+          { ...profile, unfinished: { step: "main: measuring heavy drift", resources: [] } }, environment));
+        return { stored: store.get(BODY)!.length, whole: JSON.stringify(profile).length };
+      });
+      // About 14.6 K characters a row as the rows hold them; stored, about half (measured 0.08, 0.25 and 0.48 M).
+      expect(sizes[2]!.whole).toBeGreaterThan(900_000);
+      expect(sizes[2]!.stored).toBeLessThan(600_000);
+      expect(sizes[2]!.stored / sizes[2]!.whole).toBeLessThan(0.6);
+    });
+
+    it("never throws into the check when storage refuses a write, and records it once in the session trail", () => {
+      vi.stubGlobal("localStorage", {
+        getItem: () => null, removeItem: () => {}, setItem: () => { throw new DOMException("full", "QuotaExceededError"); },
+      });
+      resetSessionTrail();
+      for (let step = 0; step < 3; step++) {
+        expect(() => saveUnfinishedCheckBody(`step ${step}`, report)).not.toThrow();
+        expect(() => saveUnfinishedCheckSamples([])).not.toThrow();
+      }
+      const storage = sessionTrailEvents().filter((event) => event.kind === "storage");
+      expect(storage.map((event) => [event.detail, event.count])).toEqual([
+        ["the Feature Test Check's record (haptic:feature-test-check:unfinished) could not be saved: QuotaExceededError", 3],
+        ["the Feature Test Check's record (haptic:feature-test-check:unfinished-samples) could not be saved: QuotaExceededError", 3],
+      ]);
     });
   });
 

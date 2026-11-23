@@ -3,11 +3,17 @@ import type { FeatureTestCheckReport, FeatureTestCheckResources } from "../servi
 import { forgetSessionTrails, sessionTrailPage, unclosedSessionTrails } from "./session-trail-record";
 
 /**
- * The running check's report, kept in this browser after every step and resource sample, so a check the app stops
- * during (a crash, an out-of-memory reload) still leaves its report and the step it reached. A finished report the
+ * The running check's report, kept in this browser after every step (its resource samples, every 2 s, in a record of
+ * their own), so a check the app stops during (a crash, an out-of-memory reload) still leaves its report and the step
+ * it reached. A finished report the
  * dialog could not show (a Breakdown whose second pass could not resume after its reload) is kept here too.
  */
 const KEY = "haptic:feature-test-check:unfinished";
+/**
+ * The running check's last resource samples, apart from its report: the 2 s sampler rewrites only this small record,
+ * never the report, whose size grows with the check.
+ */
+const SAMPLES_KEY = "haptic:feature-test-check:unfinished-samples";
 /** When the last check of any mode ended (`Date.now()`), for the Breakdown's warm-device note. */
 const ENDED_KEY = "haptic:feature-test-check:ended";
 /** About two minutes of samples at the dialog's interval. */
@@ -25,9 +31,6 @@ interface FinishedCheck {
   finished: true;
   report: FeatureTestCheckReport;
 }
-
-/** What is stored: the check, with the build that wrote it (`checkRecordBuild`). */
-type StoredCheck = (UnfinishedCheck | FinishedCheck) & { build: string };
 
 /** A deploy's hashed entry scripts (`assets/index-<hash>.js`); a dev server's `/src/main.tsx` is none. */
 const BUILD_ENTRY = /(?:^|\/)assets\/[^/]+-[\w-]{6,}\.js$/;
@@ -89,32 +92,130 @@ export function withStoppedSessions(report: FeatureTestCheckReport, forget = fal
   };
 }
 
+/**
+ * The parts of a row that rows repeat whole (a view's frame structures, its timer passes, the settings fingerprint, the
+ * program census): stored once each in the record's `pool`, every use a `{ $pool: index }` in its place. Lossless:
+ * loading (`expandPooled`) puts each back as it was.
+ */
+interface PooledRecord {
+  report: unknown;
+  pool: unknown[];
+}
+
+/** `value`, or its pool reference when it is large enough to be worth one. */
+function pooled(value: unknown, pool: unknown[], seen: Map<string, number>): unknown {
+  if (value === null || typeof value !== "object") return value;
+  const text = JSON.stringify(value);
+  if (text.length < 200) return value;
+  let index = seen.get(text);
+  if (index === undefined) {
+    index = pool.length;
+    pool.push(value);
+    seen.set(text, index);
+  }
+  return { $pool: index };
+}
+
+type PooledSample = Record<string, unknown> & {
+  gpuProbe?: { signature?: { structures?: Array<{ passes?: unknown }> } | null; timers?: { passes?: unknown } | null };
+};
+
+/** `report` with the parts its rows repeat pooled (`PooledRecord`); the report itself is not changed. */
+function poolReport(report: FeatureTestCheckReport): PooledRecord {
+  const pool: unknown[] = [];
+  const seen = new Map<string, number>();
+  const scenes = report.scenes.map((scene) => ({
+    ...scene,
+    play: {
+      ...scene.play,
+      benchmark: scene.play.benchmark.map((row) => {
+        const sample = row as unknown as PooledSample;
+        const probe = sample.gpuProbe;
+        return {
+          ...sample,
+          ...(sample.settings ? { settings: pooled(sample.settings, pool, seen) } : {}),
+          ...(sample.programs ? { programs: pooled(sample.programs, pool, seen) } : {}),
+          ...(probe ? {
+            gpuProbe: {
+              ...probe,
+              ...(probe.signature ? {
+                signature: { ...probe.signature, structures: probe.signature.structures?.map((entry) => ({ ...entry, passes: pooled(entry.passes, pool, seen) })) },
+              } : {}),
+              ...(probe.timers ? { timers: { ...probe.timers, passes: pooled(probe.timers.passes, pool, seen) } } : {}),
+            },
+          } : {}),
+        };
+      }),
+    },
+  }));
+  return { report: { ...report, scenes }, pool };
+}
+
+/** Puts every pool reference in `value` back (`poolReport`); a record without a pool is returned as it is. */
+function expandPooled(value: unknown, pool: readonly unknown[]): unknown {
+  if (Array.isArray(value)) return value.map((entry) => expandPooled(entry, pool));
+  if (value === null || typeof value !== "object") return value;
+  const index = (value as { $pool?: unknown }).$pool;
+  if (typeof index === "number" && Object.keys(value).length === 1) return expandPooled(pool[index], pool);
+  return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, expandPooled(entry, pool)]));
+}
+
 let savedChars: number | null = null;
 
-/** Keeps the running check's record, naming this page's session trail (`sessionTrailPage`). */
-export function saveUnfinishedCheck(check: UnfinishedCheck): void {
+/**
+ * Keeps the running check's report at a step, naming this page's session trail (`sessionTrailPage`): once per step,
+ * the whole report with what its rows repeat pooled. Never on a timer: the resource samples are their own record
+ * (`saveUnfinishedCheckSamples`).
+ */
+export function saveUnfinishedCheckBody(step: string, report: FeatureTestCheckReport): void {
   const page = sessionTrailPage();
-  const text = JSON.stringify({ ...check, ...(page ? { page } : {}), build: checkRecordBuild() } satisfies StoredCheck);
+  let text: string;
+  try {
+    const { report: stored, pool } = poolReport(report);
+    text = JSON.stringify({ step, report: stored, pool, ...(page ? { page } : {}), build: checkRecordBuild() });
+  } catch (error) {
+    recordSessionTrailEvent(SessionTrailEventKind.storage, `the Feature Test Check's record could not be written: ${error instanceof Error ? error.name : "an error"}`);
+    return;
+  }
   savedChars = text.length;
   write(KEY, text);
 }
 
-/** The length of the running check's record as last written (`saveUnfinishedCheck`), or null before the first. */
+/** Keeps the running check's last resource samples (at most `MAX_CHECK_RESOURCE_SAMPLES`), apart from its report. */
+export function saveUnfinishedCheckSamples(resources: readonly FeatureTestCheckResources[]): void {
+  write(SAMPLES_KEY, JSON.stringify({ resources: resources.slice(-MAX_CHECK_RESOURCE_SAMPLES), build: checkRecordBuild() }));
+}
+
+/** Keeps a running check's report and samples at once (`saveUnfinishedCheckBody`, `saveUnfinishedCheckSamples`). */
+export function saveUnfinishedCheck(check: Omit<UnfinishedCheck, "page">): void {
+  saveUnfinishedCheckBody(check.step, check.report);
+  saveUnfinishedCheckSamples(check.resources);
+}
+
+/** The length of the running check's report record as last written (`saveUnfinishedCheckBody`), or null before the first. */
 export function unfinishedCheckChars(): number | null {
   return savedChars;
 }
 
 /** Keeps a finished report for the dialog to show when it next opens. */
 export function saveFinishedCheck(report: FeatureTestCheckReport): void {
-  write(KEY, JSON.stringify({ finished: true, report, build: checkRecordBuild() } satisfies StoredCheck));
+  const { report: stored, pool } = poolReport(report);
+  write(KEY, JSON.stringify({ finished: true, report: stored, pool, build: checkRecordBuild() }));
+  remove(SAMPLES_KEY);
 }
 
-export function clearUnfinishedCheck(): void {
+function remove(key: string): void {
   try {
-    localStorage.removeItem(KEY);
+    localStorage.removeItem(key);
   } catch {
     // Unavailable storage holds nothing to clear.
   }
+}
+
+/** Removes the kept report and its samples together. */
+export function clearUnfinishedCheck(): void {
+  remove(KEY);
+  remove(SAMPLES_KEY);
 }
 
 /**
@@ -142,6 +243,35 @@ function storedReport(check: Partial<UnfinishedCheck & FinishedCheck>): FeatureT
   });
 }
 
+type LoadedCheck = Partial<UnfinishedCheck & FinishedCheck> & { build?: unknown; pool?: unknown };
+
+/** A stored record with its pooled parts put back (`poolReport`); one without a pool as it is. */
+function expanded(check: LoadedCheck): LoadedCheck {
+  if (!Array.isArray(check.pool) || !check.report) return check;
+  try {
+    return { ...check, report: expandPooled(check.report, check.pool) as FeatureTestCheckReport };
+  } catch {
+    return { ...check, report: undefined };
+  }
+}
+
+/**
+ * An unfinished record with its resource samples (`saveUnfinishedCheckSamples`) when it holds none of its own: those
+ * the same build wrote beside it.
+ */
+function withSamples(check: LoadedCheck): LoadedCheck {
+  if (check.finished === true || Array.isArray(check.resources)) return check;
+  try {
+    const samples = JSON.parse(localStorage.getItem(SAMPLES_KEY) ?? "null") as { resources?: unknown; build?: unknown } | null;
+    if (samples && samples.build === check.build && Array.isArray(samples.resources)) {
+      return { ...check, resources: samples.resources as FeatureTestCheckResources[] };
+    }
+  } catch {
+    // Unreadable samples: the report without them.
+  }
+  return check;
+}
+
 /**
  * The record kept here: a check the app stopped during (with its last step and samples in `unfinished`), or a finished
  * one waiting to be shown; null when none was left. A record another build wrote stays until a new Check starts or the
@@ -156,14 +286,14 @@ export function loadSavedCheckRecord(): SavedCheckRecord | null {
     return null;
   }
   if (!raw) return null;
-  let check: (Partial<UnfinishedCheck & FinishedCheck> & { build?: unknown }) | null = null;
+  let check: LoadedCheck | null = null;
   try {
     const parsed: unknown = JSON.parse(raw);
-    if (parsed && typeof parsed === "object") check = parsed as Partial<UnfinishedCheck & FinishedCheck> & { build?: unknown };
+    if (parsed && typeof parsed === "object") check = parsed as LoadedCheck;
   } catch {
     // Not JSON: no build to tell, so kept as text.
   }
-  const report = check ? storedReport(check) : null;
+  const report = check ? storedReport(withSamples(expanded(check))) : null;
   if (check?.build === checkRecordBuild()) {
     if (report) return { kind: "this build", report, stored: JSON.stringify(check, null, 2) };
     clearUnfinishedCheck();

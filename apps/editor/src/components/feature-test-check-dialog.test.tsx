@@ -76,6 +76,52 @@ describe("FeatureTestCheckDialog", () => {
     expect((screen.getByTestId("feature-test-check-report") as HTMLTextAreaElement).value).toMatch(/^Haptic Feature Test Check \(Profile\)/);
   });
 
+  it("writes the report once per step and only the small samples record on the 2 s timer, and runs on when storage refuses", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    const writes: string[] = [];
+    let full = false;
+    const original = Storage.prototype.setItem;
+    const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (this: Storage, key: string, value: string) {
+      writes.push(key);
+      if (full && key === "haptic:feature-test-check:unfinished") throw new DOMException("full", "QuotaExceededError");
+      original.call(this, key, value);
+    });
+    try {
+      const report: FeatureTestCheckReport = { mode: "profile", startedAt: 1_000, durationMs: 240_000, cancelled: false, scenes: [], pageErrors: [] };
+      let finish!: () => void;
+      harness.run.mockImplementation(async (options) => {
+        for (const step of ["main: measuring light baseline 1", "main: measuring light samplers off", "main: measuring light baseline 2"]) options.onStep!(step, report);
+        await new Promise<void>((resolve) => { finish = resolve; });
+        // A step whose write the storage refuses: the check goes on.
+        full = true;
+        options.onStep!("main: measuring light world hidden", report);
+        return report;
+      });
+      render(<FeatureTestCheckDialog open onOpenChange={vi.fn()} />);
+      fireEvent.click(screen.getByTestId("feature-test-check-profile"));
+      fireEvent.click(screen.getByTestId("feature-test-check-start"));
+      await vi.waitFor(() => expect(finish).toBeTypeOf("function"));
+      const body = () => writes.filter((key) => key === "haptic:feature-test-check:unfinished").length;
+      const samples = () => writes.filter((key) => key === "haptic:feature-test-check:unfinished-samples").length;
+      expect(body()).toBe(3);
+      // Each step also takes a sample, into the samples record.
+      await vi.waitFor(() => expect(samples()).toBe(3));
+      const before = samples();
+      // Ten seconds of the sampler: five samples, no report.
+      await vi.advanceTimersByTimeAsync(10_000);
+      await vi.waitFor(() => expect(samples()).toBe(before + 5));
+      expect(body()).toBe(3);
+      vi.useRealTimers();
+      finish();
+      const text = await screen.findByTestId("feature-test-check-report");
+      expect((text as HTMLTextAreaElement).value).toMatch(/^Haptic Feature Test Check \(Profile\)/);
+      expect(body()).toBe(4);
+    } finally {
+      setItem.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
   it("offers a Water Breakdown, which measures FT_World's water from the Medium tier at half resolution", async () => {
     harness.run.mockResolvedValue({ mode: "breakdown", startedAt: 1_000, durationMs: 1_000, cancelled: false, scenes: [], pageErrors: [] });
     render(<FeatureTestCheckDialog open onOpenChange={vi.fn()} />);
