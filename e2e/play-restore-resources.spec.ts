@@ -12,7 +12,7 @@ if (SOFTWARE_GL) test.use({ launchOptions: { args: SOFTWARE_GL_ARGS } });
  * The Feature Test Check's Profile switches a setting on for a row and restores it for the next baseline (`quality
  * reset`, the Profile's resolution and the part's off command), and each switch builds Play's world graph again. Back in
  * a state already drawn, Play links no program again (a byte-identical relink once kept one more program per switch,
- * from a stack entry's post-process pass named by its Material's build id) and holds the WebGL objects it held after
+ * from a stack entry's post-process pass named by its Material's build id) and holds no more WebGL objects than after
  * the first round. A Post Process Material in the Scene's stack, as the Feature Test main scene has one.
  */
 
@@ -113,13 +113,17 @@ test("Play links nothing and holds its WebGL objects across a Profile's step and
     }
     rounds.push(await counts(page));
   }
-  const [first, ...later] = rounds;
+  const [first, second, ...later] = rounds;
+  const objects = (gl: GlCounts) => Object.fromEntries(Object.entries(gl).filter(([kind]) => kind !== "links" && kind !== "relinks"));
   // The first round compiles each step's programs; every later one draws them from the Effect cache.
-  for (const [index, round] of later.entries()) {
-    const objects = (gl: GlCounts) => Object.fromEntries(Object.entries(gl).filter(([kind]) => kind !== "links" && kind !== "relinks"));
-    expect({ programs: round.programs, relinks: round.gl.relinks! - first!.gl.relinks!, objects: objects(round.gl) }, `round ${index + 2}`)
-      .toEqual({ programs: first!.programs, relinks: 0, objects: objects(first!.gl) });
+  for (const [index, round] of [second!, ...later].entries()) {
+    expect({ programs: round.programs, relinks: round.gl.relinks! - first!.gl.relinks! }, `round ${index + 2}`).toEqual({ programs: first!.programs, relinks: 0 });
+    // No kind grows past the first round, which may still hold an object a later round has let go of (it held one
+    // more buffer than every later round when the geometry pass was the switched part).
+    for (const [kind, count] of Object.entries(objects(round.gl))) expect(count, `round ${index + 2} ${kind}`).toBeLessThanOrEqual(first!.gl[kind]!);
   }
+  // From the second round on the held objects are the same, kind by kind.
+  for (const [index, round] of later.entries()) expect(objects(round.gl), `round ${index + 3}`).toEqual(objects(second!.gl));
   await page.getByTestId("play-overlay-close").click();
   await expect(page.getByTestId("play-overlay")).toHaveCount(0);
 });
