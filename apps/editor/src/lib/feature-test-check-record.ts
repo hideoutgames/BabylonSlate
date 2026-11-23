@@ -84,11 +84,31 @@ export function clearUnfinishedCheck(): void {
 }
 
 /**
- * The report kept here: a check the app stopped during (with its last step and samples in `unfinished`), or a
- * finished one waiting to be shown; null when none was left. A record another build wrote, or one this build cannot
- * read, is discarded: the report's shape changes between builds, and this build's formatter would misread an older one.
+ * A kept record: this build's report, or another build's record (`build` names it, `unnamed` when it named none) with its
+ * report, null when it holds none this build can read; `stored` is the record as it was stored (indented when JSON).
  */
-export function loadSavedCheck(): FeatureTestCheckReport | null {
+export type SavedCheckRecord =
+  | { kind: "this build"; report: FeatureTestCheckReport; stored: string }
+  | OtherBuildCheck;
+
+/** A record another build wrote (`SavedCheckRecord`). */
+export type OtherBuildCheck = { kind: "other build"; build: string; report: FeatureTestCheckReport | null; stored: string };
+
+/** The report a stored record holds, with its unfinished step and samples, or null when it holds none this build reads. */
+function storedReport(check: Partial<UnfinishedCheck & FinishedCheck>): FeatureTestCheckReport | null {
+  if (!check.report || !Array.isArray(check.report.scenes)) return null;
+  if (check.finished === true) return withStoppedSessions(check.report);
+  if (typeof check.step !== "string") return null;
+  return withStoppedSessions({ ...check.report, unfinished: { step: check.step, resources: Array.isArray(check.resources) ? check.resources : [] } });
+}
+
+/**
+ * The record kept here: a check the app stopped during (with its last step and samples in `unfinished`), or a finished
+ * one waiting to be shown; null when none was left. A record another build wrote stays until a new Check starts or the
+ * user clears it, whatever this build makes of it: a deploy can land while a long Check runs on a device, and the page
+ * that reloads after a crash then runs the new build. Only a record of this build that it cannot read is discarded.
+ */
+export function loadSavedCheckRecord(): SavedCheckRecord | null {
   let raw: string | null;
   try {
     raw = localStorage.getItem(KEY);
@@ -96,21 +116,48 @@ export function loadSavedCheck(): FeatureTestCheckReport | null {
     return null;
   }
   if (!raw) return null;
+  let check: (Partial<UnfinishedCheck & FinishedCheck> & { build?: unknown }) | null = null;
   try {
-    const check = JSON.parse(raw) as Partial<UnfinishedCheck & FinishedCheck & { build: unknown }>;
-    if (check.build === checkRecordBuild() && check.report && Array.isArray(check.report.scenes)) {
-      if (check.finished === true) return withStoppedSessions(check.report);
-      if (typeof check.step === "string") {
-        return withStoppedSessions({ ...check.report, unfinished: { step: check.step, resources: Array.isArray(check.resources) ? check.resources : [] } });
-      }
-    }
+    const parsed: unknown = JSON.parse(raw);
+    if (parsed && typeof parsed === "object") check = parsed as Partial<UnfinishedCheck & FinishedCheck> & { build?: unknown };
   } catch {
-    // Unreadable: discarded below.
+    // Not JSON: no build to tell, so kept as text.
   }
-  clearUnfinishedCheck();
-  return null;
+  const report = check ? storedReport(check) : null;
+  if (check?.build === checkRecordBuild()) {
+    if (report) return { kind: "this build", report, stored: JSON.stringify(check, null, 2) };
+    clearUnfinishedCheck();
+    return null;
+  }
+  const build = typeof check?.build === "string" ? check.build : "unnamed";
+  return { kind: "other build", build, report, stored: check ? JSON.stringify(check, null, 2) : raw };
 }
 
+/** This build's report kept here (`loadSavedCheckRecord`), or null: none, or another build's. */
+export function loadSavedCheck(): FeatureTestCheckReport | null {
+  const saved = loadSavedCheckRecord();
+  return saved?.kind === "this build" ? saved.report : null;
+}
+
+/**
+ * The text the dialog shows for a record another build wrote: a first line saying so, then the report as this build
+ * formats it (`format`), or, when it holds none this build reads or `format` throws on it, the record as stored. The
+ * report is null when the text is the stored record.
+ */
+export function formatOtherBuildCheck(
+  saved: OtherBuildCheck, format: (report: FeatureTestCheckReport) => string,
+): { text: string; report: FeatureTestCheckReport | null } {
+  const note = `Written by another build of the editor (${saved.build}): this build may misread it.`;
+  if (saved.report) {
+    try {
+      return { text: `${note}\n${format(saved.report)}`, report: saved.report };
+    } catch (error) {
+      console.warn("[editor] this build could not format a saved Feature Test Check report of another build", error);
+      return { text: `${note}\nThis build could not format it; the stored record follows.\n${saved.stored}`, report: null };
+    }
+  }
+  return { text: `${note}\nThis build could not read it; the stored record follows.\n${saved.stored}`, report: null };
+}
 /**
  * Adds `note` to the kept report's Breakdown notes, keeping it unfinished or finished as it was; false when none of
  * this build is kept.

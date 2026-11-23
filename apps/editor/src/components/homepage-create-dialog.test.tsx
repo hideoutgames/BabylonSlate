@@ -164,7 +164,8 @@ describe("Project Composer", () => {
     vi.stubEnv("VITE_GITLAB_CLIENT_ID", "gitlab-client");
     const onSubmit = vi.fn();
     render(<Composer initialHosting="remote" onSubmit={onSubmit} />);
-    expect((await screen.findByTestId("create-project-remote-reason")).textContent).toBe("Sign in to a Git host to create the repository.");
+    // The reason reads "Loading accounts…" until the accounts have loaded.
+    await waitFor(() => expect(screen.getByTestId("create-project-remote-reason").textContent).toBe("Sign in to a Git host to create the repository."));
     expect(screen.getByTestId("create-project-remote-sign-in-gitlab").textContent).toBe("Sign In To GitLab");
     fireEvent.click(screen.getByTestId("create-project-remote-sign-in-github"));
     expect((await screen.findByTestId("source-control-link-warning")).textContent).toContain("Link GitHub?");

@@ -21,18 +21,12 @@ import {
   fillVolumetricSlots,
   type VolumeShadow,
 } from "./volumetric-lights";
-import { volumetricShader, volumetricSource } from "./volumetric-shader";
-import { ambientOcclusionBlurShader, ambientOcclusionShader, ambientOcclusionSource } from "./ambient-occlusion-shader";
-import type { MergedMarch } from "./merged-marches";
-import {
-  PAIRED_BLUR_SAMPLERS, PAIRED_BLUR_UNIFORMS, PAIRED_OCCLUSION_SAMPLER, pairedBlurName, pairedBlurShader, reflectionBlurOffset,
-} from "./paired-blurs";
-import { bindHapticLights } from "./haptic-lights";
-import { shadowAtlasTexture } from "./shadow-atlas";
+import { volumetricShader } from "./volumetric-shader";
+import { ambientOcclusionBlurShader, ambientOcclusionShader } from "./ambient-occlusion-shader";
 import { spatialComposeShader } from "./spatial-compose-shader";
 import { retireOwnedEffect } from "./owned-effect-retirement";
 import { beginManagedRenderAllocation } from "./managed-render-resources";
-import { geometryRepeat, worldDebugOff } from "./world-debug";
+import { geometryRepeat } from "./world-debug";
 import { bindFogVolumes, hasFogVolumes, selectFogVolumes } from "./fog-volumes";
 import type { EffectCompileFailure } from "./effect-compile-failure";
 import { HAPTIC_SHADOW_ATLAS } from "./haptic-lighting-shader";
@@ -57,20 +51,7 @@ class PreparedSSR extends ThinSSRPostProcess {
 export interface SpatialStage {
   /** Its pass's name and its target's. */
   name: string;
-  /** Its own pass's Effect: none for a march the merged pass draws (`march`) or a blur a paired pass draws (`paired`). */
-  wrapper?: EffectWrapper;
-  /**
-   * An ambient occlusion blur drawn by a later stage's pass, the reflection blur of its axis, as that pass's second
-   * colour attachment (`paired-blurs.ts`), instead of in a pass of its own: its target, scale and format are its own.
-   */
-  paired?: boolean;
-  /** The `paired` stages, by index, whose targets this stage's pass also writes, as colour attachments 1 on. */
-  attachments?: number[];
-  /**
-   * A half-resolution march drawn by the Screen-Space Shadows pass beside their own march, into its own target
-   * (`merged-marches.ts`), instead of in a pass of its own: its shader's parts and its program's inputs.
-   */
-  march?: MergedMarch;
+  wrapper: EffectWrapper;
   scale: number;
   /**
    * The stage target's format (half float): RGBA unless every reader of the stage's output takes one channel, as the
@@ -94,11 +75,6 @@ export interface SpatialStage {
    */
   idle?: () => boolean;
   bind(effect: Effect): void;
-  /**
-   * A merged march's binding in the frames it idles while the merged pass runs: what its program needs bound to draw
-   * at all (its uniform buffers and its samplers of other types), not what it marches with.
-   */
-  bindIdle?(effect: Effect): void;
 }
 
 export function spatialEffectsUnsupported(scene: Scene): string | undefined {
@@ -179,10 +155,8 @@ export function liveSceneEffectsKey(
   if (!camera || !hasSpatialEffects(plan)) return state.effectsKey;
   const size = camera.outputRenderTarget?.getSize();
   const engine = scene.getEngine();
-  // The geometry repeat (`geometryRepeat`) adds a task and its targets, `worlddebug mergedmarches` merges the
-  // half-resolution marches into one pass or not, and `worlddebug pairedblurs` pairs the blurs or not: the graph builds
-  // again with them or without them.
-  return `${state.effectsKey}:${camera.uniqueId}:${camera.mode}:${size?.width ?? engine.getRenderWidth(true)}x${size?.height ?? engine.getRenderHeight(true)}:${resolveSceneRenderingQuality(scene).postprocessing.resolutionScale}:${geometryRepeat(scene)}:${worldDebugOff(scene, "mergedmarches") ? "separate" : "merged"}:${worldDebugOff(scene, "pairedblurs") ? "separate" : "paired"}`;
+  // The geometry repeat (`geometryRepeat`) adds a task and its targets: the graph builds again with it or without it.
+  return `${state.effectsKey}:${camera.uniqueId}:${camera.mode}:${size?.width ?? engine.getRenderWidth(true)}x${size?.height ?? engine.getRenderHeight(true)}:${resolveSceneRenderingQuality(scene).postprocessing.resolutionScale}:${geometryRepeat(scene)}`;
 }
 
 type VolumetricPlan = NonNullable<SceneEffectsPlan["volumetricLighting"]>;
@@ -265,16 +239,6 @@ export function createSpatialStages(
   width: number,
   height: number,
   failure?: EffectCompileFailure,
-  /**
-   * The Screen-Space Shadows target's size when the marches may join their pass (`merged-marches.ts`): the ambient
-   * occlusion and volumetric marches whose own target has exactly this size are then `march` stages, with no Effect.
-   */
-  mergedMarchSize?: { width: number; height: number },
-  /**
-   * `worlddebug pairedblurs on`: the ambient occlusion and reflection blurs of each axis draw in one pass when their
-   * targets are the same size (`paired-blurs.ts`).
-   */
-  pairBlurs = false,
 ): SpatialStage[] {
   if (spatialEffectsUnsupported(scene)) return [];
   const stages: SpatialStage[] = [];
@@ -286,20 +250,7 @@ export function createSpatialStages(
   const engine = scene.getEngine();
   const quality =
     resolveSceneRenderingQuality(scene).postprocessing.resolutionScale;
-  /** Whether a march at `scale` joins the merged pass: its target (`SpatialEffectsGraph`'s rounding) is the same size. */
-  const merges = (scale: number) => mergedMarchSize !== undefined &&
-    Math.max(1, Math.round(width * scale)) === mergedMarchSize.width &&
-    Math.max(1, Math.round(height * scale)) === mergedMarchSize.height;
   const reflections = plan.reflections;
-  /** A stage target's size at `scale` (`SpatialEffectsGraph`'s rounding). */
-  const targetSize = (scale: number) => `${Math.max(1, Math.round(width * scale))}x${Math.max(1, Math.round(height * scale))}`;
-  // The blurs pair only where both targets have one size on both axes, and only on WebGL: under WebGPU Babylon's own
-  // reflection blur is WGSL, which the GLSL paired program would not reproduce.
-  const paired = pairBlurs && !!plan.ambientOcclusion && !!reflections && !engine.isWebGPU &&
-    targetSize(Math.max(0.25, plan.ambientOcclusion.resolutionScale * quality)) ===
-    targetSize(Math.max(0.25, reflections.resolutionScale * quality));
-  /** The paired occlusion blurs' stage indices, and what each reads, by axis. */
-  const occlusionBlurs: Partial<Record<"X" | "Y", { stage: number; input: number }>> = {};
   // The one compose's inputs, which each effect adds: earlier stages' outputs, samplers, uniforms and their binding.
   const reads: Record<string, number> = {};
   const composeSamplers = ["depthSampler"];
@@ -315,17 +266,12 @@ export function createSpatialStages(
       const name = "Scene Ambient Occlusion";
       const uniforms = ["aoProjection", "aoInverseProjection", "aoView", "aoSettings", "aoCamera", "aoTexelSize"];
       const samplers = ["depthSampler", "normalSampler"];
-      const merged = merges(scale);
       const inverseProjection = Matrix.Identity();
       // The march and blurs write visibility to every colour channel, and each reader (the blurs, the compose) takes
       // red alone: one half-float channel holds it, at a quarter of RGBA16F's bytes and fetch bandwidth.
       stages.push({
         name,
-        wrapper: merged ? undefined : own(customWrapper(scene, name, ambientOcclusionShader(occlusion.samples), uniforms, samplers, failure)),
-        march: merged ? {
-          name, uniforms, samplers, uniformBuffers: [],
-          source: (ends) => ambientOcclusionSource(occlusion.samples, ends),
-        } : undefined,
+        wrapper: own(customWrapper(scene, name, ambientOcclusionShader(occlusion.samples), uniforms, samplers, failure)),
         scale,
         format: Constants.TEXTUREFORMAT_R,
         geometry: true,
@@ -351,20 +297,6 @@ export function createSpatialStages(
         },
       });
       for (const [axis, x, y] of [["X", texelWidth, 0], ["Y", 0, texelHeight]] as const) {
-        if (paired) {
-          // Drawn by the reflection blur of its axis (`paired-blurs.ts`), which binds its step; it reads the stage
-          // before it, as its own pass would.
-          occlusionBlurs[axis] = { stage: stages.length, input: stages.length - 1 };
-          stages.push({
-            name: `Scene Ambient Occlusion Blur ${axis}`,
-            paired: true,
-            scale,
-            format: Constants.TEXTUREFORMAT_R,
-            geometry: true,
-            bind: (effect) => effect.setFloat2("aoBlurStep", x, y),
-          });
-          continue;
-        }
         const blur = own(
           customWrapper(
             scene,
@@ -417,30 +349,6 @@ export function createSpatialStages(
         ["X", new Vector2(1, 0)],
         ["Y", new Vector2(0, 1)],
       ] as const) {
-        const pair = occlusionBlurs[axis];
-        if (pair) {
-          // One pass for this axis's two blurs (`paired-blurs.ts`): it reads the stage before it (the trace, then the
-          // X blur) as Babylon's blur does, and the occlusion blur's input as its own pass would (bilinear, as a source).
-          const wrapper = own(customWrapper(scene, pairedBlurName(axis), pairedBlurShader(), [...PAIRED_BLUR_UNIFORMS],
-            [...PAIRED_BLUR_SAMPLERS], failure));
-          const occlusionBlur = stages[pair.stage]!;
-          const [offsetX, offsetY] = reflectionBlurOffset(Math.max(1, Math.round(width * scale)),
-            Math.max(1, Math.round(height * scale)), direction);
-          stages.push({
-            name: `Scene Reflections Blur ${axis}`,
-            wrapper,
-            scale,
-            // The occlusion blur reads the view depth.
-            geometry: true,
-            reads: { [PAIRED_OCCLUSION_SAMPLER]: pair.input },
-            attachments: [pair.stage],
-            bind: (effect) => {
-              occlusionBlur.bind(effect);
-              effect.setFloat2("texelOffsetScale", offsetX, offsetY);
-            },
-          });
-          continue;
-        }
         const blur = own(
           new ThinSSRBlurPostProcess(
             `Scene Reflections Blur ${axis}`,
@@ -498,7 +406,6 @@ export function createSpatialStages(
       }
       const name = "Scene Volumetric Lighting";
       const scale = Math.max(0.25, volume.resolutionScale * quality);
-      const merged = merges(scale);
       const inverseProjection = Matrix.Identity(),
         inverseView = Matrix.Identity();
       const slots = createVolumetricSlots();
@@ -508,23 +415,13 @@ export function createSpatialStages(
       fogIdle = () => (marchIdle = volumetricMarchIdle(scene, camera, volume, localVolumes));
       stages.push({
         name,
-        wrapper: merged ? undefined : own(customWrapper(scene, name, volumetricShader(slotCount, volume.steps, localVolumes),
+        wrapper: own(customWrapper(scene, name, volumetricShader(slotCount, volume.steps, localVolumes),
           uniforms, samplers, failure, ["HapticLights"])),
-        march: merged ? {
-          name, uniforms, samplers, uniformBuffers: ["HapticLights"],
-          source: (ends) => volumetricSource(slotCount, volume.steps, localVolumes, ends),
-        } : undefined,
         scale,
         // It reads no colour: the scene's keeps no other stage's output alive until it draws.
         source: "scene",
         geometry: true,
         idle: fogIdle,
-        // An idle march in the merged pass leaves its branch, but the program still reads the light block's buffer
-        // and declares the atlas's comparison sampler: both stay bound for the draw.
-        bindIdle: (effect) => {
-          bindHapticLights(scene, effect);
-          effect.setDepthStencilTexture(HAPTIC_SHADOW_ATLAS, shadowAtlasTexture(scene));
-        },
         bind: (effect) => {
           camera.getProjectionMatrix().invertToRef(inverseProjection);
           camera.getViewMatrix().invertToRef(inverseView);

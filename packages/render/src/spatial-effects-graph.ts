@@ -3,22 +3,20 @@ import { Constants } from "@babylonjs/core/Engines/constants";
 import type { InternalTexture } from "@babylonjs/core/Materials/Textures/internalTexture";
 import type { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
-import type { FrameGraphTask } from "@babylonjs/core/FrameGraph/frameGraphTask";
 import { FrameGraphPostProcessTask } from "@babylonjs/core/FrameGraph/Tasks/PostProcesses/postProcessTask";
 import { geometryDepthTextureType, LogicalGeometryTask } from "./framegraph-logical-buffers";
 import { createGeometryDepthSeed } from "./geometry-depth-seed";
 import { GeometryRepeatProbeTask } from "./geometry-repeat-probe";
-import { geometryRepeat, worldDebugOff } from "./world-debug";
+import { geometryRepeat } from "./world-debug";
 import { registerSpatialGeometryPass, unregisterSpatialGeometryPass } from "./spatial-geometry-passes";
 // Unlit Standard surfaces write no reflectivity: installed before any reflectivity geometry pass compiles.
 import {
   createSpatialStages,
-  SCREEN_SHADOW_SCALE,
   spatialEffectsUnsupported,
   type SpatialStage,
 } from "./spatial-effects";
 import type { SceneEffectsPlan } from "./scene-effects";
-import { ScreenShadowsGraph, type MergedMarchStage } from "./screen-shadows";
+import { ScreenShadowsGraph } from "./screen-shadows";
 import {
   releaseManagedRenderLeaseAfterDisposal,
   type ManagedRenderCategory,
@@ -37,27 +35,22 @@ class SpatialTask extends FrameGraphPostProcessTask {
   private readonly buffers: Record<string, FrameGraphTextureHandle>;
   /** Earlier stages' outputs it samples, by sampler name. */
   private readonly reads: Record<string, FrameGraphTextureHandle>;
-  /** The targets it also writes, colour attachments 1 on beside its own (`stage.attachments`, `paired-blurs.ts`). */
-  private readonly attachments: FrameGraphTextureHandle[];
   constructor(
     graph: FrameGraph,
     stage: SpatialStage,
     buffers: Record<string, FrameGraphTextureHandle>,
     reads: Record<string, FrameGraphTextureHandle>,
-    attachments: FrameGraphTextureHandle[] = [],
   ) {
-    if (!stage.wrapper) throw new Error(`${stage.name} draws in a merged or paired pass, not a pass of its own.`);
     super(stage.wrapper.name, graph, stage.wrapper);
     this.stage = stage;
     this.buffers = buffers;
     this.reads = reads;
-    this.attachments = attachments;
     this.depthTest = false;
   }
   override record() {
     // Babylon's own disabled pass copies the source, which only a colour stage passes through.
     const idleCapable = this.stage.idle !== undefined;
-    const pass = super.record(idleCapable || this.attachments.length > 0, undefined, (context) => {
+    const pass = super.record(idleCapable, undefined, (context) => {
       const effect = this.drawWrapper.effect!;
       if (this.stage.geometry)
         for (const [name, handle] of Object.entries(this.buffers)) {
@@ -75,15 +68,6 @@ class SpatialTask extends FrameGraphPostProcessTask {
     });
     if (this.stage.geometry) pass.addDependencies(Object.values(this.buffers));
     pass.addDependencies(Object.values(this.reads));
-    if (this.attachments.length) {
-      const targets = [this.outputTexture, ...this.attachments];
-      pass.setRenderTarget(targets);
-      // Babylon requires a disabled pass of the same targets; a paired pass has no idle stage, so it never runs.
-      const disabled = this._frameGraph.addRenderPass(`${this.name}_disabled`, true);
-      disabled.setRenderTarget(targets);
-      disabled.setExecuteFunc(() => {});
-      return pass;
-    }
     if (idleCapable) {
       const skipped = this._frameGraph.addRenderPass(`${this.name}_disabled`, true);
       skipped.setRenderTarget(this.outputTexture);
@@ -120,19 +104,12 @@ export class SpatialEffectsGraph {
    * `geometry`, drawing its object list into scratch targets nothing reads (`GeometryRepeatProbeTask`); absent otherwise.
    */
   readonly geometryProbe?: GeometryRepeatProbeTask;
-  /** The passes of its stages that draw on their own: every stage but the marches merged into `screenShadows`. */
+  /** Each stage's pass, in chain order. */
   readonly tasks: SpatialTask[] = [];
   /** Every stage, in chain order. */
   private readonly stages: SpatialStage[];
-  /** The stages merged into the Screen-Space Shadows pass, in chain order. */
-  private readonly merged: MergedMarchStage[];
-  /** Each stage's name, its target, and the task that writes it (`screenShadows.task` for a merged march), in order. */
-  readonly stageTargets: readonly { name: string; output: FrameGraphTextureHandle; writer: FrameGraphTask }[];
   readonly output: FrameGraphTextureHandle;
-  /**
-   * Screen-Space Shadows: a pass after the geometry pass that the owner adds before its objects (`screen-shadows.ts`),
-   * which also draws the ambient occlusion and volumetric marches of its target's size (`merged-marches.ts`).
-   */
+  /** Screen-Space Shadows: a pass after the geometry pass that the owner adds before its objects (`screen-shadows.ts`). */
   readonly screenShadows?: ScreenShadowsGraph;
   /**
    * The geometry pass starts from the scene's depth (`sceneDepth`): every stage reads the view depth alone (no ambient
@@ -271,14 +248,6 @@ export class SpatialEffectsGraph {
           this.compileFailure.for("Spatial Geometry Depth Seed"));
         this.seeded = true;
       }
-      // With Screen-Space Shadows and `worlddebug mergedmarches on` (off by default, until a native GPU proves the merge),
-      // the ambient occlusion and volumetric marches of the same target size draw in their pass (`merged-marches.ts`).
-      const marchSize = plan.screenShadows && !worldDebugOff(graph.scene, "mergedmarches")
-        ? { width: Math.ceil(width / SCREEN_SHADOW_SCALE), height: Math.ceil(height / SCREEN_SHADOW_SCALE) }
-        : undefined;
-      // With `worlddebug pairedblurs on` (a temporary measurement switch, off by default until a native GPU proves the
-      // pairing and the device Profile its saving), the ambient occlusion and reflection blurs of each axis of one target
-      // size draw in one pass (`paired-blurs.ts`).
       const stages = createSpatialStages(
         graph.scene,
         camera,
@@ -286,64 +255,31 @@ export class SpatialEffectsGraph {
         width,
         height,
         this.compileFailure,
-        marchSize,
-        !worldDebugOff(graph.scene, "pairedblurs"),
       );
       this.stages = stages;
       for (const stage of stages) unattached.add(stage);
-      const marches = (merged?: { buffers: Record<string, FrameGraphTextureHandle>; marches: MergedMarchStage[] }) => {
-        const shadows = new ScreenShadowsGraph(graph, camera, plan.screenShadows!, this.geometry.geometryViewDepthTexture,
-          width, height, this.compileFailure, merged);
-        this.handles.push({ handle: shadows.output, category: "geometry" });
-        return shadows;
-      };
-      // Declared first, as with no march merged; with marches, once their targets are.
-      const merging = stages.some((stage) => stage.march);
-      if (plan.screenShadows && !merging) this.screenShadows = marches();
+      if (plan.screenShadows) {
+        this.screenShadows = new ScreenShadowsGraph(graph, camera, plan.screenShadows, this.geometry.geometryViewDepthTexture,
+          width, height, this.compileFailure);
+        this.handles.push({ handle: this.screenShadows.output, category: "geometry" });
+      }
       const sceneColor = source;
       const outputs: FrameGraphTextureHandle[] = [];
-      const writers: (SpatialTask | undefined)[] = [];
-      const merged: MergedMarchStage[] = [];
       for (const stage of stages) {
         const reads: Record<string, FrameGraphTextureHandle> = {};
         for (const [name, index] of Object.entries(stage.reads ?? {})) reads[name] = outputs[index]!;
-        if (stage.march) {
-          // Drawn by the Screen-Space Shadows pass, before the objects; its readers follow as they did.
-          const output = target(stage.name, stage.scale, false, stage.format);
-          merged.push({ stage, output, running: true });
-          unattached.delete(stage);
-          outputs.push(output);
-          writers.push(undefined);
-          source = output;
-          continue;
-        }
-        if (stage.paired) {
-          // Written by a later stage's pass as one of its attachments (`paired-blurs.ts`); its readers follow as they did.
-          const output = target(stage.name, stage.scale, false, stage.format);
-          unattached.delete(stage);
-          outputs.push(output);
-          writers.push(undefined);
-          source = output;
-          continue;
-        }
-        const task = new SpatialTask(graph, stage, buffers, reads, (stage.attachments ?? []).map((index) => outputs[index]!));
+        const task = new SpatialTask(graph, stage, buffers, reads);
         this.tasks.push(task);
         unattached.delete(stage);
         task.sourceTexture = stage.source === "scene" ? sceneColor : source;
         task.targetTexture = target(stage.name, stage.scale, false, stage.format);
         outputs.push(task.outputTexture);
-        writers.push(task);
-        for (const index of stage.attachments ?? []) writers[index] = task;
         source = task.outputTexture;
       }
-      this.merged = merged;
-      if (merging) this.screenShadows = marches({ buffers, marches: merged });
-      const shadows = this.screenShadows;
-      this.stageTargets = stages.map((stage, index) => ({ name: stage.name, output: outputs[index]!, writer: writers[index] ?? shadows!.task }));
       this.output = source;
     } catch (error) {
       for (const { wrapper } of unattached)
-        if (wrapper) retireOwnedEffect(wrapper.effect, () => wrapper.dispose());
+        retireOwnedEffect(wrapper.effect, () => wrapper.dispose());
       this.disposeTasks();
       // Declarations allocate no targets until graph.build. The caller still
       // owns and retires that graph after a failed construction.
@@ -358,9 +294,7 @@ export class SpatialEffectsGraph {
    * nothing for this camera, Screen-Space Shadows without a shadowed sun or with an
    * orthographic camera, and the geometry passes once nothing running reads
    * them (the stages flagged `geometry` and the march; no other pass samples
-   * these buffers); toggling flags never rebuilds the graph. A march merged
-   * into the Screen-Space Shadows pass skips its branch there instead, and the
-   * pass runs while anything in it marches.
+   * these buffers); toggling flags never rebuilds the graph.
    */
   syncIdle(): void {
     let geometryRead = false;
@@ -368,27 +302,18 @@ export class SpatialEffectsGraph {
     // the Fog Volumes: evaluate each distinct function once.
     let evaluated: (() => boolean) | undefined;
     let skipped = false;
-    let task = 0, march = 0;
-    for (const stage of this.stages) {
+    this.stages.forEach((stage, index) => {
       const idle = stage.idle;
       if (idle && idle !== evaluated) {
         evaluated = idle;
         skipped = idle();
       }
       const running = idle === undefined || !skipped;
-      if (stage.march) {
-        // The merged pass marches it this frame or leaves its branch (`ScreenShadowsGraph.sync`).
-        this.merged[march++]!.running = running;
-        continue;
-      }
-      // A paired blur runs with the pass that draws it, which has a stage of its own; neither idles.
-      if (stage.paired) continue;
-      const own = this.tasks[task++]!;
-      own.disabled = !running;
+      this.tasks[index]!.disabled = !running;
       if (running && stage.geometry) geometryRead = true;
-    }
-    // The Screen-Space Shadows pass reads the depth (and the caster mark) while it runs: while they march (a shadowed sun
-    // and a perspective view), or while a march merged into it does.
+    });
+    // The Screen-Space Shadows pass reads the depth (and the caster mark) while it marches: a shadowed sun and a
+    // perspective view.
     if (this.screenShadows?.sync()) geometryRead = true;
     this.geometry.disabled = !geometryRead;
     if (this.geometryProbe) {

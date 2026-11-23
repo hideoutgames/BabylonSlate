@@ -4,14 +4,8 @@
  * translucent pane and an unlit pillar lit in 3D, under a shadowed sun and a point light, with one combination of
  * ambient occlusion, Real-Time Reflections, volumetric lighting and Screen-Space Shadows (`EffectsComposeVariant`).
  * It returns the presented frame, the spatial chain's output as the compose wrote it, the geometry pass's reflectivity,
- * the Screen-Space Shadows target, the ambient occlusion and volumetric marches' targets, and the GL passes and texels
- * covered of the frame (`GlSignatureRecorder`), so a spec can compare two builds' frames and structure. The `marches`
- * variants plan Screen-Space Shadows beside ambient occlusion and volumetric lighting, whose half-resolution marches
- * draw in passes of their own by default and in one pass with `mergedMarches` (`worlddebug mergedmarches on`,
- * `merged-marches.ts`), so a spec can compare the two byte for byte. `marches-fog-idle` has no density and
- * no Fog Volume (the fog march idles), `marches-sun-unshadowed` a sun that casts no shadows (the screen shadows idle).
- * With `pairedBlurs` (`worlddebug pairedblurs on`, `paired-blurs.ts`) each axis's ambient occlusion and reflection blurs
- * draw in one pass; `blurs` holds the four blur targets as their passes leave them, so a spec can compare the two.
+ * the Screen-Space Shadows target, and the GL passes and texels covered of the frame (`GlSignatureRecorder`), so a
+ * spec can compare two builds' frames and structure.
  */
 import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
 import { Engine } from "@babylonjs/core/Engines/engine";
@@ -35,11 +29,9 @@ import { createDefaultMaterialDocument, lowerMaterialDocument, materialPinDefaul
 import { GlSignatureRecorder, installGlSignature } from "@haptic/render/editor-proofs";
 import { allowSceneScreenShadows } from "@haptic/render/render-settings";
 import type { SpatialEffectsGraph } from "@haptic/render/editor-proofs";
-import { setSceneWorldDebug } from "@haptic/render/editor-proofs";
 import { setUnlitMaterial } from "@haptic/render/editor-proofs";
 
-export type EffectsComposeVariant =
-  | "ao" | "fog" | "reflections" | "ao-fog" | "all" | "screen-shadows" | "marches" | "marches-fog-idle" | "marches-sun-unshadowed";
+export type EffectsComposeVariant = "ao" | "fog" | "reflections" | "ao-fog" | "all" | "screen-shadows";
 
 /** A readback as base64 of its typed array: `u8` bytes, `f32` floats or `u16` half floats. */
 export type EffectsReadback = { width: number; height: number; type: "u8" | "f32" | "u16"; data: string };
@@ -54,11 +46,6 @@ export type EffectsComposeCapture = {
   composed: EffectsReadback | null;
   reflectivity: EffectsReadback | null;
   screenShadows: EffectsReadback | null;
-  /** The ambient occlusion march's and the volumetric march's targets, as the pass that writes each leaves it. */
-  occlusion: EffectsReadback | null;
-  fog: EffectsReadback | null;
-  /** The ambient occlusion and reflection blurs' targets, by stage name, as the pass that writes each leaves it. */
-  blurs: Record<string, EffectsReadback | null>;
   /** The frame's GL passes and texels covered, and its graph tasks. */
   passes: number;
   texelsCovered: number;
@@ -93,13 +80,7 @@ function png(pixels: Uint8Array): string {
   return canvas.toDataURL("image/png");
 }
 
-/** The blur stages `EffectsComposeCapture.blurs` reads. */
-export const EFFECTS_BLUR_STAGES = [
-  "Scene Ambient Occlusion Blur X", "Scene Ambient Occlusion Blur Y", "Scene Reflections Blur X", "Scene Reflections Blur Y",
-] as const;
-
-export async function runEffectsComposeProof(variant: EffectsComposeVariant, largeWorld = false, mergedMarches = false,
-  pairedBlurs = false): Promise<EffectsComposeCapture> {
+export async function runEffectsComposeProof(variant: EffectsComposeVariant, largeWorld = false): Promise<EffectsComposeCapture> {
   const canvas = document.createElement("canvas");
   canvas.width = WIDTH;
   canvas.height = HEIGHT;
@@ -116,18 +97,13 @@ export async function runEffectsComposeProof(variant: EffectsComposeVariant, lar
     camera.maxZ = 60;
     scene.activeCamera = camera;
     allowSceneScreenShadows(scene, () => true);
-    if (mergedMarches) setSceneWorldDebug(scene, "mergedmarches", true);
-    if (pairedBlurs) setSceneWorldDebug(scene, "pairedblurs", true);
-    const marches = variant.startsWith("marches");
-    const ao = variant === "ao" || variant === "ao-fog" || variant === "all" || marches;
-    const reflections = variant === "reflections" || variant === "all" || variant === "marches";
-    const fog = variant === "fog" || variant === "ao-fog" || variant === "all" || marches;
+    const ao = variant === "ao" || variant === "ao-fog" || variant === "all";
+    const reflections = variant === "reflections" || variant === "all";
+    const fog = variant === "fog" || variant === "ao-fog" || variant === "all";
     const effects = normalizeRenderEffectsSettings({
       ambientOcclusion: { enabled: ao, resolutionScale: 0.5, radius: 0.6, strength: 2 },
       reflections: { enabled: reflections, maxSteps: 64, thickness: 0.3 },
-      volumetricLighting: {
-        enabled: fog, resolutionScale: 0.5, steps: 16, density: variant === "marches-fog-idle" ? 0 : 0.04, maxDistance: 20, intensity: 1,
-      },
+      volumetricLighting: { enabled: fog, resolutionScale: 0.5, steps: 16, density: 0.04, maxDistance: 20, intensity: 1 },
     });
     setSceneRenderSettings(scene, {
       mode: "pbr",
@@ -138,7 +114,7 @@ export async function runEffectsComposeProof(variant: EffectsComposeVariant, lar
         postprocessing: { resolutionScale: 1, antiAliasing: "off", ambientOcclusion: true, reflections: true, volumetricLighting: true },
       }),
       // Screen-Space Shadows over a coarse sun map, which leaves the contacts to them.
-      shadows: variant === "screen-shadows" || marches
+      shadows: variant === "screen-shadows"
         ? normalizeShadowSettings({ cascades: 1, mapSize: 256, distance: 60, screenShadows: "high" })
         : normalizeShadowSettings({ cascades: 2, mapSize: 512, distance: 30, screenShadows: "off" }),
     });
@@ -187,9 +163,7 @@ export async function runEffectsComposeProof(variant: EffectsComposeVariant, lar
     });
 
     const sun = new DirectionalLight("sun", new Vector3(0.45, -0.5, 0.6).normalize(), scene);
-    applyAuthoredLightProperties(sun, {
-      color: [1, 0.95, 0.85], intensity: 3, castShadows: variant !== "marches-sun-unshadowed", range: 40, outerAngle: 70, innerAngle: 40,
-    });
+    applyAuthoredLightProperties(sun, { color: [1, 0.95, 0.85], intensity: 3, castShadows: true, range: 40, outerAngle: 70, innerAngle: 40 });
     const lamp = new PointLight("lamp", new Vector3(1, 2, 0), scene);
     applyAuthoredLightProperties(lamp, { color: [0.6, 0.7, 1], intensity: 8, castShadows: false, range: 10, outerAngle: 70, innerAngle: 40 });
 
@@ -210,7 +184,6 @@ export async function runEffectsComposeProof(variant: EffectsComposeVariant, lar
       return readback(engine._readTexturePixelsSync(texture, texture.width, texture.height) as ArrayBufferView, texture.width, texture.height);
     };
     let composed: EffectsReadback | null = null, reflectivity: EffectsReadback | null = null, screenShadows: EffectsReadback | null = null;
-    const marchTargets: Record<"occlusion" | "fog", EffectsReadback | null> = { occlusion: null, fog: null };
     // Read as each pass leaves its target: later passes may reuse it within the frame.
     const observers: (() => void)[] = [];
     const last = spatial.tasks[spatial.tasks.length - 1];
@@ -226,22 +199,6 @@ export async function runEffectsComposeProof(variant: EffectsComposeVariant, lar
     if (shadows) {
       const observer = shadows.task.onAfterTaskExecute.add(() => { screenShadows = read(shadows.output); });
       observers.push(() => shadows.task.onAfterTaskExecute.remove(observer));
-    }
-    // The marches' targets as their pass leaves them: the merged pass before the objects, or each march's own after.
-    for (const [key, name] of [["occlusion", "Scene Ambient Occlusion"], ["fog", "Scene Volumetric Lighting"]] as const) {
-      const target = spatial.stageTargets.find((entry) => entry.name === name);
-      if (!target) continue;
-      const observer = target.writer.onAfterTaskExecute.add(() => { marchTargets[key] = read(target.output); });
-      observers.push(() => target.writer.onAfterTaskExecute.remove(observer));
-    }
-    // The blurs' targets as their pass leaves them: each in its own pass, or two in each paired pass.
-    const blurs: Record<string, EffectsReadback | null> = {};
-    for (const name of EFFECTS_BLUR_STAGES) {
-      const target = spatial.stageTargets.find((entry) => entry.name === name);
-      if (!target) continue;
-      blurs[name] = null;
-      const observer = target.writer.onAfterTaskExecute.add(() => { blurs[name] = read(target.output); });
-      observers.push(() => target.writer.onAfterTaskExecute.remove(observer));
     }
     const recorder = new GlSignatureRecorder();
     let record: ReturnType<GlSignatureRecorder["endFrame"]> = null;
@@ -278,9 +235,6 @@ export async function runEffectsComposeProof(variant: EffectsComposeVariant, lar
       composed,
       reflectivity,
       screenShadows,
-      occlusion: marchTargets.occlusion,
-      fog: marchTargets.fog,
-      blurs,
       passes: frameRecord?.passes ?? 0,
       texelsCovered: frameRecord?.texelsCovered ?? 0,
       passList: recorder.stats()?.structures[0]?.passes ?? [],

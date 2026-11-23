@@ -13,15 +13,17 @@ if (SOFTWARE_GL) test.use({ launchOptions: { args: SOFTWARE_GL_ARGS } });
  * reset`, the Profile's resolution and the part's off command), and each switch builds Play's world graph again. Back in
  * a state already drawn, Play links no program again (a byte-identical relink once kept one more program per switch,
  * from a stack entry's post-process pass named by its Material's build id) and holds the WebGL objects it held after
- * the first round. A Post Process Material in the Scene's stack, as the Feature Test main scene has one.
+ * the first round (buffers to within a few). A Post Process Material in the Scene's stack, as the Feature Test main scene has one.
  */
 
 /** Live WebGL objects by kind, programs linked, and links of a program whose shader text was linked before. */
 type GlCounts = Record<string, number>;
 
 const ROUNDS = 4;
+/** Buffers a later round may hold more or fewer than the first: far fewer than a round of leaking switches (12). */
+const BUFFER_SLACK = 3;
 const STEPS: readonly (readonly [readonly string[], readonly string[]])[] = [
-  [["worlddebug mergedmarches on"], ["quality reset", "quality resolution scale 1", "worlddebug mergedmarches off"]],
+  [["worlddebug geometryonce off"], ["quality reset", "quality resolution scale 1", "worlddebug geometryonce on"]],
   [["quality shadows medium"], ["quality reset", "quality resolution scale 1"]],
   [["rendertargets off"], ["quality reset", "quality resolution scale 1", "rendertargets on"]],
 ];
@@ -114,11 +116,14 @@ test("Play links nothing and holds its WebGL objects across a Profile's step and
     rounds.push(await counts(page));
   }
   const [first, ...later] = rounds;
+  const objects = (gl: GlCounts) => Object.fromEntries(Object.entries(gl).filter(([kind]) => kind !== "links" && kind !== "relinks" && kind !== "Buffer"));
   // The first round compiles each step's programs; every later one draws them from the Effect cache.
   for (const [index, round] of later.entries()) {
-    const objects = (gl: GlCounts) => Object.fromEntries(Object.entries(gl).filter(([kind]) => kind !== "links" && kind !== "relinks"));
     expect({ programs: round.programs, relinks: round.gl.relinks! - first!.gl.relinks!, objects: objects(round.gl) }, `round ${index + 2}`)
       .toEqual({ programs: first!.programs, relinks: 0, objects: objects(first!.gl) });
+    // The buffer count moves by one between rounds, in either direction, with whichever frame a round ends on; a graph
+    // rebuild that kept its tasks held two more buffers a switch, six switches a round.
+    expect(Math.abs(round.gl.Buffer! - first!.gl.Buffer!), `round ${index + 2} buffers ${round.gl.Buffer} against ${first!.gl.Buffer}`).toBeLessThanOrEqual(BUFFER_SLACK);
   }
   await page.getByTestId("play-overlay-close").click();
   await expect(page.getByTestId("play-overlay")).toHaveCount(0);

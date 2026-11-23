@@ -18,20 +18,18 @@ const switched = new WeakMap<Scene, ReadonlySet<WorldDebugPart>>();
 const NONE: ReadonlySet<WorldDebugPart> = new Set();
 
 /**
- * The parts off by default: `mergedmarches`, the merged half-resolution march pass, an opt-in until a native GPU proves
- * it (`merged-marches.ts`), `materialrecords`, graph Materials reading the Material record (`material-record.ts`),
- * an opt-in until a native GPU proves it, and `pairedblurs`, the paired blur passes (`paired-blurs.ts`), a temporary
- * measurement switch until a native GPU proves them and the device Profile sizes them.
+ * The parts off by default: `materialrecords`, graph Materials reading the Material record (`material-record.ts`), an
+ * opt-in until a native GPU proves it.
  */
-const DEFAULT_OFF: ReadonlySet<WorldDebugPart> = new Set(["mergedmarches", "materialrecords", "pairedblurs"]);
+const DEFAULT_OFF: ReadonlySet<WorldDebugPart> = new Set(["materialrecords"]);
 
 /**
  * The parts that change no Material's defines: those of the view's graph (`liveSceneEffectsKey`), `spritebatching`,
  * which the Play view applies itself (`syncWorldSpriteBatching` in `create-engine.ts`), and `materialrecords`, which
  * compiles the Scene's library Materials again (`MaterialLibrary.recompileScene`).
  */
-const PROGRAM_FREE_PARTS: ReadonlySet<WorldDebugPart> = new Set(["geometryonce", "geometryoncescissor", "mergedmarches", "spritebatching",
-  "materialrecords", "pairedblurs"]);
+const PROGRAM_FREE_PARTS: ReadonlySet<WorldDebugPart> = new Set(["geometryonce", "geometryoncescissor", "spritebatching",
+  "materialrecords"]);
 
 /**
  * The Engines created with the Material record on from the start (`materialrecords on`, stored by
@@ -59,10 +57,8 @@ export function worldDebugOff(scene: Scene, part: WorldDebugPart): boolean {
 /**
  * Switches `part` on or off for `scene`; true when that changed it. A part a shader reads has every Material of the
  * Scene re-prepare its defines on its next draw (a part off compiles its variant; back on, the Material draws its own
- * program again). The geometry repeat parts, `mergedmarches` and `pairedblurs` change no Material's program: they change
- * the view's graph (`liveSceneEffectsKey`), which builds again with or without the repeat pass (`geometryRepeat`), with
- * the half-resolution marches in one pass or in their own, or with each axis's blurs in one pass or two
- * (`SpatialEffectsGraph`).
+ * program again). The geometry repeat parts change no Material's program: they change the view's graph
+ * (`liveSceneEffectsKey`), which builds again with or without the repeat pass (`geometryRepeat`, `SpatialEffectsGraph`).
  */
 export function setSceneWorldDebug(scene: Scene, part: WorldDebugPart, enabled: boolean): boolean {
   if (worldDebugOff(scene, part) === !enabled) return false;

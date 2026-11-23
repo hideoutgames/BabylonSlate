@@ -23,8 +23,9 @@ import { usePlay } from "../context/play-context";
 import {
   MAX_CHECK_RESOURCE_SAMPLES,
   clearUnfinishedCheck,
+  formatOtherBuildCheck,
   loadCheckEnded,
-  loadSavedCheck,
+  loadSavedCheckRecord,
   saveCheckEnded,
   saveUnfinishedCheck,
   withStoppedSessions,
@@ -184,15 +185,22 @@ function hostMemoryOf(host: HostMemoryStats | null): HostMemory {
   return { deviceAvailableBytes: host?.systemAvailableBytes ?? null, appAvailableBytes: host?.appAvailableBytes ?? null };
 }
 
-type Phase = { kind: "idle" } | { kind: "running"; message: string } | { kind: "done"; text: string; report: FeatureTestCheckReport };
+/** `done` without a report shows a stored record this build could not read, as it was stored. */
+type Phase = { kind: "idle" } | { kind: "running"; message: string } | { kind: "done"; text: string; report: FeatureTestCheckReport | null };
 
 /**
  * The report a check the app stopped during, or a finished one not yet shown, left behind; idle without one. The
- * dialog mounts with the project, so a stored report that cannot be formatted is discarded rather than breaking it.
+ * dialog mounts with the project, so a stored report of this build that cannot be formatted is discarded rather than
+ * breaking it. Another build's record is always shown, marked as such, as text when this build cannot format it
+ * (`formatOtherBuildCheck`).
  */
 function savedPhase(): Phase {
-  const report = loadSavedCheck();
-  if (!report) return { kind: "idle" };
+  const saved = loadSavedCheckRecord();
+  if (!saved) return { kind: "idle" };
+  if (saved.kind === "other build") {
+    return { kind: "done", ...formatOtherBuildCheck(saved, (report) => formatFeatureTestCheckReport(report, collectDiagnosticEnvironment())) };
+  }
+  const report = saved.report;
   try {
     return { kind: "done", report, text: formatFeatureTestCheckReport(report, collectDiagnosticEnvironment()) };
   } catch (error) {
@@ -429,11 +437,13 @@ export function FeatureTestCheckDialog({ open, onOpenChange }: FeatureTestCheckD
         <DialogHeader>
           <DialogTitle>Feature Test Check</DialogTitle>
           <DialogDescription>
-            {report?.unfinished
-              ? `The last check did not finish: the app stopped while ${report.unfinished.step}. Copy its report and paste it into your chat or issue.`
-              : report
-                ? `${passed} of ${report.scenes.length} scenes passed${report.cancelled ? " before the check was cancelled" : ""}. Copy the report and paste it into your chat or issue.`
-                : MODE_DESCRIPTIONS[mode]}
+            {phase.kind === "done" && !report
+              ? "The last check's report was written by another build of the editor, which this build cannot read. Copy it as it was stored."
+              : report?.unfinished
+                ? `The last check did not finish: the app stopped while ${report.unfinished.step}. Copy its report and paste it into your chat or issue.`
+                : report
+                  ? `${passed} of ${report.scenes.length} scenes passed${report.cancelled ? " before the check was cancelled" : ""}. Copy the report and paste it into your chat or issue.`
+                  : MODE_DESCRIPTIONS[mode]}
           </DialogDescription>
         </DialogHeader>
         {phase.kind === "done" ? (

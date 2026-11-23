@@ -5,19 +5,15 @@
  * (every surface one constant colour). Two size the geometry pass the screen-space effects read by drawing it once
  * more, the picture unchanged: `geometryonce` (off: a second geometry pass, the same meshes into scratch targets nothing
  * reads, right before the real one) and `geometryoncescissor` (off: that second pass under a 1x1 scissor, so it keeps
- * its draws and vertices and drops its fragments). `mergedmarches` is off by default, unlike the others: on, the ambient
- * occlusion and volumetric marches draw in the Screen-Space Shadows pass instead of passes of their own, an opt-in that
- * awaits a native-GPU proof that the picture is unchanged. `spritebatching` off ejects every Play world sprite from its
+ * its draws and vertices and drops its fragments). `spritebatching` off ejects every Play world sprite from its
  * thin-instanced batch to a quad of its own and batches none built after (the picture unchanged, to size what batching
- * saves); back on, sprites built afterwards batch again. `materialrecords` is off by default too: on, the Scene's graph
- * Materials compile again to read their parameters and literals from a per-Material uniform block (the Material record),
- * so Materials of one shape share a program, an opt-in that awaits a native-GPU proof that the picture is unchanged.
- * `pairedblurs` is off by default too: on, the ambient occlusion and reflection blurs of each axis draw in one
- * pass instead of two, a temporary measurement switch that awaits a native-GPU proof and the device Profile, after
- * which it becomes the only path or is removed. Debug only, never saved.
+ * saves); back on, sprites built afterwards batch again. `materialrecords` is off by default, unlike the others: on, the
+ * Scene's graph Materials compile again to read their parameters and literals from a per-Material uniform block (the
+ * Material record), so Materials of one shape share a program, an opt-in that awaits a native-GPU proof that the picture
+ * is unchanged. Debug only, never saved.
  */
 export const WORLD_DEBUG_PARTS = [
-  "world", "lighting", "shadowtaps", "locallights", "shading", "geometryonce", "geometryoncescissor", "mergedmarches",
-  "spritebatching", "materialrecords", "pairedblurs",
+  "world", "lighting", "shadowtaps", "locallights", "shading", "geometryonce", "geometryoncescissor",
+  "spritebatching", "materialrecords",
 ] as const;
 export type WorldDebugPart = (typeof WORLD_DEBUG_PARTS)[number];
