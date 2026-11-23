@@ -216,7 +216,7 @@ describe("Haptic project browser", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Open Project Game" }));
     await waitFor(() => expect(onOpenProject).toHaveBeenCalledOnce());
-    expect(screen.getByRole("status").textContent).toMatch(/Opening Project/i);
+    expect(screen.getByRole("status").textContent).toBe("Opening Project…");
     expect(screen.getByTestId("create-project")).toHaveProperty(
       "disabled",
       true,
@@ -238,6 +238,37 @@ describe("Haptic project browser", () => {
     );
     createDialog();
     expect(screen.getByTestId("create-project-dialog")).toBeTruthy();
+  });
+
+  it("shows the creation's real percent from 0, never lower, and keeps the announced text still", async () => {
+    let report!: (percent: number) => void;
+    let finish!: () => void;
+    const onCreateEmpty = vi.fn<ComponentProps<typeof Homepage>["onCreateEmpty"]>(
+      (_name, options) =>
+        new Promise<void>((resolve) => {
+          report = options!.onProgress!;
+          finish = resolve;
+        }),
+    );
+    renderHomepage({ onCreateEmpty });
+    createDialog();
+    fireEvent.change(screen.getByTestId("create-project-name"), { target: { value: "Orbit" } });
+    fireEvent.click(screen.getByTestId("create-project-submit"));
+    await waitFor(() => expect(onCreateEmpty).toHaveBeenCalledOnce());
+    // The dialog stays open while it creates, so the header status sits behind it.
+    const status = () => screen.getByRole("status", { hidden: true });
+    expect(status().textContent).toBe("Creating Project… 0%");
+    act(() => report(0));
+    act(() => report(37));
+    expect(status().textContent).toBe("Creating Project… 37%");
+    act(() => report(12));
+    expect(status().textContent).toBe("Creating Project… 37%");
+    act(() => report(100));
+    expect(status().textContent).toBe("Creating Project… 100%");
+    // The percent sits outside what a screen reader announces.
+    expect(status().querySelector("[aria-hidden]:not(svg)")?.textContent).toBe(" 100%");
+    await act(async () => finish());
+    expect(screen.queryByRole("status")).toBeNull();
   });
 
   it("locks template import without adding a status row and restores actions after failure", async () => {
@@ -321,7 +352,7 @@ describe("Haptic project browser", () => {
       name: "forest-run",
       private: true,
     });
-    // The provider reports Opening project and Initializing source control through it.
+    // The provider reports Opening project and Initializing Source Control… through it.
     expect(options.onPhase).toEqual(expect.any(Function));
     await waitFor(() => expect(screen.queryByTestId("create-project-dialog")).toBeNull());
     await waitFor(() => expect(getAppSettingsSnapshot().settings.newProjectHosting).toEqual({ hosting: "remote", origin: "https://github.com" }));
@@ -606,7 +637,8 @@ describe("Haptic project browser", () => {
   );
 
   it("edits identity without creating or opening a project", async () => {
-    const onUpdateProject = vi.fn(async () => {});
+    let finishUpdate!: () => void;
+    const onUpdateProject = vi.fn(() => new Promise<void>((resolve) => { finishUpdate = resolve; }));
     const onOpenProject = vi.fn(async () => {});
     renderHomepage({
       projects: [listedProject("Game", "opfs")],
@@ -628,6 +660,10 @@ describe("Haptic project browser", () => {
         expect.objectContaining({ name: "Renamed" }),
       ),
     );
+    // An update has no percent.
+    expect(screen.getByRole("status", { hidden: true }).textContent).toBe("Updating Project…");
+    await act(async () => finishUpdate());
+    expect(screen.queryByRole("status")).toBeNull();
     expect(onOpenProject).not.toHaveBeenCalled();
   });
 

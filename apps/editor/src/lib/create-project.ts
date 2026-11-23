@@ -83,11 +83,57 @@ export function isBuiltInStarterKind(id: string): id is BuiltInStarterKind {
  */
 export type LaunchPhase = "creating" | "source-control" | "opening";
 
+/** Completed creation steps out of the steps the create has; the service ticks it as each step finishes. */
+export type StepProgress = { advance(): void };
+
+/**
+ * A creation's progress: `total` steps, each worth the same, reported as a whole
+ * percent that only rises (0 at the start, 100 once every step finished).
+ */
+export function createStepProgress(total: number, report?: (percent: number) => void): StepProgress {
+  let done = 0;
+  let reported = -1;
+  const emit = () => {
+    const percent = Math.floor((100 * done) / total);
+    if (percent <= reported) return;
+    reported = percent;
+    report?.(percent);
+  };
+  emit();
+  return {
+    advance() {
+      done = Math.min(total, done + 1);
+      emit();
+    },
+  };
+}
+
+/**
+ * The steps of creating a built-in starter, from `onProgress`'s first report to 100: attaching the
+ * Engine Plugins and Extensions, preparing the folder, `scaffoldNewProject`'s steps (the scene and
+ * project files, plugin defaults, the asset registry, then the starter's own assets) and the
+ * create's end. Keep in step with `scaffoldNewProject`.
+ */
+export function starterStepCount(kind: BuiltInStarterKind = "empty", pixelArt = false): number {
+  const withAssets = kind === "empty" || kind === "feature-test";
+  return 3 + 4 + (withAssets ? 2 : 0) + (kind === "feature-test" ? 1 : 0) + (pixelArt ? 1 : 0);
+}
+
+/**
+ * The steps of creating from a template: attaching plugins, preparing the folder, one per file
+ * written, the plugin defaults, loading the project and the create's end.
+ */
+export function templateStepCount(fileCount: number): number {
+  return 5 + fileCount;
+}
+
 export type CreateProjectOptions = {
   /** Remote: once the project opens, publish it to this new repository, as Project Settings' Publish does. */
   repository?: NewRepositoryRequest;
   /** Reports each step for the launcher card. */
   onPhase?: (phase: LaunchPhase) => void;
+  /** Reports the creation's progress as a whole percent, 0 first and then only higher; 100 when the project is created, before `onPhase("opening")`. */
+  onProgress?: (percent: number) => void;
   appearance?: ProjectAppearance;
   /** Native only: pick an external folder, then scaffold into it. */
   pickFolder?: boolean;

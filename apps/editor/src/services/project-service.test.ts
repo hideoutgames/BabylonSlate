@@ -7,6 +7,7 @@ import { encodeAssetDocument, SPECULATIVE_CATALOG_READ_BYTES } from "@haptic/ass
 import { encodeHasset, decodeHasset } from "@haptic/assets/hasset";
 import { convertHdrEnvironmentOffMainThread } from "@haptic/assets/import-worker-client";
 import { buildFloatDdsCubeFixture, buildRadianceHdrFixture } from "@haptic/test-kit/environment-fixtures";
+import { createStepProgress, starterStepCount } from "../lib/create-project";
 import { loadKenneyMannequinGlb } from "../lib/kenney-mannequin";
 import { ProjectService } from "./project-service";
 import { setEncodeQueuePauseReason } from "./encode-queue-pause";
@@ -54,6 +55,26 @@ function workerFactory() {
 }
 
 describe("ProjectService lifecycle", () => {
+  it.each([
+    ["blank", false],
+    ["2d", false],
+    ["empty", false],
+    ["blank", true],
+  ] as const)("ticks a %s starter's progress (pixel art %s) once per step the count promises, ending at 100 only on the final step", async (kind, pixelArt) => {
+    const service = new ProjectService(new MemoryStorageAdapter("documents"));
+    const percents: number[] = [];
+    const progress = createStepProgress(starterStepCount(kind, pixelArt), (percent) => percents.push(percent));
+    // The editor's attach step comes first and its final step last.
+    progress.advance();
+    await service.createEmptyProject(`Counted ${kind}`, { kind, pixelArt }, progress);
+    expect(percents.at(-1)).toBeLessThan(100);
+    progress.advance();
+    expect(percents.at(-1)).toBe(100);
+    expect(percents[0]).toBe(0);
+    expect(percents).toEqual([...percents].sort((a, b) => a - b));
+    expect(new Set(percents).size).toBe(percents.length);
+  });
+
   it("blocks every exposed project writer while keeping authoring reads and derived storage available", async () => {
     const storage = new MemoryStorageAdapter("documents");
     const service = new ProjectService(storage);

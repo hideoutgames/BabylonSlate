@@ -21,7 +21,13 @@ import { ensureEnginePluginStorage } from "../lib/engine-plugins";
 import { ensureEngineExtensionStorage } from "../lib/engine-extensions";
 import { ensureEngineExtensionLibrary } from "../lib/engine-extension-library";
 import { ensureEnginePluginLibrary } from "../lib/engine-plugin-library";
-import type { CreateProjectOptions, CreateProjectOutcome } from "../lib/create-project";
+import {
+  createStepProgress,
+  starterStepCount,
+  templateStepCount,
+  type CreateProjectOptions,
+  type CreateProjectOutcome,
+} from "../lib/create-project";
 import type { ProjectSaveState } from "../lib/project-save-state";
 import {
   EDITOR_UTILITY_EVENTS,
@@ -291,9 +297,13 @@ export function useProjectLifecycle({
   const createEmptyProject = useCallback(
     async (name: string, options?: CreateProjectOptions): Promise<CreateProjectOutcome> => {
       if (!await documentTransitions.check({ kind: "replace-project" })) return "refused";
+      const progress = createStepProgress(starterStepCount(options?.kind, options?.pixelArt), options?.onProgress);
       await attachEnginePlugins({ reviewExecuteJavaScript: options?.reviewExecuteJavaScript });
+      progress.advance();
       const { document, layouts, created } =
-        await projectService.createEmptyProject(name, options);
+        await projectService.createEmptyProject(name, options, progress);
+      // Finished: the create's last step. A picked folder that already held a project created nothing, so it reports none.
+      if (created) progress.advance();
       options?.onPhase?.("opening");
       await enterEditor(document, layouts);
       return created ? "created" : "opened";
@@ -312,14 +322,20 @@ export function useProjectLifecycle({
         throw new Error(`Unknown template: ${templateId}`);
       }
       if (!await documentTransitions.check({ kind: "replace-project" })) return "refused";
+      // Loaded first: the progress counts one step for each of the template's files.
+      const templateFiles = await loadSelectedTemplateFiles(template.id);
+      const progress = createStepProgress(templateStepCount(templateFiles.length), options?.onProgress);
       await attachEnginePlugins({ reviewExecuteJavaScript: options?.reviewExecuteJavaScript });
+      progress.advance();
       const { document, layouts } =
         await projectService.createFromTemplate({
-          templateFiles: await loadSelectedTemplateFiles(template.id),
+          templateFiles,
           name,
           pickFolder: options?.pickFolder,
           appearance: options?.appearance,
+          progress,
         });
+      progress.advance();
       options?.onPhase?.("opening");
       await enterEditor(document, layouts);
       return "created";

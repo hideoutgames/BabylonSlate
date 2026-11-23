@@ -123,12 +123,16 @@ describe("hproject codec", () => {
     });
     const dest = new MemoryStorageAdapter("documents");
     await dest.openDocumentsProject("FromTemplate.hproject");
+    let written = 0;
     await createProjectFromTemplate({
       templateFiles: template,
       destination: dest,
       guid: "new-guid",
       name: "FromTemplate.hproject",
+      onFileWritten: () => written++,
     });
+    // One report per file, so a caller's progress counts every file.
+    expect(written).toBe(template.length);
     const tree = await readProjectTree(dest);
     const manifest = JSON.parse(
       new TextDecoder().decode(

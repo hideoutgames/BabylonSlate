@@ -250,6 +250,8 @@ export function Homepage({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [operation, setOperation] = useState<string | null>(null);
+  /** A New Project's creation percent, null while no creation runs. */
+  const [progress, setProgress] = useState<number | null>(null);
   const busyRef = useRef(false);
   const [accountOpen, setAccountOpen] = useState(false);
   /** The signed-in account, null for a guest, undefined until sign-in settles. */
@@ -378,7 +380,7 @@ export function Homepage({
 
   const run = async (
     action: () => void | Promise<void>,
-    label: string | null = "Opening Project",
+    label: string | null = "Opening Project…",
   ) => {
     if (busyRef.current) return;
     busyRef.current = true;
@@ -393,6 +395,7 @@ export function Homepage({
       busyRef.current = false;
       setBusy(false);
       setOperation(null);
+      setProgress(null);
     }
   };
   const create = (id = "blank", choose = true) => {
@@ -495,7 +498,9 @@ export function Homepage({
             {operation ? (
               <p role="status" className="homepage-status-operation">
                 <LoaderCircleIcon className="animate-spin" aria-hidden="true" />
-                {operation}…
+                {operation}
+                {/* Outside the announced text, so a screen reader does not read out every percent. */}
+                {progress !== null && <span aria-hidden="true"> {progress}%</span>}
               </p>
             ) : (
               <p className="homepage-status-summary">
@@ -598,7 +603,7 @@ export function Homepage({
                 size="sm"
                 disabled={busy}
                 onClick={() =>
-                  void run(() => launch(onReconnect), "Reconnecting Project")
+                  void run(() => launch(onReconnect), "Reconnecting Project…")
                 }
               >
                 Reconnect
@@ -905,6 +910,7 @@ export function Homepage({
                     settings.newProjectHosting = { hosting, origin: newRepository?.origin ?? settings.newProjectHosting.origin };
                   }).catch(() => undefined);
                 }
+                setProgress(0);
                 await launch(async () => {
                   const options: CreateProjectOptions = {
                     appearance,
@@ -913,6 +919,11 @@ export function Homepage({
                     blackBars,
                     pixelArt,
                     onPhase: transition.setPhase,
+                    onProgress: (percent) => {
+                      // The header status and the launcher card show the same percent.
+                      setProgress((current) => Math.max(current ?? 0, percent));
+                      transition.setProgress(percent);
+                    },
                     reviewExecuteJavaScript: (plugins) => {
                       setNewProjectTrusted(isBuiltInStarterKind(templateId));
                       return executeJavaScript.review(plugins.flatMap((plugin) =>
@@ -941,7 +952,7 @@ export function Homepage({
               }
               setCreateOpen(false);
             },
-            editTarget ? "Updating Project" : "Creating Project",
+            editTarget ? "Updating Project…" : "Creating Project…",
           );
         }}
       />
