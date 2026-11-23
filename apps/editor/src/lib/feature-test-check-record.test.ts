@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FeatureTestCheckReport } from "../services/feature-test-check";
 import { resetSessionTrail } from "@haptic/core";
-import { clearUnfinishedCheck, loadCheckEnded, loadSavedCheck, saveCheckEnded, saveUnfinishedCheck, withStoppedSessions } from "./feature-test-check-record";
+import {
+  clearUnfinishedCheck, formatOtherBuildCheck, loadCheckEnded, loadSavedCheck, loadSavedCheckRecord, saveCheckEnded, saveUnfinishedCheck,
+  withStoppedSessions,
+} from "./feature-test-check-record";
 import { formatFeatureTestCheckReport } from "./feature-test-check-report";
 import { startSessionTrail } from "./session-trail-record";
 
@@ -131,49 +134,79 @@ describe("the unfinished Feature Test Check", () => {
     expect(loadCheckEnded()).toBeNull();
   });
 
-  it("discards, and never formats, a check another build left: one stopped on the 2026-11-20 build reads no Material builds", () => {
-    const environment = {
-      appVersion: "1.2.3", userAgent: "iPhone", platform: "iPhone", touchPoints: 5, devicePixelRatio: 3, screen: "393x852", viewport: "393x852", cores: 6, memoryGb: null,
-    };
-    // That build's Play snapshot counted the Engine's programs without the Material compiler's census (`materials`).
-    const rendering = { cpuMs: 9, gpuMs: null, gpuStatus: "unsupported", width: 1179, height: 2556, scalingLevel: 1, qualityLimits: [],
-      programs: { programs: 120, neverDrawn: 35, passes: { objects: 50 }, shaders: 70, mostVariants: 6, splitBy: [] } };
-    const scene = report.scenes[0]!;
-    const older = { ...report, scenes: [{ ...scene, play: { ...scene.play, snapshot: { drawCalls: 42, meshes: 80, textures: 30, accountedBytes: 0, rendering } } }] };
-    // It wrote no build of its own, as every build before this record named its build.
-    store.set("haptic:feature-test-check:unfinished", JSON.stringify({ step: "main: benchmarking high", report: older, resources: [] }));
-    expect(() => {
-      const saved = loadSavedCheck();
-      if (saved) formatFeatureTestCheckReport(saved, environment);
-    }).not.toThrow();
-    expect(store.has("haptic:feature-test-check:unfinished")).toBe(false);
-    // A record of this build's shape from another deploy goes the same way.
+  /** The text the dialog shows for a record another build left, formatted as the dialog formats it. */
+  const shown = (format = (saved: FeatureTestCheckReport) => formatFeatureTestCheckReport(saved, environment)) => {
+    const saved = loadSavedCheckRecord();
+    if (saved?.kind !== "other build") throw new Error("no other build's record");
+    return formatOtherBuildCheck(saved, format);
+  };
+  const environment = {
+    appVersion: "1.2.3", userAgent: "iPad", platform: "iPad", touchPoints: 5, devicePixelRatio: 2, screen: "1180x820", viewport: "1180x820", cores: 6, memoryGb: null,
+  };
+  const RECORD = "haptic:feature-test-check:unfinished";
+  /** The stored record as `build` would have written it. */
+  const writtenBy = (build: string) => {
     saveUnfinishedCheck({ step: "main: benchmarking high", report, resources: [] });
-    store.set("haptic:feature-test-check:unfinished", JSON.stringify({ ...JSON.parse(store.get("haptic:feature-test-check:unfinished")!), build: "index-0ld8u1ld.js" }));
+    store.set(RECORD, JSON.stringify({ ...JSON.parse(store.get(RECORD)!), build }));
+  };
+
+  it("shows a check another build left, marked as another build's, and keeps it until a new Check starts or the user clears it", () => {
+    writtenBy("index-0ld8u1ld.js");
+    // Not this build's report: the A/B resume and the note append leave it alone.
     expect(loadSavedCheck()).toBeNull();
-    expect(store.has("haptic:feature-test-check:unfinished")).toBe(false);
+    const { text, report: restored } = shown();
+    const lines = text.split("\n");
+    expect(lines[0]).toBe("Written by another build of the editor (index-0ld8u1ld.js): this build may misread it.");
+    expect(lines[2]).toBe("Result: 0/1 scenes passed · DID NOT FINISH · took 41.0 s");
+    expect(lines[3]).toBe("Did not finish: the app stopped (a crash or reload) while main: benchmarking high.");
+    expect(restored?.unfinished?.step).toBe("main: benchmarking high");
+    // Shown again on the next open: nothing deleted it.
+    expect(shown().text).toBe(text);
+    expect(store.has(RECORD)).toBe(true);
+    clearUnfinishedCheck();
+    expect(loadSavedCheckRecord()).toBeNull();
   });
 
-  it("names a deploy by its hashed entry scripts, so the next deploy's page discards the record and the same one resumes it", () => {
+  it("shows another build's record as stored when this build cannot format or read it", () => {
+    writtenBy("index-0ld8u1ld.js");
+    const stored = JSON.stringify(JSON.parse(store.get(RECORD)!), null, 2);
+    // This build's formatter throws on it (a field it reads that the older shape lacks).
+    const thrown = shown(() => { throw new TypeError("Cannot read properties of undefined (reading 'materials')"); });
+    expect(thrown).toEqual({
+      report: null,
+      text: `Written by another build of the editor (index-0ld8u1ld.js): this build may misread it.\nThis build could not format it; the stored record follows.\n${stored}`,
+    });
+    // A record with no report this build reads, and one that is not JSON and names no build.
+    store.set(RECORD, JSON.stringify({ step: 4, build: "index-0ld8u1ld.js" }));
+    expect(shown().text).toBe(
+      'Written by another build of the editor (index-0ld8u1ld.js): this build may misread it.\nThis build could not read it; the stored record follows.\n{\n  "step": 4,\n  "build": "index-0ld8u1ld.js"\n}');
+    store.set(RECORD, "{not json");
+    expect(shown()).toEqual({
+      report: null,
+      text: "Written by another build of the editor (unnamed): this build may misread it.\nThis build could not read it; the stored record follows.\n{not json",
+    });
+    expect(store.get(RECORD)).toBe("{not json");
+  });
+
+  it("names a deploy by its hashed entry scripts, so the same deploy resumes the record and the next one shows it as another build's", () => {
     const deployed = (entry: string) => vi.stubGlobal("document", {
       querySelectorAll: () => [`/BabylonSlate/assets/${entry}`, "/BabylonSlate/sw-register.js"].map((src) => ({ getAttribute: () => src })),
     });
     deployed("index-a1b2c3d4.js");
     saveUnfinishedCheck({ step: "main: benchmarking high", report, resources: [] });
     expect(loadSavedCheck()?.unfinished?.step).toBe("main: benchmarking high");
+    expect(loadSavedCheckRecord()).toMatchObject({ kind: "this build" });
     deployed("index-e5f6a7b8.js");
     expect(loadSavedCheck()).toBeNull();
-    expect(store.has("haptic:feature-test-check:unfinished")).toBe(false);
+    expect(loadSavedCheckRecord()).toMatchObject({ kind: "other build", build: "index-a1b2c3d4.js" });
+    expect(store.has(RECORD)).toBe(true);
   });
 
-  it("discards a record it cannot read, and runs on without storage", () => {
-    store.set("haptic:feature-test-check:unfinished", "{not json");
-    expect(loadSavedCheck()).toBeNull();
-    expect(store.has("haptic:feature-test-check:unfinished")).toBe(false);
+  it("discards a record of this build it cannot read, and runs on without storage", () => {
     saveUnfinishedCheck({ step: "x", report, resources: [] });
-    store.set("haptic:feature-test-check:unfinished", JSON.stringify({ ...JSON.parse(store.get("haptic:feature-test-check:unfinished")!), step: 4 }));
-    expect(loadSavedCheck()).toBeNull();
-    expect(store.has("haptic:feature-test-check:unfinished")).toBe(false);
+    store.set(RECORD, JSON.stringify({ ...JSON.parse(store.get(RECORD)!), step: 4 }));
+    expect(loadSavedCheckRecord()).toBeNull();
+    expect(store.has(RECORD)).toBe(false);
     vi.stubGlobal("localStorage", { getItem: () => { throw new Error("denied"); }, setItem: () => { throw new Error("full"); }, removeItem: () => { throw new Error("denied"); } });
     expect(() => saveUnfinishedCheck({ step: "x", report, resources: [] })).not.toThrow();
     expect(loadSavedCheck()).toBeNull();
