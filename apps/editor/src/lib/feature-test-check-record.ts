@@ -1,3 +1,4 @@
+import { recordSessionTrailEvent, SessionTrailEventKind } from "@haptic/core";
 import type { FeatureTestCheckReport, FeatureTestCheckResources } from "../services/feature-test-check";
 import { forgetSessionTrails, sessionTrailPage, unclosedSessionTrails } from "./session-trail-record";
 
@@ -51,8 +52,21 @@ export function checkRecordBuild(): string {
 function write(key: string, value: string): void {
   try {
     localStorage.setItem(key, value);
+  } catch (error) {
+    // Storage full or unavailable: the check still runs, it only cannot survive a crash. The session trail, a small
+    // record of its own, tells the next report.
+    const name = error instanceof Error ? error.name : "an error";
+    recordSessionTrailEvent(SessionTrailEventKind.storage, `the Feature Test Check's record (${key}) could not be saved: ${name}`);
+  }
+}
+
+/** The session trail page an unfinished check's stored record names, whichever build wrote it; null without one. */
+export function unfinishedCheckPage(): string | null {
+  try {
+    const stored = JSON.parse(localStorage.getItem(KEY) ?? "null") as { page?: unknown } | null;
+    return typeof stored?.page === "string" ? stored.page : null;
   } catch {
-    // Storage full or unavailable: the check still runs, it only cannot survive a crash.
+    return null;
   }
 }
 
@@ -68,7 +82,10 @@ export function withStoppedSessions(report: FeatureTestCheckReport, forget = fal
   if (!trails.length) return report;
   return {
     ...report,
-    stoppedSessions: trails.map((trail) => ({ page: trail.page, lastAliveAt: trail.alive, marks: trail.marks, events: trail.events })),
+    stoppedSessions: trails.map((trail) => ({
+      page: trail.page, lastAliveAt: trail.alive, marks: trail.marks, events: trail.events,
+      ...(trail.failedWrites ? { failedWrites: trail.failedWrites } : {}),
+    })),
   };
 }
 

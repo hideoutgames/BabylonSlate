@@ -1109,33 +1109,41 @@ const CAUSES: ReadonlyArray<{ kind: string; text: (detail: string) => string }> 
   { kind: "uncaught error", text: (detail) => `an uncaught error: ${detail}` },
   { kind: "unhandled rejection", text: (detail) => `an unhandled rejection: ${detail}` },
   { kind: "resource failed to load", text: (detail) => `a resource failed to load: ${detail}` },
-  { kind: "stall", text: (detail) => `the page hung (${detail})` },
+  { kind: "storage", text: (detail) => `browser storage failed: ${detail}` },
 ];
 
 /**
  * The most specific cause a stopped page's trail recorded within `CAUSE_WINDOW_MS` of its last sign of life, with how
  * long before it, or what its lifecycle says: a page that recorded no close, hide or reload of its own was stopped by
- * the system (a WebKit content process killed for memory, or a crash).
+ * the system (a WebKit content process killed for memory, or a crash). What came after the page began to unload
+ * (`beforeunload`) is its consequence (WebKit fails in-flight imports then), unless a reload of ours began it.
  */
 export function stopCause(session: FeatureTestStoppedSession): string {
-  const recent = session.events.filter((event) => session.lastAliveAt - event.at <= CAUSE_WINDOW_MS);
   const before = (at: number) => `, ${s(Math.max(0, session.lastAliveAt - at))} before the last sign of life`;
+  const lastEvents = session.events.filter((event) => session.lastAliveAt - event.at <= CAUSE_WINDOW_MS);
+  const unloading = lastEvents.findIndex((event) => event.kind === "page" && event.detail.startsWith("unloading"));
+  const recent = unloading >= 0 ? lastEvents.slice(0, unloading) : lastEvents;
   const chunk = recent.findLast((event) => event.kind === "chunk import failed");
   if (chunk) {
-    const reloaded = recent.some((event) => event.kind === "reload" && event.at >= chunk.first);
+    const reloaded = lastEvents.some((event) => event.kind === "reload" && event.at >= chunk.first);
     return `a failed chunk import (${chunk.detail})${reloaded ? ", then the page reloaded itself" : ""}${before(chunk.at)}`;
   }
   for (const cause of CAUSES) {
     const event = recent.findLast((entry) => entry.kind === cause.kind);
     if (event) return `${cause.text(event.detail)}${before(event.at)}`;
   }
+  if (unloading >= 0) {
+    return `the page was reloaded or navigated away by the browser or the user (beforeunload${before(lastEvents[unloading]!.at)}), with no reload of the editor's own`;
+  }
   const last = session.marks.at(-1)?.stage;
-  const close = recent.findLast((event) => event.kind === "page" && event.detail.startsWith("closed"));
+  const close = lastEvents.findLast((event) => event.kind === "page" && event.detail.startsWith("closed"));
   if (last === "page: closed" || close) {
     return `the page was closed, reloaded or navigated away by the browser or the user (${close ? close.detail : "page: closed"}), with no reload of the editor's own`;
   }
   if (last === "page: hidden") return "the page was put away (hidden) and did not come back";
-  return "nothing recorded: the system stopped the page (no error, reload, close or hide was recorded before it; a WebKit content process killed for memory, or a crash, looks like this)";
+  // A hang the page came back from is no stop; one shortly before the end tells what the page went through.
+  const stall = lastEvents.findLast((event) => event.kind === "stall");
+  return `nothing recorded: the system stopped the page (no error, reload, close or hide was recorded before it; a WebKit content process killed for memory, or a crash, looks like this)${stall ? `; it had hung shortly before (${stall.detail}${before(stall.at)})` : ""}`;
 }
 
 /** An event as a stopped session lists it, with how often and since when it repeated. */
@@ -1159,6 +1167,9 @@ function stoppedSessionLines(session: FeatureTestStoppedSession): string[] {
       ? `A session ended with its page closed or put away (a reload counts), last alive ${alive}.`
       : `A session stopped without closing (a freeze, a crash or a force close), last alive ${alive}.`,
     `Why: ${stopCause(session)}.`,
+    ...(session.failedWrites
+      ? [`${session.failedWrites} writes of its trail failed (browser storage full or unavailable): it may have run on after its last sign of life.`]
+      : []),
     `Its last stages, each with how long before that it was reached${omitted ? ` (${omitted} earlier omitted)` : ""}:`,
     ...marks.map((mark) => `  ${ago(mark.at)}  ${clip(mark.stage)}`),
     ...(session.events.length

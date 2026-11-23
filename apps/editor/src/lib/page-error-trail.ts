@@ -33,7 +33,9 @@ export function recordErrorScreen(title: string, error: unknown, info?: { compon
   try {
     const components = (info?.componentStack ?? "").split("\n").map((line) => line.trim()).filter(Boolean)
       .slice(0, COMPONENT_STACK_LINES).join(" < ");
-    recordSessionTrailEvent(SessionTrailEventKind.errorScreen, `${title}: ${describeError(error)}${components ? ` | in ${components}` : ""}`);
+    // The component stack goes before the error's own stack, which the detail's bound cuts first.
+    const [head, ...stack] = describeError(error).split(" | ");
+    recordSessionTrailEvent(SessionTrailEventKind.errorScreen, [`${title}: ${head}`, ...(components ? [`in ${components}`] : []), ...stack].join(" | "));
   } catch {
     // Recording must never break the screen that shows the error.
   }

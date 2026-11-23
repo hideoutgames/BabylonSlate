@@ -85,6 +85,25 @@ describe("the session trail's events", () => {
     ]);
   });
 
+  it("writes a burst of varying errors only a few at a time, and drops errors before a reload for room", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(10_000);
+    let writes = 0;
+    setSessionTrailSink(() => { writes += 1; });
+    writes = 0;
+    recordSessionTrailEvent("reload", "a failed chunk import");
+    for (let frame = 0; frame < 100; frame++) recordSessionTrailEvent("uncaught error", `TypeError at frame ${frame}`);
+    // The reload, then four errors of the burst; the rest wait for the host's next write.
+    expect(writes).toBe(5);
+    // A new window writes again, and a reload is never held back.
+    vi.setSystemTime(15_000);
+    recordSessionTrailEvent("uncaught error", "TypeError at frame 100");
+    recordSessionTrailEvent("context lost", "play: loss 1 of this view");
+    expect(writes).toBe(7);
+    expect(sessionTrailEvents()).toHaveLength(SESSION_TRAIL_EVENTS);
+    expect(sessionTrailEvents().filter((event) => event.kind !== "uncaught error").map((event) => event.kind)).toEqual(["reload", "context lost"]);
+  });
+
   it("keeps the newest events, each cut to a bounded length, and survives many marks", () => {
     recordSessionTrailEvent("error", "x".repeat(5_000));
     for (let index = 0; index < SESSION_TRAIL_EVENTS + 2; index++) recordSessionTrailEvent("error", `error ${index}`);

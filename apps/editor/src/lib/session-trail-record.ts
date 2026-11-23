@@ -37,6 +37,8 @@ export interface StoredSessionTrail {
   alive: number;
   marks: SessionTrailMark[];
   events: SessionTrailEvent[];
+  /** Writes of this trail that failed (storage full or unavailable) before the last that got through; absent when none. */
+  failedWrites?: number;
 }
 
 /** What the page tells the record of its lifecycle. */
@@ -102,7 +104,8 @@ function readAll(storage: SessionTrailHost["storage"]): StoredSessionTrail[] {
       // Trails outlive a deploy on purpose (a crash, then an update); a mark another build wrote keeps only what is read.
       const marks = stored.marks.filter((mark: Partial<SessionTrailMark> | null) => typeof mark?.at === "number" && typeof mark.stage === "string");
       const events = Array.isArray(stored.events) ? stored.events.filter(isEvent) : [];
-      trails.push({ page: key.slice(PREFIX.length), alive: stored.alive, marks, events });
+      const failedWrites = typeof stored.failedWrites === "number" && stored.failedWrites > 0 ? { failedWrites: stored.failedWrites } : {};
+      trails.push({ page: key.slice(PREFIX.length), alive: stored.alive, marks, events, ...failedWrites });
     } catch {
       // A record this build cannot read tells nothing.
     }
@@ -128,20 +131,28 @@ let current: { page: string; host: SessionTrailHost } | null = null;
  * lifecycle events and renewals that came late, and renews the record while the page runs. Records of pages that
  * ended in the ordinary way, and old ones, are removed. Returns what stops it (tests).
  */
-export function startSessionTrail(host: SessionTrailHost = browserHost()): () => void {
+export function startSessionTrail(host: SessionTrailHost = browserHost(), keepPage: () => string | null = () => null): () => void {
   const page = host.newPageId();
   const key = PREFIX + page;
+  let failedWrites = 0;
   const write = () => {
     try {
-      host.storage.setItem(key, JSON.stringify({ alive: host.now(), marks: sessionTrail(), events: sessionTrailEvents() }));
+      host.storage.setItem(key, JSON.stringify({
+        alive: host.now(), marks: sessionTrail(), events: sessionTrailEvents(), ...(failedWrites ? { failedWrites } : {}),
+      }));
     } catch {
-      // Storage full or unavailable: the app runs, it only cannot say where it stopped.
+      // Storage full or unavailable: the app runs, it only cannot say where it stopped. A later write that gets
+      // through says how many did not, so a report can tell a trail that stopped being written from a page that stopped.
+      failedWrites += 1;
     }
   };
   try {
     const now = host.now();
+    // An unfinished check's page is kept for its report, however it ended.
+    const kept = keepPage();
     for (const trail of readAll(host.storage)) {
       const stale = now - trail.alive >= SESSION_TRAIL_STALE_MS;
+      if (trail.page === kept) continue;
       if ((stale && endedOrdinarily(trail) && !stoppedItself(trail)) || now - trail.alive >= KEEP_MS) host.storage.removeItem(PREFIX + trail.page);
     }
   } catch {

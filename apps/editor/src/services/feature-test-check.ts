@@ -1327,6 +1327,8 @@ export interface FeatureTestStoppedSession {
    * error screens, lost graphics contexts, the page's lifecycle), by their latest occurrence, oldest first.
    */
   events: { at: number; first: number; kind: string; detail: string; count: number }[];
+  /** Writes of its trail that failed (storage full or unavailable) before its last stored one; absent when none. */
+  failedWrites?: number;
 }
 
 /** What the editor held at one moment of a check: shader programs, textures and memory. */

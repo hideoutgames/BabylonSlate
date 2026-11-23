@@ -14,12 +14,16 @@ function fakeHost(startAt: number) {
   let now = startAt;
   let renew: (() => void) | null = null;
   let page: SessionTrailPageWatch | null = null;
+  let full = false;
   const host: SessionTrailHost = {
     storage: {
       get length() { return items.size; },
       key: (index) => [...items.keys()][index] ?? null,
       getItem: (key) => items.get(key) ?? null,
-      setItem: (key, value) => { items.set(key, value); },
+      setItem: (key, value) => {
+        if (full) throw new DOMException("full", "QuotaExceededError");
+        items.set(key, value);
+      },
       removeItem: (key) => { items.delete(key); },
     },
     now: () => now,
@@ -30,6 +34,8 @@ function fakeHost(startAt: number) {
   };
   return {
     host, items,
+    /** Storage refuses every write while full. */
+    fill: (isFull: boolean) => { full = isFull; },
     /** Lets `ms` pass, renewing the record as a running page does. */
     run(ms: number) {
       for (let passed = SESSION_TRAIL_ALIVE_MS; passed <= ms; passed += SESSION_TRAIL_ALIVE_MS) {
@@ -175,6 +181,29 @@ describe("the trails of pages that stopped without closing", () => {
     resetSessionTrail();
     stop = startSessionTrail(browser.host);
     expect([...browser.items.keys()].filter((key) => key !== PREFIX + "this-page")).toEqual([PREFIX + "reloaded"]);
+  });
+});
+
+describe("a page's stored trail around an unfinished check and full storage", () => {
+  it("keeps the page an unfinished check names at the next start, whatever it ended with", () => {
+    const browser = fakeHost(1_000_000);
+    browser.otherPage("check-page", 60_000, ["check: heavy baseline 17", SESSION_TRAIL_CLOSED]);
+    browser.otherPage("closed", 60_000, ["app: started", SESSION_TRAIL_CLOSED]);
+    stop = startSessionTrail(browser.host, () => "check-page");
+    expect(browser.items.has(PREFIX + "check-page")).toBe(true);
+    expect(browser.items.has(PREFIX + "closed")).toBe(false);
+  });
+
+  it("says how many writes failed once one gets through", () => {
+    const browser = fakeHost(1_000_000);
+    stop = startSessionTrail(browser.host);
+    browser.fill(true);
+    markSessionTrail("check: heavy baseline 17");
+    markSessionTrail("check: heavy baseline 18");
+    browser.fill(false);
+    markSessionTrail("check: heavy baseline 19");
+    expect(browser.record()).toMatchObject({ failedWrites: 2 });
+    expect(browser.record().marks.at(-1)!.stage).toBe("check: heavy baseline 19");
   });
 });
 

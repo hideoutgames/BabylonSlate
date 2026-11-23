@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FeatureTestCheckReport, FeatureTestStoppedSession } from "../services/feature-test-check";
-import { resetSessionTrail } from "@haptic/core";
+import { resetSessionTrail, sessionTrailEvents } from "@haptic/core";
 import {
   clearUnfinishedCheck, formatOtherBuildCheck, loadCheckEnded, loadSavedCheck, loadSavedCheckRecord, saveCheckEnded, saveUnfinishedCheck,
   withStoppedSessions,
@@ -191,6 +191,16 @@ describe("the unfinished Feature Test Check", () => {
       expect(stopCause(session([event("page", "hidden", 99_000)], "page: hidden"))).toBe("the page was put away (hidden) and did not come back");
       expect(stopCause(session([event("page", "closed (pagehide, persisted false)", 100_000)], "page: closed")))
         .toBe("the page was closed, reloaded or navigated away by the browser or the user (closed (pagehide, persisted false)), with no reload of the editor's own");
+      // A reload the user began fails in-flight imports: those, and the reload they make, are its consequence.
+      const unload = event("page", "unloading (beforeunload: a reload or navigation)", 99_000);
+      expect(stopCause(session([unload, event("chunk import failed", "x.js; reloading the page", 99_100), event("reload", "a failed chunk import", 99_100)], "page: closed")))
+        .toBe("the page was reloaded or navigated away by the browser or the user (beforeunload, 1.0 s before the last sign of life), with no reload of the editor's own");
+      // A reload of ours begins its own unload.
+      expect(stopCause(session([event("reload", "Reload on Couldn't Load Haptic", 98_900), unload], "page: closed")))
+        .toBe("the editor reloaded the page itself (Reload on Couldn't Load Haptic), 1.1 s before the last sign of life");
+      // A hang the page came back from qualifies the stop, it does not replace it.
+      expect(stopCause(session([event("stall", "the page did not run for 12 s", 97_000)])))
+        .toMatch(/^nothing recorded: the system stopped the page .*; it had hung shortly before \(the page did not run for 12 s, 3\.0 s before the last sign of life\)$/);
     });
   });
 
@@ -277,6 +287,9 @@ describe("the unfinished Feature Test Check", () => {
     expect(store.has(RECORD)).toBe(false);
     vi.stubGlobal("localStorage", { getItem: () => { throw new Error("denied"); }, setItem: () => { throw new Error("full"); }, removeItem: () => { throw new Error("denied"); } });
     expect(() => saveUnfinishedCheck({ step: "x", report, resources: [] })).not.toThrow();
+    // The session trail tells the next report that the record could not be kept.
+    expect(sessionTrailEvents().map((event) => `${event.kind}: ${event.detail}`))
+      .toContain("storage: the Feature Test Check's record (haptic:feature-test-check:unfinished) could not be saved: Error");
     expect(loadSavedCheck()).toBeNull();
     expect(() => clearUnfinishedCheck()).not.toThrow();
   });

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@haptic/ui/components/button";
 import { Dialog } from "@haptic/ui/components/dialog";
 import { SelectableText } from "@haptic/editor-kit";
+import { recordErrorScreen } from "../lib/page-error-trail";
 import { ProgressDialogContent, ProgressDialogFailure, ProgressDialogStatus } from "./progress-dialog-parts";
 
 export type PlayPreparePhase = "saving" | "compiling" | "releasing";
@@ -69,6 +70,7 @@ export type PlayFailedDialogProps = {
 
 /** A Play or Simulate preparation failure, shown while no Output Log window is open. */
 export function PlayFailedDialog({ title, reason, onClose }: PlayFailedDialogProps) {
+  useEffect(() => { recordErrorScreen(title, reason); }, [title, reason]);
   return (
     <Dialog open onOpenChange={() => {}}>
       <ProgressDialogContent failed data-testid="play-failed-dialog">

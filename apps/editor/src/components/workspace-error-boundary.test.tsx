@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { resetSessionTrail, sessionTrailEvents } from "@haptic/core";
 import { WorkspaceErrorBoundary } from "./workspace-error-boundary";
 
 afterEach(() => {
   cleanup();
+  resetSessionTrail();
 });
 
 function Boom(): never {
@@ -44,6 +46,9 @@ describe("WorkspaceErrorBoundary", () => {
     );
     // Reloading cannot repair a document's own data; only a chunk that didn't load offers it.
     expect(screen.queryByRole("button", { name: "Reload Editor" })).toBeNull();
+    // The red screen is recorded for the next report, with the component that threw.
+    expect(sessionTrailEvents().at(-1)).toMatchObject({ kind: "error screen" });
+    expect(sessionTrailEvents().at(-1)!.detail).toMatch(/^Couldn't Open Document: Error: scene settings\.grid is missing \| in at Boom/);
     spy.mockRestore();
   });
 });
