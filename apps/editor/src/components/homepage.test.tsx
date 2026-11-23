@@ -352,7 +352,7 @@ describe("Haptic project browser", () => {
       name: "forest-run",
       private: true,
     });
-    // The provider reports Opening project and Initializing source control through it.
+    // The provider reports Opening project and Initializing Source Control… through it.
     expect(options.onPhase).toEqual(expect.any(Function));
     await waitFor(() => expect(screen.queryByTestId("create-project-dialog")).toBeNull());
     await waitFor(() => expect(getAppSettingsSnapshot().settings.newProjectHosting).toEqual({ hosting: "remote", origin: "https://github.com" }));

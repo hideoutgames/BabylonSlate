@@ -195,11 +195,11 @@ describe("Launcher Transition", () => {
         act(() => launcher.controls().ready("editor"));
       } else {
         act(() => launcher.controls().ready("editor"));
-        expect(status()).toBe("Preparing editor");
+        expect(status()).toBe("Preparing Editor…");
         act(() => launcher.controls().setPhase("source-control"));
       }
       // The editor mounting beneath the card never hides the step still running.
-      expect(status()).toBe("Initializing source control");
+      expect(status()).toBe("Initializing Source Control…");
       act(() => launcher.controls().settle());
       expect(status()).toBe("Ready");
       cleanup();
@@ -220,7 +220,7 @@ describe("Launcher Transition", () => {
     expect(status()).toBe("Opening Project…");
     launcher.setRoute("editor");
     act(() => launcher.controls().ready("editor"));
-    expect(status()).toBe("Preparing editor");
+    expect(status()).toBe("Preparing Editor…");
     act(() => launcher.controls().settle());
     act(() => launcher.controls().setPhase("source-control"));
     expect(status()).toBe("Ready");

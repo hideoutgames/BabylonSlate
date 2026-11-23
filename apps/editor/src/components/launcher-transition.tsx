@@ -56,20 +56,20 @@ export const useLauncherTransition = () => useContext(TransitionContext);
 
 const PHASE_STATUS: Record<LaunchPhase, string> = {
   creating: "Creating Project…",
-  "source-control": "Initializing source control",
+  "source-control": "Initializing Source Control…",
   opening: "Opening Project…",
 };
 
 /**
  * The card's status: the boot intro's and the Homepage's loading step, or a
- * project open's phase, which becomes Preparing editor once the editor has
+ * project open's phase, which becomes Preparing Editor… once the editor has
  * mounted beneath the card. A later step (a Remote New Project's
  * Publish) keeps its own name, whichever of the two comes first.
  */
 function statusOf(transition: Transition): string {
   if (transition.mounted && transition.settled) return "Ready";
   if (transition.boot || transition.target === "home") return transition.status;
-  return transition.mounted && transition.phase === "opening" ? "Preparing editor" : PHASE_STATUS[transition.phase];
+  return transition.mounted && transition.phase === "opening" ? "Preparing Editor…" : PHASE_STATUS[transition.phase];
 }
 
 /** The boot intro (index.html) settles its letters at about 2.2 s and then
