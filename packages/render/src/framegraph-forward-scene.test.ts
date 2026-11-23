@@ -168,7 +168,7 @@ it("draws a multisampled world view into its own scene targets, copies them to t
     updateSceneRenderingSettings(scene, { effects: { ...DEFAULT_RENDER_EFFECTS, vignette: { ...DEFAULT_RENDER_EFFECTS.vignette, enabled: chain } } });
     expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
     const frame = captureRenderFrame(engine, () => graph.render(camera));
-    expect(frame.value).toEqual({ path: "frameGraph" });
+    expect(frame.value).toEqual({ path: "frameGraph", drewOutput: true });
     // The scene colour and depth the objects draw into.
     const objects = frame.report.tasks.find((task) => task.name === "Forward objects")!;
     const targets = objects.passes.flatMap((pass) => [...pass.colorTargets ?? [], ...pass.depthTarget === undefined ? [] : [pass.depthTarget]]);
@@ -221,7 +221,7 @@ it.each([
     const graph = new ForwardSceneFrameGraph(scene);
     expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
     const frame = captureRenderFrame(engine, () => graph.render(camera));
-    expect(frame.value).toEqual({ path: "frameGraph" });
+    expect(frame.value).toEqual({ path: "frameGraph", drewOutput: true });
     const { textureManager, tasks } = (graph as unknown as { graph: FrameGraph }).graph;
     const resource = (handle: number | undefined) => frame.report.resources.find((entry) => entry.handle === handle);
     const objects = frame.report.tasks.find((task) => task.name === "Forward objects")!;
@@ -278,9 +278,9 @@ it.each(["displaySpace", "sceneLinear"] as const)(
       clears.push({ pass, color: channels.map((channel) => Math.round(channel * 1e4) / 1e4), attachments, flags: [colour, depth, stencil, value] });
     });
     scene.clearColor = new Color4(0.25, 0.5, 0.75, 1);
-    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
     scene.autoClear = false;
-    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
     // A Scene Linear scene colour holds linear values: the display-space clear colour converted, as the clear task did.
     const color = mode === "sceneLinear" ? [0.0474, 0.2176, 0.531, 1] : [0.25, 0.5, 0.75, 1];
     expect(clears).toEqual([
@@ -320,7 +320,7 @@ it("retains the previous graph's tasks during a settings transaction, frees its 
   expect(release).toHaveBeenCalledTimes(1);
   releasePrevious(); releasePrevious();
   expect(release).toHaveBeenCalledTimes(2);
-  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
   graph.dispose();
   expect(release).toHaveBeenCalledTimes(3);
 });
@@ -339,7 +339,7 @@ it("probes without rendering and preserves the chosen camera through one scene f
   expect(scene.activeCamera).toBe(camera);
   expect(before).not.toHaveBeenCalled();
   expect(after).not.toHaveBeenCalled();
-  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
   expect(update).toHaveBeenCalledTimes(1);
   expect(otherUpdate).not.toHaveBeenCalled();
   expect(before).toHaveBeenCalledTimes(1);
@@ -361,7 +361,7 @@ it("preserves native infinite-far sky projection during the main object draw", a
   sky.onBeforeBindObservable.add(() => projections.push(camera.maxZ));
   const graph = new ForwardSceneFrameGraph(scene);
   await graph.prepare(camera);
-  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
   expect(projections).toEqual([0]);
   expect(camera.maxZ).toBe(100);
   expect(scene._intermediateRendering).toBe(false);
@@ -391,7 +391,7 @@ it("keeps the authored cutout draw order when a FrameGraph owns the rendering ma
   order.length = 0;
   const graph = new ForwardSceneFrameGraph(scene);
   await graph.prepare(camera);
-  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
   expect(order).toEqual(["back", "front"]);
   graph.dispose();
 });
@@ -514,7 +514,7 @@ it("rejects unmanaged shadows, native passes, unsupported targets and frozen que
   await expect(graph.prepare(camera)).rejects.toThrow("single-sample 2D color texture");
   camera.outputRenderTarget = null;
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
-  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
   await new Promise<void>((resolve) =>
     scene.freezeActiveMeshes(false, resolve),
   );
@@ -545,7 +545,7 @@ it("disposes task resources after a build failure and can prepare a new graph", 
   record.mockRestore();
   graph.invalidate();
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
-  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
   graph.dispose();
   expect(release).toHaveBeenCalledTimes(2);
 });
@@ -581,7 +581,7 @@ it("refreshes the resized backbuffer dimensions while retaining the object rende
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
   expect(probe).toHaveBeenLastCalledWith(96, 72);
   expect(graphRenderers(scene)).toEqual([renderer]);
-  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
   graph.dispose();
 });
 
@@ -605,7 +605,7 @@ it("renders a scaled view at its scale into own targets whose single output copy
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
   expect(ownSize()).toEqual([40, 32]);
   expect(outputCopies()).toBe(1);
-  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
   setSceneOutputScale(scene, 1);
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
   expect(ownSize()).toBeNull();
@@ -633,7 +633,7 @@ it("ends a scaled view's upscale at the view's size, one copy filling the output
   // The default: upscaled and sharpened to the view's size, one copy filling the output.
   expect(upscaled()).toEqual([40, 32]);
   expect(outputCopies()).toEqual(["Scene post-process output"]);
-  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
   expect(setSceneFsrOutputDebug(scene, "device")).toBe(true);
   expect(setSceneFsrOutputDebug(scene, "device")).toBe(false);
   // The prepared graph is stale.
@@ -669,7 +669,7 @@ it("multisamples a scaled view's own targets at its scale and resolves them thro
   expect([description.size.width, description.size.height, description.options.samples]).toEqual([40, 32, 2]);
   expect(owned.graph!.tasks.filter((task) => task.getClassName() === "FrameGraphCopyToBackbufferColorTask").map((task) => task.name))
     .toEqual(["Multisample output"]);
-  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
   graph.dispose();
 });
 
@@ -699,7 +699,7 @@ it("draws Play particle systems on graph frames", async () => {
   const draw = vi.spyOn(system, "render").mockReturnValue(0);
   const graph = new ForwardSceneFrameGraph(scene);
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
-  for (let frame = 0; frame < 3; frame += 1) expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  for (let frame = 0; frame < 3; frame += 1) expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
   // Babylon draws a particle system only when its emitter survives the graph's Cull Objects task.
   expect(draw).toHaveBeenCalledTimes(3);
   // Babylon takes a disposed particle system out of the Scene without announcing it. It leaves nothing to compile:
@@ -708,7 +708,7 @@ it("draws Play particle systems on graph frames", async () => {
   service.dispose();
   expect(scene.particleSystems).toHaveLength(0);
   await new Promise((resolve) => setTimeout(resolve, 20));
-  for (let frame = 0; frame < 3; frame += 1) expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  for (let frame = 0; frame < 3; frame += 1) expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
   expect(graph.strictReadinessChecks).toBe(probed);
   graph.dispose();
 });
@@ -771,7 +771,7 @@ it("resizes settings-only effect targets together with the output depth", async 
       // target would latch a native fallback and silently lose the graph.
       expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
       expect(graph.taskNames()).toContain("Scene Effects FXAA");
-      expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+      expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
     }
   } finally { graph.dispose(); }
 });
@@ -781,10 +781,10 @@ it("skips strict readiness probes on unchanged frames after admission", async ()
   MeshBuilder.CreateBox("box", {}, scene);
   const graph = new ForwardSceneFrameGraph(scene);
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
-  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
   const checks = graph.strictReadinessChecks;
   for (let frame = 0; frame < 20; frame += 1)
-    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
   expect(graph.strictReadinessChecks).toBe(checks);
   graph.dispose();
 });
@@ -794,7 +794,7 @@ it("adds up the time its strict readiness checks take, once its diagnostics were
   MeshBuilder.CreateBox("box", {}, scene);
   const graph = new ForwardSceneFrameGraph(scene);
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
-  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
   // A clock that moves 3 ms every time it is read: each timed check reads it at its start and its end.
   let now = 0;
   const clock = vi.spyOn(performance, "now").mockImplementation(() => (now += 3));
@@ -824,7 +824,7 @@ it("counts why each strict readiness check ran, once its diagnostics were read",
   const graph = new ForwardSceneFrameGraph(scene);
   try {
     expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
-    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
     // Before a reader asks, nothing is recorded.
     graph.markReadinessDirty("renderSettings");
     expect(graph.sceneStrictlyReady(camera)).toBe(true);
@@ -854,7 +854,7 @@ it("counts a failed strict readiness check once for each pending reason, until o
   const graph = new ForwardSceneFrameGraph(scene);
   try {
     expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
-    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
     graph.diagnostics();
     const probe = vi.spyOn(material, "isReadyForSubMesh").mockReturnValue(false);
     graph.markReadinessDirty("materialParameters");
@@ -878,7 +878,7 @@ it("names what a failed strict readiness check found unready, once a reader aske
   const graph = new ForwardSceneFrameGraph(scene);
   try {
     expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
-    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
     expect(graph.diagnostics().readinessBlockers).toEqual([]);
     const probe = vi.spyOn(material, "isReadyForSubMesh").mockReturnValue(false);
     graph.markReadinessDirty("materialParameters");
@@ -902,7 +902,7 @@ it("counts a strict readiness check run only for a pending variant swap as a swa
   const graph = new ForwardSceneFrameGraph(scene);
   try {
     expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
-    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
     graph.diagnostics();
     // A steady frame's check finds the mesh still drawing its previous Effect while its new variant compiles.
     const ready = material.isReadyForSubMesh.bind(material);
@@ -937,11 +937,11 @@ it("skips strict readiness probes on unchanged frames in CEL mode", async () => 
   // The CEL-wrapped material may need an asynchronous first compile before
   // the strict probe admits the scene and caches.
   await vi.waitFor(() => {
-    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
   });
   const checks = graph.strictReadinessChecks;
   for (let frame = 0; frame < 20; frame += 1)
-    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
   expect(graph.strictReadinessChecks).toBe(checks);
   graph.dispose();
 });
@@ -952,7 +952,7 @@ it("re-probes strict readiness exactly once after each invalidating change", asy
   const light = new PointLight("light", Vector3.Up(), scene);
   const graph = new ForwardSceneFrameGraph(scene);
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
-  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
   const expectOneCheck = async (mutate: () => void) => {
     const before = graph.strictReadinessChecks;
     mutate();
@@ -963,7 +963,7 @@ it("re-probes strict readiness exactly once after each invalidating change", asy
     let probes = 0;
     await vi.waitFor(() => {
       const checks = graph.strictReadinessChecks;
-      expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+      expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
       probes += graph.strictReadinessChecks - checks;
       frames += 1;
     });
@@ -971,7 +971,7 @@ it("re-probes strict readiness exactly once after each invalidating change", asy
     expect(probes).toBeGreaterThan(0);
     expect(graph.strictReadinessChecks).toBeGreaterThan(before);
     const admitted = graph.strictReadinessChecks;
-    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
     expect(graph.strictReadinessChecks).toBe(admitted);
   };
   await expectOneCheck(() => {
@@ -993,13 +993,13 @@ it("probes nothing for what leaves the Scene, nor for a particle system's readin
   const instance = source.createInstance("instance");
   const graph = new ForwardSceneFrameGraph(scene);
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
-  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
   const probesOver = async (change: () => void) => {
     const before = graph.strictReadinessChecks;
     change();
     // Past the task on which Babylon announces what was added.
     await new Promise((resolve) => setTimeout(resolve, 20));
-    for (let frame = 0; frame < 3; frame += 1) expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    for (let frame = 0; frame < 3; frame += 1) expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
     return graph.strictReadinessChecks - before;
   };
   // A mesh that leaves needs nothing compiled.
@@ -1011,7 +1011,7 @@ it("probes nothing for what leaves the Scene, nor for a particle system's readin
   // An instance that leaves can change the variant its source's batch draws with (here: without instancing again).
   let before = graph.strictReadinessChecks;
   instance.dispose();
-  await vi.waitFor(() => expect(graph.render(camera)).toEqual({ path: "frameGraph" }));
+  await vi.waitFor(() => expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true }));
   expect(graph.strictReadinessChecks).toBeGreaterThan(before);
   // Any other texture may be one a Material is about to sample.
   before = graph.strictReadinessChecks;
@@ -1026,17 +1026,17 @@ it("probes once for a mesh it found before Babylon announced it, and still for o
   const first = MeshBuilder.CreateBox("first", {}, scene);
   const graph = new ForwardSceneFrameGraph(scene);
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
-  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
   // Drawn before the announcement: the Scene's mesh count gives the new mesh away, and it is probed until ready.
   MeshBuilder.CreateBox("added", {}, scene);
   let probed = graph.strictReadinessChecks;
   graph.render(camera);
   expect(graph.strictReadinessChecks).toBeGreaterThan(probed);
   // The announcement, a task later, finds it probed.
-  await vi.waitFor(() => expect(graph.render(camera)).toEqual({ path: "frameGraph" }));
+  await vi.waitFor(() => expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true }));
   probed = graph.strictReadinessChecks;
   await new Promise((resolve) => setTimeout(resolve, 20));
-  for (let frame = 0; frame < 3; frame += 1) expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  for (let frame = 0; frame < 3; frame += 1) expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
   expect(graph.strictReadinessChecks).toBe(probed);
   // One mesh joins as another leaves: the count is what it was, and the new mesh is still probed.
   MeshBuilder.CreateBox("swapped in", {}, scene);
@@ -1054,7 +1054,7 @@ it("asks only the meshes a change named in a steady frame, and every mesh otherw
   const graph = new ForwardSceneFrameGraph(scene);
   try {
     expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
-    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
     graph.diagnostics();
     const askedKept = vi.spyOn(keptMaterial, "isReadyForSubMesh");
     // The spawned mesh's first variant compiles over its first probes.
@@ -1091,7 +1091,7 @@ it("asks only the meshes a change named in a steady frame, and every mesh otherw
     graph.recheckVariantSwaps();
     expect(steadyProbe()).toBe(true);
     await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
     const settled = scoped();
 
     // A change that names no mesh (a particle system's Material, a readiness check) asks none.
@@ -1127,7 +1127,7 @@ it("limits a strict probe to the meshes a change named, for a view that asked fo
   const graph = new ForwardSceneFrameGraph(scene, { scopedStrictProbes: true });
   try {
     expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
-    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
     graph.diagnostics();
     const askedKept = vi.spyOn(keptMaterial, "isReadyForSubMesh");
     let ready = true;
@@ -1167,7 +1167,7 @@ it("asks a source's batch when an instance leaves or joins it, and no other mesh
   const graph = new ForwardSceneFrameGraph(scene);
   try {
     expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
-    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
     graph.diagnostics();
     const askedKept = vi.spyOn(keptMaterial, "isReadyForSubMesh");
     const askedSource = vi.spyOn(sourceMaterial, "isReadyForSubMesh");
@@ -1200,7 +1200,7 @@ it("counts a scoped probe that a probe of every mesh disagrees with, while verif
   verifyScopedReadinessProbes(true);
   try {
     expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
-    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
     graph.diagnostics();
     const steadyProbe = () => probeVariantSwaps(true, () => graph.sceneStrictlyReady(camera));
     // A scoped mark for a change that touched no other mesh: the probe of every mesh agrees.
@@ -1280,7 +1280,7 @@ it.each(UNDRAWN_VISUALS.flatMap((visual) => PROBING_VIEWS.map((view) => ({ ...vi
     verifyScopedReadinessProbes(true);
     try {
       expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
-      expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+      expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
       graph.diagnostics();
       const probe = () => tolerant ? probeVariantSwaps(true, () => graph.sceneStrictlyReady(camera)) : graph.sceneStrictlyReady(camera);
       // Spawned while no pass draws it: the probe its arrival marks for passes over it.
@@ -1331,20 +1331,20 @@ it.each(PROBING_VIEWS)("probes a mesh whose sub-meshes are rebuilt, as a redrawn
   verifyScopedReadinessProbes(true);
   try {
     expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
-    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
     graph.diagnostics();
     const probe = () => tolerant ? probeVariantSwaps(true, () => graph.sceneStrictlyReady(camera)) : graph.sceneStrictlyReady(camera);
     const checks = graph.strictReadinessChecks;
     // Its vertices rewritten in place (a box resize's counter-scale): the sub-meshes it drew with stay.
     text.updateVerticesData(VertexBuffer.PositionKind, text.getVerticesData(VertexBuffer.PositionKind)!);
-    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
     expect(graph.strictReadinessChecks).toBe(checks);
     // Redrawn with the same attributes: new vertex data with its indices gives it new sub-meshes, which hold no variant
     // for any pass yet, though the variant they draw is the one the Engine holds. It adds no probe of its own...
     const askedText = vi.spyOn(textMaterial, "isReadyForSubMesh");
     for (let redraw = 0; redraw < 3; redraw += 1) {
       VertexData.CreatePlane({ width: 2 + redraw }).applyToMesh(text);
-      expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+      expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
     }
     expect(graph.strictReadinessChecks).toBe(checks);
     // ...and the next probe, run for an unrelated change, asks it and agrees with a probe of every mesh.
@@ -1381,12 +1381,12 @@ it("probes a mesh whose visibility crosses 1, as a revealed glyph's does, and no
   verifyScopedReadinessProbes(true);
   try {
     expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
-    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
     graph.diagnostics();
     const checks = graph.strictReadinessChecks;
     // Steps of a fade that stays blended draw the variant they drew.
     glyph.visibility = 0.4;
-    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
     expect(graph.strictReadinessChecks).toBe(checks);
     // Revealed: no longer blended, it draws another variant, asked before the frame draws.
     const askedGlyph = vi.spyOn(glyphMaterial, "isReadyForSubMesh");
@@ -1413,17 +1413,17 @@ it("probes a hidden visual when shown only after a passing probe skipped it, so 
   const graph = new ForwardSceneFrameGraph(scene, { scopedStrictProbes: true });
   try {
     expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
-    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
     const checks = graph.strictReadinessChecks;
     // Hidden and shown again, its geometry rewritten in place: its variants are as the last probe found them.
     for (let frame = 0; frame < 3; frame += 1) {
       toggled.setEnabled(false);
-      expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+      expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
       toggled.setEnabled(true);
       toggled.isVisible = false;
       toggled.isVisible = true;
       toggled.updateVerticesData(VertexBuffer.PositionKind, toggled.getVerticesData(VertexBuffer.PositionKind)!);
-      expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+      expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
     }
     expect(graph.strictReadinessChecks).toBe(checks);
     // A probe for a change touching a hidden visual's variants passes over it: shown, it is asked before it draws.
@@ -1446,7 +1446,7 @@ it("keeps probing every frame while unready, then caches once admitted", async (
   mesh.material = material;
   const graph = new ForwardSceneFrameGraph(scene);
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
-  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
   const probe = vi.spyOn(material, "isReadyForSubMesh").mockReturnValue(false);
   graph.invalidate();
   const before = graph.strictReadinessChecks;
@@ -1456,10 +1456,10 @@ it("keeps probing every frame while unready, then caches once admitted", async (
   probe.mockRestore();
   // The restored probe may compile asynchronously; skip frames until it passes.
   await vi.waitFor(() => {
-    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
   });
   const admitted = graph.strictReadinessChecks;
-  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
   expect(graph.strictReadinessChecks).toBe(admitted);
   graph.dispose();
 });
@@ -1476,10 +1476,10 @@ it("keeps the default graph free of effect tasks, copies and owned passes", asyn
     "Forward objects",
   ]);
   expect(graph.postProcessPassCount()).toBe(0);
-  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
   const checks = graph.strictReadinessChecks;
   for (let frame = 0; frame < 20; frame += 1)
-    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
   expect(graph.strictReadinessChecks).toBe(checks);
   graph.dispose();
 });
@@ -1510,7 +1510,7 @@ it("composes the settings effect chain in Scene Linear, its last stage drawing t
   expect(names).not.toContain("Scene post-process output");
   // Per-material image processing moved into the display stage.
   expect(scene.imageProcessingConfiguration.applyByPostProcess).toBe(true);
-  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
   expect(graph.postProcessPassCount()).toBe(3);
   graph.dispose();
 });
@@ -1536,7 +1536,7 @@ it("keeps Display Space effects display-space without a display stage", async ()
   expect(names.at(-1)).toBe("Scene Effects FXAA");
   expect(names).not.toContain("Scene post-process output");
   expect(scene.imageProcessingConfiguration.applyByPostProcess).toBe(false);
-  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
   graph.dispose();
 });
 
@@ -1552,7 +1552,7 @@ it("draws a new 3D project's output in its Display Color stage", async () => {
   const names = graph.taskNames();
   expect(names.at(-1)).toBe("Scene Effects Display Color");
   expect(names).not.toContain("Scene post-process output");
-  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
   expect(graph.postProcessPassCount()).toBe(1);
   graph.dispose();
 });
@@ -1574,7 +1574,7 @@ it("draws a Display Space chain of bloom alone into the output from its merge, w
   expect(names.slice(names.indexOf("Scene Effects Bloom"))).toEqual(["Scene Effects Bloom", "Scene Effects Bloom Merge"]);
   expect(names).not.toContain("Scene post-process output");
   expect(names).not.toContain("Scene Effects Display Color");
-  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
   expect(graph.postProcessPassCount()).toBe(2);
   graph.dispose();
 });
@@ -1597,7 +1597,7 @@ it("treats the Scene Linear setting as display-space identity under CEL", async 
     graph.taskNames().filter((name) => name.startsWith("Scene Effects")),
   ).toHaveLength(0);
   expect(scene.imageProcessingConfiguration.applyByPostProcess).toBe(false);
-  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
   // Display-space effects still apply; the display stage stays identity.
   updateSceneRenderingSettings(scene, {
     mode: "cel",
@@ -1617,7 +1617,7 @@ it("rebuilds the effect chain on a settings change without drawing stale output"
   const { scene, camera } = host();
   const graph = new ForwardSceneFrameGraph(scene);
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
-  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
   expect(graph.taskNames()).not.toContain("Scene post-process output");
   setTierFxaa(scene, true);
   // The prepared key is stale: hold the frame until the graph reprepares.
@@ -1627,7 +1627,7 @@ it("rebuilds the effect chain on a settings change without drawing stale output"
   expect(graph.readiness(camera)).toEqual({ path: "frameGraph", ready: false, preparationRequired: true });
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
   expect(graph.taskNames()).toContain("Scene Effects FXAA");
-  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
   // The session toggle releases the chain the same way.
   setSceneEffectsEnabled(scene, false);
   expect(graph.render(camera)).toMatchObject({ rendered: false });
@@ -1669,7 +1669,7 @@ it("re-plans the graph when project Water quality changes, including during prep
   expect(await pending).toEqual({ path: "frameGraph" });
   expect(graph.readiness(camera)).toEqual({ path: "frameGraph", ready: false, preparationRequired: true });
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
-  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
   graph.dispose();
 });
 
@@ -1704,7 +1704,7 @@ it("gives the settings effect chain's offscreen scene color a real depth attachm
   const graph = new ForwardSceneFrameGraph(scene);
   try {
     expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
-    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
     const objects = latestObjects();
     const manager = objects.graph.textureManager;
     const target = objects.task.targetTexture as FrameGraphTextureHandle;
@@ -1769,7 +1769,7 @@ it("clears the spatial geometry attachments on their own target, never the backb
   try {
     expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
     expect(graph.taskNames()).toContain("Scene Reflections");
-    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
     expect(backbufferLayouts).toEqual([]);
     expect(farClears).toEqual([true]);
   } finally {
@@ -1793,10 +1793,10 @@ it("draws steady frames of a spatial geometry pass without a pass over every mes
   try {
     expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
     // The geometry pass draws the view's world list, which Babylon observes from then on.
-    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
     const lightDirty = vi.spyOn(box, "_markSubMeshesAsLightDirty");
-    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
-    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
+    expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
     expect(lightDirty).not.toHaveBeenCalled();
   } finally {
     graph.dispose();
@@ -1830,7 +1830,7 @@ async function fogHost(
   const graph = new ForwardSceneFrameGraph(scene, options);
   await graph.prepare(camera);
   /** Names of the graph tasks that ran their disabled passes in one frame. */
-  const skipped = (result: object = { path: "frameGraph" }) => {
+  const skipped = (result: object = { path: "frameGraph", drewOutput: true }) => {
     const frame = captureRenderFrame(engine, () => graph.render(camera));
     expect(frame.value).toEqual(result);
     return frame.report.stages.filter((stage) => stage.kind === "task" && stage.fallbackPasses).map((stage) => stage.name);
@@ -2039,7 +2039,7 @@ it("keeps drawing a running fog march in the frame in which shadow admission dro
     controller.register(sun, false);
     controller.sync();
   });
-  expect(skipped({ path: "frameGraph", rendered: false })).toEqual([]);
+  expect(skipped({ path: "frameGraph", drewOutput: true, rendered: false })).toEqual([]);
   expect(controller.generator(sun)).toBeNull();
   expect(bindings.shadow(0)).toEqual([[VOLUME_SHADOW_CODE.cascades, 1]]);
   expect(bindings.atlas()).toHaveLength(1);
@@ -2304,7 +2304,7 @@ async function screenShadowsHost(shadowed: boolean, effects: Partial<typeof DEFA
     for (let attempt = 0; attempt < 8; attempt++) {
       const captured = captureRenderFrame(engine, () => graph.render(camera));
       if ((captured.value as { rendered?: boolean }).rendered === false) continue;
-      expect(captured.value).toEqual({ path: "frameGraph" });
+      expect(captured.value).toEqual({ path: "frameGraph", drewOutput: true });
       const skipped = captured.report.stages.filter((stage) => stage.kind === "task" && stage.fallbackPasses).map((stage) => stage.name);
       // The objects pass of the graph now prepared (a projection change rebuilds it).
       const objectsPass = (graph as unknown as { objects: FrameGraphObjectRendererTask }).objects.objectRenderer.renderPassId;
