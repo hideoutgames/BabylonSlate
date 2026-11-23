@@ -29,8 +29,8 @@ function measuredCommands(): { source: string; line: string }[] {
   // they toggle back to, and the tour camera it ends on.
   lines.push({ source: "profile warm-up", line: possessProfileView(PROFILE_CONTROL_VIEW) }, { source: "profile base", line: "quality resolution scale 0.75" });
   for (const state of [
-    { postProcessing: true, captures: true, discard: false, layers: true, materialRecords: false, framesInFlight: 2, frameCap: 60 } as const,
-    { postProcessing: false, captures: false, discard: true, layers: false, materialRecords: true, framesInFlight: "off", frameCap: 30 } as const,
+    { postProcessing: true, captures: true, discard: false, layers: true, framesInFlight: 2, frameCap: 60 } as const,
+    { postProcessing: false, captures: false, discard: true, layers: false, framesInFlight: "off", frameCap: 30 } as const,
   ]) {
     for (const step of featureTestProfileSequence(state))
       for (const line of [...step.commands, ...(step.restore ?? [])]) lines.push({ source: `profile ${step.label}`, line });
@@ -57,7 +57,7 @@ describe("Feature Test measurement commands", () => {
     const commands = measuredCommands();
     expect(commands.some(({ line }) => line.startsWith("quality postprocessing antialiasing"))).toBe(true);
     expect(commands.some(({ source, line }) => source === "profile heavy geometry effects off" && line === "quality postprocessing ambientOcclusion off")).toBe(true);
-    for (const line of ["shadowdebug sunpasses off", "shadowdebug localpasses on", "shadowdebug fulltiles off", "worlddebug geometryonce off", "worlddebug geometryoncescissor on", "worlddebug materialrecords on", "worlddebug materialrecords off"])
+    for (const line of ["shadowdebug sunpasses off", "shadowdebug localpasses on", "shadowdebug fulltiles off", "worlddebug geometryonce off", "worlddebug geometryoncescissor on"])
       expect(commands.some((command) => command.line === line), line).toBe(true);
     expect(commands.some(({ line }) => line === "worlddebug world off")).toBe(true);
     expect(commands.some(({ line }) => line === "shadowdebug passes off")).toBe(true);

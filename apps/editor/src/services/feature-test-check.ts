@@ -130,11 +130,6 @@ export interface FeatureTestBreakdownStep {
   samplersOff?: boolean;
   /** Profile: windows the step is measured in, each between two baselines (`PROFILE_STEP_REPEATS` when absent). */
   repeats?: number;
-  /**
-   * Profile: the step compiles the Scene's Materials again (the Material record switch), which takes longer than a
-   * variant: its settle may last up to `profileCompileMs` instead of `profileSettleBoundMs`.
-   */
-  recompiles?: boolean;
 }
 
 const POST_FIELDS = [
@@ -283,8 +278,6 @@ export interface FeatureTestProfileState {
   captures: boolean;
   /** Whether Play composites its Scene Layers (`scenelayers`). */
   layers: boolean;
-  /** Whether graph Materials read the Material record (`worlddebug materialrecords`, or `materialrecords on` from the start). */
-  materialRecords: boolean;
 }
 
 /** The session's state from a baseline's settings fingerprint; a missing field reads as Play's default. */
@@ -293,7 +286,6 @@ export function profileState(settings: Readonly<Record<string, string>> | undefi
     postProcessing: settings?.["post.enabled"] !== "false",
     captures: settings?.captures !== "suspended",
     layers: settings?.layers !== "hidden",
-    materialRecords: (settings?.["world.debug"] ?? "").split(",").includes("materialrecords on"),
   };
 }
 
@@ -348,12 +340,17 @@ export function possessProfileView(view: FeatureTestProfileViewName): string {
  * steps have compiled, and a memory-limited device kills the page. `shadow tiles half` plans its smaller maps in the
  * level's atlas, which stays the same object.
  *
+ * Nor does a step switch how Materials compile (`worlddebug materialrecords`): mid-run, that builds a second generation
+ * of every Scene Material and links its programs while the first stays bound, and the Play keep holds the old programs
+ * after it, on top of what the steps compiled. A Profile of the Material record runs in a session started with it
+ * (`materialrecords on`, then reload), against one started without; its fingerprint (`world.debug`) says which.
+ *
  * `light` (few draws) takes first one window with the Check's own samplers off (`samplersOff`), right after its first
  * baseline so a run that stops later still has it, then the world hidden, the shadow map passes and their splits, the
  * geometry effects together, and the world drawn once. `heavy` (many draws, no Mirror on screen; the control view) takes what follows the draws rather
  * than the pixels: the world hidden, the shadow map passes, the geometry effects together and the geometry pass drawn
  * twice, whole and scissored (where it draws the most), the world drawn once, and the passes joined: the merged marches,
- * the paired blurs and both, and last the Material record (`material records on`): the measurement rows sit in the heavy view only, which draws the most passes and binds, so the run stays within the 720 s the unit test bounds its windows to. `mirror` (both Mirrors and the capture monitors on screen) takes
+ * the paired blurs and both: the measurement rows sit in the heavy view only, which draws the most passes and binds, so the run stays within the 720 s the unit test bounds its windows to. `mirror` (both Mirrors and the capture monitors on screen) takes
  * the captures, the Mirrors' reflection and the world drawn once.
  */
 export function featureTestProfilePlan(state: FeatureTestProfileState): FeatureTestBreakdownPlan {
@@ -412,13 +409,6 @@ export function featureTestProfilePlan(state: FeatureTestProfileState): FeatureT
   const mergedMarchesOn = passesJoined("merged marches on", ["mergedmarches"]);
   const pairedBlursOn = passesJoined("paired blurs on", ["pairedblurs"]);
   const bothJoined = passesJoined("merged marches + paired blurs on", ["mergedmarches", "pairedblurs"]);
-  // Graph Materials reading their parameters and literals from the Material record, so Materials of one shape share a
-  // program: what it costs the frame (CPU, the record's buffer binds) once compiled. Last in its view, as its compile
-  // adds programs on top of the steps'; skipped where the session already has it.
-  const records: FeatureTestBreakdownStep = {
-    label: "material records on", commands: ["worlddebug materialrecords on"],
-    restore: [`worlddebug materialrecords ${state.materialRecords ? "on" : "off"}`], fields: ["world.debug"], overlaps: true, recompiles: true,
-  };
   return {
     views: [
       {
@@ -429,7 +419,7 @@ export function featureTestProfilePlan(state: FeatureTestProfileState): FeatureT
       {
         name: "heavy", enter: [possessProfileView("heavy")], steps: [
           worldHidden, shadowPassesOff, geometryOff, geometryRepeat, geometryRepeatScissored, once,
-          mergedMarchesOn, pairedBlursOn, bothJoined, records,
+          mergedMarchesOn, pairedBlursOn, bothJoined,
         ],
       },
       {
@@ -457,7 +447,7 @@ export function featureTestProfileSequence(state: FeatureTestProfileState): Feat
 
 /** The Profile step a sample measured, by its label (`heavy shadows off`); undefined for baselines and warm-up windows. */
 export function profileStep(label: string): FeatureTestBreakdownSequenceStep | undefined {
-  const step = featureTestProfileSequence({ postProcessing: true, captures: true, layers: true, materialRecords: false }).find((entry) => entry.label === label);
+  const step = featureTestProfileSequence({ postProcessing: true, captures: true, layers: true }).find((entry) => entry.label === label);
   return step?.baseline ? undefined : step;
 }
 
@@ -2427,12 +2417,8 @@ async function benchmarkProfiles(
       if (drew.note) failed.push(drew.note);
       // The view draws again, but the variants a step asked for may still be first drawing or compiling: sampling
       // them would measure their compiles, not the step.
-      // A step that compiles the Scene's Materials again, and the baseline its restore compiles them back for, settle for
-      // as long as a view may hold for its compiles.
-      const recompiles = step.recompiles || (step.baseline && steps[index - 1]?.recompiles);
-      const settleBound = profileMode && recompiles ? Math.max(settleBoundMs, limits.profileCompileMs) : settleBoundMs;
-      const settled = steady ? await settle(settleBound) : { quiet: true, ms: 0 };
-      if (!settled.quiet) failed.push(unsettledNote("step", settleBound));
+      const settled = steady ? await settle(settleBoundMs) : { quiet: true, ms: 0 };
+      if (!settled.quiet) failed.push(unsettledNote("step", settleBoundMs));
       const switched = switchedFrom ? switchedSince(play, deps, switchedFrom) : null;
       const sample = await measure(step.label, failed, mode === "profile" ? limits.profileStepSampleMs : limits.playSampleMs, settled, true, step.samplersOff === true);
       if (switched) sample.switched = switched;
