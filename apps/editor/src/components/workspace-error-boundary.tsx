@@ -1,4 +1,5 @@
-import { Component, type ReactNode } from "react";
+import { Component, type ErrorInfo, type ReactNode } from "react";
+import { recordErrorScreen } from "../lib/page-error-trail";
 import {
   Alert,
   AlertDescription,
@@ -34,6 +35,10 @@ export class WorkspaceErrorBoundary extends Component<
     return { error };
   }
 
+  componentDidCatch(error: unknown, info: ErrorInfo) {
+    recordErrorScreen("Couldn't Open Document", error, info);
+  }
+
   render(): ReactNode {
     const { error } = this.state;
     if (error) {
@@ -61,7 +66,7 @@ export class WorkspaceErrorBoundary extends Component<
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => reloadForNewBuild()}
+                  onClick={() => reloadForNewBuild("Reload Editor on Couldn't Open Document")}
                 >
                   Reload Editor
                 </Button>

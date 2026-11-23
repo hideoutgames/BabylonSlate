@@ -1,5 +1,5 @@
 import type { FeatureTestCheckReport, FeatureTestCheckResources } from "../services/feature-test-check";
-import { forgetSessionTrails, unclosedSessionTrails } from "./session-trail-record";
+import { forgetSessionTrails, sessionTrailPage, unclosedSessionTrails } from "./session-trail-record";
 
 /**
  * The running check's report, kept in this browser after every step and resource sample, so a check the app stops
@@ -16,6 +16,8 @@ interface UnfinishedCheck {
   step: string;
   report: FeatureTestCheckReport;
   resources: FeatureTestCheckResources[];
+  /** The session trail page the check runs in (`sessionTrailPage`), whose trail tells why it stopped. */
+  page?: string;
 }
 
 interface FinishedCheck {
@@ -60,14 +62,29 @@ function write(key: string, value: string): void {
  * froze. `forget` removes their records: the report of a check that ran to its end is the one that tells of them.
  */
 export function withStoppedSessions(report: FeatureTestCheckReport, forget = false): FeatureTestCheckReport {
-  const trails = unclosedSessionTrails();
+  // An unfinished check's own page is told whatever its trail ends with: a reload of ours ends it as a close.
+  const trails = unclosedSessionTrails(report.unfinished?.page);
   if (forget) forgetSessionTrails(trails.map((trail) => trail.page));
   if (!trails.length) return report;
-  return { ...report, stoppedSessions: trails.map((trail) => ({ lastAliveAt: trail.alive, marks: trail.marks })) };
+  return {
+    ...report,
+    stoppedSessions: trails.map((trail) => ({ page: trail.page, lastAliveAt: trail.alive, marks: trail.marks, events: trail.events })),
+  };
 }
 
+let savedChars: number | null = null;
+
+/** Keeps the running check's record, naming this page's session trail (`sessionTrailPage`). */
 export function saveUnfinishedCheck(check: UnfinishedCheck): void {
-  write(KEY, JSON.stringify({ ...check, build: checkRecordBuild() } satisfies StoredCheck));
+  const page = sessionTrailPage();
+  const text = JSON.stringify({ ...check, ...(page ? { page } : {}), build: checkRecordBuild() } satisfies StoredCheck);
+  savedChars = text.length;
+  write(KEY, text);
+}
+
+/** The length of the running check's record as last written (`saveUnfinishedCheck`), or null before the first. */
+export function unfinishedCheckChars(): number | null {
+  return savedChars;
 }
 
 /** Keeps a finished report for the dialog to show when it next opens. */
@@ -99,7 +116,13 @@ function storedReport(check: Partial<UnfinishedCheck & FinishedCheck>): FeatureT
   if (!check.report || !Array.isArray(check.report.scenes)) return null;
   if (check.finished === true) return withStoppedSessions(check.report);
   if (typeof check.step !== "string") return null;
-  return withStoppedSessions({ ...check.report, unfinished: { step: check.step, resources: Array.isArray(check.resources) ? check.resources : [] } });
+  return withStoppedSessions({
+    ...check.report,
+    unfinished: {
+      step: check.step, resources: Array.isArray(check.resources) ? check.resources : [],
+      ...(typeof check.page === "string" ? { page: check.page } : {}),
+    },
+  });
 }
 
 /**

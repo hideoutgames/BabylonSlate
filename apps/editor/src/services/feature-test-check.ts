@@ -1316,10 +1316,17 @@ export interface FeatureTestCheckSceneResult {
  * it: with or without a check running, so an ordinary Play session that froze is told by the next report.
  */
 export interface FeatureTestStoppedSession {
-  /** When the page last renewed its trail (`Date.now()`): at its last mark, or within seconds of stopping. */
+  /** The page's id in the stored trails: an unfinished check names its own (`unfinished.page`). */
+  page: string;
+  /** When the page last renewed its trail (`Date.now()`): at its last mark or event, or within seconds of stopping. */
   lastAliveAt: number;
   /** The stages it passed through last, oldest first. */
   marks: { at: number; stage: string }[];
+  /**
+   * What it recorded that may say why it stopped (`SessionTrailEvent`: errors, failed chunk imports, reloads of ours,
+   * error screens, lost graphics contexts, the page's lifecycle), by their latest occurrence, oldest first.
+   */
+  events: { at: number; first: number; kind: string; detail: string; count: number }[];
 }
 
 /** What the editor held at one moment of a check: shader programs, textures and memory. */
@@ -1344,6 +1351,12 @@ export interface FeatureTestCheckResources {
   /** Where the native host reports them: the device's free and inactive memory, and the app's headroom (`HostMemory`). */
   deviceAvailableBytes: number | null;
   appAvailableBytes: number | null;
+  /** Meshes, Materials and textures every Engine's Scenes hold (their lists' lengths). */
+  sceneObjects?: { meshes: number; materials: number; textures: number } | null;
+  /** The render change journals of those Scenes: entries held, and how far their slowest reader is behind. */
+  changeJournal?: { entries: number; maxLag: number } | null;
+  /** The size of the check's stored record as last written (characters of its JSON), which grows with the report. */
+  recordChars?: number | null;
 }
 
 /**
@@ -1363,7 +1376,12 @@ export interface FeatureTestCheckReport {
   scenes: FeatureTestCheckSceneResult[];
   pageErrors: string[];
   /** A check the app stopped during (a crash or reload): its last step and resource samples, oldest first. */
-  unfinished?: { step: string; resources: FeatureTestCheckResources[] };
+  unfinished?: {
+    step: string;
+    resources: FeatureTestCheckResources[];
+    /** The session trail page the check ran in (`stoppedSessions`), whose events tell why it stopped. */
+    page?: string;
+  };
   /** Pages that stopped without closing since the last report told of them, oldest first (the session trail). */
   stoppedSessions?: FeatureTestStoppedSession[];
   /** A Breakdown's measurement context; absent for other modes. */

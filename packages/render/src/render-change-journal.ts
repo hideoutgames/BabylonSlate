@@ -246,6 +246,18 @@ export function openRenderChangeReader(scene: Scene, kinds: number = DEFAULT_KIN
   return reader;
 }
 
+/**
+ * `scene`'s change log as it stands: its entries, its readers, and how far the slowest reader is behind (entries it has
+ * not read); null while it has no reader. Reads three numbers per reader, for a Check's resource samples.
+ */
+export function renderChangeJournalStats(scene: Scene): { entries: number; readers: number; maxLag: number } | null {
+  const journal = (scene as JournalScene)._hapticRenderChanges;
+  if (!journal) return null;
+  let maxLag = 0;
+  for (const reader of journal.readers) maxLag = Math.max(maxLag, journal.end - reader.cursor);
+  return { entries: journal.nodes.length, readers: journal.readers.size, maxLag };
+}
+
 /** Records a change of Haptic-owned state that no Babylon write reaches (`RenderChange.Other` unless `kinds` says). */
 export function noteRenderChange(node: Node, kinds: number = RenderChange.Other): void {
   journalOf(node)?.note(node, kinds);

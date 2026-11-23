@@ -1,4 +1,6 @@
-import { Component, type ReactNode } from "react";
+import { Component, type ErrorInfo, type ReactNode } from "react";
+import { recordErrorScreen } from "../lib/page-error-trail";
+import { reloadPage } from "../lib/preload-error-reload";
 import {
   Alert,
   AlertDescription,
@@ -28,7 +30,8 @@ export class RouteErrorBoundary extends Component<
     return { error: error instanceof Error ? error : new Error(String(error)) };
   }
 
-  componentDidCatch() {
+  componentDidCatch(error: unknown, info: ErrorInfo) {
+    recordErrorScreen("Couldn't Load Haptic", error, info);
     releaseBootIntro();
   }
 
@@ -52,7 +55,7 @@ export class RouteErrorBoundary extends Component<
               variant="outline"
               size="sm"
               className="pointer-coarse:min-h-11"
-              onClick={() => window.location.reload()}
+              onClick={() => reloadPage("Reload on Couldn't Load Haptic")}
             >
               Reload
             </Button>

@@ -505,6 +505,9 @@ function resourceLine(sample: FeatureTestCheckResources): string {
     ...(sample.appFootprintBytes !== null ? [`app ${mb(sample.appFootprintBytes)}`] : []),
     ...(sample.deviceAvailableBytes != null ? [`device free ${mb(sample.deviceAvailableBytes)}`] : []),
     ...(sample.appAvailableBytes != null ? [`app headroom ${mb(sample.appAvailableBytes)}`] : []),
+    ...(sample.sceneObjects ? [`Scenes ${sample.sceneObjects.meshes} meshes, ${sample.sceneObjects.materials} materials, ${sample.sceneObjects.textures} textures`] : []),
+    ...(sample.changeJournal ? [`change journal ${sample.changeJournal.entries} (lag ${sample.changeJournal.maxLag})`] : []),
+    ...(sample.recordChars != null ? [`record ${Math.round(sample.recordChars / 1024)} KB`] : []),
   ];
   return `  ${pad(s(sample.atMs), 9)}${memory.join(" · ")} · ${clip(sample.step, 80)}`;
 }
@@ -1041,7 +1044,7 @@ export function formatFeatureTestCheckReport(report: FeatureTestCheckReport, env
   const lines = [
     `Haptic Feature Test Check (${MODE_LABELS[report.mode]}) · ${new Date(report.startedAt).toISOString()}`,
     `Result: ${passed}/${report.scenes.length} scenes passed${report.cancelled ? " · CANCELLED" : ""}${report.unfinished ? " · DID NOT FINISH" : ""}${flags} · took ${s(report.durationMs)}`,
-    ...(report.unfinished ? [`Did not finish: the app stopped (a crash or reload) while ${report.unfinished.step}.`] : []),
+    ...(report.unfinished ? [unfinishedLine(report)] : []),
     ...(breakdown?.warmMinutes !== null && breakdown?.warmMinutes !== undefined
       ? [`WARM DEVICE: previous run ended ${breakdown.warmMinutes} min ago`] : []),
     ...formatDiagnosticEnvironment(environment),
@@ -1080,18 +1083,88 @@ export function formatFeatureTestCheckReport(report: FeatureTestCheckReport, env
 
 /** Stages of a stopped session's trail a report lists: its last ones. */
 const MAX_TRAIL_LINES = 24;
+/** An event this long before the last sign of life is no cause of the stop: the page ran on after it. */
+const CAUSE_WINDOW_MS = 15_000;
+
+/** The "Did not finish" line: the step it reached and, from its page's trail, the most specific cause recorded. */
+function unfinishedLine(report: FeatureTestCheckReport): string {
+  const unfinished = report.unfinished!;
+  const session = unfinished.page ? report.stoppedSessions?.find((entry) => entry.page === unfinished.page) : undefined;
+  if (!session) return `Did not finish: the app stopped (a crash or reload) while ${unfinished.step}; its page left no trail to say why.`;
+  return `Did not finish: the app stopped while ${unfinished.step}: ${stopCause(session)}.`;
+}
+
+/** Whether a trail ended with the page's being hidden or closed in the ordinary way. */
+function endedOrdinarily(session: FeatureTestStoppedSession): boolean {
+  const last = session.marks.at(-1)?.stage;
+  return last === "page: hidden" || last === "page: closed";
+}
+
+/** Event kinds (`SessionTrailEventKind`) by how specifically each says why a page stopped, most specific first. */
+const CAUSES: ReadonlyArray<{ kind: string; text: (detail: string) => string }> = [
+  { kind: "reload", text: (detail) => `the editor reloaded the page itself (${detail})` },
+  { kind: "context lost", text: (detail) => `the WebGL context was lost (${detail})` },
+  { kind: "error screen", text: (detail) => `an error screen was shown: ${detail}` },
+  { kind: "game worker", text: (detail) => `the game worker failed: ${detail}` },
+  { kind: "uncaught error", text: (detail) => `an uncaught error: ${detail}` },
+  { kind: "unhandled rejection", text: (detail) => `an unhandled rejection: ${detail}` },
+  { kind: "resource failed to load", text: (detail) => `a resource failed to load: ${detail}` },
+  { kind: "stall", text: (detail) => `the page hung (${detail})` },
+];
 
 /**
- * A session that stopped without closing: when it was last alive, and the stages it passed through last, each with
- * how long before that moment it was reached.
+ * The most specific cause a stopped page's trail recorded within `CAUSE_WINDOW_MS` of its last sign of life, with how
+ * long before it, or what its lifecycle says: a page that recorded no close, hide or reload of its own was stopped by
+ * the system (a WebKit content process killed for memory, or a crash).
+ */
+export function stopCause(session: FeatureTestStoppedSession): string {
+  const recent = session.events.filter((event) => session.lastAliveAt - event.at <= CAUSE_WINDOW_MS);
+  const before = (at: number) => `, ${s(Math.max(0, session.lastAliveAt - at))} before the last sign of life`;
+  const chunk = recent.findLast((event) => event.kind === "chunk import failed");
+  if (chunk) {
+    const reloaded = recent.some((event) => event.kind === "reload" && event.at >= chunk.first);
+    return `a failed chunk import (${chunk.detail})${reloaded ? ", then the page reloaded itself" : ""}${before(chunk.at)}`;
+  }
+  for (const cause of CAUSES) {
+    const event = recent.findLast((entry) => entry.kind === cause.kind);
+    if (event) return `${cause.text(event.detail)}${before(event.at)}`;
+  }
+  const last = session.marks.at(-1)?.stage;
+  const close = recent.findLast((event) => event.kind === "page" && event.detail.startsWith("closed"));
+  if (last === "page: closed" || close) {
+    return `the page was closed, reloaded or navigated away by the browser or the user (${close ? close.detail : "page: closed"}), with no reload of the editor's own`;
+  }
+  if (last === "page: hidden") return "the page was put away (hidden) and did not come back";
+  return "nothing recorded: the system stopped the page (no error, reload, close or hide was recorded before it; a WebKit content process killed for memory, or a crash, looks like this)";
+}
+
+/** An event as a stopped session lists it, with how often and since when it repeated. */
+function eventText(event: FeatureTestStoppedSession["events"][number], lastAliveAt: number): string {
+  const repeats = event.count > 1 ? ` (${event.count}x, first ${s(Math.max(0, lastAliveAt - event.first))} before)` : "";
+  return `${event.kind}: ${event.detail}${repeats}`;
+}
+
+/**
+ * A session that stopped: when it was last alive, the stages it passed through last, each with how long before that
+ * moment it was reached, and what it recorded (errors, failed imports, reloads, error screens, lost contexts, the
+ * page's lifecycle), in time order with the same lead.
  */
 function stoppedSessionLines(session: FeatureTestStoppedSession): string[] {
   const marks = session.marks.slice(-MAX_TRAIL_LINES);
   const omitted = session.marks.length - marks.length;
+  const ago = (at: number) => s(Math.max(0, session.lastAliveAt - at)).padStart(8);
+  const alive = new Date(session.lastAliveAt).toISOString();
   return [
-    `A session stopped without closing (a freeze, a crash or a force close), last alive ${new Date(session.lastAliveAt).toISOString()}.`,
+    endedOrdinarily(session)
+      ? `A session ended with its page closed or put away (a reload counts), last alive ${alive}.`
+      : `A session stopped without closing (a freeze, a crash or a force close), last alive ${alive}.`,
+    `Why: ${stopCause(session)}.`,
     `Its last stages, each with how long before that it was reached${omitted ? ` (${omitted} earlier omitted)` : ""}:`,
-    ...marks.map((mark) => `  ${s(Math.max(0, session.lastAliveAt - mark.at)).padStart(8)}  ${clip(mark.stage)}`),
+    ...marks.map((mark) => `  ${ago(mark.at)}  ${clip(mark.stage)}`),
+    ...(session.events.length
+      ? ["What it recorded (errors, reloads, error screens, contexts, the page's lifecycle), each with how long before that it happened:",
+        ...session.events.map((event) => `  ${ago(event.at)}  ${clip(eventText(event, session.lastAliveAt), 400)}`)]
+      : ["It recorded no error, reload, error screen, lost context or page event."]),
   ];
 }
 

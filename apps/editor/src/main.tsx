@@ -11,10 +11,12 @@ import {
 import { setTouchUi } from "@haptic/editor-kit";
 import App from "./App";
 import { installPreloadErrorReload } from "./lib/preload-error-reload";
+import { installPageErrorTrail } from "./lib/page-error-trail";
 import { startSessionTrail } from "./lib/session-trail-record";
 
 // First: whatever follows may be where a page that freezes or is killed stops.
 startSessionTrail();
+installPageErrorTrail();
 initializeCapacitorLifecycle();
 initializeCapacitorAudioLifecycle();
 installPreloadErrorReload();

@@ -105,7 +105,7 @@ import { Scene, ScenePerformancePriority } from "@babylonjs/core/scene";
 import type {
   SerializedScene,
 } from "@haptic/core";
-import { engineCommandBus, markSessionTrail } from "@haptic/core";
+import { engineCommandBus, markSessionTrail, recordSessionTrailEvent, SessionTrailEventKind } from "@haptic/core";
 import { setSceneRenderSettings } from "./scene-render-mode";
 import { liveMeshCount } from "./model-lod";
 import { spatialEffectsUnsupported } from "./spatial-effects";
@@ -2844,6 +2844,7 @@ function initializeEngine(
     loadGeneration += 1;
     cancelPresentation(contextLostError());
     markSessionTrail(`${trailView}: graphics context lost`);
+    recordSessionTrailEvent(SessionTrailEventKind.contextLost, `${trailView}: loss ${presentationStats.contextLosses} of this view`);
     engineCommandBus.dispatch({ type: "log", message: "WebGL context lost" });
   });
   onRollback(() => engine.onContextLostObservable.remove(contextLostObserver));
@@ -2852,6 +2853,7 @@ function initializeEngine(
     contextLost = false;
     presentationStats.contextRestorations += 1;
     markSessionTrail(`${trailView}: graphics context restored`);
+    recordSessionTrailEvent(SessionTrailEventKind.contextRestored, `${trailView}: restoration ${presentationStats.contextRestorations} of this view`);
     engineCommandBus.dispatch({
       type: "log",
       message: "WebGL context restored",
