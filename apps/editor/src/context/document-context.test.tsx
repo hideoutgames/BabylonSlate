@@ -209,6 +209,29 @@ afterEach(async () => {
 });
 
 describe("DocumentProvider actions and route", () => {
+  it("reports a new project's progress from 0 to 100, and reaches 100 just before the open phase", async () => {
+    render(
+      <DocumentProvider>
+        <Probe />
+      </DocumentProvider>,
+    );
+    await waitFor(() => expect(documents().homepageReady).toBe(true));
+    const events: Array<number | string> = [];
+    await act(() =>
+      seen.actions!.createEmptyProject("Progress", {
+        kind: "2d",
+        onProgress: (percent) => events.push(percent),
+        onPhase: (phase) => events.push(phase),
+      }),
+    );
+    expect(events[0]).toBe(0);
+    expect(events.at(-2)).toBe(100);
+    expect(events.at(-1)).toBe("opening");
+    const percents = events.filter((event): event is number => typeof event === "number");
+    expect(percents).toEqual([...percents].sort((a, b) => a - b));
+    expect(new Set(percents).size).toBe(percents.length);
+  });
+
   it("Save All commits a draft still being typed in an Inspector field before it saves", async () => {
     function SceneNameField() {
       const { applySceneChange } = useDocumentActions();

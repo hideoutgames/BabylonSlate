@@ -32,6 +32,8 @@ export const PLUGINS_DIR = "plugins";
 export async function writeProjectTree(
   storage: ProjectStorage,
   files: ProjectTreeFile[],
+  /** Called after each file is written. */
+  onFileWritten?: () => void,
 ): Promise<void> {
   for (const file of files) {
     const dir = file.path.includes("/")
@@ -41,6 +43,7 @@ export async function writeProjectTree(
       await storage.mkdir(dir, true);
     }
     await storage.writeBinary(file.path, file.data);
+    onFileWritten?.();
   }
 }
 
@@ -143,10 +146,12 @@ export async function createProjectFromTemplate(options: {
   destination: ProjectStorage;
   guid: string;
   name: string;
+  /** Called after each template file is written; one call per entry of `templateFiles`. */
+  onFileWritten?: () => void;
 }): Promise<void> {
   const rewritten = rewriteProjectIdentity(options.templateFiles, {
     guid: options.guid,
     name: options.name,
   });
-  await writeProjectTree(options.destination, rewritten);
+  await writeProjectTree(options.destination, rewritten, options.onFileWritten);
 }

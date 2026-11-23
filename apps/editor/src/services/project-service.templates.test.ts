@@ -8,6 +8,7 @@ import {
 import { createEmptyProjectFiles } from "@haptic/assets/test-support/project-files";
 import { SCENE_SCHEMA_VERSION } from "@haptic/core";
 import { MemoryStorageAdapter } from "@haptic/vfs";
+import { createStepProgress, templateStepCount } from "../lib/create-project";
 import { takeProjectThumbnailRequest } from "../lib/model-thumbnail-queue";
 import { ProjectService } from "./project-service";
 
@@ -52,6 +53,21 @@ describe("Create Project from a template", () => {
     expect(await service.loadDocument("scene", document.scenes[0]!)).toEqual(
       expect.objectContaining({ actors: expect.any(Array) }),
     );
+  });
+
+  it("counts every template file and each remaining step once, so the progress ends on the last step the caller adds", async () => {
+    const templateFiles = await loadTemplateFiles(await folderWithTemplates(), "Platformer");
+    const service = new ProjectService(new MemoryStorageAdapter("documents"));
+    const percents: number[] = [];
+    // The editor's own attach step and final step bracket the service's.
+    const progress = createStepProgress(templateStepCount(templateFiles.length), (percent) => percents.push(percent));
+    progress.advance();
+    await service.createFromTemplate({ templateFiles, name: "Counted", progress });
+    expect(percents.at(-1)).toBeLessThan(100);
+    progress.advance();
+    expect(percents.at(-1)).toBe(100);
+    expect(percents).toEqual([...percents].sort((a, b) => a - b));
+    expect(new Set(percents).size).toBe(percents.length);
   });
 
   it("keeps the documents a template ships instead of scaffolding new ones", async () => {

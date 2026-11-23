@@ -186,9 +186,9 @@ describe("Launcher Transition", () => {
       act(() => launcher.controls().ready("home"));
       advance(2600);
       act(() => launcher.controls().begin("Forest Run", "creating"));
-      expect(status()).toBe("Creating project");
+      expect(status()).toBe("Creating Project… 0%");
       act(() => launcher.controls().setPhase("opening"));
-      expect(status()).toBe("Opening project");
+      expect(status()).toBe("Opening Project…");
       launcher.setRoute("editor");
       if (publishFirst) {
         act(() => launcher.controls().setPhase("source-control"));
@@ -217,13 +217,37 @@ describe("Launcher Transition", () => {
     expect(screen.queryByRole("status")).toBeNull();
     expect(launcher.surface().hasAttribute("inert")).toBe(false);
     act(() => launcher.controls().begin("Test Project"));
-    expect(status()).toBe("Opening project");
+    expect(status()).toBe("Opening Project…");
     launcher.setRoute("editor");
     act(() => launcher.controls().ready("editor"));
     expect(status()).toBe("Preparing editor");
     act(() => launcher.controls().settle());
     act(() => launcher.controls().setPhase("source-control"));
     expect(status()).toBe("Ready");
+  });
+
+  it("shows a creation's percent beside Creating Project, never lower, and only while it creates", () => {
+    const launcher = renderTransition();
+    act(() => launcher.controls().ready("home"));
+    advance(2600);
+    // Opening a project has no percent, even if one is reported.
+    act(() => launcher.controls().begin("Test Project"));
+    act(() => launcher.controls().setProgress(50));
+    expect(status()).toBe("Opening Project…");
+    act(() => launcher.controls().begin("Forest Run", "creating"));
+    expect(status()).toBe("Creating Project… 0%");
+    act(() => launcher.controls().setProgress(40));
+    act(() => launcher.controls().setProgress(25));
+    expect(status()).toBe("Creating Project… 40%");
+    // The percent is outside the announced text.
+    expect(document.querySelector(".haptic-splash-status [aria-hidden]")?.textContent).toBe(" 40%");
+    act(() => launcher.controls().setProgress(100));
+    expect(status()).toBe("Creating Project… 100%");
+    act(() => launcher.controls().setPhase("opening"));
+    expect(status()).toBe("Opening Project…");
+    // A new creation starts again from 0.
+    act(() => launcher.controls().begin("Second", "creating"));
+    expect(status()).toBe("Creating Project… 0%");
   });
 
   it("restores the home route when opening a project is cancelled", () => {

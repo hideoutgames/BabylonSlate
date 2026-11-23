@@ -22,6 +22,8 @@ type Transition = {
   status: string;
   /** A project open's broad step (`begin`, `setPhase`). */
   phase: LaunchPhase;
+  /** The creation's whole percent while `phase` is `creating`, else null. */
+  progress: number | null;
   since: number;
   mounted: boolean;
   readyAt: number | null;
@@ -35,6 +37,8 @@ const TransitionContext = createContext<{
   begin: (label: string, phase?: LaunchPhase) => void;
   /** The project open moved on to `phase`; nothing while no open is under way. */
   setPhase: (phase: LaunchPhase) => void;
+  /** The creation's percent so far; it only rises, and counts only while the card names Creating Project. */
+  setProgress: (percent: number) => void;
   ready: (target: Target) => void;
   settle: () => void;
   reportHomeLoading: (status: string) => void;
@@ -42,6 +46,7 @@ const TransitionContext = createContext<{
 }>({
   begin: () => {},
   setPhase: () => {},
+  setProgress: () => {},
   ready: () => {},
   settle: () => {},
   reportHomeLoading: () => {},
@@ -50,9 +55,9 @@ const TransitionContext = createContext<{
 export const useLauncherTransition = () => useContext(TransitionContext);
 
 const PHASE_STATUS: Record<LaunchPhase, string> = {
-  creating: "Creating project",
+  creating: "Creating Project…",
   "source-control": "Initializing source control",
-  opening: "Opening project",
+  opening: "Opening Project…",
 };
 
 /**
@@ -85,6 +90,7 @@ export function LauncherTransitionProvider({
     label: "Haptic",
     status: "Loading application",
     phase: "opening",
+    progress: null,
     since: performance.now(),
     mounted: false,
     readyAt: null,
@@ -99,6 +105,7 @@ export function LauncherTransitionProvider({
         label,
         status: "",
         phase,
+        progress: phase === "creating" ? 0 : null,
         since: performance.now(),
         mounted: false,
         readyAt: null,
@@ -106,6 +113,19 @@ export function LauncherTransitionProvider({
         leaving: false,
         boot: false,
       }),
+    [],
+  );
+  const setProgress = useCallback(
+    (percent: number) =>
+      setTransition((current) =>
+        current?.target === "editor" &&
+        !current.boot &&
+        !current.settled &&
+        current.phase === "creating" &&
+        percent > (current.progress ?? -1)
+          ? { ...current, progress: percent }
+          : current,
+      ),
     [],
   );
   const setPhase = useCallback(
@@ -207,17 +227,20 @@ export function LauncherTransitionProvider({
       ? "Loading Haptic"
       : `Opening ${transition?.label ?? "Haptic"}`;
   const status = transition ? statusOf(transition) : "";
+  const showProgress =
+    transition?.progress != null && status === PHASE_STATUS.creating;
   useBootIntro(transition?.boot ? { label, status } : null);
   const value = useMemo(
     () => ({
       begin,
       setPhase,
+      setProgress,
       ready,
       settle,
       reportHomeLoading,
       active,
     }),
-    [begin, setPhase, ready, settle, reportHomeLoading, active],
+    [begin, setPhase, setProgress, ready, settle, reportHomeLoading, active],
   );
   return (
     <TransitionContext.Provider value={value}>
@@ -277,6 +300,10 @@ export function LauncherTransitionProvider({
                       )}
                       <span className="haptic-splash-status">
                         {status}
+                        {/* Outside the announced text, so a screen reader does not read out every percent. */}
+                        {showProgress && (
+                          <span aria-hidden="true"> {transition.progress}%</span>
+                        )}
                       </span>
                     </div>
                     <span className="haptic-splash-version">{version}</span>
