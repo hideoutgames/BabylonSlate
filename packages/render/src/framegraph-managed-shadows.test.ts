@@ -96,7 +96,7 @@ async function fixture(kind: "point" | "spot" | "sun" = "point") {
   const graph = new ForwardSceneFrameGraph(scene);
   const render = () => {
     const previous = faces;
-    expect(graph.render(camera, false)).toEqual({ path: "frameGraph" });
+    expect(graph.render(camera, false)).toEqual({ path: "frameGraph", drewOutput: true });
     return faces - previous;
   };
   return {
@@ -475,13 +475,13 @@ it("rechecks admission after scene callbacks so revoked maps are never rendered 
   });
   // Revocation remains safe inside the draw, but that candidate must not
   // replace the last coherent viewport image.
-  expect(graph.render(camera, false)).toEqual({ path: "frameGraph", rendered: false });
+  expect(graph.render(camera, false)).toEqual({ path: "frameGraph", drewOutput: true, rendered: false });
   expect(faces()).toBe(0);
   expect(controller.generator(light)).toBeNull();
   expect(light.getShadowGenerator()).not.toBe(generator);
   expect(scene.textures).not.toContain(map);
   // A changed shadow set needs no preparation: the next frame binds the maps as they are now, without the revoked one.
-  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
   expect(faces()).toBe(0);
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
   expect(render()).toBe(0);
@@ -509,20 +509,20 @@ it("retains binding observers on settled frames and refreshes them for camera an
   expect(renderer.onAfterRenderObservable.observers).toEqual(after);
   const second = new FreeCamera("second", new Vector3(1, 2, -7), scene);
   second.setTarget(Vector3.Zero());
-  expect(graph.render(second, false)).toEqual({ path: "frameGraph" });
+  expect(graph.render(second, false)).toEqual({ path: "frameGraph", drewOutput: true });
   expect(renderer.onBeforeRenderObservable.observers).not.toEqual(before);
   const changedCamera = renderer.onBeforeRenderObservable.observers.slice();
   scene.onBeforeRenderObservable.addOnce(() => {
     controller.register(light, false);
     controller.sync();
   });
-  expect(graph.render(second, false)).toEqual({ path: "frameGraph", rendered: false });
+  expect(graph.render(second, false)).toEqual({ path: "frameGraph", drewOutput: true, rendered: false });
   expect(renderer.onBeforeRenderObservable.observers).not.toEqual(
     changedCamera,
   );
   expect(light.getShadowGenerator()).toBeNull();
   expect(await graph.prepare(second)).toEqual({ path: "frameGraph" });
-  expect(graph.render(second, false)).toEqual({ path: "frameGraph" });
+  expect(graph.render(second, false)).toEqual({ path: "frameGraph", drewOutput: true });
   graph.dispose();
 });
 
@@ -560,7 +560,7 @@ it("moves the admitted map to a compatible camera handoff within one presented f
   vi.spyOn(performance, "now").mockReturnValue(performance.now() + 500);
   camera.position.x = 40;
   // No held frame, preparation or receiver shader change.
-  expect(graph.render(camera, false)).toEqual({ path: "frameGraph" });
+  expect(graph.render(camera, false)).toEqual({ path: "frameGraph", drewOutput: true });
   expect(controller.generator(incoming)).toBe(previous);
   expect(controller.generator(light)).toBeNull();
   expect(scene.lights.filter((light) => light.getShadowGenerator())).toEqual([incoming]);
@@ -599,7 +599,7 @@ it("prepares and presents a shadowed first frame without dirtying a Material", a
   const { scene, camera, mesh, graph } = await fixture("spot");
   const dirty = vi.spyOn(mesh.material!, "markDirty");
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
-  expect(graph.render(camera, false)).toEqual({ path: "frameGraph" });
+  expect(graph.render(camera, false)).toEqual({ path: "frameGraph", drewOutput: true });
   expect(dirty).not.toHaveBeenCalled();
   expect(scene.activeCamera).toBe(camera);
   graph.dispose();
@@ -643,14 +643,14 @@ it("skips a later borrowed map revoked by an earlier shadow draw", async () => {
     secondBinds++;
     bindSecond(...args);
   });
-  expect(graph.render(camera, false)).toEqual({ path: "frameGraph", rendered: false });
+  expect(graph.render(camera, false)).toEqual({ path: "frameGraph", drewOutput: true, rendered: false });
   expect(revoked).toBe(true);
   expect(secondBinds).toBe(0);
   expect(scene.textures).not.toContain(secondMap);
   expect(second.getShadowGenerator()).not.toBe(secondGenerator);
   expect(engine._currentRenderTarget).toBeNull();
   expect(await graph.prepare(camera)).toEqual({ path: "frameGraph" });
-  expect(graph.render(camera, false)).toEqual({ path: "frameGraph" });
+  expect(graph.render(camera, false)).toEqual({ path: "frameGraph", drewOutput: true });
   expect(secondBinds).toBe(0);
   graph.dispose();
 });
