@@ -59,7 +59,12 @@ export class ShadowCasterList {
    */
   private kept = false;
   private cursor = 0;
-  private readonly added: AbstractMesh[] = [];
+  /**
+   * The casters to read at the next `prepare` beyond those the walk changed. Only `prepare` empties it, which a Scene
+   * without a shadow map never runs (a Scene Layer's), so a removed caster leaves it too: it would hold every caster the
+   * Scene ever had.
+   */
+  private readonly added = new Set<AbstractMesh>();
   private readonly scratch = new Float64Array(6);
   /** While `prepare` reads the changed casters: its `walked`, and how many it read. */
   private changedWalked: ((mesh: AbstractMesh) => { readonly shown: boolean } | undefined) | undefined;
@@ -86,7 +91,7 @@ export class ShadowCasterList {
     this.places.set(mesh, place);
     this.meshes.push(mesh);
     this.prepared = false;
-    this.added.push(mesh);
+    this.added.add(mesh);
   }
 
   /**
@@ -98,7 +103,7 @@ export class ShadowCasterList {
     if (place === undefined || (this.draws[place] === 1) === draws) return;
     this.draws[place] = draws ? 1 : 0;
     // Its box and state were not kept while it drew nothing (the walk leaves it out).
-    if (draws) this.added.push(mesh);
+    if (draws) this.added.add(mesh);
   }
 
   /**
@@ -126,8 +131,7 @@ export class ShadowCasterList {
       this.changedReads = 0;
       kept = changes!.forEachChangeSince(this.cursor, this.readChanged);
       if (kept) {
-        const added = this.added;
-        for (let index = 0; index < added.length; index += 1) this.readChanged(added[index]!);
+        this.added.forEach(this.readChanged);
         changes!.noteStage("prepared", this.changedReads);
       }
       this.changedWalked = undefined;
@@ -154,7 +158,8 @@ export class ShadowCasterList {
       }
       changes!.noteStageMiss("preparedCasters", misses);
     }
-    this.added.length = 0;
+    // Clearing a Set makes it a new table: an empty one is left as it is.
+    if (this.added.size) this.added.clear();
     if (changes) this.cursor = changes.changeCursor();
     this.kept = !!changes;
     this.prepared = true;
@@ -185,6 +190,7 @@ export class ShadowCasterList {
     if (place === undefined) return;
     const last = this.meshes.pop()!;
     this.places.delete(mesh);
+    this.added.delete(mesh);
     this.prepared = false;
     if (last === mesh) return;
     // The last caster takes the place, with what was read of it.
@@ -203,7 +209,7 @@ export class ShadowCasterList {
     this.places.clear();
     this.prepared = false;
     this.kept = false;
-    this.added.length = 0;
+    this.added.clear();
   }
 
   /** The box around every caster's world box, shown or hidden; undefined without casters. Reused between calls. */

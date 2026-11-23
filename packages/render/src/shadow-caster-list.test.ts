@@ -1,3 +1,5 @@
+import { setFlagsFromString } from "node:v8";
+import { runInNewContext } from "node:vm";
 import { describe, expect, it, vi } from "vitest";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
@@ -86,6 +88,48 @@ describe("a prepare from the walk's changes", () => {
       // Every frame's prepare read the log with the one function it made once, not a new one each frame.
       expect(visitors.size).toBe(1);
       incremental.dispose();
+    } finally {
+      engine.dispose();
+    }
+  });
+});
+
+/** Runs a full collection once the current job ended (a WeakRef made in it holds its target until then). */
+async function collectGarbage(): Promise<void> {
+  setFlagsFromString("--expose-gc");
+  const gc = runInNewContext("gc") as () => void;
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  gc();
+}
+
+describe("a Scene without a shadow map", () => {
+  // A Scene Layer's list, or a world Scene's without a shadow-casting light: no caster walk, so `prepare` never runs.
+  it("keeps no caster that left the list", async () => {
+    const engine = new NullEngine();
+    try {
+      const scene = new Scene(engine);
+      const index = new ShadowCasterList();
+      // Actors spawned and despawned: each caster joins and leaves, its draws switched off and on meanwhile. Made in a
+      // function of its own, so that no mesh stays in this one's frame across the await.
+      const despawn = (round: number) => {
+        const mesh = MeshBuilder.CreateBox(`despawned ${round}`, {}, scene);
+        index.add(mesh);
+        index.setDraws(mesh, false);
+        index.setDraws(mesh, true);
+        index.remove(mesh);
+        mesh.dispose();
+        return new WeakRef(mesh);
+      };
+      const left = Array.from({ length: 8 }, (_, round) => despawn(round));
+      const stays = MeshBuilder.CreateBox("stays", {}, scene);
+      index.add(stays);
+      await collectGarbage();
+      expect(left.filter((ref) => ref.deref() !== undefined)).toHaveLength(0);
+      // A shadow map that comes later still finds the caster that stayed.
+      index.prepare();
+      expect(index.queryPlanes([new Plane(-1, 0, 0, 10)])).toEqual([stays]);
+      index.release();
+      index.dispose();
     } finally {
       engine.dispose();
     }
