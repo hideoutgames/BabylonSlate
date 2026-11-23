@@ -50,7 +50,7 @@ Storage port, platform adapters, app-owned libraries, Engine Settings storage, s
 
 ## Project creation
 
-- Scaffold only into an empty folder (ignoring `.haptic-creating`, `.DS_Store`, `Thumbs.db`, `desktop.ini`); never overwrite. `.haptic-creating` (`PROJECT_CREATION_MARKER` in `@haptic/core`, which Publish's summary and the Git core's clone also skip) marks an app-owned partial scaffold that a retry may clear.
+- Scaffold only into an empty folder (ignoring `.haptic-creating`, `.DS_Store`, `Thumbs.db`, `desktop.ini`); never overwrite. `.haptic-creating` (`PROJECT_CREATION_MARKER` in `@haptic/core`, which Publish's summary and the Git core's clone also skip) marks an app-owned partial scaffold that a retry may clear; one beside a `project.json` is stale and only the marker is removed (`openOwnedDocumentsProject`), so the project is kept and the name stays taken. Opening a listed project (`openListedProject`) never scaffolds: a folder that is gone or holds no `project.json` fails as missing files; only creating a project scaffolds into an empty folder.
 - Persist the recent-project entry before the editor becomes interactive. Project identity for the browser lives in `project.json` metadata (`name`, optional `appearance`; uploaded images ≤ 96 KiB data URL).
 
 ## Binary storage transport

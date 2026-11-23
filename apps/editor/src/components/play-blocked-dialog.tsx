@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -10,6 +11,7 @@ import {
 } from "@haptic/ui/components/alert-dialog";
 import type { Diagnostic } from "@haptic/scripting";
 import { SelectableText } from "@haptic/editor-kit";
+import { recordErrorScreen } from "../lib/page-error-trail";
 
 export type PlayBlockedDialogProps = {
   open: boolean;
@@ -36,6 +38,10 @@ export function PlayBlockedDialog({
   onPlayAnyway,
 }: PlayBlockedDialogProps) {
   const errors = diagnostics.filter((d) => d.severity === "error");
+  const first = errors[0] ? `${errors[0].code}: ${errors[0].message}` : "";
+  useEffect(() => {
+    if (open) recordErrorScreen(title, `${errors.length} error${errors.length === 1 ? "" : "s"}${first ? `, first ${first}` : ""}`);
+  }, [open, title, errors.length, first]);
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent

@@ -1,4 +1,7 @@
-import { createSaveStorageServer, createSessionSaveStorage, markSessionTrail, markSessionTrailStatus } from "@haptic/core";
+import {
+  createSaveStorageServer, createSessionSaveStorage, markSessionTrail, markSessionTrailStatus, recordSessionTrailEvent,
+  SessionTrailEventKind,
+} from "@haptic/core";
 import { createSaveGameStorage } from "@haptic/vfs";
 import type { ScalabilityAcknowledgement } from "@haptic/core";
 import {
@@ -660,6 +663,7 @@ export function startPlaySession(options: PlaySessionOptions): PlaySession {
       const diagnostic = diagnosticFromCommand(command);
       if (diagnostic) workerDiagnostics.push(diagnostic);
       if (isFatalPlayDiagnostic(command.code)) {
+        recordSessionTrailEvent(SessionTrailEventKind.worker, `fatal ${command.code}: ${command.message}`);
         queueMicrotask(() => options.onFatalDiagnostic?.());
       }
     }

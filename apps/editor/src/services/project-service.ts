@@ -924,8 +924,22 @@ export class ProjectService {
     return owned.handle;
   }
 
+  /**
+   * Opens a project from the list. Its folder must still hold its project.json: a listed project whose files are gone
+   * is reported as missing, never scaffolded anew under its old name (only creating a project scaffolds).
+   */
   async openListedProject(handle: ProjectFolderHandle): Promise<ProjectLoadResult> {
-    await this.storage.openKnownFolder(handle);
+    const missing = () => new Error(`The files of "${handle.name}" are missing: its folder is gone or holds no project.json.`);
+    try {
+      await this.storage.openKnownFolder(handle);
+    } catch (error) {
+      if (isStorageNotFound(error)) throw missing();
+      throw error;
+    }
+    if (!(await this.storage.exists(PROJECT_FILE))) {
+      await this.storage.releaseFolder();
+      throw missing();
+    }
     return this.loadCurrentProject();
   }
 

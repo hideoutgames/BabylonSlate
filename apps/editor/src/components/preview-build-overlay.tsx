@@ -40,6 +40,7 @@ import { profileDefaultsFromSettings } from "../lib/play-debugger-defaults";
 import { PROFILER_CONSOLE_COMMANDS, runProfilerConsoleCommand, withProfilerHelp } from "../lib/profiler-console";
 import { createPreviewDiagnostics } from "../services/preview-diagnostics";
 import { formatRuntimeLogLine } from "../lib/output-log-line";
+import { recordErrorScreen } from "../lib/page-error-trail";
 
 function sameNames(next: readonly string[] | undefined, previous: readonly string[] | undefined): boolean {
   if (next === previous) return true;
@@ -82,6 +83,7 @@ export function PreviewBuildOverlay({
   const onDetachedRef = useRef(onDetached);
   onDetachedRef.current = onDetached;
   useEffect(() => () => { onDetachedRef.current?.(); }, []);
+  useEffect(() => { if (error) recordErrorScreen("Preview Build Failed To Start", error); }, [error]);
   const onOutputLogRef = useRef(onOutputLog);
   onOutputLogRef.current = onOutputLog;
   const [consoleOpen, setConsoleOpen] = useState(false);

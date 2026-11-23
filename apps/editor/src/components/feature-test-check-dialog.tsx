@@ -3,7 +3,7 @@ import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import { EngineStore } from "@babylonjs/core/Engines/engineStore";
 import type { Effect } from "@babylonjs/core/Materials/effect";
 import { markSessionTrail } from "@haptic/core";
-import { estimateTextureMemory, isEngineContextLost } from "@haptic/render";
+import { estimateTextureMemory, isEngineContextLost, renderChangeJournalStats } from "@haptic/render";
 import { getHostMemoryStats, type HostMemoryStats } from "@haptic/vfs";
 import { Button } from "@haptic/ui/components/button";
 import {
@@ -27,7 +27,9 @@ import {
   loadCheckEnded,
   loadSavedCheckRecord,
   saveCheckEnded,
-  saveUnfinishedCheck,
+  saveUnfinishedCheckBody,
+  saveUnfinishedCheckSamples,
+  unfinishedCheckChars,
   withStoppedSessions,
 } from "../lib/feature-test-check-record";
 import {
@@ -41,6 +43,7 @@ import {
   type BreakdownResumeMarker,
 } from "../lib/feature-test-breakdown-ab";
 import { FEATURE_TEST_AB_DEPS } from "../lib/feature-test-ab-deps";
+import { reloadPage } from "../lib/preload-error-reload";
 import { FEATURE_TEST_CHECK_SCENES } from "../services/feature-test-check-scenes";
 import { FeatureTestCheckStatus } from "./feature-test-check-status";
 import { installFrameAttribution } from "../services/frame-attribution";
@@ -177,7 +180,34 @@ async function sampleCheckResources(atMs: number, step: string): Promise<Feature
     jsHeapBytes: host?.jsHeapBytes ?? null,
     appFootprintBytes: host?.appFootprintBytes ?? null,
     ...hostMemoryOf(host),
+    ...sceneHoldings(),
+    recordChars: unfinishedCheckChars(),
   };
+}
+
+/**
+ * What every Engine's Scenes hold (their mesh, Material and texture lists' lengths) and their render change journals
+ * (entries, and the slowest reader's lag): counts the sampler reads, no walk of the objects.
+ */
+function sceneHoldings(): Pick<FeatureTestCheckResources, "sceneObjects" | "changeJournal"> {
+  const objects = { meshes: 0, materials: 0, textures: 0 };
+  const journal = { entries: 0, maxLag: 0 };
+  let scenes = 0;
+  let journals = 0;
+  for (const engine of EngineStore.Instances) {
+    for (const scene of engine.scenes) {
+      scenes += 1;
+      objects.meshes += scene.meshes.length;
+      objects.materials += scene.materials.length;
+      objects.textures += scene.textures.length;
+      const stats = renderChangeJournalStats(scene);
+      if (!stats) continue;
+      journals += 1;
+      journal.entries += stats.entries;
+      journal.maxLag = Math.max(journal.maxLag, stats.maxLag);
+    }
+  }
+  return { sceneObjects: scenes ? objects : null, changeJournal: journals ? journal : null };
 }
 
 /** The native host's memory counters in a check's terms. */
@@ -279,7 +309,8 @@ export function FeatureTestCheckDialog({ open, onOpenChange }: FeatureTestCheckD
       if (!running || !record.report) return;
       record.resources.push(resources);
       if (record.resources.length > MAX_CHECK_RESOURCE_SAMPLES) record.resources.shift();
-      saveUnfinishedCheck({ step: record.step, report: record.report, resources: record.resources });
+      // Only the samples' own small record: the report, which grows with the check, is written once per step.
+      saveUnfinishedCheckSamples(record.resources);
     };
     const sampler = setInterval(() => { void sample(); }, RESOURCE_SAMPLE_MS);
     const pageErrors: string[] = [];
@@ -314,7 +345,12 @@ export function FeatureTestCheckDialog({ open, onOpenChange }: FeatureTestCheckD
     try {
       const report = await runFeatureTestCheck({
         mode, scenes, deps, signal: controller.signal, pageErrors: () => [...pageErrors], breakdown,
-        onStep: (step, partial) => { record.step = step; record.report = earlier ? mergeBreakdownPasses(earlier, partial) : partial; void sample(); },
+        onStep: (step, partial) => {
+          record.step = step;
+          record.report = earlier ? mergeBreakdownPasses(earlier, partial) : partial;
+          saveUnfinishedCheckBody(step, record.report);
+          void sample();
+        },
       });
       return { report, error: null };
     } catch (error) {
@@ -361,7 +397,7 @@ export function FeatureTestCheckDialog({ open, onOpenChange }: FeatureTestCheckD
       finish(cancelPlannedReload(marker, reason, AB_DEPS));
     };
     cancelRef.current = () => giveUp("cancelled before the reload");
-    const reload = setTimeout(() => { if (!settled) window.location.reload(); }, RELOAD_DELAY_MS);
+    const reload = setTimeout(() => { if (!settled) reloadPage("the Breakdown's preserveDrawingBuffer A/B, for its second pass"); }, RELOAD_DELAY_MS);
     const watchdog = setTimeout(() => giveUp("the editor did not reload"), RELOAD_DELAY_MS + RELOAD_WATCHDOG_MS);
   }, [finish]);
 

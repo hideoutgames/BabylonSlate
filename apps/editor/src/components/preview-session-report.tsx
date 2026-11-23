@@ -357,7 +357,7 @@ export function PreviewSessionReport({
             <Button
               variant="secondary"
               data-testid="session-report-reload"
-              onClick={() => reloadForNewBuild()}
+              onClick={() => reloadForNewBuild("Reload Editor in the Play session report (a newer build replaced the editor)")}
             >
               Reload Editor
             </Button>

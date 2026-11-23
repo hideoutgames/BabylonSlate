@@ -131,7 +131,7 @@ export * from "./node-rig";
 export type { FramePressureSample, RenderDiagnostics } from "./render-diagnostics";
 export type { SceneReadinessDirtyReason } from "./scene-readiness-signal";
 export { verifyScopedReadinessProbes } from "./readiness-scope";
-export { verifyRenderChangeJournal } from "./render-change-journal";
+export { renderChangeJournalStats, verifyRenderChangeJournal } from "./render-change-journal";
 export { verifyLeanPreparation, type LeanPreparationWork } from "./lean-render-preparation";
 export type { PresentedImageSample } from "./presented-image";
 export type { WebGlCallGroup, WebGlCallTotals } from "./webgl-call-timer";

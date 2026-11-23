@@ -4,6 +4,7 @@ import {
   MAIN_CLASS_FILE,
   MAIN_SCENE_FILE,
   PROJECT_CREATION_MARKER,
+  PROJECT_FILE,
   type ProjectDocument,
   type ProjectFolderHandle,
   type ProjectStorage,
@@ -47,6 +48,12 @@ export async function openOwnedDocumentsProject(storage: ProjectStorage, name: s
     }
   }
   if (await storage.exists(PROJECT_CREATION_MARKER)) {
+    // A marker beside a project.json is stale (left by a creation that wrote its project but stopped before removing
+    // the marker): the project is kept, and the folder is not this call's to fill.
+    if (await storage.exists(PROJECT_FILE)) {
+      await storage.remove(PROJECT_CREATION_MARKER);
+      return { handle, createdHere: false };
+    }
     // Only fresh app-owned folders receive the marker. A retry can use a
     // different template, so discard the interrupted scaffold's files.
     if (storage.deleteProject) {

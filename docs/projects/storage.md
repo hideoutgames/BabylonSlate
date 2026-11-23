@@ -13,7 +13,7 @@ The Homepage status bar names the default location for your platform.
 | Mac, Windows and Linux | **Projects Folder** | A folder inside the app's data folder. |
 | Web | **Browser Storage** | Kept by this browser on this device. Clearing the browser's site data removes it. |
 
-Projects in default storage reopen from the Homepage without asking for a folder.
+Projects in default storage reopen from the Homepage without asking for a folder. If a listed project's files were deleted outside Haptic, opening it says that its files are missing; Haptic does not make a new empty project in its place.
 
 Haptic's own working data, such as thumbnails and crash recovery, is kept separately from your projects. On iPad and iPhone it does not appear in the Files app, and on iPad, iPhone and Android it is not included in device backups.
 
