@@ -19,7 +19,7 @@ import { deviceProfile } from "./device-profile";
 import { ShadowAtlasAllocator, type ShadowAtlasTile } from "./shadow-atlas-allocator";
 import { recordShadowMapPass, type ShadowTileView } from "./shadow-change-journal";
 import { shadowDebugOff } from "./shadow-debug";
-import { applyVertexDepthClamp } from "./shadow-vertex-clamp";
+import { applyRasterDepthClamp, applyVertexDepthClamp, cascadeDepthClamp, rasterDepthClampAvailable } from "./shadow-vertex-clamp";
 
 /**
  * The light block's shadows (`HapticLightingBlock`) live in one depth-only texture per Scene, the shadow
@@ -949,10 +949,22 @@ export class AtlasCascadedShadowGenerator extends CascadedShadowGenerator implem
     return this.corrections;
   }
 
-  /** Debug (`shadowdebug depthclamp off`): the casters' depth is clamped in the vertex stage (`shadow-vertex-clamp.ts`). */
+  /**
+   * Whether the casters' depth is clamped by the rasteriser (`SM_DEPTHCLAMP 3`, where the context has `EXT_depth_clamp`)
+   * rather than written from the fragment stage (`shadow-vertex-clamp.ts`).
+   */
+  private clampsInRasteriser(): boolean {
+    return this.depthClamp && !shadowDebugOff(this._scene, "depthclamp") && rasterDepthClampAvailable(this._scene.getEngine());
+  }
+
+  /**
+   * The casters' depth clamp without `gl_FragDepth`: in the rasteriser where it can (`clampsInRasteriser`); debug
+   * (`shadowdebug depthclamp off`), in the vertex stage.
+   */
   protected override _isReadyCustomDefines(defines: string[]): void {
     super._isReadyCustomDefines(defines);
     if (shadowDebugOff(this._scene, "depthclamp")) applyVertexDepthClamp(defines);
+    else if (this.clampsInRasteriser()) applyRasterDepthClamp(defines);
   }
 
   protected override _initializeGenerator(): void {
@@ -1007,6 +1019,11 @@ export class AtlasCascadedShadowGenerator extends CascadedShadowGenerator implem
         this.staleCascades &= ~(1 << cascade);
       },
     });
+    // The rasteriser's depth clamp (`SM_DEPTHCLAMP 3`) holds for the cascade passes only.
+    const map = this._shadowMap!;
+    const engine = this._scene.getEngine();
+    map.onBeforeRenderObservable.add(() => cascadeDepthClamp(engine, this.clampsInRasteriser()));
+    map.onAfterRenderObservable.add(() => cascadeDepthClamp(engine, false));
     this.staleCascades = ALL_CASCADES;
     this.selectiveRefresh = false;
     // Every reset passes through the map's object renderer: the map's own, a new refresh rate, and a mesh found not

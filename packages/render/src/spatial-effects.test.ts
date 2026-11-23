@@ -94,6 +94,19 @@ it.each([
   expect(stage.idle).toBe("aoSampler" in expected || "reflectionSampler" in expected ? undefined : march?.idle);
 });
 
+it("reads each depth texel the occlusion and fog upsamples share once, and only where they are at one resolution", () => {
+  const depthReads = (effects: Partial<typeof DEFAULT_RENDER_EFFECTS>) => {
+    const wrapper = compose(stagesFor(effects)).stage.wrapper!;
+    const fragment = ShaderStore.ShadersStore[`${wrapper.options.fragmentShader}FragmentShader`]!;
+    return fragment.match(/texture2D\(depthSampler/g)?.length ?? 0;
+  };
+  // The centre and four taps, for both upsamples.
+  expect(depthReads({ ...OCCLUSION, ...FOG })).toBe(5);
+  // The fog at another resolution taps other texels: its own four reads and centre stay.
+  const coarseFog = { volumetricLighting: { ...FOG.volumetricLighting, resolutionScale: FOG.volumetricLighting.resolutionScale / 2 } };
+  expect(depthReads({ ...OCCLUSION, ...coarseFog })).toBe(10);
+});
+
 it("declares in the compose exactly the uniforms and samplers its Effect binds", () => {
   const stages = stagesFor({ ...OCCLUSION, ...REFLECTIONS, ...FOG });
   const wrapper = compose(stages).stage.wrapper!;
