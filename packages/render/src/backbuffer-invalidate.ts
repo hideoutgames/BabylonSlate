@@ -14,8 +14,9 @@ type WebGlEngine = AbstractEngine & {
  * after the frame's last draw into it, before anything binds another framebuffer. Their contents are undefined
  * afterwards, so every later reader clears them first in its own frame: a layer drawn over the world (the world output
  * pass's merged clear, or the layer's own; `backbuffer-depth-tracker.ts` leaves a clear out only after one in the same
- * frame), a loading frame (its full clear), the editor's views (their own clears); the shared layer stack's composite
- * tests no depth.
+ * frame) and a loading frame (its full clear); the shared layer stack's composite tests no depth. Only Play's frames
+ * with layers invalidate, so an editor view drawing after Play closes reads what the last Play frame left undefined
+ * only if it tests depth before its own clear.
  *
  * False, and nothing done, on WebGL1 or while Babylon has another framebuffer bound.
  */

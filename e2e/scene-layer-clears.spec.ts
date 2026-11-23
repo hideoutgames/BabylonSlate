@@ -232,13 +232,13 @@ test("leaving out the Scene Layers' already-cleared depth-stencil clears changes
   expect(skippedWork!.backbuffer.depthClears).toBeGreaterThanOrEqual(3);
   expect(skippedWork!.backbuffer.elided).toBeLessThan(everyWork!.backbuffer.depthClears);
   // Play invalidates the backbuffer's depth and stencil after each frame: no later frame reads them before its own clear.
-  // Writing depth 0 and stencil 0xFF in place of the invalidate, as a tile-based GPU may leave them, changes no pixel.
+  // From here on depth 0 and stencil 0xFF are written in place of the invalidate, as a tile-based GPU may leave them:
+  // no pixel changes, here or in the stages below (the shared stack's composite over the world included).
   const poisoned = await page.evaluate(() => {
     const gl = (globalThis as unknown as { __layerClearsContexts: WebGL2RenderingContext[] }).__layerClearsContexts
       .filter((context) => !context.isContextLost()).sort((a, b) => b.drawingBufferWidth - a.drawingBufferWidth)[0]!;
     const counts = { poisoned: 0 };
     const original = gl.invalidateFramebuffer;
-    (gl as unknown as { __restoreInvalidate: () => void }).__restoreInvalidate = () => { gl.invalidateFramebuffer = original; };
     gl.invalidateFramebuffer = function (target: GLenum, attachments: GLenum[]) {
       if (gl.getParameter(gl.DRAW_FRAMEBUFFER_BINDING) !== null || !attachments.includes(gl.DEPTH)) return original.call(gl, target, attachments);
       counts.poisoned += 1;
@@ -257,12 +257,8 @@ test("leaving out the Scene Layers' already-cleared depth-stencil clears changes
   });
   expect(poisoned).toBe(0);
   expect(await settled(page), "depth and stencil poisoned after each frame").toBe(plain.skipped);
-  expect(await page.evaluate(() => (globalThis as unknown as { __poisonCounts: { poisoned: number } }).__poisonCounts.poisoned)).toBeGreaterThan(1);
-  await page.evaluate(() => {
-    const gl = (globalThis as unknown as { __layerClearsContexts: WebGL2RenderingContext[] }).__layerClearsContexts
-      .filter((context) => !context.isContextLost()).sort((a, b) => b.drawingBufferWidth - a.drawingBufferWidth)[0]!;
-    (gl as unknown as { __restoreInvalidate: () => void }).__restoreInvalidate();
-  });
+  const poisonCount = () => page.evaluate(() => (globalThis as unknown as { __poisonCounts: { poisoned: number } }).__poisonCounts.poisoned);
+  expect(await poisonCount()).toBeGreaterThan(1);
 
   const step = async (text: string) => {
     await closeConsole();
@@ -278,8 +274,11 @@ test("leaving out the Scene Layers' already-cleared depth-stencil clears changes
   await step("Gain written");
   // The shared Scene Layer stack with the pass: every layer draws into its target, so nothing is left out.
   await step("Pass registered");
+  const poisonedBeforeStack = await poisonCount();
   const stacked = await compare("shared stack with a pass");
   expect(stacked.skippedWork?.backbuffer.elided).toBe(0);
+  // The stack's frames were poisoned too.
+  expect(await poisonCount()).toBeGreaterThan(poisonedBeforeStack);
 
   await testInfo.attach("scene-layer-clears", { body: JSON.stringify(results, null, 2), contentType: "application/json" });
   console.log(`scene layer clears: ${JSON.stringify(results)}`);

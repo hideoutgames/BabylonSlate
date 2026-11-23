@@ -2660,6 +2660,9 @@ function initializeEngine(
           leaveDrawPass(engine);
         }
       }
+      // A frame that loads an owner or is captured for a frame report may turn incoherent after it wrote (a failed
+      // presentation, a capture not ready to present): its shown image is held before anything writes, as before.
+      if (registeredView && (pendingPresentations.size > 0 || frameScope)) holdPresentedImage(engine, registeredView);
       if (!worldLoading || pendingPresentations.has("world")) drawOwner("world", () => {
         const result = frameScope
           ? frameScope.capture.stage(scene, { name: "World output", kind: "composition", sceneId: lastSceneAssetGuid },
@@ -2684,8 +2687,9 @@ function initializeEngine(
       });
       else engine.clear(scene.clearColor, true, true, true);
       // A frame held back before the world wrote its output: the backbuffer still holds the shown image, which the
-      // layers are about to draw over, so it is held now and put back at the step's end. A world that drew its output
-      // and then turned incoherent shows that frame instead (`registered-view-admission.ts`).
+      // layers are about to draw over, so it is held now and put back at the step's end. A steady frame whose world drew
+      // its output and then turned incoherent (readiness changed during the draw) shows that whole frame instead
+      // (`registered-view-admission.ts`).
       if (!coherentFrame && !worldDrewOutput && registeredView) holdPresentedImage(engine, registeredView);
       joysticks.refresh();
       uiControls.refresh();

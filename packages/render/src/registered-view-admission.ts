@@ -281,7 +281,7 @@ function retainPresentation(engine: AbstractEngine, view: EngineView, presentati
       // A resize reallocates (clears) the default framebuffer: a shown image only it holds is held first, in a step too.
       const before = this.getRenderingCanvas();
       const unheld = direct ? unheldShownImage(direct) : null;
-      if (unheld && before && (before.width !== width || before.height !== height)) direct!.store.snapshot(unheld, before.width, before.height);
+      if (unheld && before && (forceSetSize || before.width !== width || before.height !== height)) direct!.store.snapshot(unheld, before.width, before.height);
       const changed = setSize.call(this, width, height, forceSetSize);
       const covered = direct?.placement.view;
       if (direct && covered && !direct.inStep) {
