@@ -94,12 +94,14 @@ describe("a prepare from the walk's changes", () => {
   });
 });
 
-/** Runs a full collection once the current job ended (a WeakRef made in it holds its target until then). */
+/** Runs full collections once the current job ended (a WeakRef made in it holds its target until then). */
 async function collectGarbage(): Promise<void> {
   setFlagsFromString("--expose-gc");
   const gc = runInNewContext("gc") as () => void;
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  gc();
+  for (let pass = 0; pass < 2; pass += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    gc();
+  }
 }
 
 describe("a Scene without a shadow map", () => {
