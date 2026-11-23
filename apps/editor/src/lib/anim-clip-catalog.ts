@@ -116,14 +116,17 @@ export function animClipCatalogFromAssets(
 }
 
 /**
- * A Play session's clip catalog: every clip the headers list (a script may play any Animation on a slot, not only those
- * its Play closure holds), each Animation's root motion taken from `tracks` (`playRootMotionTracks`: read from
- * documents, scaled by the source Model's import scale as export scales it). An Animation `tracks` lacks has none.
+ * A Play session's clip catalog: every clip the headers list, each Animation's root motion taken from `prepared` (the
+ * Play closure's catalog, built from the documents preparation read, its travel scaled by the source Model's import
+ * scale as export scales it). An Animation outside the closure has none and costs no read: a slot that plays one loads
+ * it on demand first, and the load brings its track in the source union's catalog.
  */
 export function playAnimClipCatalog(
   assets: ReadonlyArray<CatalogAsset>,
-  tracks: ReadonlyMap<string, AnimClipRootMotion>,
+  prepared: ReadonlyArray<AnimClipCatalogEntry>,
 ): AnimClipCatalogEntry[] {
+  const tracks = new Map<string, AnimClipRootMotion>();
+  for (const entry of prepared) if (entry.type === "Animation" && entry.rootMotion?.track) tracks.set(entry.guid, entry.rootMotion);
   return animClipCatalogFromAssets(assets).map((entry) => {
     if (entry.type !== "Animation") return entry;
     const rootMotion = tracks.get(entry.guid);
