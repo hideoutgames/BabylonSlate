@@ -23,6 +23,13 @@ function engine() {
     clear(color: unknown, backBuffer: boolean, depth: boolean, stencil = false) {
       reached.push(`${color && backBuffer ? "c" : ""}${depth ? "d" : ""}${stencil ? "s" : ""}`);
     },
+    /** A clear left out whole makes no clear call: it binds a deferred attachments restore and applies the states (`-`). */
+    _pendingAttachments: null as unknown,
+    _flushAttachments() { reached.push("attachments"); },
+    applyStates() {
+      // As a clear applies them: the stencil from its global state.
+      reached.push(fake.stencilStateComposer.useStencilGlobalOnly ? "-" : "material stencil");
+    },
     enableScissor() {},
     disableScissor() {},
     drawElementsType: (() => { fake._drawCalls.current += 1; }) as (fillMode: number, start: number, count: number, instances?: number) => void,
@@ -46,12 +53,27 @@ describe("the backbuffer depth tracker", () => {
     layerClear();
     layerClear();
     tracker.endLayerPass();
-    expect(reached).toEqual(["ds", ""]);
+    expect(reached).toEqual(["ds", "-"]);
     expect({ depthClears: tracker.depthClears, elided: tracker.elided }).toEqual({ depthClears: 1, elided: 1 });
     // Outside a layer pass every clear runs.
     layerClear();
     layerClear();
-    expect(reached).toEqual(["ds", "", "ds", "ds"]);
+    expect(reached).toEqual(["ds", "-", "ds", "ds"]);
+  });
+
+  it("leaves a clear with nothing left to clear out of the context, binding pending attachments and applying the states as the clear would", () => {
+    const { fake, babylon, tracker, reached, layerClear } = engine();
+    tracker.beginLayerPass();
+    layerClear();
+    fake._pendingAttachments = [0];
+    fake.stencilStateComposer.useStencilGlobalOnly = false;
+    layerClear();
+    // A layer clear with its colour keeps the colour: only depth and stencil are left out.
+    babylon.clear({} as never, true, true, true);
+    tracker.endLayerPass();
+    expect(reached).toEqual(["ds", "attachments", "-", "c"]);
+    expect(fake.stencilStateComposer.useStencilGlobalOnly).toBe(false);
+    expect({ clears: tracker.clears, depthClears: tracker.depthClears, elided: tracker.elided }).toEqual({ clears: 2, depthClears: 1, elided: 2 });
   });
 
   it("keeps the world clear's colour, and leaves the first layer's clear out after the world's merged clear and its one draw", () => {
@@ -62,7 +84,7 @@ describe("the backbuffer depth tracker", () => {
     tracker.beginLayerPass();
     layerClear();
     tracker.endLayerPass();
-    expect(reached).toEqual(["cds", ""]);
+    expect(reached).toEqual(["cds", "-"]);
     // A second draw before the layers is not the output pass's: the clear runs.
     worldClear();
     tracker.noteFoldedClear();
@@ -100,17 +122,17 @@ describe("the backbuffer depth tracker", () => {
     fake.depthCullingState.depthMask = false;
     draw();
     layerClear();
-    expect(reached).toEqual(["ds", ""]);
+    expect(reached).toEqual(["ds", "-"]);
     fake.depthCullingState.depthMask = true;
     draw();
     layerClear();
-    expect(reached).toEqual(["ds", "", "ds"]);
+    expect(reached).toEqual(["ds", "-", "ds"]);
     // Without the depth test a draw writes no depth.
     fake.depthCullingState.depthTest = false;
     draw();
     layerClear();
     expect(reached).toHaveLength(4);
-    expect(reached[3]).toBe("");
+    expect(reached[3]).toBe("-");
     stencilGlobal.enabled = true;
     draw();
     layerClear();
@@ -148,7 +170,7 @@ describe("the backbuffer depth tracker", () => {
     setup.babylon.clear(null as never, false, true, false);
     setup.babylon.clear(null as never, false, true, true, 1);
     setup.tracker.endLayerPass();
-    expect(setup.reached).toEqual(["ds", "", "", "ds"]);
+    expect(setup.reached).toEqual(["ds", "-", "-", "ds"]);
   });
 
   it("follows only the default framebuffer, and forgets at the end of each layer pass", () => {
@@ -161,7 +183,7 @@ describe("the backbuffer depth tracker", () => {
     layerClear();
     fake._currentFramebuffer = null;
     layerClear();
-    expect(reached).toEqual(["ds", "ds", ""]);
+    expect(reached).toEqual(["ds", "ds", "-"]);
     tracker.endLayerPass();
     tracker.beginLayerPass();
     layerClear();

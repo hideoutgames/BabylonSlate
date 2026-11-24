@@ -148,7 +148,7 @@ async function settle(graph: ForwardSceneFrameGraph, camera: FreeCamera): Promis
       const internal = texture.getInternalTexture();
       if (internal) internal.isReady = true;
     }
-    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
   });
   await drawn();
   await new Promise((resolve) => setTimeout(resolve, 150));
@@ -228,7 +228,7 @@ it("copies a multisampled world view's resolved scene, depth included, and draws
     clears.push((this as unknown as { _currentRenderTarget?: { name: string } })._currentRenderTarget?.name);
   });
   const work = frames(graph, () => {
-    for (let frame = 0; frame < 2; frame += 1) expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    for (let frame = 0; frame < 2; frame += 1) expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
   });
   expect(work).toEqual({ frames: 2, visibleFrames: 2, copies: 2 });
   expect(clears).toEqual(["Forward objects", "Forward objects"]);
@@ -258,7 +258,7 @@ it("swaps the backbuffer view onto an own pair only on frames with visible copy-
   const clears = vi.spyOn(FrameGraphRenderContext.prototype, "clearAttachments");
   let work = frames(graph, () => {
     waterDraws.length = opaqueDraws.length = glassDraws.length = sparkDraws.length = 0;
-    for (let frame = 0; frame < 3; frame += 1) expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    for (let frame = 0; frame < 3; frame += 1) expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
   });
   expect(work).toEqual({ frames: 3, visibleFrames: 3, copies: 3 });
   expect(clears).toHaveBeenCalledTimes(3);
@@ -275,7 +275,7 @@ it("swaps the backbuffer view onto an own pair only on frames with visible copy-
   water.isVisible = false;
   work = frames(graph, () => {
     waterDraws.length = opaqueDraws.length = glassDraws.length = sparkDraws.length = 0;
-    for (let frame = 0; frame < 3; frame += 1) expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    for (let frame = 0; frame < 3; frame += 1) expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
   });
   expect(work).toEqual({ frames: 3, visibleFrames: 0, copies: 0 });
   expect(clears).toHaveBeenCalledTimes(6);
@@ -285,7 +285,7 @@ it("swaps the backbuffer view onto an own pair only on frames with visible copy-
   expect(sparkDraws).toEqual(Array(3).fill("Forward objects → output"));
 
   water.isVisible = true;
-  work = frames(graph, () => expect(graph.render(camera)).toEqual({ path: "frameGraph" }));
+  work = frames(graph, () => expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true }));
   expect(work).toEqual({ frames: 1, visibleFrames: 1, copies: 1 });
   expect(clears).toHaveBeenCalledTimes(7);
   graph.dispose();
@@ -315,7 +315,7 @@ it("draws water before the editor grid and every other blended surface, with or 
   await settle(graph, camera);
   const render = () => {
     order.length = 0;
-    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
   };
   // The split's transparent pass, after the copy.
   expect(frames(graph, render)).toEqual({ frames: 1, visibleFrames: 1, copies: 1 });
@@ -340,7 +340,7 @@ it("draws water without its depth pre-pass only while `waterdebug prepass` is of
   await settle(graph, camera);
   const frame = () => {
     passes.length = 0;
-    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
     return [...passes];
   };
   expect(frame()).toEqual(["Forward transparent depth pre-pass → texture", "Forward transparent → texture"]);
@@ -374,7 +374,7 @@ it("shares an effect chain's scene targets, deferring transparents only while wa
   expect(graph.waterSceneCopyDiagnostics()).toMatchObject({ ownTargets: false });
   let work = frames(graph, () => {
     glassDraws.length = sparkDraws.length = 0;
-    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
   });
   expect(work).toEqual({ frames: 1, visibleFrames: 1, copies: 1 });
   expect(glassDraws).toEqual(["Forward transparent → texture"]);
@@ -385,7 +385,7 @@ it("shares an effect chain's scene targets, deferring transparents only while wa
   await settle(graph, camera);
   work = frames(graph, () => {
     glassDraws.length = sparkDraws.length = 0;
-    expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+    expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
   });
   expect(work).toEqual({ frames: 1, visibleFrames: 0, copies: 0 });
   expect(glassDraws).toEqual(["Forward objects → texture"]);
@@ -807,7 +807,7 @@ it("degrades to the plain graph with a warning when the shared budget refuses th
   // The refusal is part of the prepared plan: frames keep rendering without re-planning.
   await settle(graph, camera);
   expect(graph.readiness(camera)).toEqual({ path: "frameGraph", ready: true });
-  expect(graph.render(camera)).toEqual({ path: "frameGraph" });
+  expect(graph.render(camera)).toEqual({ path: "frameGraph", drewOutput: true });
   expect(warn).toHaveBeenCalledTimes(1);
   graph.dispose();
 });
