@@ -2415,6 +2415,7 @@ it("keeps the geometry pass for ambient occlusion while Screen-Space Shadows idl
 
 // High plans volumetric lighting; its march and occlusion's are at half the render size, as the screen shadows'.
 const HIGH = normalizeRenderingQuality(qualityPresetPatch("high"));
+const ULTRA = normalizeRenderingQuality(qualityPresetPatch("ultra"));
 
 it("draws the screen shadows before the objects and the ambient occlusion and volumetric marches in passes of their own after them", async () => {
   const { graph, frame } = await screenShadowsHost(true, {
@@ -2430,13 +2431,17 @@ it("draws the screen shadows before the objects and the ambient occlusion and vo
   graph.dispose();
 });
 
-it("draws each ambient occlusion and reflection blur in a pass of its own", async () => {
+it.each([
+  // Ultra's full occlusion blurs in two separable passes; High's reduced one in one.
+  ["Ultra", ULTRA, ["Scene Ambient Occlusion Blur X", "Scene Ambient Occlusion Blur Y"]],
+  ["High", HIGH, ["Scene Ambient Occlusion Blur"]],
+])("draws each ambient occlusion and reflection blur in a pass of its own at %s", async (_tier, quality, occlusionBlurs) => {
   const { graph, frame } = await screenShadowsHost(true, {
     ambientOcclusion: { ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true },
     reflections: { ...DEFAULT_RENDER_EFFECTS.reflections, enabled: true },
-  }, undefined, HIGH);
-  expect(graph.taskNames().filter((name) => /^(Scene Ambient Occlusion|Scene Reflections)( Blur [XY])?$/.test(name))).toEqual([
-    "Scene Ambient Occlusion", "Scene Ambient Occlusion Blur X", "Scene Ambient Occlusion Blur Y",
+  }, undefined, quality);
+  expect(graph.taskNames().filter((name) => /^(Scene Ambient Occlusion|Scene Reflections)( Blur( [XY])?)?$/.test(name))).toEqual([
+    "Scene Ambient Occlusion", ...occlusionBlurs,
     "Scene Reflections", "Scene Reflections Blur X", "Scene Reflections Blur Y",
   ]);
   expect(frame()).toEqual({ skipped: [], reads: true });
@@ -2518,7 +2523,9 @@ it("keeps occlusion's march and blurs in one half-float channel, which every rea
   updateSceneRenderingSettings(scene, {
     mode: "pbr",
     effects: { ...DEFAULT_RENDER_EFFECTS, ambientOcclusion: { ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true } },
-    quality: normalizeRenderingQuality({ postprocessing: { resolutionScale: 1, antiAliasing: "off", ambientOcclusion: true } }),
+    quality: normalizeRenderingQuality({
+      postprocessing: { resolutionScale: 1, antiAliasing: "off", ambientOcclusion: true, ambientOcclusionDetail: "full" },
+    }),
   });
   const graph = new ForwardSceneFrameGraph(scene);
   try {
@@ -2558,7 +2565,10 @@ it("sizes every screen-space target of the world view from its render scale; onl
       volumetricLighting: { ...DEFAULT_RENDER_EFFECTS.volumetricLighting, enabled: true },
     },
     quality: normalizeRenderingQuality({
-      postprocessing: { resolutionScale: 1, antiAliasing: "off", ambientOcclusion: true, reflections: true, volumetricLighting: true },
+      postprocessing: {
+        resolutionScale: 1, antiAliasing: "off", ambientOcclusion: true, reflections: true, volumetricLighting: true,
+        ambientOcclusionDetail: "full", volumetricDetail: "full",
+      },
     }),
   });
   new PointLight("light", new Vector3(0, 2, 0), scene);
