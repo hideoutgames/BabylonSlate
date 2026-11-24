@@ -9,8 +9,8 @@ import { fsr1UpscalePixelShader } from "@babylonjs/core/Shaders/fsr1Upscale.frag
 
 /**
  * Babylon's EASU emulates FSR's gathers channel by channel: `FsrEasuRF`, `GF` and `BF` each fetch the same four texels
- * for one channel, 48 fetches a pixel. `easuSharedFetches` has each footprint fetch its four texels once for all three
- * channels (12 fetches), building the same per-channel vectors, so every value and the image are the same.
+ * for one channel, 48 fetches a pixel. `easuSharedFetches` has each of the four footprints fetch its four texels once for
+ * all three channels (16 fetches), building the same per-channel vectors, so every value and the image are the same.
  */
 export function easuSharedFetches(source: string): string {
   const texel = (offset: string) => `texelFetch(textureSampler,clamp(base+ivec2(${offset}),ivec2(0),mx),0).rgb`;
