@@ -15,6 +15,7 @@
     "./src/fbx-import.worker.ts",
     "./src/flat-normal-block.ts",
     "./src/foliage-fade.ts",
+    "./src/fsr1-tasks.ts",
     "./src/geometry-surface-output-block.ts",
     "./src/gltf-loader.ts",
     "./src/gpu-synthetic-load.ts",

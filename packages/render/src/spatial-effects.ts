@@ -257,10 +257,14 @@ export function createSpatialStages(
   const composeUniforms: string[] = [];
   const composeBinds: ((effect: Effect) => void)[] = [];
   let fogIdle: (() => boolean) | undefined;
+  // The occlusion's and the fog's resolutions: equal, the compose's two upsamples share their depth reads.
+  let occlusionScale: number | null = null;
+  let fogScale: number | null = null;
   try {
     const occlusion = plan.ambientOcclusion;
     if (occlusion) {
       const scale = Math.max(0.25, occlusion.resolutionScale * quality);
+      occlusionScale = scale;
       const texelWidth = 1 / Math.max(1, Math.round(width * scale)),
         texelHeight = 1 / Math.max(1, Math.round(height * scale));
       const name = "Scene Ambient Occlusion";
@@ -406,6 +410,7 @@ export function createSpatialStages(
       }
       const name = "Scene Volumetric Lighting";
       const scale = Math.max(0.25, volume.resolutionScale * quality);
+      fogScale = scale;
       const inverseProjection = Matrix.Identity(),
         inverseView = Matrix.Identity();
       const slots = createVolumetricSlots();
@@ -484,6 +489,7 @@ export function createSpatialStages(
               : null,
             volumetricLighting: !!volume,
             linear: plan.sceneLinear,
+            sharedUpsample: occlusionScale !== null && occlusionScale === fogScale,
           }),
           composeUniforms,
           [...composeSamplers, ...Object.keys(reads)],

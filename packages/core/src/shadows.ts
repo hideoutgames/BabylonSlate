@@ -281,9 +281,9 @@ export function componentCastsShadows(classId: string, castShadows: unknown): bo
  * themselves (`passes`: no layer is bound, cleared or drawn once it has drawn its first, and lit surfaces sample the
  * depth the maps last held), and the atlas sized to the level (`atlasfit`: off, the atlas is one power of two larger,
  * within the device's limit, and holds the same tiles, so its change is what the atlas's size alone costs), and the
- * sun cascades' depth clamp in the fragment stage (`depthclamp`: off, casters in front of a cascade's near plane are
- * clamped to it in the vertex stage, so no caster fragment writes its own depth; a triangle crossing the plane then
- * draws slightly differently), and the sun's far cascades drawn in every frame the map draws (`farcascades`: off, the
+ * sun cascades' depth clamp, in the rasteriser where the context has `EXT_depth_clamp` and else by each caster fragment
+ * writing its clamped depth (`depthclamp`: off, casters in front of a cascade's near plane are clamped to it in the
+ * vertex stage; a triangle crossing the plane then draws slightly differently), and the sun's far cascades drawn in every frame the map draws (`farcascades`: off, the
  * cascades after the first two are cleared and drawn only in every second Engine frame and keep their depth and the
  * view they were drawn with in between, so a moving caster's far shadow may lag a frame), and the map passes of the
  * sun alone (`sunpasses`) or of the spot and point lights alone (`localpasses`), each as `passes` is for its maps, and

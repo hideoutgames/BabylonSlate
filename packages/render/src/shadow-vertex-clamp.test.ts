@@ -1,6 +1,6 @@
 import { ShaderStore } from "@babylonjs/core/Engines/shaderStore";
 import { describe, expect, it } from "vitest";
-import { SHADOW_VERTEX_CLAMP_DEFINE, applyVertexDepthClamp } from "./shadow-vertex-clamp";
+import { SHADOW_RASTER_CLAMP_DEFINE, SHADOW_VERTEX_CLAMP_DEFINE, applyRasterDepthClamp, applyVertexDepthClamp } from "./shadow-vertex-clamp";
 
 describe("vertex-stage shadow depth clamp", () => {
   it("asks for the vertex clamp only where Babylon asked for the fragment clamp", () => {
@@ -11,6 +11,18 @@ describe("vertex-stage shadow depth clamp", () => {
     const unclamped = ["#define SM_DEPTHCLAMP 0"];
     applyVertexDepthClamp(unclamped);
     expect(unclamped).toEqual(["#define SM_DEPTHCLAMP 0"]);
+    const raster = ["#define SM_DEPTHCLAMP 1"];
+    applyRasterDepthClamp(raster);
+    expect(raster).toEqual([SHADOW_RASTER_CLAMP_DEFINE]);
+  });
+
+  it("has the rasteriser clamp take the fragment clamp's depth from the vertex stage, without gl_FragDepth", () => {
+    const metric = ShaderStore.IncludesShadersStore.shadowMapVertexMetric!;
+    const branch = metric.slice(metric.indexOf("SM_DEPTHCLAMP==3"));
+    // GL's depth range maps NDC z to (z + 1) / 2: the metric Babylon's fragment clamp writes.
+    expect(branch).toContain("gl_Position.z=(vDepthMetricSM*2.0-1.0)*gl_Position.w;");
+    // Babylon computes the metric from the biased clip depth only off its fragment clamp, which this mode is.
+    expect(metric.indexOf("vDepthMetricSM=(gl_Position.z+depthValuesSM.x)/depthValuesSM.y+biasAndScaleSM.x;")).toBeLessThan(metric.indexOf("SM_DEPTHCLAMP==3"));
   });
 
   it("adds its branch to Babylon's vertex metric once, after the metric, and leaves Babylon's own branches as they were", () => {

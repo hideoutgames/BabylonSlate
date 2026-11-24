@@ -11,13 +11,18 @@ export interface SpatialComposeTerms {
   volumetricLighting: boolean;
   /** Scene Linear colour; Display Space decodes and encodes it with the 2.2 power. */
   linear: boolean;
+  /**
+   * Occlusion and volumetric lighting at the same resolution: their upsamples tap the same depth texels, which the fog's
+   * takes from the occlusion's reads instead of fetching them again (the same values, so the same image).
+   */
+  sharedUpsample?: boolean;
 }
 
 /** A depth-weighted four-tap upsample of `sampler` (at `texel`) around the full-resolution pixel of depth `depth`. */
-function upsampleTaps(texel: string, read: (at: string) => string, tapDepth: (at: string) => string, add: string): string {
-  return [[0, 0], [1, 0], [0, 1], [1, 1]].map(([x, y]) => `{
+function upsampleTaps(texel: string, read: (at: string) => string, tapDepth: (at: string, index: number) => string, add: string): string {
+  return [[0, 0], [1, 0], [0, 1], [1, 1]].map(([x, y], index) => `{
   vec2 tap = start + vec2(${x}.0, ${y}.0) * ${texel};
-  ${tapDepth("tap")}
+  ${tapDepth("tap", index)}
   float weight = ${x ? "fraction.x" : "(1.0-fraction.x)"} * ${y ? "fraction.y" : "(1.0-fraction.y)"} / (1.0 + 100.0 * abs(tapDepth - depth) / max(depth, 0.1));
   ${add.replace("$value", read("tap"))}
   total += weight;
@@ -59,15 +64,18 @@ export function spatialComposeShader(terms: SpatialComposeTerms): string {
 bool reflects = max(reflectivity.r, max(reflectivity.g, reflectivity.b)) > reflectionTerms.z;`);
   if (reflectionsAlone) body.push("if (!reflects) { gl_FragColor = base; return; }");
   body.push(`vec3 color = ${linear ? "base.rgb" : reflectionsAlone ? "pow(base.rgb, vec3(2.2))" : "pow(max(base.rgb, vec3(0.0)), vec3(2.2))"};`);
+  // The occlusion's depth reads, kept for the fog's upsample at the same resolution.
+  const shared = !!terms.sharedUpsample && ao && fog;
+  if (shared) body.push("float sharedDepth = abs(texture2D(depthSampler, vUV).r);\nfloat sharedTapDepth0 = 0.0;\nfloat sharedTapDepth1 = 0.0;\nfloat sharedTapDepth2 = 0.0;\nfloat sharedTapDepth3 = 0.0;");
   if (ao)
     body.push(`{
-float depth = abs(texture2D(depthSampler, vUV).r);
+float depth = ${shared ? "sharedDepth" : "abs(texture2D(depthSampler, vUV).r)"};
 vec2 grid = vUV / aoTexelSize - vec2(0.5);
 vec2 fraction = fract(grid);
 vec2 start = (floor(grid) + vec2(0.5)) * aoTexelSize;
 float visibility = 0.0;
 float total = 0.0;
-${upsampleTaps("aoTexelSize", (at) => `texture2D(aoSampler, ${at}).r`, (at) => `float tapDepth = abs(texture2D(depthSampler, ${at}).r);`, "visibility += $value * weight;")}
+${upsampleTaps("aoTexelSize", (at) => `texture2D(aoSampler, ${at}).r`, (at, index) => `float tapDepth = abs(texture2D(depthSampler, ${at}).r);${shared ? ` sharedTapDepth${index} = tapDepth;` : ""}`, "visibility += $value * weight;")}
 visibility = visibility / max(total, 0.000001);
 if (depth < 0.000001) { visibility = 1.0; }
 color *= visibility;
@@ -90,14 +98,14 @@ color = color * (1.0 - reflectionMultiplier) + SSR * reflectionMultiplier;
 }`);
   if (fog)
     body.push(`if (fogActive > 0.5) {
-float depth = min(abs(texture2D(depthSampler, vUV).r), 65000.0);
+float depth = min(${shared ? "sharedDepth" : "abs(texture2D(depthSampler, vUV).r)"}, 65000.0);
 if (depth < 0.000001) { depth = cameraFar; }
 vec2 grid = vUV / fogTexelSize - vec2(0.5);
 vec2 fraction = fract(grid);
 vec2 start = (floor(grid) + vec2(0.5)) * fogTexelSize;
 vec4 fog = vec4(0.0);
 float total = 0.0;
-${upsampleTaps("fogTexelSize", (at) => `texture2D(fogSampler, ${at})`, (at) => `float tapDepth = min(abs(texture2D(depthSampler, ${at}).r), 65000.0);
+${upsampleTaps("fogTexelSize", (at) => `texture2D(fogSampler, ${at})`, (at, index) => `float tapDepth = min(${shared ? `sharedTapDepth${index}` : `abs(texture2D(depthSampler, ${at}).r)`}, 65000.0);
   if (tapDepth < 0.000001) { tapDepth = cameraFar; }`, "fog += $value * weight;")}
 fog /= max(total, 0.000001);
 color = color * fog.a + fog.rgb;

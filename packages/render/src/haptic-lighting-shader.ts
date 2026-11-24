@@ -580,6 +580,12 @@ void hapticDirectLights(hapticSurface surface, vec3 P, vec3 N, vec3 V, inout vec
   // filter adds over a second to the program's link. A slot's contribution is summed where its own loop summed it.
   hapticSunLookup sun = hapticSunCascade(P);
   float sunShadow = 1.0;
+  // Whether N faces the shadowed sun: a light behind the surface adds nothing its shadow could change.
+  bool sunFacing = false;
+  for (int d = 0; d < ${HAPTIC_LIGHT_MAXIMUM.directional}; d++) {
+    if (d >= int(hapticCounts.x)) break;
+    if (hapticDirectional[d * 2 + 1].w > 0.5) sunFacing = dot(N, hapticDirectional[d * 2].xyz) < 0.0;
+  }
   uvec2 clusterMask = hapticClusterMask(P);
 #ifdef HAPTIC_DEBUG_NO_LOCAL_LIGHTS
   // \`worlddebug locallights off\`: no point, spot or rect light.
@@ -603,7 +609,7 @@ void hapticDirectLights(hapticSurface surface, vec3 P, vec3 N, vec3 V, inout vec
     float cone = 1.0;
     if (slot < 2) {
       // The sun's cascade, then the next one where it blends into it.
-      if (sun.index >= 0 && (slot == 0 || sun.blends)) {
+      if (sun.index >= 0 && (slot == 0 || sun.blends) && sunFacing) {
         view = sun.first + float(sun.index + slot);
         viewDx = dPdx;
         viewDy = dPdy;
@@ -636,7 +642,9 @@ void hapticDirectLights(hapticSurface surface, vec3 P, vec3 N, vec3 V, inout vec
         cone = hapticConeFalloff(hapticSpot[i * 4 + 1].xyz, L, hapticSpot[i * 4 + 1].w, hapticSpot[i * 4 + 3].y);
         if (cone == 0.0) continue;
       }
-      view = spot ? hapticSpot[i * 4 + 3].x : hapticPointShadowView(hapticPoint[i * 3 + 2], -offset);
+      // A light behind the surface: its shadow is not looked up.
+      if (dot(N, L) <= 0.0) continue;
+      view = spot ?hapticSpot[i * 4 + 3].x : hapticPointShadowView(hapticPoint[i * 3 + 2], -offset);
     }
     float lit = hapticShadow(view, P, viewDx, viewDy);
     if (slot == 0) {
@@ -653,7 +661,7 @@ void hapticDirectLights(hapticSurface surface, vec3 P, vec3 N, vec3 V, inout vec
         vec4 record = hapticDirectional[d * 2 + 1];
 #ifdef HAPTIC_SCREEN_SHADOWS
         // The cascades and the screen shadows each block the sun; the darker wins, so neither doubles the other.
-        vec3 sunColor = record.rgb * (record.w > 0.5 ? min(sunShadow, hapticSunScreenShadow(P, sunShadow)) : 1.0);
+        vec3 sunColor = record.rgb * (record.w > 0.5 && sunFacing ? min(sunShadow, hapticSunScreenShadow(P, sunShadow)) : 1.0);
 #else
         vec3 sunColor = record.rgb * (record.w > 0.5 ? sunShadow : 1.0);
 #endif

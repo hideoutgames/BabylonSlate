@@ -255,7 +255,7 @@ export function builtinCommands(): RegisteredCommand[] {
       name: "shadowdebug",
       tier: "debug",
       category: "engine",
-      description: "Switch one part of shadow drawing off or back on, to measure what it costs: the casters drawn into every map layer (casters), the map passes themselves (passes), the sun's map passes alone (sunpasses), the spot and point lights' alone (localpasses), the atlas sized to its tiles (atlasfit; off, it is one size larger with the same tiles), every tile at its full size (fulltiles; off, every map is drawn at half its edge in the same atlas), the sun cascades' depth clamp in the fragment stage (depthclamp; off, casters are clamped in the vertex stage instead), or the sun's far cascades drawn every frame (farcascades; off, they draw in every second frame)",
+      description: "Switch one part of shadow drawing off or back on, to measure what it costs: the casters drawn into every map layer (casters), the map passes themselves (passes), the sun's map passes alone (sunpasses), the spot and point lights' alone (localpasses), the atlas sized to its tiles (atlasfit; off, it is one size larger with the same tiles), every tile at its full size (fulltiles; off, every map is drawn at half its edge in the same atlas), the sun cascades' depth clamp, in the rasteriser where the GPU can and else per pixel (depthclamp; off, casters are clamped in the vertex stage instead), or the sun's far cascades drawn every frame (farcascades; off, they draw in every second frame)",
       parameters: [{ name: "part", type: "enum", enumValues: [...SHADOW_DEBUG_PARTS] }, FLAG],
       run(args, host) {
         const part = args.part as ShadowDebugPart, enabled = Boolean(args.enabled);
