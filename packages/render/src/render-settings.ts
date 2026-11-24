@@ -31,6 +31,7 @@ import {
   normalizeWaterBlendDistance,
   antiAliasingSamples,
   type AntiAliasingMode,
+  type PostProcessingDetailField,
   type PostProcessingEffectField,
   type PostProcessingQuality,
   type EffectiveRenderingQuality,
@@ -110,6 +111,8 @@ type SceneRendering = {
   worldPostEffects: boolean;
   /** Screen-space effects the resolved quality tier can afford. */
   effectAllowances: Pick<PostProcessingQuality, PostProcessingEffectField>;
+  /** How much of Ambient Occlusion's and Volumetric Lighting's work the resolved quality tier runs. */
+  effectDetail: Pick<PostProcessingQuality, PostProcessingDetailField>;
   /** The quality tier's Anti-Aliasing; a world view's alone (`sceneMultisampleCount`, the plan's FXAA). */
   antiAliasing: AntiAliasingMode;
   /** Loads the requested LUT asset; only a ready texture enters the plan. */
@@ -200,6 +203,10 @@ export function sceneRenderingSettings(scene: Scene): SceneRendering {
         reflections: quality.postprocessing.reflections,
         volumetricLighting: quality.postprocessing.volumetricLighting,
       },
+      effectDetail: {
+        ambientOcclusionDetail: quality.postprocessing.ambientOcclusionDetail,
+        volumetricDetail: quality.postprocessing.volumetricDetail,
+      },
       antiAliasing: quality.postprocessing.antiAliasing,
       colorGrading: undefined as unknown as ColorGradingSource,
       colorGradingTexture: null,
@@ -248,6 +255,8 @@ export function updateSceneRenderingSettings(
   state.shadows = quality.shadows;
   const { ambientOcclusion, reflections, volumetricLighting } = quality.postprocessing;
   state.effectAllowances = { ambientOcclusion, reflections, volumetricLighting };
+  const { ambientOcclusionDetail, volumetricDetail } = quality.postprocessing;
+  state.effectDetail = { ambientOcclusionDetail, volumetricDetail };
   // Upscaling Pixelated keeps every edge on the pixel grid: no tier, Scene or session smooths it (MSAA or FXAA).
   const pixelated = pixelatedUpscaling(state.project);
   state.antiAliasing = pixelated ? "off" : quality.postprocessing.antiAliasing;
@@ -295,6 +304,7 @@ function replanSceneEffects(state: SceneRendering): void {
     fogVolumesPresent: spatial && state.fogVolumesPresent,
     colorGradingTexture: state.colorGradingTexture,
     allowed: spatial ? state.effectAllowances : NO_SPATIAL_EFFECTS,
+    detail: state.effectDetail,
     screenShadows: readsScreenShadows(state) && state.shadows.enabled ? state.shadows.screenShadows : "off",
     fxaa: worldView(state) && state.antiAliasing === "fxaa",
   };

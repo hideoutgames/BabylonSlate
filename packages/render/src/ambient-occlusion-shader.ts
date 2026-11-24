@@ -130,6 +130,36 @@ ${output(`${v4}(visibility, visibility, visibility, 1.0)`)}
 }
 
 /**
+ * Ambient Occlusion's blur at `reduced` detail (`reducedOcclusion`): one depth-aware 3 × 3 pass at occlusion resolution
+ * in place of the two separable ones, nine taps (and their depths) instead of eighteen. `aoBlurStep` is the tap
+ * spacing on each axis (1.5 texels, so the bilinear taps reach as far as the separable pair's inner taps); a tap across
+ * a depth edge is rejected as there.
+ */
+export function ambientOcclusionSquareBlurShader(): string {
+  const { v2, v4, f, uv, u, decl, field, texture, sample, loop, output, main } = syntax();
+  const header = `varying vec2 vUV;
+${texture("textureSampler")}${texture("depthSampler")}${field(v2, "aoBlurStep")}
+`;
+  const body = `
+${decl(f, "centerDepth", `abs(${sample("depthSampler", uv)}.r)`)}
+${decl(f, "total", "0.0")}
+${decl(f, "weights", "0.0")}
+${loop("j", -1, 2)} {
+  ${loop("i", -1, 2)} {
+    ${decl(v2, "tap", `${uv} + ${u("aoBlurStep")} * ${v2}(${f}(i), ${f}(j))`)}
+    ${decl(f, "tapDepth", `abs(${sample("depthSampler", "tap")}.r)`)}
+    ${decl(f, "weight", `exp(-${f}(i * i + j * j) / 2.0) / (1.0 + 50.0 * abs(tapDepth - centerDepth) / max(centerDepth, 0.1))`)}
+    total += ${sample("textureSampler", "tap")}.r * weight;
+    weights += weight;
+  }
+}
+${decl(f, "visibility", "total / max(weights, 0.000001)")}
+${output(`${v4}(visibility, visibility, visibility, 1.0)`)}
+`;
+  return header + main(body);
+}
+
+/**
  * Separable depth-aware blur at occlusion resolution. `aoBlurStep` is one
  * occlusion texel along the blur axis; taps across a depth edge are rejected.
  */

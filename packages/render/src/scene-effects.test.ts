@@ -327,6 +327,37 @@ it("enables PBR ambient occlusion, scene reflections and scene-light fog indepen
   expect(planSceneEffects(settings, "pbr", false)).toBeNull();
 });
 
+it("runs the tier's reduced occlusion and fog from the project's own settings, and keys the detail", () => {
+  const settings = effects({
+    ambientOcclusion: { ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true, samples: 12, resolutionScale: 0.5 },
+    volumetricLighting: { ...DEFAULT_RENDER_EFFECTS.volumetricLighting, enabled: true, steps: 16, resolutionScale: 0.5 },
+  });
+  const { high, ultra } = RENDER_QUALITY_PROFILES;
+  // Ultra's full detail plans exactly what the project asks, keyed as before the setting existed.
+  const full = planSceneEffects(settings, "pbr", true, { detail: ultra.postprocessing });
+  expect(full?.ambientOcclusion).toEqual(settings.ambientOcclusion);
+  expect(full?.volumetricLighting).toEqual(settings.volumetricLighting);
+  expect(sceneEffectsKey(settings, "pbr", true, { detail: ultra.postprocessing })).toBe(sceneEffectsKey(settings, "pbr", true));
+  // Reduced: two thirds of the samples and one blur; half the steps at half the scale.
+  const reduced = planSceneEffects(settings, "pbr", true, { detail: high.postprocessing });
+  expect(reduced?.ambientOcclusion).toEqual({ ...settings.ambientOcclusion, samples: 8, singleBlur: true });
+  expect(reduced?.volumetricLighting).toEqual({ ...settings.volumetricLighting, steps: 8, resolutionScale: 0.25 });
+  const keys = new Set([
+    sceneEffectsKey(settings, "pbr", true, { detail: ultra.postprocessing }),
+    sceneEffectsKey(settings, "pbr", true, { detail: { ambientOcclusionDetail: "reduced", volumetricDetail: "full" } }),
+    sceneEffectsKey(settings, "pbr", true, { detail: { ambientOcclusionDetail: "full", volumetricDetail: "reduced" } }),
+  ]);
+  expect(keys.size).toBe(3);
+  // The fewest the project can ask for still round to a whole count; a tier's Fog Volumes alone march reduced too.
+  const sparse = effects({
+    ambientOcclusion: { ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true, samples: 4 },
+    volumetricLighting: { ...DEFAULT_RENDER_EFFECTS.volumetricLighting, enabled: false, steps: 9 },
+  });
+  const volumes = planSceneEffects(sparse, "pbr", true, { detail: high.postprocessing, fogVolumesPresent: true });
+  expect(volumes?.ambientOcclusion?.samples).toBe(3);
+  expect(volumes?.volumetricLighting).toMatchObject({ steps: 4, density: 0, resolutionScale: sparse.volumetricLighting.resolutionScale / 2 });
+});
+
 it("runs reflections in CEL from the one project setting, keeping ambient occlusion PBR-only and quality allowances", () => {
   const settings = effects({ reflections: { ...DEFAULT_RENDER_EFFECTS.reflections, enabled: true },
     ambientOcclusion: { ...DEFAULT_RENDER_EFFECTS.ambientOcclusion, enabled: true } });

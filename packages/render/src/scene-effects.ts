@@ -2,6 +2,7 @@ import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture
 import { ImageProcessingConfiguration } from "@babylonjs/core/Materials/imageProcessingConfiguration";
 import { Color4 } from "@babylonjs/core/Maths/math.color";
 import type {
+  PostProcessingDetailField,
   PostProcessingEffectField,
   PostProcessingQuality,
   RenderEffectsSettings,
@@ -35,6 +36,11 @@ export interface SceneEffectsInputs {
    * Omitted allows every effect the project enables.
    */
   allowed?: Pick<PostProcessingQuality, PostProcessingEffectField>;
+  /**
+   * How much of Ambient Occlusion's and Volumetric Lighting's work the tier runs (Post Processing quality); omitted,
+   * all of it. `reducedOcclusion` and `reducedVolumetrics` apply it to the plan.
+   */
+  detail?: Pick<PostProcessingQuality, PostProcessingDetailField>;
   /** Screen-Space Shadows' level from the resolved shadow settings (off in CEL and without shadows). */
   screenShadows?: ScreenShadowsQuality;
   /** The quality tier's Anti-Aliasing is FXAA (a world view's): the only source of the FXAA pass. */
@@ -50,7 +56,8 @@ export interface SceneEffectsPlan {
   bloom: RenderEffectsSettings["bloom"] | null;
   imageProcessing: SceneEffectsImageProcessingPlan | null;
   fxaa: boolean;
-  ambientOcclusion: RenderEffectsSettings["ambientOcclusion"] | null;
+  /** `singleBlur`: one 3 × 3 blur pass in place of the two separable ones (`ambientOcclusionDetail` `reduced`). */
+  ambientOcclusion: (RenderEffectsSettings["ambientOcclusion"] & { singleBlur?: boolean }) | null;
   reflections: RenderEffectsSettings["reflections"] | null;
   volumetricLighting: RenderEffectsSettings["volumetricLighting"] | null;
   /** The chain renders at `renderScale`, then FSR 1 restores the output size. */
@@ -102,15 +109,17 @@ export function planSceneEffects(
     sceneLinear || vignette || colorGrading ? { sceneLinear, vignette, colorGrading } : null;
   const fxaa = inputs.fxaa === true;
   const allowed = inputs.allowed;
-  const ambientOcclusion = mode === "pbr" && effects.ambientOcclusion.enabled && allowed?.ambientOcclusion !== false
+  const occlusion = mode === "pbr" && effects.ambientOcclusion.enabled && allowed?.ambientOcclusion !== false
     ? effects.ambientOcclusion : null;
+  const ambientOcclusion = occlusion && inputs.detail?.ambientOcclusionDetail === "reduced" ? reducedOcclusion(occlusion) : occlusion;
   const reflections = effects.reflections.enabled && allowed?.reflections !== false
     ? effects.reflections : null;
   // A tier without volumetric lighting keeps authored Fog Volumes: the pass
   // then runs exactly as with the project's scene-wide volumetrics off.
-  const volumetricLighting = effects.volumetricLighting.enabled && allowed?.volumetricLighting !== false
+  const volume = effects.volumetricLighting.enabled && allowed?.volumetricLighting !== false
     ? effects.volumetricLighting
     : fogVolumesPresent ? { ...effects.volumetricLighting, enabled: true, density: 0 } : null;
+  const volumetricLighting = volume && inputs.detail?.volumetricDetail === "reduced" ? reducedVolumetrics(volume) : volume;
   const upscale = effects.upscaling.enabled && effects.upscaling.renderScale < 1 ? effects.upscaling : null;
   // sceneLinear always yields imageProcessing, so it needs no separate term.
   const screenShadows = mode === "pbr" && inputs.screenShadows && inputs.screenShadows !== "off" ? inputs.screenShadows : null;
@@ -118,6 +127,26 @@ export function planSceneEffects(
     !screenShadows)
     return null;
   return { sceneLinear, bloom, imageProcessing, fxaa, ambientOcclusion, reflections, volumetricLighting, upscale, screenShadows };
+}
+
+/**
+ * Ambient Occlusion at `reduced` detail: two thirds of the project's Samples (rounded; at least one) and one 3 × 3 blur
+ * pass. Its march and blur compile as their own programs, so `full` keeps exactly the programs it had.
+ */
+export function reducedOcclusion(
+  occlusion: RenderEffectsSettings["ambientOcclusion"],
+): RenderEffectsSettings["ambientOcclusion"] & { singleBlur: true } {
+  return { ...occlusion, samples: Math.max(1, Math.round(occlusion.samples * 2 / 3)), singleBlur: true };
+}
+
+/**
+ * Volumetric Lighting at `reduced` detail: half the project's Steps (at least one) at half its Resolution Scale (the
+ * march's quarter-scale floor still holds). Fog at another scale than occlusion's loses the compose's shared depth reads.
+ */
+export function reducedVolumetrics(
+  volume: RenderEffectsSettings["volumetricLighting"],
+): RenderEffectsSettings["volumetricLighting"] {
+  return { ...volume, steps: Math.max(1, Math.floor(volume.steps / 2)), resolutionScale: volume.resolutionScale / 2 };
 }
 
 /**
@@ -247,5 +276,7 @@ export function sceneEffectsKey(
   // Presence only: a level is uniforms the pass reads live (`ScreenShadowsGraph`), so changing it rebuilds nothing.
   const screen = mode === "pbr" && inputs.screenShadows && inputs.screenShadows !== "off" ? ":screen" : "";
   const fxaa = inputs.fxaa ? ":fxaa" : "";
-  return `${mode}${JSON.stringify(effects)}${fxaa}${inputs.fogVolumesPresent ? ":fogVolumes" : ""}${lut === undefined ? "" : `:lut${lut}`}${skipped}${screen}`;
+  // The reduced details compile other programs and targets.
+  const detail = `${inputs.detail?.ambientOcclusionDetail === "reduced" ? ":aoReduced" : ""}${inputs.detail?.volumetricDetail === "reduced" ? ":volReduced" : ""}`;
+  return `${mode}${JSON.stringify(effects)}${fxaa}${detail}${inputs.fogVolumesPresent ? ":fogVolumes" : ""}${lut === undefined ? "" : `:lut${lut}`}${skipped}${screen}`;
 }

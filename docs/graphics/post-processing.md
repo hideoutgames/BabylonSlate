@@ -48,14 +48,23 @@ Vignette and Color Grading apply in both pipelines.
 
 Post-processing cost follows the **Post Processing** group in **Project Settings > Rendering > Scalability**.
 
-| Level | Post Processing Resolution Scale | Anti-Aliasing | Allow Ambient Occlusion | Allow Reflections | Allow Volumetric Lighting |
-| --- | --- | --- | --- | --- | --- |
-| Low | 0.75 | FXAA | Off | Off | Off |
-| Medium | 1 | MSAA 2x | On | On | Off |
-| High | 1 | MSAA 4x | On | On | On |
-| Ultra | 1 | MSAA 4x | On | On | On |
+| Level | Post Processing Resolution Scale | Anti-Aliasing | Allow Ambient Occlusion | Allow Reflections | Allow Volumetric Lighting | Ambient Occlusion Detail | Volumetric Detail |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Low | 0.75 | FXAA | Off | Off | Off | Reduced | Reduced |
+| Medium | 1 | MSAA 2x | On | On | Off | Reduced | Reduced |
+| High | 1 | MSAA 2x | On | On | On | Reduced | Reduced |
+| Ultra | 1 | MSAA 4x | On | On | On | Full | Full |
 
 An **Allow** switch never turns an effect on; the effect also has to be on in **Post Processing**. **Post Processing Resolution Scale** applies to passes marked **Scalable**.
+
+The two **Detail** settings choose how much of an effect's work the level runs. **Full** runs what the project asks for. **Reduced** keeps the effect's look while doing less:
+
+| Setting | Reduced |
+| --- | --- |
+| **Ambient Occlusion Detail** | Two thirds of **Occlusion Samples** (12 become 8), smoothed by one blur pass instead of two. |
+| **Volumetric Detail** | Half of the fog's **Steps** (16 become 8), at half its **Resolution Scale**. |
+
+The project's own values keep their meaning: a level scales them, so raising **Occlusion Samples** raises them on every level.
 
 ## Anti-aliasing
 

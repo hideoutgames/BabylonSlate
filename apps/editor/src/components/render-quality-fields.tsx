@@ -35,6 +35,10 @@ import {
   MIRROR_REFLECTS,
   type MirrorReflects,
   type PostProcessingEffectField,
+  EFFECT_DETAILS,
+  isEffectDetail,
+  type EffectDetail,
+  type PostProcessingDetailField,
 } from "@haptic/core";
 import { LabelHint, NumberField } from "@haptic/editor-kit";
 import {
@@ -70,6 +74,18 @@ const postProcessingEffects: { field: PostProcessingEffectField; label: string; 
   { field: "reflections", label: "Allow Reflections", hint: "Runs the project's screen-space Reflections when they are enabled." },
   { field: "volumetricLighting", label: "Allow Volumetric Lighting", hint: "Runs the project's scene-wide Volumetric Lighting when it is enabled. Fog Volumes always render." },
 ];
+/** How much of each effect's authored work the tier runs. */
+const postProcessingDetails: { field: PostProcessingDetailField; id: string; label: string; hint: string }[] = [
+  {
+    field: "ambientOcclusionDetail", id: "ambient-occlusion-detail", label: "Ambient Occlusion Detail",
+    hint: "Reduced takes two thirds of the project's Samples and blurs once.",
+  },
+  {
+    field: "volumetricDetail", id: "volumetric-detail", label: "Volumetric Detail",
+    hint: "Reduced takes half the project's Steps at half its Resolution Scale.",
+  },
+];
+const effectDetailLabels: Record<EffectDetail, string> = { full: "Full", reduced: "Reduced" };
 const antiAliasingLabels: Record<AntiAliasingMode, string> = {
   msaa4: "MSAA 4x",
   msaa2: "MSAA 2x",
@@ -510,6 +526,32 @@ export function RenderQualityFields({
               checked={effective.postprocessing[field]}
               onCheckedChange={(allowed) => edit("postprocessing", { [field]: allowed })}
             />
+          </Field>
+        ))}
+        {postProcessingDetails.map(({ field, id, label, hint }) => (
+          <Field key={field} className="settings-field">
+            <LabelHint hint={hint}>
+              <FieldLabel htmlFor={`quality-postprocessing-${id}`}>{label}</FieldLabel>
+            </LabelHint>
+            <Select
+              value={effective.postprocessing[field]}
+              onValueChange={(detail) => {
+                if (isEffectDetail(detail)) edit("postprocessing", { [field]: detail });
+              }}
+            >
+              <SelectTrigger id={`quality-postprocessing-${id}`} data-testid={`quality-postprocessing-${id}`}>
+                <SelectValue>{effectDetailLabels[effective.postprocessing[field]]}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {EFFECT_DETAILS.map((detail) => (
+                    <SelectItem key={detail} value={detail}>
+                      {effectDetailLabels[detail]}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
           </Field>
         ))}
         <h4 className="settings-group-heading">Lighting</h4>
