@@ -111,7 +111,11 @@ export async function runEffectsComposeProof(variant: EffectsComposeVariant, lar
       cel: normalizeCelShadingSettings({ outlinesEnabled: false }),
       quality: normalizeRenderingQuality({
         resolution: { scale: 1, dynamic: false },
-        postprocessing: { resolutionScale: 1, antiAliasing: "off", ambientOcclusion: true, reflections: true, volumetricLighting: true },
+        // Each effect's full work, so the frames compare the compose alone.
+        postprocessing: {
+          resolutionScale: 1, antiAliasing: "off", ambientOcclusion: true, reflections: true, volumetricLighting: true,
+          ambientOcclusionDetail: "full", volumetricDetail: "full",
+        },
       }),
       // Screen-Space Shadows over a coarse sun map, which leaves the contacts to them.
       shadows: variant === "screen-shadows"

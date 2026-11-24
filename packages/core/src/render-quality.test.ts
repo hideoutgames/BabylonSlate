@@ -225,7 +225,7 @@ describe("rendering quality sessions", () => {
     expect(session.effective().geometry).toMatchObject({ autoLod: true, lodDistanceScale: 1.25 });
   });
   it("sets Anti-Aliasing from the console, refuses an unknown mode, and fills it from the saved tier", () => {
-    const session = new RenderingQualitySession({ quality: normalizeRenderingQuality({ postprocessing: { profile: "high", preset: "high" } }) });
+    const session = new RenderingQualitySession({ quality: normalizeRenderingQuality({ postprocessing: { profile: "ultra", preset: "ultra" } }) });
     expect(session.effective().postprocessing.antiAliasing).toBe("msaa4");
     expect(session.execute("postprocessing", "antialiasing", "msaa2").success).toBe(true);
     expect(session.effective().postprocessing).toMatchObject({ antiAliasing: "msaa2", preset: "custom" });
@@ -239,6 +239,38 @@ describe("rendering quality sessions", () => {
     expect(normalizeRenderingQuality({ postprocessing: { antiAliasing: "supersample" } }).postprocessing.antiAliasing).toBe("msaa2");
     expect(resolveRenderingQuality({ quality: normalizeRenderingQuality({}) }, {}, qualityPresetPatch("low")).postprocessing.antiAliasing)
       .toBe("fxaa");
+  });
+  it("runs Ultra's full occlusion, fog and four samples, and every lower tier the reduced ones and at most two", () => {
+    const tiers = Object.fromEntries((["low", "medium", "high", "ultra"] as const).map((level) => {
+      const { antiAliasing, ambientOcclusionDetail, volumetricDetail } =
+        resolveRenderingQuality({ quality: normalizeRenderingQuality({}) }, {}, qualityPresetPatch(level)).postprocessing;
+      return [level, [antiAliasing, ambientOcclusionDetail, volumetricDetail]];
+    }));
+    expect(tiers).toEqual({
+      low: ["fxaa", "reduced", "reduced"],
+      medium: ["msaa2", "reduced", "reduced"],
+      high: ["msaa2", "reduced", "reduced"],
+      ultra: ["msaa4", "full", "full"],
+    });
+  });
+  it("sets each effect's detail from the console, refuses another value, and fills a missing or unknown one from the saved tier", () => {
+    const session = new RenderingQualitySession({ quality: normalizeRenderingQuality({ postprocessing: { profile: "high", preset: "high" } }) });
+    expect(session.execute("postprocessing", "ambientOcclusionDetail", "full").success).toBe(true);
+    expect(session.effective().postprocessing).toMatchObject({ ambientOcclusionDetail: "full", volumetricDetail: "reduced", preset: "custom" });
+    expect(session.execute("postprocessing", "volumetricDetail", "full").success).toBe(true);
+    for (const [field, value] of [["volumetricDetail", "half"], ["volumetricDetail", undefined], ["reflectionsDetail", "full"]])
+      expect(session.execute("postprocessing", field, value).success).toBe(false);
+    expect(session.execute("water", "volumetricDetail", "full").success).toBe(false);
+    expect(session.effective().postprocessing).toMatchObject({ ambientOcclusionDetail: "full", volumetricDetail: "full" });
+    session.execute("postprocessing", "reset");
+    expect(session.effective().postprocessing).toMatchObject({ ambientOcclusionDetail: "reduced", volumetricDetail: "reduced" });
+    // Saved before the fields existed, or with a value no release wrote: the saved tier fills them, Medium without one.
+    expect(normalizeRenderingQuality({ postprocessing: { profile: "ultra", preset: "ultra", resolutionScale: 1 } }).postprocessing)
+      .toMatchObject({ ambientOcclusionDetail: "full", volumetricDetail: "full" });
+    expect(normalizeRenderingQuality({ postprocessing: { profile: "ultra", volumetricDetail: "half" as "full" } }).postprocessing.volumetricDetail)
+      .toBe("full");
+    expect(normalizeRenderingQuality({}).postprocessing).toMatchObject({ ambientOcclusionDetail: "reduced", volumetricDetail: "reduced" });
+    expect(qualitySettingsFingerprint(session.effective())).toMatchObject({ "post.ambientOcclusionDetail": "reduced", "post.volumetricDetail": "reduced" });
   });
   it("caps what Mirrors draw live from the console, with no cap at any tier", () => {
     const session = new RenderingQualitySession();

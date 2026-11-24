@@ -6,7 +6,7 @@ import { Scene } from "@babylonjs/core/scene";
 import { ShaderStore } from "@babylonjs/core/Engines/shaderStore";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { WebGLPipelineContext } from "@babylonjs/core/Engines/WebGL/webGLPipelineContext";
-import { DEFAULT_RENDER_EFFECTS, normalizeRenderingQuality, qualityPresetPatch } from "@haptic/core";
+import { DEFAULT_RENDER_EFFECTS, normalizeRenderingQuality, qualityPresetPatch, type QualityLevel } from "@haptic/core";
 import { EffectCompileFailure } from "./effect-compile-failure";
 import { sceneRenderingSettings, updateSceneRenderingSettings } from "./render-settings";
 import { createSpatialStages, type SpatialStage } from "./spatial-effects";
@@ -16,12 +16,13 @@ afterEach(() => { while (disposers.length) disposers.pop()!(); });
 
 function stagesFor(
   effects: Partial<typeof DEFAULT_RENDER_EFFECTS>, failure?: EffectCompileFailure, mode = Camera.PERSPECTIVE_CAMERA,
+  tier: QualityLevel = "ultra",
 ): SpatialStage[] {
-  return spatialChain(effects, mode).build(failure);
+  return spatialChain(effects, mode, tier).build(failure);
 }
 
-/** A Scene planning `effects`, whose `build` creates the chain's stages as each graph build does. */
-function spatialChain(effects: Partial<typeof DEFAULT_RENDER_EFFECTS>, mode = Camera.PERSPECTIVE_CAMERA) {
+/** A Scene planning `effects` at `tier` (Ultra: every effect at full detail), whose `build` creates the chain's stages as each graph build does. */
+function spatialChain(effects: Partial<typeof DEFAULT_RENDER_EFFECTS>, mode = Camera.PERSPECTIVE_CAMERA, tier: QualityLevel = "ultra") {
   const engine = new NullEngine();
   // The spatial chain needs four float targets and depth sampling.
   Object.assign(engine.getCaps(), {
@@ -31,9 +32,8 @@ function spatialChain(effects: Partial<typeof DEFAULT_RENDER_EFFECTS>, mode = Ca
   const scene = new Scene(engine);
   const camera = new FreeCamera("camera", new Vector3(0, 2, -6), scene);
   camera.mode = mode;
-  // High is the lowest Post Processing tier that allows every screen-space effect.
   updateSceneRenderingSettings(scene, {
-    mode: "pbr", effects: { ...DEFAULT_RENDER_EFFECTS, ...effects }, quality: normalizeRenderingQuality(qualityPresetPatch("high")),
+    mode: "pbr", effects: { ...DEFAULT_RENDER_EFFECTS, ...effects }, quality: normalizeRenderingQuality(qualityPresetPatch(tier)),
   });
   disposers.push(() => { scene.dispose(); engine.dispose(); });
   return {
@@ -105,6 +105,33 @@ it("reads each depth texel the occlusion and fog upsamples share once, and only 
   // The fog at another resolution taps other texels: its own four reads and centre stay.
   const coarseFog = { volumetricLighting: { ...FOG.volumetricLighting, resolutionScale: FOG.volumetricLighting.resolutionScale / 2 } };
   expect(depthReads({ ...OCCLUSION, ...coarseFog })).toBe(10);
+});
+
+it("runs High's reduced occlusion and fog as their own programs: fewer samples, one blur, half the steps at half the scale", () => {
+  const effects = {
+    ambientOcclusion: { ...OCCLUSION.ambientOcclusion, samples: 12, resolutionScale: 0.5 },
+    volumetricLighting: { ...FOG.volumetricLighting, steps: 16, resolutionScale: 0.5 },
+  };
+  const ultra = stagesFor(effects);
+  const high = stagesFor(effects, undefined, Camera.PERSPECTIVE_CAMERA, "high");
+  const source = (stages: SpatialStage[], name: string) => {
+    const stage = stages[named(stages, name)];
+    return stage ? ShaderStore.ShadersStore[`${stage.wrapper.options.fragmentShader}FragmentShader`]! : null;
+  };
+  // Ultra keeps the project's twelve samples and the two separable blurs; High marches eight and blurs once in 3 × 3.
+  expect(source(ultra, "Scene Ambient Occlusion")).toContain("i < 12;");
+  expect(source(high, "Scene Ambient Occlusion")).toContain("i < 8;");
+  expect(ultra.filter((stage) => stage.name.startsWith("Scene Ambient Occlusion Blur")).map((stage) => stage.name))
+    .toEqual(["Scene Ambient Occlusion Blur X", "Scene Ambient Occlusion Blur Y"]);
+  const blurs = high.filter((stage) => stage.name.startsWith("Scene Ambient Occlusion Blur"));
+  expect(blurs.map((stage) => stage.name)).toEqual(["Scene Ambient Occlusion Blur"]);
+  expect(source(high, "Scene Ambient Occlusion Blur")!.match(/texture2D\(depthSampler/g)).toHaveLength(2);
+  expect(compose(high).reads.aoSampler).toBe("Scene Ambient Occlusion Blur");
+  // The fog marches half the steps into a target half as wide; Ultra's stays at the project's scale.
+  expect(source(ultra, "Scene Volumetric Lighting")).toContain("step < 16;");
+  expect(source(high, "Scene Volumetric Lighting")).toContain("step < 8;");
+  const fog = (stages: SpatialStage[]) => stages[named(stages, "Scene Volumetric Lighting")]!.scale;
+  expect([fog(ultra), fog(high)]).toEqual([0.5, 0.25]);
 });
 
 it("declares in the compose exactly the uniforms and samplers its Effect binds", () => {

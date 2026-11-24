@@ -54,6 +54,8 @@ export const SCALABILITY_FIELD_OWNERS = {
     ambientOcclusion: "postprocessing",
     reflections: "postprocessing",
     volumetricLighting: "postprocessing",
+    ambientOcclusionDetail: "postprocessing",
+    volumetricDetail: "postprocessing",
   },
   lighting: { localLightMode: "lighting", maxLocalLights: "lighting" },
 } as const satisfies {

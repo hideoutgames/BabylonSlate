@@ -164,9 +164,31 @@ export function antiAliasingSamples(mode: AntiAliasingMode): 1 | 2 | 4 {
 export function isAntiAliasingMode(value: unknown): value is AntiAliasingMode {
   return (ANTI_ALIASING_MODES as readonly unknown[]).includes(value);
 }
+/**
+ * How much of an effect's authored work a tier runs: `full`, all of it; `reduced`, a lighter version of the same effect
+ * (`ambientOcclusionDetail`, `volumetricDetail`). Each level compiles its own programs, so a tier pays only for its own.
+ */
+export const EFFECT_DETAILS = ["full", "reduced"] as const;
+export type EffectDetail = (typeof EFFECT_DETAILS)[number];
+export function isEffectDetail(value: unknown): value is EffectDetail {
+  return (EFFECT_DETAILS as readonly unknown[]).includes(value);
+}
+export type PostProcessingDetailField = "ambientOcclusionDetail" | "volumetricDetail";
+/** The detail fields; also the console names for `quality postprocessing <field> full|reduced`. */
+export const POST_PROCESSING_DETAIL_FIELDS: readonly PostProcessingDetailField[] = ["ambientOcclusionDetail", "volumetricDetail"];
 export interface PostProcessingQuality extends QualitySelection {
   resolutionScale: number;
   antiAliasing: AntiAliasingMode;
+  /**
+   * Ambient Occlusion's work: `full` takes the project's Samples and two separable blur passes; `reduced` two thirds of
+   * the Samples (rounded) and one 3 × 3 blur pass.
+   */
+  ambientOcclusionDetail: EffectDetail;
+  /**
+   * Volumetric Lighting's work: `full` marches the project's Steps at its Resolution Scale; `reduced` half the Steps at
+   * half that scale.
+   */
+  volumetricDetail: EffectDetail;
   /**
    * Screen-space effects this tier can afford. Each runs only when the project
    * also enables it; a disallowed one is skipped, never forced on.
@@ -224,7 +246,10 @@ export const RENDER_QUALITY_PROFILES: Record<QualityLevel, RenderingQuality> = {
       refraction: false, refractionScale: 0.5, reflections: "sky", reflectionSteps: 6,
       planarScale: 0.25, fftSize: 64, fftCascades: 2,
     },
-    postprocessing: { resolutionScale: 0.75, antiAliasing: "fxaa", ambientOcclusion: false, reflections: false, volumetricLighting: false },
+    postprocessing: {
+      resolutionScale: 0.75, antiAliasing: "fxaa", ambientOcclusion: false, reflections: false, volumetricLighting: false,
+      ambientOcclusionDetail: "reduced", volumetricDetail: "reduced",
+    },
   },
   medium: {
     lighting: { localLightMode: "auto", maxLocalLights: 32 },
@@ -240,7 +265,10 @@ export const RENDER_QUALITY_PROFILES: Record<QualityLevel, RenderingQuality> = {
       planarScale: 0.5, fftSize: 64, fftCascades: 3,
     },
     // Two samples: a tile-based GPU stores and reloads every sample of the multisampled scene targets.
-    postprocessing: { resolutionScale: 1, antiAliasing: "msaa2", ambientOcclusion: true, reflections: true, volumetricLighting: false },
+    postprocessing: {
+      resolutionScale: 1, antiAliasing: "msaa2", ambientOcclusion: true, reflections: true, volumetricLighting: false,
+      ambientOcclusionDetail: "reduced", volumetricDetail: "reduced",
+    },
   },
   high: {
     lighting: { localLightMode: "auto", maxLocalLights: 64 },
@@ -252,7 +280,11 @@ export const RENDER_QUALITY_PROFILES: Record<QualityLevel, RenderingQuality> = {
       refraction: true, refractionScale: 0.75, reflections: "planar", reflectionSteps: 16,
       planarScale: 0.75, fftSize: 256, fftCascades: 3,
     },
-    postprocessing: { resolutionScale: 1, antiAliasing: "msaa4", ambientOcclusion: true, reflections: true, volumetricLighting: true },
+    // Two samples and the reduced occlusion and fog: on screen they hardly differ from Ultra's full versions.
+    postprocessing: {
+      resolutionScale: 1, antiAliasing: "msaa2", ambientOcclusion: true, reflections: true, volumetricLighting: true,
+      ambientOcclusionDetail: "reduced", volumetricDetail: "reduced",
+    },
   },
   ultra: {
     lighting: { localLightMode: "auto", maxLocalLights: 256 },
@@ -264,7 +296,10 @@ export const RENDER_QUALITY_PROFILES: Record<QualityLevel, RenderingQuality> = {
       refraction: true, refractionScale: 1, reflections: "planar", reflectionSteps: 24,
       planarScale: 0.75, fftSize: 256, fftCascades: 3,
     },
-    postprocessing: { resolutionScale: 1, antiAliasing: "msaa4", ambientOcclusion: true, reflections: true, volumetricLighting: true },
+    postprocessing: {
+      resolutionScale: 1, antiAliasing: "msaa4", ambientOcclusion: true, reflections: true, volumetricLighting: true,
+      ambientOcclusionDetail: "full", volumetricDetail: "full",
+    },
   },
 };
 export function isQualityLevel(value: unknown): value is QualityLevel {
@@ -347,6 +382,7 @@ export function normalizeRenderingQuality(value: unknown): RenderingQuality {
         : RENDER_QUALITY_PROFILES[isQualityLevel(source.postprocessing?.profile) ? source.postprocessing.profile : "medium"]
           .postprocessing.antiAliasing,
       ...postProcessingEffects(source.postprocessing),
+      ...postProcessingDetails(source.postprocessing),
     },
     lighting: {
       ...selection(source.lighting),
@@ -386,6 +422,14 @@ function postProcessingEffects(
     reflections: flag("reflections"),
     volumetricLighting: flag("volumetricLighting"),
   };
+}
+/** Missing or invalid details take the saved profile's tier, as the effect flags do. */
+function postProcessingDetails(
+  source: Partial<PostProcessingQuality> | undefined,
+): Pick<PostProcessingQuality, PostProcessingDetailField> {
+  const tier = RENDER_QUALITY_PROFILES[isQualityLevel(source?.profile) ? source.profile : "medium"].postprocessing;
+  const detail = (key: PostProcessingDetailField) => isEffectDetail(source?.[key]) ? source[key] : tier[key];
+  return { ambientOcclusionDetail: detail("ambientOcclusionDetail"), volumetricDetail: detail("volumetricDetail") };
 }
 function snapWaterFftSize(value: number): number {
   return WATER_FFT_SIZES.reduce((best, size) =>
@@ -635,6 +679,15 @@ export class RenderingQualitySession {
           postprocessing: { ...this.overrides.postprocessing, [choice]: value === "on" },
         };
       else if (
+        group === "postprocessing" &&
+        (POST_PROCESSING_DETAIL_FIELDS as readonly string[]).includes(choice) &&
+        isEffectDetail(value)
+      )
+        this.overrides = {
+          ...this.overrides,
+          postprocessing: { ...this.overrides.postprocessing, [choice]: value },
+        };
+      else if (
         group === "lighting" &&
         choice === "budget" &&
         (value === "auto" || (Number.isSafeInteger(numeric) && numeric >= 0))
@@ -814,6 +867,8 @@ export function qualitySettingsFingerprint(quality: EffectiveRenderingQuality): 
     "post.reflections": String(post.reflections),
     "post.volumetricLighting": String(post.volumetricLighting),
     "post.antiAliasing": post.antiAliasing,
+    "post.ambientOcclusionDetail": post.ambientOcclusionDetail,
+    "post.volumetricDetail": post.volumetricDetail,
     "resolution.scale": String(quality.resolution.scale),
     "geometry.occlusion": String(quality.geometry.occlusionCulling),
     "geometry.mirrors": quality.geometry.mirrorReflections,

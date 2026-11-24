@@ -144,6 +144,8 @@ export const PROJECT_SETTING_FIELDS: SettingSearchField[] = [
       ["Allow Reflections Quality", "quality-postprocessing-reflections"],
       ["Anti-Aliasing MSAA FXAA", "quality-postprocessing-antialiasing"],
       ["Allow Volumetric Lighting Quality", "quality-postprocessing-volumetricLighting"],
+      ["Ambient Occlusion Detail Samples Blur Quality", "quality-postprocessing-ambient-occlusion-detail"],
+      ["Volumetric Detail Fog Steps Resolution Quality", "quality-postprocessing-volumetric-detail"],
       ["Local Light Budget Auto Manual", "quality-lighting-mode"],
     ]],
     ["shadows", "Shadows", [

@@ -1,4 +1,4 @@
-import { POST_PROCESSING_EFFECT_FIELDS, QUALITY_GROUPS, QUALITY_LEVELS, SHADOW_DEBUG_PARTS, WATER_DEBUG_PARTS, WATER_QUALITY_FIELDS, type QualityGroup, type ShadowDebugPart, type WaterDebugPart, WORLD_DEBUG_PARTS, type WorldDebugPart } from "@haptic/core";
+import { POST_PROCESSING_DETAIL_FIELDS, POST_PROCESSING_EFFECT_FIELDS, QUALITY_GROUPS, QUALITY_LEVELS, SHADOW_DEBUG_PARTS, WATER_DEBUG_PARTS, WATER_QUALITY_FIELDS, type QualityGroup, type ShadowDebugPart, type WaterDebugPart, WORLD_DEBUG_PARTS, type WorldDebugPart } from "@haptic/core";
 import { fail, ok } from "./parser";
 import type {
   CommandParameter,
@@ -152,7 +152,7 @@ export function builtinCommands(): RegisteredCommand[] {
       name: group ? `quality ${group}` : "quality", tier: "core", category: "engine",
       description: "Query, set or reset rendering scalability",
       parameters: [
-        { name: "choice", type: "enum", optional: true, enumValues: [...QUALITY_LEVELS, "reset", ...(group === "shadows" ? ["budget", "distance", "enabled", "screen", "filter", "reflections"] : group === "lighting" ? ["budget"] : group === "resolution" ? ["scale"] : group === "geometry" ? ["lod", "distance", "occlusion", "mirrors"] : group === "water" ? WATER_QUALITY_FIELDS : group === "postprocessing" ? [...POST_PROCESSING_EFFECT_FIELDS, "antialiasing"] : [])] },
+        { name: "choice", type: "enum", optional: true, enumValues: [...QUALITY_LEVELS, "reset", ...(group === "shadows" ? ["budget", "distance", "enabled", "screen", "filter", "reflections"] : group === "lighting" ? ["budget"] : group === "resolution" ? ["scale"] : group === "geometry" ? ["lod", "distance", "occlusion", "mirrors"] : group === "water" ? WATER_QUALITY_FIELDS : group === "postprocessing" ? [...POST_PROCESSING_EFFECT_FIELDS, ...POST_PROCESSING_DETAIL_FIELDS, "antialiasing"] : [])] },
         { name: "value", type: "string", optional: true },
       ],
       run: (args, host) => host.quality(group, args.choice as string | undefined, args.value as string | undefined),

@@ -135,6 +135,7 @@ export interface FeatureTestBreakdownStep {
 
 const POST_FIELDS = [
   "post.scale", "post.ambientOcclusion", "post.reflections", "post.volumetricLighting", "post.antiAliasing", "post.samples",
+  "post.ambientOcclusionDetail", "post.volumetricDetail",
 ] as const;
 const ANTI_ALIASING_FIELDS = ["post.antiAliasing", "post.samples"] as const;
 const WATER_DETAIL_FIELDS = ["water.shadingDetail", "water.fft"] as const;

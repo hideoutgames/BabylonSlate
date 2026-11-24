@@ -22,7 +22,7 @@ import {
   type VolumeShadow,
 } from "./volumetric-lights";
 import { volumetricShader } from "./volumetric-shader";
-import { ambientOcclusionBlurShader, ambientOcclusionShader } from "./ambient-occlusion-shader";
+import { ambientOcclusionBlurShader, ambientOcclusionShader, ambientOcclusionSquareBlurShader } from "./ambient-occlusion-shader";
 import { spatialComposeShader } from "./spatial-compose-shader";
 import { retireOwnedEffect } from "./owned-effect-retirement";
 import { beginManagedRenderAllocation } from "./managed-render-resources";
@@ -300,12 +300,17 @@ export function createSpatialStages(
           effect.setFloat2("aoTexelSize", texelWidth, texelHeight);
         },
       });
-      for (const [axis, x, y] of [["X", texelWidth, 0], ["Y", 0, texelHeight]] as const) {
+      // Two separable 9-tap passes, or at reduced detail one 3 × 3 pass (`ambientOcclusionSquareBlurShader`) whose taps
+      // lie 1.5 texels apart, its step both axes' texel times 1.5.
+      const blurs: readonly (readonly [string, string, number, number])[] = occlusion.singleBlur
+        ? [["Scene Ambient Occlusion Blur", ambientOcclusionSquareBlurShader(), texelWidth * 1.5, texelHeight * 1.5]]
+        : [["Scene Ambient Occlusion Blur X", ambientOcclusionBlurShader(), texelWidth, 0], ["Scene Ambient Occlusion Blur Y", ambientOcclusionBlurShader(), 0, texelHeight]];
+      for (const [blurName, blurShader, x, y] of blurs) {
         const blur = own(
           customWrapper(
             scene,
-            `Scene Ambient Occlusion Blur ${axis}`,
-            ambientOcclusionBlurShader(),
+            blurName,
+            blurShader,
             ["aoBlurStep"],
             ["depthSampler"],
             failure,
