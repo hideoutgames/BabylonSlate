@@ -4,7 +4,7 @@
  * shadowed sun, shadowed spot and point lights, two rect lights (one facing away from most of the view), ambient
  * occlusion, Real-Time Reflections and Screen-Space Shadows. `reference` draws it as before the savings: the light
  * block's rect loop visits every rect light and fetches the LTC tables per light, a spot light's shadow is looked up
- * outside its cone, and a capture's own sun maps redraw every time, and the view's object and geometry passes take
+ * outside its cone and every light's shadow whichever way the normal faces it, and a capture's own sun maps redraw every time, and the view's object and geometry passes take
  * Babylon's preparation instead of the lean one (`leanPreparation`); each view's clear is a render pass of its own
  * before its objects pass (`ManagedShadowObjectRendererTask.startClear`), the spatial geometry pass prepares through
  * Babylon's clears and then its own, binding its target three times, and keeps its depth, and the light block binds its
@@ -107,6 +107,10 @@ function referenceShadowRefresh(): () => void {
  * pair's current text and what stood there. A pair that no longer matches fails the proof rather than proving nothing.
  */
 const REFERENCE_GLSL: readonly (readonly [string, string])[] = [
+  // Every light's shadow looked up, whichever way the normal faces it: the sun's cascades and screen shadows too.
+  ["  bool sunFacing = false;\n", "  bool sunFacing = true;\n"],
+  ["    if (hapticDirectional[d * 2 + 1].w > 0.5) sunFacing = dot(N, hapticDirectional[d * 2].xyz) < 0.0;\n", ""],
+  ["      // A light behind the surface: its shadow is not looked up.\n      if (dot(N, L) <= 0.0) continue;\n", ""],
   // A spot light's cone, applied after its shadow lookup.
   [
     "      lightDistance = sqrt(distanceSquared);\n      L = offset / max(lightDistance, HAPTIC_EPSILON);\n" +
