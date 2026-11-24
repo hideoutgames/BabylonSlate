@@ -546,7 +546,7 @@ it("never presents an unready scene or draws before its graph is prepared", asyn
   await renderer.prepare();
   expect(frame).not.toHaveBeenCalled();
   expect(renderer.isReady()).toBe(true);
-  expect(renderer.render()).toEqual({ path: "frameGraph", rendered: true, readyForPresentation: true });
+  expect(renderer.render()).toEqual({ path: "frameGraph", drewOutput: true, rendered: true, readyForPresentation: true });
   expect(frame).toHaveBeenCalledTimes(1);
   renderer.dispose();
 });
@@ -973,6 +973,7 @@ it("caches strict readiness on unchanged frames and re-probes once after a scene
   expect(renderer.isReady()).toBe(true);
   expect(renderer.render()).toEqual({
     path: "frameGraph",
+    drewOutput: true,
     rendered: true,
     readyForPresentation: true,
   });
@@ -1034,12 +1035,12 @@ it("draws unvalidated frames without acknowledging them and re-probes a scene ch
   await renderer.prepare();
   const frame = vi.fn();
   scene.onAfterRenderObservable.add(frame);
-  expect(renderer.render(false)).toEqual({ path: "frameGraph", rendered: true, readyForPresentation: false });
+  expect(renderer.render(false)).toEqual({ path: "frameGraph", drewOutput: true, rendered: true, readyForPresentation: false });
   expect(frame).toHaveBeenCalledTimes(1);
   const checks = renderer.strictReadinessChecks;
   MeshBuilder.CreateBox("added", {}, scene);
-  expect(renderer.render(false)).toEqual({ path: "frameGraph", rendered: true, readyForPresentation: false });
-  expect(renderer.render()).toEqual({ path: "frameGraph", rendered: true, readyForPresentation: true });
+  expect(renderer.render(false)).toEqual({ path: "frameGraph", drewOutput: true, rendered: true, readyForPresentation: false });
+  expect(renderer.render()).toEqual({ path: "frameGraph", drewOutput: true, rendered: true, readyForPresentation: true });
   expect(frame).toHaveBeenCalledTimes(3);
   expect(renderer.strictReadinessChecks).toBe(checks + 1);
   renderer.dispose();

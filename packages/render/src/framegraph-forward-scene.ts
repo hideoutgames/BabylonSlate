@@ -97,7 +97,8 @@ import {
 const NO_MESHES: ReadonlySet<AbstractMesh> = new Set();
 
 /** The FrameGraph is the only scene renderer; a frame it cannot draw is skipped. */
-export type ForwardSceneGraphResult = { path: "frameGraph" };
+/** `drewOutput`: the graph ran this frame, so its output (the backbuffer, for a view that draws into it) was written. */
+export type ForwardSceneGraphResult = { path: "frameGraph"; drewOutput?: true };
 type ForwardSceneFrameGraphOptions = {
   /**
    * An auxiliary view (a High or Full Quality Render Target Capture) drawn inside the
@@ -1477,8 +1478,9 @@ export class ForwardSceneFrameGraph {
       // What Scene.render's after-render observers changed stales the next frame's probe, not this frame.
       this.syncMembershipTimed();
       // A Scene.render that never ran the graph's render function has no draw end: the whole call is the window.
+      const ran = this.drawnRevision !== undefined;
       const drawn = this.drawnRevision ?? this.readinessRevision;
-      return { path: "frameGraph", ...(revision === drawn ? {} : { rendered: false }) };
+      return { path: "frameGraph", ...(ran ? { drewOutput: true } : {}), ...(revision === drawn ? {} : { rendered: false }) };
     } finally {
       if (!this.auxiliary) this.scene.frameGraph = null;
       this.scene.activeCamera = this.auxiliary ? previousCamera : camera;

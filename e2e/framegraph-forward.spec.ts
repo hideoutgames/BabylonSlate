@@ -46,7 +46,7 @@ test(`Forward FrameGraph preserves surface pixels and scene ownership on ${outpu
   expect(result.captures).toHaveLength(12);
   for (const capture of result.captures) {
     expect(capture.prepared, capture.name).toEqual({ path: "frameGraph" });
-    expect(capture.result, capture.name).toEqual({ path: "frameGraph" });
+    expect(capture.result, capture.name).toEqual({ path: "frameGraph", drewOutput: true });
     expect(capture.readinessDraws, capture.name).toBe(0);
     expect(capture.frames, capture.name).toEqual([1, 1]);
     expect(capture.referenceDraws, capture.name).toBeGreaterThanOrEqual(4);

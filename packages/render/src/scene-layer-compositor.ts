@@ -1303,6 +1303,10 @@ export class SceneLayerCompositor {
       texture, color: [1, 1, 1], alpha: 1, cutoff: 0, blend: true, textureAlpha: true, twoSided: false,
     });
     blit.alphaMode = Constants.ALPHA_PREMULTIPLIED;
+    // A full-screen composite over whatever the backbuffer's depth holds, which this Scene never clears: Play discards
+    // that depth after each frame whose layers clear it before they read it (`invalidateBackbufferDepthStencil`).
+    blit.depthFunction = Constants.ALWAYS;
+    blit.disableDepthWrite = true;
     return blitScene;
   }
 

@@ -8,13 +8,18 @@ import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
  * canvas every frame (a CPU blit plus a CPU/GPU sync on WebKit, a GPU copy on
  * Chromium).
  *
- * The visible image still changes only after a coherent frame: every coherent
- * frame copies the default framebuffer into the view's held image on the GPU,
- * and a frame that drew something incoherent copies the held image back before
- * the browser presents. A step that drew nothing copies nothing. Resizes
+ * The visible image still changes only after a coherent frame. A view that
+ * holds every frame copies each coherent frame of the default framebuffer into
+ * its held image on the GPU. A view that holds lazily (Play) copies nothing in
+ * a coherent frame: the context preserves its drawing buffer, which keeps the
+ * shown image until something writes into it, so the image is copied only
+ * before a write that may not be presented (a frame its owner holds back, a
+ * resize). A frame that drew something incoherent copies the held image back
+ * before the browser presents. A step that drew nothing copies nothing. Resizes
  * restore the held image into the new buffer. When presentation moves to
  * another view, or back to copying, the departing view's 2D canvas receives
- * its held image once, so it keeps its last frame like a copied view.
+ * its held image (held lazily, the shown image) once, so it keeps its last
+ * frame like a copied view.
  */
 
 /** GPU copies of each view's last coherent frame. */
@@ -31,6 +36,13 @@ export interface HeldImageStore {
    */
   restore(view: EngineView, width: number, height: number): boolean;
   size(view: EngineView): { width: number; height: number } | null;
+  /**
+   * The view's held image is no longer the shown one (a lazily holding view presented a newer frame): `restore` and
+   * `size` treat it as absent until the next `snapshot`, which reuses its storage.
+   */
+  forget(view: EngineView): void;
+  /** Whether the context keeps its drawing buffer between presentations, so a view may hold its image lazily. */
+  readonly preserved: boolean;
   release(view: EngineView): void;
   /** Forget every held image; `lost` skips GPU deletes after a context loss. */
   clear(lost?: boolean): void;
@@ -53,7 +65,7 @@ export function createWebGl2HeldImageStore(engine: AbstractEngine): HeldImageSto
   if (!gl || native.webGLVersion !== 2 || typeof gl.blitFramebuffer !== "function") return null;
   if (gl.getContextAttributes()?.antialias) return null;
   if (typeof HTMLCanvasElement === "undefined" || !(engine.getRenderingCanvas() instanceof HTMLCanvasElement)) return null;
-  type Held = { framebuffer: WebGLFramebuffer; renderbuffer: WebGLRenderbuffer; width: number; height: number };
+  type Held = { framebuffer: WebGLFramebuffer; renderbuffer: WebGLRenderbuffer; width: number; height: number; current: boolean };
   const held = new Map<EngineView, Held>();
   // Babylon caches only the FRAMEBUFFER binding; restore exactly that one.
   const rebind = () => gl.bindFramebuffer(gl.FRAMEBUFFER, native._currentFramebuffer ?? null);
@@ -85,7 +97,7 @@ export function createWebGl2HeldImageStore(engine: AbstractEngine): HeldImageSto
     gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
     gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, renderbuffer);
     rebind();
-    const entry = { framebuffer, renderbuffer, width, height };
+    const entry = { framebuffer, renderbuffer, width, height, current: false };
     held.set(view, entry);
     return entry;
   };
@@ -93,18 +105,25 @@ export function createWebGl2HeldImageStore(engine: AbstractEngine): HeldImageSto
     snapshot(view, width, height) {
       const entry = allocate(view, width, height);
       // Without an entry nothing is held; the default framebuffer is shown either way.
-      if (entry) blit(null, entry.framebuffer, entry, { width, height });
+      if (!entry) return;
+      blit(null, entry.framebuffer, entry, { width, height });
+      entry.current = true;
     },
     restore(view, width, height) {
       const entry = held.get(view);
-      if (!entry || width < 1 || height < 1) return false;
+      if (!entry?.current || width < 1 || height < 1) return false;
       blit(entry.framebuffer, null, entry, { width, height });
       return true;
     },
     size(view) {
       const entry = held.get(view);
-      return entry ? { width: entry.width, height: entry.height } : null;
+      return entry?.current ? { width: entry.width, height: entry.height } : null;
     },
+    forget(view) {
+      const entry = held.get(view);
+      if (entry) entry.current = false;
+    },
+    preserved: gl.getContextAttributes()?.preserveDrawingBuffer === true,
     release(view) {
       const entry = held.get(view);
       if (entry) drop(entry);

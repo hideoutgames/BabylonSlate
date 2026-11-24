@@ -76,6 +76,17 @@ test("leaving out the Scene Layers' already-cleared depth-stencil clears changes
   test.setTimeout(300_000);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
+  // The WebGL2 contexts the page makes, so a step can replace the end-of-frame invalidate.
+  await page.addInitScript(() => {
+    const contexts: WebGL2RenderingContext[] = [];
+    (globalThis as unknown as { __layerClearsContexts: WebGL2RenderingContext[] }).__layerClearsContexts = contexts;
+    const getContext = HTMLCanvasElement.prototype.getContext as (this: HTMLCanvasElement, type: string, options?: unknown) => unknown;
+    (HTMLCanvasElement.prototype as unknown as { getContext: typeof getContext }).getContext = function (type, options) {
+      const context = getContext.call(this, type, options);
+      if (type === "webgl2" && context && !contexts.includes(context as WebGL2RenderingContext)) contexts.push(context as WebGL2RenderingContext);
+      return context;
+    };
+  });
   page.on("console", (message) => {
     if (message.type() === "error" && /webgl|shader|glsl|gl_invalid|program|compile/i.test(message.text())) errors.push(message.text());
   });
@@ -220,6 +231,34 @@ test("leaving out the Scene Layers' already-cleared depth-stencil clears changes
   // The front and occluding layers write depth, so the clears after them run: more than the world's merged clear.
   expect(skippedWork!.backbuffer.depthClears).toBeGreaterThanOrEqual(3);
   expect(skippedWork!.backbuffer.elided).toBeLessThan(everyWork!.backbuffer.depthClears);
+  // Play invalidates the backbuffer's depth and stencil after each frame: no later frame reads them before its own clear.
+  // From here on depth 0 and stencil 0xFF are written in place of the invalidate, as a tile-based GPU may leave them:
+  // no pixel changes, here or in the stages below (the shared stack's composite over the world included).
+  const poisoned = await page.evaluate(() => {
+    const gl = (globalThis as unknown as { __layerClearsContexts: WebGL2RenderingContext[] }).__layerClearsContexts
+      .filter((context) => !context.isContextLost()).sort((a, b) => b.drawingBufferWidth - a.drawingBufferWidth)[0]!;
+    const counts = { poisoned: 0 };
+    const original = gl.invalidateFramebuffer;
+    gl.invalidateFramebuffer = function (target: GLenum, attachments: GLenum[]) {
+      if (gl.getParameter(gl.DRAW_FRAMEBUFFER_BINDING) !== null || !attachments.includes(gl.DEPTH)) return original.call(gl, target, attachments);
+      counts.poisoned += 1;
+      const scissor = gl.isEnabled(gl.SCISSOR_TEST);
+      const depthMask = gl.getParameter(gl.DEPTH_WRITEMASK) as boolean;
+      const stencilMask = gl.getParameter(gl.STENCIL_WRITEMASK) as number;
+      const depthClear = gl.getParameter(gl.DEPTH_CLEAR_VALUE) as number;
+      const stencilClear = gl.getParameter(gl.STENCIL_CLEAR_VALUE) as number;
+      gl.disable(gl.SCISSOR_TEST); gl.depthMask(true); gl.stencilMask(0xff); gl.clearDepth(0); gl.clearStencil(0xff);
+      gl.clear(gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
+      if (scissor) gl.enable(gl.SCISSOR_TEST);
+      gl.depthMask(depthMask); gl.stencilMask(stencilMask); gl.clearDepth(depthClear); gl.clearStencil(stencilClear);
+    };
+    (globalThis as unknown as { __poisonCounts: typeof counts }).__poisonCounts = counts;
+    return counts.poisoned;
+  });
+  expect(poisoned).toBe(0);
+  expect(await settled(page), "depth and stencil poisoned after each frame").toBe(plain.skipped);
+  const poisonCount = () => page.evaluate(() => (globalThis as unknown as { __poisonCounts: { poisoned: number } }).__poisonCounts.poisoned);
+  expect(await poisonCount()).toBeGreaterThan(1);
 
   const step = async (text: string) => {
     await closeConsole();
@@ -235,8 +274,11 @@ test("leaving out the Scene Layers' already-cleared depth-stencil clears changes
   await step("Gain written");
   // The shared Scene Layer stack with the pass: every layer draws into its target, so nothing is left out.
   await step("Pass registered");
+  const poisonedBeforeStack = await poisonCount();
   const stacked = await compare("shared stack with a pass");
   expect(stacked.skippedWork?.backbuffer.elided).toBe(0);
+  // The stack's frames were poisoned too.
+  expect(await poisonCount()).toBeGreaterThan(poisonedBeforeStack);
 
   await testInfo.attach("scene-layer-clears", { body: JSON.stringify(results, null, 2), contentType: "application/json" });
   console.log(`scene layer clears: ${JSON.stringify(results)}`);

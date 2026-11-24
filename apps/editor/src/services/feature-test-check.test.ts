@@ -175,8 +175,6 @@ function fingerprintAfter(
   let fsrOutput = "view";
   let layerClears = "on";
   let layerSkipClears = "on";
-  let heldImage = "on";
-  let backbufferDepth = "kept";
   const waterOff = new Set<string>();
   const shadowOff = new Set<string>();
   // The parts away from their default: off for most, on for those off by default.
@@ -194,8 +192,6 @@ function fingerprintAfter(
     else if (name === "scenelayers") layers = first === "on";
     else if (name === "fsrdebug") fsrOutput = second!;
     else if (name === "layerdebug") { if (first === "skipclears") layerSkipClears = second!; else layerClears = second!; }
-    else if (name === "heldimage") heldImage = first!;
-    else if (name === "backbufferdiscard") backbufferDepth = first === "on" ? "discarded" : "kept";
     else if (name === "waterdebug") { if (second === "off") waterOff.add(first!); else waterOff.delete(first!); }
     else if (name === "shadowdebug") { if (second === "off") shadowOff.add(first!); else shadowOff.delete(first!); }
     else if (name === "worlddebug") { if ((second === "off") !== worldDefaultOff.has(first!)) worldSwitched.add(first!); else worldSwitched.delete(first!); }
@@ -215,8 +211,6 @@ function fingerprintAfter(
     "upscale.output": fsrOutput,
     "layers.clears": layerClears,
     "layers.skipclears": layerSkipClears,
-    "presentation.held": heldImage,
-    "backbuffer.depth": backbufferDepth,
   };
 }
 
