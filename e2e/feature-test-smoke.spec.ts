@@ -50,6 +50,12 @@ async function playLoad(page: Page): Promise<"loading" | "loaded" | "closed" | n
 
 test("the Feature Test main scene loads in the editor and in Play without session errors", async ({ page }) => {
   test.setTimeout(14 * 60_000);
+  // The browser logs each WebGL error it raises (until "too many errors"), whether or not a getError saw it: the
+  // editor's load and Play of the starter raise none.
+  const webglErrors: string[] = [];
+  page.on("console", (message) => {
+    if (/WebGL: (INVALID_|CONTEXT_LOST|OUT_OF_MEMORY|too many errors)|GL_INVALID_/.test(message.text())) webglErrors.push(message.text().slice(0, 300));
+  });
   await seedEngineSettings(page);
   await createFeatureTestProject(page);
   await openFeatureTestScene(page, "main");
@@ -79,6 +85,7 @@ test("the Feature Test main scene loads in the editor and in Play without sessio
   // A session with entries opens its report as Play closes; only errors fail the smoke, as in the Feature Test Check.
   await page.getByTestId("preview-session-report").waitFor({ state: "visible", timeout: 5_000 }).catch(() => {});
   expect(await sessionErrors(page)).toEqual([]);
+  expect(webglErrors, "the editor and Play raise no WebGL error").toEqual([]);
   expect(outcome, "Play finishes the load before it closes").toBe("loaded");
   expect(splitting, "Play reports what splits its shaders into several programs").not.toBeNull();
   expect(splitting!.filter((define) => BOUND_NOT_COMPILED.test(define)), "a bound value compiles no program of its own").toEqual([]);
