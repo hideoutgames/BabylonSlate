@@ -1,6 +1,5 @@
 import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
 import type { Material } from "@babylonjs/core/Materials/material";
-import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { Scene } from "@babylonjs/core/scene";
 import { GetEnvironmentBRDFTexture } from "@babylonjs/core/Misc/brdfTextureTools";
 import {
@@ -12,7 +11,6 @@ import {
   type MaterialGraphNode,
 } from "@haptic/shader-graph";
 import { compileMaterialPlan, type CompiledMaterial } from "./material-compiler";
-import { replaceSceneMaterial } from "./material-library";
 
 const ENGINE_DEFAULT_MATERIAL_NAME = "engineDefaultMaterial";
 /**
@@ -140,37 +138,6 @@ export function installEngineDefaultMaterial(scene: Scene): Material {
   scene.defaultMaterial = material;
   return material;
 }
-
-/**
- * Compiles `scene`'s engine default Material again after a change to how the Scene compiles Materials (`worlddebug
- * materialrecords`), keeping its emission: the new build becomes the Scene's default once it is ready, and the old one
- * is disposed.
- */
-export function recompileEngineDefaultMaterial(scene: Scene): Promise<void> {
-  // One at a time, so the last switch decides the build that stays.
-  const run = (recompiles.get(scene) ?? Promise.resolve()).then(async () => {
-    const previous = scene.materials.find(isEngineDefaultMaterial);
-    if (!previous || scene.isDisposed) return;
-    const old = compiled.get(previous)!;
-    const next = createEngineDefaultMaterial(scene);
-    const build = compiled.get(next)!;
-    const emission = old.getParameter(ENGINE_DEFAULT_EMISSION_PARAMETER);
-    if (emission) build.setParameter(ENGINE_DEFAULT_EMISSION_PARAMETER, emission);
-    const drawsDefault = (mesh: Mesh) => mesh.material === previous || (mesh.material === null && scene.defaultMaterial === previous);
-    if (!await replaceSceneMaterial(scene, previous, next, drawsDefault)) {
-      compiled.delete(next);
-      build.dispose();
-      return;
-    }
-    if (scene.defaultMaterial === previous) scene.defaultMaterial = next;
-    compiled.delete(previous);
-    old.dispose();
-  });
-  recompiles.set(scene, run);
-  return run;
-}
-
-const recompiles = new WeakMap<Scene, Promise<void>>();
 
 /**
  * 2D scenes ship without lights, so a material-less primitive drawn with the lit default would be black. In 2D the

@@ -59,7 +59,6 @@ import { fullTargetClear } from "@haptic/render/editor-proofs";
 import { drawGeometryDepthSeed } from "@haptic/render/editor-proofs";
 import { setMeshInstanceParameters } from "@haptic/render/editor-proofs";
 import { setSceneOutputScale } from "@haptic/render/editor-proofs";
-import { setSceneWorldDebug } from "@haptic/render/editor-proofs";
 import { GlSignatureRecorder, installGlSignature } from "@haptic/render/editor-proofs";
 import { HapticLightingBlock } from "@haptic/render/editor-proofs";
 import { createMirrorSurfaceMesh, mirrorDiagnostics } from "@haptic/render/editor-proofs";
@@ -286,12 +285,11 @@ function measureFrame(engine: AbstractEngine, frame: () => unknown): MainPassExa
 }
 
 /**
- * `materialRecords` compiles the scene's Materials reading the Material record (`worlddebug materialrecords on`);
- * `parameters` gives each Material a Color and a Float parameter, each times a literal, so the record holds parameters
- * and hoisted literals as well as the Material Output's.
+ * `parameters` gives each Material a Color and a Float parameter, each times a literal, so the Material record holds
+ * parameters and hoisted literals as well as the Material Output's.
  */
 export async function runMainPassExactnessProof(options: {
-  reference: boolean; largeWorld?: boolean; chain?: boolean; materialRecords?: boolean; parameters?: boolean;
+  reference: boolean; largeWorld?: boolean; chain?: boolean; parameters?: boolean;
 }) {
   const block = HapticLightingBlock.prototype as unknown as { _buildBlock(state: NodeMaterialBuildState): unknown };
   const build = block._buildBlock;
@@ -339,7 +337,6 @@ export async function runMainPassExactnessProof(options: {
     });
     // The world at half the backbuffer: the chain ends at the view's size and its output copy fills the backbuffer.
     if (options.chain) setSceneOutputScale(scene, 0.5);
-    if (options.materialRecords) setSceneWorldDebug(scene, "materialrecords", true);
     const camera = new FreeCamera("Main Camera", new Vector3(0, 3.2, -7), scene);
     camera.setTarget(new Vector3(0, 0.6, 1.5));
     camera.minZ = 0.1;

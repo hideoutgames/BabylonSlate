@@ -23,7 +23,8 @@ import { NodeMaterialModes } from "@babylonjs/core/Materials/Node/Enums/nodeMate
 import { NodeMaterial, type NodeMaterialDefines } from "@babylonjs/core/Materials/Node/nodeMaterial";
 import { NodeMaterialBlock } from "@babylonjs/core/Materials/Node/nodeMaterialBlock";
 import type { NodeMaterialConnectionPoint } from "@babylonjs/core/Materials/Node/nodeMaterialBlockConnectionPoint";
-import type { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import type { Effect } from "@babylonjs/core/Materials/effect";
 import { Material } from "@babylonjs/core/Materials/material";
 import { ShaderLanguage } from "@babylonjs/core/Materials/shaderLanguage";
@@ -89,7 +90,6 @@ import { markBoundedMaterial, markDrawBatchMaterial } from "./draw-batch-world-b
 import { OverlayStyleBlock } from "./overlay-style-block";
 import { SceneFogBlock } from "./scene-fog-block";
 import { createDecalPlumbing } from "./decal-projection-block";
-import { materialRecordsOn } from "./world-debug";
 import { MATERIAL_RECORD_BLOCK, MaterialRecord, MaterialRecordReadBlock, planMaterialRecord, type MaterialRecordValue } from "./material-record";
 import { LayerMultiplyBlock, MultiplyBlendFactorBlock, MultiplyFactorOutputBlock } from "./multiply-blend-block";
 import { followLayerMultiplyAlphaMode } from "./layer-composite";
@@ -455,10 +455,10 @@ export function compileMaterialPlan(
   // carries only the decal's own instance rows, so in the Decal domain it stays a uniform.
   const isPerInstance = (operation: MaterialOperation) =>
     operation.source.callPath.length === 0 && plan.domain !== "decal" && isPerInstanceParameter(operation.nodeType, operation.properties);
-  // With `worlddebug materialrecords on`, a Material-mode program reads its parameters and hoisted literals from the
-  // Material's record (`material-record.ts`); Particle and Post Process programs, and a plan too large for a record,
-  // keep plain uniforms. Off (the default), every Material compiles its parameters as uniforms and literals as code.
-  const recordPlan = material.mode === NodeMaterialModes.Material && materialRecordsOn(scene) ? planMaterialRecord(plan, isPerInstance) : null;
+  // Every Material-mode program reads its parameters and hoisted literals from the Material's record
+  // (`material-record.ts`); Particle and Post Process programs, and a plan past the safe record slot limit, keep plain
+  // uniforms.
+  const recordPlan = material.mode === NodeMaterialModes.Material ? planMaterialRecord(plan, isPerInstance) : null;
   const record = recordPlan ? new MaterialRecord(scene.getEngine(), recordPlan.slots) : null;
   if (record) material.onDisposeObservable.addOnce(() => record.dispose());
   /** A block reading `slot` of the record, which holds `value` (a parameter's default or a hoisted literal). */
@@ -1691,6 +1691,35 @@ export function drawsLayer3DWithDepth(material: Material, plan: Pick<MaterialBui
   material.needAlphaTestingForMesh = (mesh) => isLayerDepthVisual(mesh) ? masked && !material.needAlphaBlendingForMesh(mesh) : tests(mesh);
 }
 
+const neutralParamTextures = new WeakMap<AbstractEngine, RawTexture>();
+
+/**
+ * Shared Engine-owned 1×1 white fallback for an unset `param.texture` node: ensures bound and unbound texture
+ * parameter instances compile to one GPU program and assigning a texture at runtime triggers no shader recompile.
+ */
+function neutralParamTexture(engine: AbstractEngine): RawTexture {
+  let texture = neutralParamTextures.get(engine);
+  if (!texture || isDisposedGpuTexture(texture)) {
+    texture = RawTexture.CreateRGBATexture(
+      new Uint8Array([255, 255, 255, 255]),
+      1,
+      1,
+      engine,
+      false,
+      false,
+      Texture.NEAREST_SAMPLINGMODE,
+    );
+    texture.name = "haptic:neutralParamTexture";
+    neutralParamTextures.set(engine, texture);
+    const owned = texture;
+    engine.onDisposeObservable.addOnce(() => {
+      if (neutralParamTextures.get(engine) === owned) neutralParamTextures.delete(engine);
+      if (!isDisposedGpuTexture(owned)) owned.dispose();
+    });
+  }
+  return texture;
+}
+
 /** Bind the shared sampler source for a parameter or an inline sample. */
 function bindTexture(
   operation: MaterialOperation,
@@ -1705,7 +1734,13 @@ function bindTexture(
     operand?.kind === "operation" ? operand.operationId : undefined;
   const { textures } = planIndex(plan);
   const binding = (producerId === undefined ? undefined : textures.get(producerId)) ?? textures.get(operation.id);
-  if (!binding) return true;
+  const block = (realization.outputs.textureOut?.ownerBlock ?? realization.blocks[0]) as unknown as {
+    texture?: Texture | null;
+  };
+  if (!binding) {
+    if (operation.nodeType === "param.texture") block.texture = neutralParamTexture(options.scene.getEngine());
+    return true;
+  }
   const texture = options.resolveTexture?.(binding.textureGuid, binding.filter) ?? null;
   if (!texture || isDisposedGpuTexture(texture)) {
     diagnostics.push({
@@ -1716,9 +1751,6 @@ function bindTexture(
     });
     return false;
   }
-  const block = (realization.outputs.textureOut?.ownerBlock ?? realization.blocks[0]) as unknown as {
-    texture?: Texture | null;
-  };
   block.texture = texture;
   if (!isGpuTextureSampleReady(texture)) pendingTextures.add(texture);
   return true;

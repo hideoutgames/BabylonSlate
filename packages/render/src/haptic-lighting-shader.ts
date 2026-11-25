@@ -12,9 +12,20 @@ import { CLUSTER_SLICES, CLUSTER_TILES_X, CLUSTER_TILES_Y } from "./light-cluste
  * instead (`cel-shader.ts`).
  */
 
-/** Pre-scaled spherical harmonics of the environment's irradiance (Babylon's PBR evaluation), one uniform each. */
+/** Pre-scaled spherical harmonics of the environment's irradiance (Babylon's PBR evaluation), stored in `HapticEnvironment`. */
 export const HAPTIC_IRRADIANCE_KEYS = ["l00", "l1_1", "l10", "l11", "l2_2", "l2_1", "l20", "l21", "l22"] as const;
-export const HAPTIC_IRRADIANCE_UNIFORMS = HAPTIC_IRRADIANCE_KEYS.map((key) => `hapticIrradiance_${key}`);
+/** The per-environment `std140` uniform block bound at `HapticEnvironment`: 17 `vec4`s (272 bytes). */
+export const HAPTIC_ENVIRONMENT_BLOCK = "HapticEnvironment";
+export const HAPTIC_ENVIRONMENT_FLOATS = 68;
+export const HAPTIC_ENVIRONMENT_GLSL = `layout(std140) uniform ${HAPTIC_ENVIRONMENT_BLOCK} {
+  mat4 hapticEnvironmentMatrix;
+  vec4 hapticEnvironment;
+  vec4 hapticEnvironmentForm;
+  vec4 hapticEnvironmentBoxPosition;
+  vec4 hapticEnvironmentBoxSize;
+  vec4 hapticIrradiance[9];
+};
+`;
 /** The shadow atlas's compare sampler, which the block's shadows read (`shadowAtlasTexture`). */
 export const HAPTIC_SHADOW_ATLAS = "hapticShadowAtlas";
 /**
@@ -929,9 +940,9 @@ vec3 hapticEnvironmentDirection(vec3 direction) {
 }
 vec3 hapticIrradiance(vec3 N) {
   vec3 n = hapticEnvironmentDirection(N);
-  return hapticIrradiance_l00.rgb + hapticIrradiance_l1_1.rgb * n.y + hapticIrradiance_l10.rgb * n.z + hapticIrradiance_l11.rgb * n.x +
-    hapticIrradiance_l2_2.rgb * (n.y * n.x) + hapticIrradiance_l2_1.rgb * (n.y * n.z) + hapticIrradiance_l20.rgb * (3.0 * n.z * n.z - 1.0) +
-    hapticIrradiance_l21.rgb * (n.z * n.x) + hapticIrradiance_l22.rgb * (n.x * n.x - n.y * n.y);
+  return hapticIrradiance[0].rgb + hapticIrradiance[1].rgb * n.y + hapticIrradiance[2].rgb * n.z + hapticIrradiance[3].rgb * n.x +
+    hapticIrradiance[4].rgb * (n.y * n.x) + hapticIrradiance[5].rgb * (n.y * n.z) + hapticIrradiance[6].rgb * (3.0 * n.z * n.z - 1.0) +
+    hapticIrradiance[7].rgb * (n.z * n.x) + hapticIrradiance[8].rgb * (n.x * n.x - n.y * n.y);
 }
 // The prefiltered cube along the reflection, box-projected onto a reflection probe's volume.
 vec3 hapticRadiance(vec3 P, vec3 N, vec3 V, float alpha) {

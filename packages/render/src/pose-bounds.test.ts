@@ -92,10 +92,10 @@ describe("pose bounds", () => {
     expect(box(mesh).max).toEqual([10, 2, 0]);
   });
 
-  it("computes a skeleton once a frame however many followed meshes it poses, its bones linked to nodes or not", () => {
+  it("computes a skeleton at most once a frame however many followed meshes it poses, skips idle linked rigs, and avoids a duplicate render-pass prepare", () => {
     const { scene, frame } = host();
     // A loaded model's character: each primitive its own mesh on one skeleton whose bones follow transform nodes, as
-    // the glTF loader links them, so every prepare copies the nodes and computes every bone.
+    // the glTF loader links them.
     const linked = rig(scene);
     const rootNode = new TransformNode("root node", scene), armNode = new TransformNode("arm node", scene);
     armNode.parent = rootNode;
@@ -109,12 +109,19 @@ describe("pose bounds", () => {
     for (const mesh of [...parts, lone]) expect(followPose(mesh)).toBe(true);
     const computes = new Map([[linked.skeleton, 0], [own.skeleton, 0]]);
     for (const skeleton of computes.keys()) skeleton.onBeforeComputeObservable.add(() => computes.set(skeleton, computes.get(skeleton)! + 1));
+    // Nothing moved since `followPose`: neither linked nor unlinked skeletons recompute.
     frame();
-    expect([...computes.values()]).toEqual([1, 0]);
+    expect([...computes.values()]).toEqual([0, 0]);
     armNode.position.set(5, 2, 0);
     own.arm.position = new Vector3(3, 2, 0);
     frame();
-    expect([...computes.values()]).toEqual([2, 1]);
+    expect([...computes.values()]).toEqual([1, 1]);
+    // Babylon increments `_renderId` after `onBeforeRenderObservable` and calls `skeleton.prepare(false)` during the
+    // render pass: neither skeleton computes a second time when nothing moved since `updatePoseBounds`.
+    scene.incrementRenderId();
+    linked.skeleton.prepare(false);
+    own.skeleton.prepare(false);
+    expect([...computes.values()]).toEqual([1, 1]);
     for (const mesh of parts) expect(box(mesh), mesh.name).toEqual({ min: [0, 0, 0], max: [6, 2, 0] });
     expect(box(lone)).toEqual({ min: [0, 0, 0], max: [4, 2, 0] });
   });
@@ -161,7 +168,7 @@ describe("pose bounds", () => {
       setPose();
       computes = 0;
       frame();
-      expect(computes, `pose ${index}`).toBe(1);
+      expect(computes, `pose ${index}`).toBe(index === 0 ? 0 : 1);
       // Each bone moves a straight run of a strip's vertices, whose box is the run itself: the posed box is the box of
       // the skinned vertices, a ten-thousandth of its size wider.
       for (const [mesh, positions] of [[wide, [-2, 0, 0, 3, 0, 0, 0, 2, 0, 1, 2, 0]], [tall, [0, 0, 1, 1, 0, 1, 0, 2, -1, 0, 2, 4]]] as const) {

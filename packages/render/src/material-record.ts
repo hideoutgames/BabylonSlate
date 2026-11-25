@@ -12,8 +12,8 @@ import { Vector2, Vector3, Vector4 } from "@babylonjs/core/Maths/math.vector";
 import { RegisterClass } from "@babylonjs/core/Misc/typeStore";
 import type { MaterialBuildPlan, MaterialOperand, MaterialOperation } from "@haptic/shader-graph";
 
-/** The light blocks every lit program binds (`HapticLightingBlock`), in binding-point order. */
-export const HAPTIC_LIGHT_UNIFORM_BLOCKS = ["HapticLights", "HapticClusters"] as const;
+/** The light and environment blocks every lit program binds (`HapticLightingBlock`), in binding-point order. */
+export const HAPTIC_LIGHT_UNIFORM_BLOCKS = ["HapticLights", "HapticClusters", "HapticEnvironment"] as const;
 
 /** The per-Material `std140` uniform block every Material-mode program of the compiler reads its record from. */
 export const MATERIAL_RECORD_BLOCK = "HapticMaterial";

@@ -337,11 +337,6 @@ export function possessProfileView(view: FeatureTestProfileViewName): string {
  * steps have compiled, and a memory-limited device kills the page. `shadow tiles half` plans its smaller maps in the
  * level's atlas, which stays the same object.
  *
- * Nor does a step switch how Materials compile (`worlddebug materialrecords`): mid-run, that builds a second generation
- * of every Scene Material and links its programs while the first stays bound, and the Play keep holds the old programs
- * after it, on top of what the steps compiled. A Profile of the Material record runs in a session started with it
- * (`materialrecords on`, then reload), against one started without; its fingerprint (`world.debug`) says which.
- *
  * `light` (few draws) takes first one window with the Check's own samplers off (`samplersOff`), right after its first
  * baseline so a run that stops later still has it, then the world hidden, the shadow map passes and their splits, the
  * geometry effects together, and the world drawn once. `heavy` (many draws, no Mirror on screen; the control view) takes what follows the draws rather

@@ -177,9 +177,8 @@ function fingerprintAfter(
   let layerSkipClears = "on";
   const waterOff = new Set<string>();
   const shadowOff = new Set<string>();
-  // The parts away from their default: off for most, on for those off by default.
+  // The parts switched off away from their default.
   const worldSwitched = new Set<string>();
-  const worldDefaultOff = new Set(["materialrecords"]);
   for (const line of commands) {
     const [name, first, second, third] = line.split(" ");
     if (name === "quality") {
@@ -194,7 +193,7 @@ function fingerprintAfter(
     else if (name === "layerdebug") { if (first === "skipclears") layerSkipClears = second!; else layerClears = second!; }
     else if (name === "waterdebug") { if (second === "off") waterOff.add(first!); else waterOff.delete(first!); }
     else if (name === "shadowdebug") { if (second === "off") shadowOff.add(first!); else shadowOff.delete(first!); }
-    else if (name === "worlddebug") { if ((second === "off") !== worldDefaultOff.has(first!)) worldSwitched.add(first!); else worldSwitched.delete(first!); }
+    else if (name === "worlddebug") { if (second === "off") worldSwitched.add(first!); else worldSwitched.delete(first!); }
   }
   const quality = session.effective();
   return {
@@ -204,7 +203,7 @@ function fingerprintAfter(
     captures: captures ? "on" : "suspended",
     "water.debug": WATER_DEBUG_PARTS.filter((part) => waterOff.has(part)).join(",") || "none",
     "shadows.debug": SHADOW_DEBUG_PARTS.filter((part) => shadowOff.has(part)).join(",") || "none",
-    "world.debug": WORLD_DEBUG_PARTS.filter((part) => worldSwitched.has(part)).map((part) => worldDefaultOff.has(part) ? `${part} on` : part).join(",") || "none",
+    "world.debug": WORLD_DEBUG_PARTS.filter((part) => worldSwitched.has(part)).join(",") || "none",
     "presentation.framesInFlight": framesInFlight,
     "msaa.discard": discard ? "on" : "off",
     layers: layers ? "shown" : "hidden",
@@ -1233,9 +1232,6 @@ describe("Profile", { timeout: 30_000 }, () => {
     expect(plan.views.flatMap((view) => view.steps).filter((entry) => entry.adds).map((entry) => entry.label))
       .toEqual(["geometry pass drawn twice", "geometry pass drawn twice, scissored"]);
     expect(step("heavy", "geometry effects off").commands).toHaveLength(4);
-    // No step switches how Materials compile: mid-run, that builds every Scene Material again (`worlddebug materialrecords`).
-    expect(plan.views.flatMap((view) => view.steps).flatMap((entry) => [...entry.commands, ...(entry.restore ?? [])])
-      .filter((line) => line.includes("materialrecords"))).toEqual([]);
     expect(step("light", "world hidden")).toMatchObject({
       commands: ["worlddebug world off", "shadowdebug passes off", "rendertargets off", "postprocessing off"],
       restore: ["worlddebug world on", "shadowdebug passes on", "rendertargets on", "postprocessing on"],
@@ -1286,7 +1282,7 @@ describe("Profile", { timeout: 30_000 }, () => {
   });
 
   it("reads the session's state from a baseline's fingerprint, with Play's defaults for what it lacks", () => {
-    expect(profileState({ "post.enabled": "false", captures: "suspended", layers: "hidden", "world.debug": "materialrecords on" }))
+    expect(profileState({ "post.enabled": "false", captures: "suspended", layers: "hidden", "world.debug": "none" }))
       .toEqual({ postProcessing: false, captures: false, layers: false });
     expect(profileState(undefined)).toEqual(SESSION);
   });

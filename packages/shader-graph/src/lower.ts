@@ -114,23 +114,18 @@ export interface MaterialBuildPlan {
   hash: string;
   /**
    * The graph's shape: what decides its GPU program. Operations by plan position (never node id), their wiring and
-   * conversions, the literals the shader holds, the properties that change code, which samples have a texture bound,
-   * and the domain, shading, blend, two-sided, normals and alpha cutoff. Two plans with one `programHash` and one
-   * `valueHash` compile byte-identical shader text whatever their Materials and node ids (`shareCompiledProgram`).
+   * conversions, the non-hoisted literals the shader holds, `outputFlags`, the properties that change code, which
+   * non-parameter samples have a texture bound, and the domain, shading, blend, two-sided, normals and alpha cutoff.
+   * Two plans with one `programHash` and one `valueHash` compile byte-identical shader text whatever their Materials
+   * and node ids (`shareCompiledProgram`).
    */
   programHash: string;
   /**
-   * What a plan binds rather than compiles: its parameters' names and default values, its texture guids and filters,
-   * its Global Parameter selections and its bounds padding. Two plans that differ only here share one program.
+   * What a plan binds rather than compiles: its parameters' names and default values, its hoisted literals, its
+   * texture guids and filters, its Global Parameter selections and its bounds padding. Two plans that differ only here
+   * share one program.
    */
   valueHash: string;
-  /**
-   * `programHash` as a program reading the Material record compiles the plan (`worlddebug materialrecords on`): hoisted
-   * literals are values, not code, and `outputFlags` are code.
-   */
-  recordProgramHash: string;
-  /** `valueHash` with the record's hoisted literals among the bound values. */
-  recordValueHash: string;
 }
 
 /**
@@ -304,21 +299,21 @@ function isBoundProperty(operation: MaterialOperation, key: string, hoisted: Rea
 }
 
 /**
- * The program and value hashes of a lowered plan (see `MaterialBuildPlan`): with `record`, as the Material record
- * compiles it (hoisted literals are values, pin defaults are their operands); without, as plain uniforms and literals.
+ * The program and value hashes of a lowered plan (see `MaterialBuildPlan`): hoisted literals are bound values, pin
+ * defaults are their operands, and `param.texture` nodes always compile with a texture sampler (binding a neutral
+ * fallback when unset so bound and unbound instances share one program).
  */
 function hashPlanParts(
   operations: readonly MaterialOperation[],
   outputs: Record<string, MaterialOperand | null>,
   textures: readonly MaterialTextureBinding[],
   hoistedConstants: readonly string[],
-  record: boolean,
   programHeader: string,
   valueHeader: string,
 ): { programHash: string; valueHash: string } {
   const positions = new Map(operations.map((operation, index) => [operation.id, index]));
-  const hoisted = new Set(record ? hoistedConstants : []);
-  const isHoisted = (value: MaterialOperand) => record && value.kind === "constant" && value.hoisted === true;
+  const hoisted = new Set(hoistedConstants);
+  const isHoisted = (value: MaterialOperand) => value.kind === "constant" && value.hoisted === true;
   const operand = (value: MaterialOperand | null | undefined): string => {
     if (!value) return "none";
     if (value.kind === "constant") return isHoisted(value) ? `h:${value.type}` : `c:${value.type}:${value.value.join("/")}`;
@@ -333,9 +328,10 @@ function hashPlanParts(
   operations.forEach((operation, index) => {
     const inputs = Object.keys(operation.inputs).sort().map((pinId) => `${pinId}=${operand(operation.inputs[pinId])}`).join(",");
     // A pin default (`default:<pin>`) is the operand that carries it, described with the inputs.
-    const keys = Object.keys(operation.properties).sort().filter((key) => key !== "__pins" && !(record && key.startsWith("default:")));
+    const keys = Object.keys(operation.properties).sort().filter((key) => key !== "__pins" && !key.startsWith("default:"));
     const code = keys.filter((key) => !isBoundProperty(operation, key, hoisted)).map((key) => property(operation, key)).join(",");
-    program.push(`${operation.nodeType}|${operation.resolvedType}|${inputs}|${code}|${bound.has(operation.id) ? "texture" : ""}`);
+    const hasTexture = bound.has(operation.id) || operation.nodeType === "param.texture";
+    program.push(`${operation.nodeType}|${operation.resolvedType}|${inputs}|${code}|${hasTexture ? "texture" : ""}`);
     const value = keys.filter((key) => isBoundProperty(operation, key, hoisted)).map((key) => property(operation, key));
     for (const pinId of Object.keys(operation.inputs).sort()) {
       const input = operation.inputs[pinId]!;
@@ -671,9 +667,9 @@ function lowerWithinBudget(
 
   const cost = costOf(operations);
   const outputFlags = materialOutputFlags(outputs, operations);
-  const shapeHeader = (record: boolean) => [
+  const shapeHeader = [
     doc.domain, doc.shadingModel, doc.blendMode, doc.twoSided ? "two-sided" : "one-sided", doc.defaultNormals, String(doc.alphaCutoff),
-    ...(record ? [JSON.stringify(outputFlags)] : []),
+    ...(RECORD_DOMAINS.has(doc.domain) ? [JSON.stringify(outputFlags)] : []),
   ].join("|");
   const hoistedConstants = hoistMaterialLiterals(doc.domain, operations, outputs, cost.customBlocks, outputFlags);
   const header = [
@@ -708,9 +704,7 @@ function lowerWithinBudget(
       hash: hashPlan(operations, outputs, header),
       hoistedConstants,
       outputFlags,
-      ...hashPlanParts(operations, outputs, textures, hoistedConstants, false, shapeHeader(false), String(doc.boundsPadding ?? 0)),
-      ...(({ programHash, valueHash }) => ({ recordProgramHash: programHash, recordValueHash: valueHash }))(
-        hashPlanParts(operations, outputs, textures, hoistedConstants, true, shapeHeader(true), String(doc.boundsPadding ?? 0))),
+      ...hashPlanParts(operations, outputs, textures, hoistedConstants, shapeHeader, String(doc.boundsPadding ?? 0)),
     },
   };
 }

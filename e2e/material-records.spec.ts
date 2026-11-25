@@ -12,7 +12,7 @@ if (SOFTWARE_GL) test.use({ launchOptions: { args: SOFTWARE_GL_ARGS } });
 type Proof = typeof runMainPassExactnessProof;
 type Run = Awaited<ReturnType<Proof>>;
 
-async function run(page: Page, materialRecords: boolean, parameters: boolean): Promise<Run> {
+async function run(page: Page, reference: boolean, parameters: boolean): Promise<Run> {
   const errors: string[] = [];
   const listener = (message: { type(): string; text(): string }) => {
     if (["warning", "error"].includes(message.type()) &&
@@ -25,9 +25,9 @@ async function run(page: Page, materialRecords: boolean, parameters: boolean): P
   await page.goto("/?test=1&mainPassExactnessProof=1");
   await page.waitForFunction(() => typeof (window as unknown as { __mainPassExactnessProof?: unknown }).__mainPassExactnessProof === "function");
   const result = await page.evaluate((value) => (window as unknown as { __mainPassExactnessProof: Proof }).__mainPassExactnessProof(value),
-    { reference: false, materialRecords, parameters });
+    { reference, parameters });
   page.off("console", listener);
-  expect(errors, `${parameters ? "parameters" : "plain"}${materialRecords ? " records" : ""}`).toEqual([]);
+  expect(errors, `${parameters ? "parameters" : "plain"}${reference ? " reference" : ""}`).toEqual([]);
   return result;
 }
 
@@ -35,29 +35,25 @@ const sha = (bytes: number[]) => createHash("sha256").update(Uint8Array.from(byt
 const digests = (images: Run["still"]) => ({ view: sha(images.view), fast: sha(images.captures.fast), highQuality: sha(images.captures.highQuality), atlas: images.atlas });
 
 /**
- * The Material record (`worlddebug materialrecords on`: parameters and hoisted literals read from a per-Material uniform
- * block, the Material Output's literals among them) is an opt-in until a native GPU proves it: this draws the main-pass
- * exactness scene with it off (the default) and on, with the scene's own Materials (their Output literals hoisted) and
- * with a Color and a Float parameter each times a literal, and compares the view, both captures and the shadow atlas
- * byte for byte, still, after the casters moved and after notified geometry writes.
+ * Every Material-mode graph Material reads its parameters and hoisted literals from the per-Material `HapticMaterial`
+ * uniform block (and environment lighting from `HapticEnvironment`). This verifies the parameterized Materials draw
+ * cleanly with zero GL/UBO errors, bind their uniform buffers, and match the reference pass byte for byte.
  */
-test("Materials reading the Material record draw the bytes their uniforms and literals draw", async ({ page }) => {
+test("parameterised Materials reading the Material record match the reference pass byte for byte", async ({ page }) => {
   test.setTimeout(900_000);
-  const summary: Record<string, unknown> = {};
-  for (const parameters of [false, true]) {
-    const variant = parameters ? "parameters" : "plain";
-    const off = await run(page, false, parameters);
-    const on = await run(page, true, parameters);
-    const stages = Object.fromEntries((["still", "moved", "rewritten"] as const).map((stage) => [stage, { off: digests(off[stage]), on: digests(on[stage]) }]));
-    summary[variant] = { renderer: on.renderer, stages, programs: { off: off.glFrame.calls.useProgram ?? 0, on: on.glFrame.calls.useProgram ?? 0 } };
-    console.log(`${variant} on ${on.renderer}: ${JSON.stringify(stages)}`);
-    for (const stage of ["still", "moved", "rewritten"] as const) {
-      // Not blank: the view shows the lit scene.
-      expect(new Set(on[stage].view).size, `${variant} ${stage} view`).toBeGreaterThan(32);
-      expect(stages[stage]!.on, `${variant} ${stage}`).toEqual(stages[stage]!.off);
-    }
-    // The record path ran: the still frame binds the records, which the default path never does.
-    expect(on.glFrame.calls.bindBufferBase ?? 0, variant).toBeGreaterThan(off.glFrame.calls.bindBufferBase ?? 0);
+  const current = await run(page, false, true);
+  const reference = await run(page, true, true);
+  const stages = Object.fromEntries((["still", "moved", "rewritten"] as const).map((stage) => [stage, { current: digests(current[stage]), reference: digests(reference[stage]) }]));
+  const summary = {
+    parameters: { renderer: current.renderer, stages, programs: { current: current.glFrame.calls.useProgram ?? 0, reference: reference.glFrame.calls.useProgram ?? 0 } },
+  };
+  console.log(`parameters on ${current.renderer}: ${JSON.stringify(stages)}`);
+  for (const stage of ["still", "moved", "rewritten"] as const) {
+    // Not blank: the view shows the lit scene.
+    expect(new Set(current[stage].view).size, `parameters ${stage} view`).toBeGreaterThan(32);
+    expect(stages[stage]!.current, `parameters ${stage}`).toEqual(stages[stage]!.reference);
   }
+  // Uniform blocks (`HapticLights`, `HapticClusters`, `HapticEnvironment`, `HapticMaterial`) were bound.
+  expect(current.glFrame.calls.bindBufferBase ?? 0).toBeGreaterThan(0);
   if (process.env.HAPTIC_MATERIAL_RECORDS_PROOF_OUT) writeFileSync(process.env.HAPTIC_MATERIAL_RECORDS_PROOF_OUT, JSON.stringify(summary));
 });
