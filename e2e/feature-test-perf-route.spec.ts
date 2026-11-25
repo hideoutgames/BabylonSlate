@@ -603,6 +603,13 @@ async function pausedRedraw(page: Page): Promise<void> {
   await expect.poll(() => playDrawnFrames(page), { timeout: 10_000, intervals: [50] }).toBeGreaterThan(before);
 }
 
+/** Frames the paused view drew by itself over `ms`: 0 shows it holds its picture until asked. */
+async function drawnWhilePaused(page: Page, ms: number): Promise<number> {
+  const before = await playDrawnFrames(page);
+  await page.waitForTimeout(ms);
+  return (await playDrawnFrames(page)) - before;
+}
+
 type DrawListCounts = Array<{ retained: number; full: number; checked: number; fallback: number } | null>;
 
 /**

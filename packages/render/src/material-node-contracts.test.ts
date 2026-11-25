@@ -317,7 +317,7 @@ describe("material node contracts", () => {
     expect(uniforms.length).toBeGreaterThan(0);
     expect(uniforms.every((uniform) => !uniform.includes("__"))).toBe(true);
     expect(result.setParameter("Opacity", { kind: "float", value: 0.75 })).toBe(true);
-    expect(result.material.attachedBlocks.some((block) => block instanceof InputBlock && block.value === 0.75)).toBe(true);
+    expect(result.material.attachedBlocks.some((block) => (block as { value?: unknown }).value === 0.75)).toBe(true);
   });
 
   it.each(["parameter", "inline", "forwarded"])("compiles and binds a %s texture sampler for custom UV sampling", async (source) => {
@@ -481,8 +481,8 @@ describe("material node contracts", () => {
     wire(doc, "clamp", "out", "output", "roughness");
     const result = await compile(doc);
     for (const id of ["minimum", "maximum"]) {
-      const input = result.material.getInputBlockByPredicate((block) => block.name === nodeBlockName(doc, id));
-      expect(input?.output.hasEndpoints).toBe(true);
+      const input = result.material.getBlockByName(nodeBlockName(doc, id)) as { output?: { hasEndpoints: boolean } } | null;
+      expect(input?.output?.hasEndpoints).toBe(true);
     }
     expect(result.setParameter("Minimum", { kind: "float", value: 0.2 })).toBe(true);
   });

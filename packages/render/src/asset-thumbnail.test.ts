@@ -2,7 +2,6 @@ import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
 import { Camera } from "@babylonjs/core/Cameras/camera";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
-import { InputBlock } from "@babylonjs/core/Materials/Node/Blocks/Input/inputBlock";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
 import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
@@ -67,7 +66,10 @@ describe("asset thumbnail capture", () => {
       const material = sphere.material as NodeMaterial;
       captured = {
         vertices: sphere.getTotalVertices(),
-        colors: material.attachedBlocks.flatMap((block) => block instanceof InputBlock && block.value instanceof Color3 ? [block.value.asArray()] : []),
+        colors: material.attachedBlocks.flatMap((block) => {
+          const value = (block as { value?: unknown }).value;
+          return value instanceof Color3 ? [value.asArray()] : [];
+        }),
         alpha: preview.clearColor.a,
         target: preview.activeCamera!.outputRenderTarget,
       };
