@@ -243,8 +243,45 @@ describe("dirty-tracked PhysicsWorldSync review fixes", () => {
     const second = composer.compose([rider]);
     expect(second).toBe(first);
     expect(second.get("rider")).toBe(pose);
-    expect(pose).toMatchObject({ position: { x: 6, y: 0, z: 0 } });
-    expect([...second.keys()]).toEqual(["carrier", "rider"]);
+      expect(pose).toMatchObject({ position: { x: 6, y: 0, z: 0 } });
+      expect([...second.keys()]).toEqual(["carrier", "rider"]);
+  });
+
+  it("ignores custom gameplay variable writes and skips stationary kinematic targets after settling", () => {
+    const world = createTestWorld();
+    const backend = createSoftwarePhysicsBackend("3d", { x: 0, y: 0, z: 0 });
+    const sync = new PhysicsWorldSync(backend);
+    try {
+      const platform = spawnBox(world, { guid: "platform", motionType: "kinematic", x: 0 });
+      sync.step(1 / 60, world);
+
+      const lookups = vi.spyOn(world, "findActor");
+      const targetSpy = vi.spyOn(backend, "setBodyTargetTransform");
+
+      // Custom gameplay variables do not dirty physics or trigger collider/world lookups in syncFromWorld.
+      platform.setVariable("health", 99);
+      platform.setVariable("cooldown", 0.5);
+      // A kinematic body created at rest skips stationary target writes.
+      sync.syncFromWorld(world);
+      expect(lookups).not.toHaveBeenCalled();
+      expect(targetSpy).toHaveBeenCalledTimes(0);
+
+      sync.step(1 / 60, world);
+      sync.step(1 / 60, world);
+      expect(targetSpy).toHaveBeenCalledTimes(0);
+
+      // Moving the kinematic actor sends a new target plus one settle tick, then goes quiet again.
+      platform.transform.position = { x: 2, y: 0, z: 0 };
+      sync.step(1 / 60, world);
+      sync.step(1 / 60, world);
+      const callsAfterSettle = targetSpy.mock.calls.length;
+      expect(callsAfterSettle).toBe(2);
+
+      sync.step(1 / 60, world);
+      expect(targetSpy).toHaveBeenCalledTimes(callsAfterSettle);
+    } finally {
+      sync.dispose();
+    }
   });
 });
 

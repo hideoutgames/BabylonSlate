@@ -171,6 +171,7 @@ type RapierColliderDesc = {
   setActiveEvents(events: number): RapierColliderDesc;
   setActiveCollisionTypes(types: number): RapierColliderDesc;
   setActiveHooks(hooks: number): RapierColliderDesc;
+  setCollisionGroups(groups: number): RapierColliderDesc;
   setDensity(density: number): RapierColliderDesc;
 };
 
@@ -206,6 +207,8 @@ type RapierCollider = {
   setSensor(isSensor: boolean): void;
   setFriction(friction: number): void;
   setRestitution(restitution: number): void;
+  setActiveHooks(hooks: number): void;
+  setCollisionGroups(groups: number): void;
   volume(): number;
   setMass(mass: number): void;
 };
@@ -277,6 +280,10 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
   private readonly triggerPairs = new Map<string, ContactPair | null>();
   /** Open overlaps of replaced colliders, which the next step must re-confirm. */
   private readonly refreshingTriggerKeys = new Set<string>();
+  /** Per-actor contact reporting flag (`setContactReporting`); absent defaults to true. */
+  private readonly reportingByActor = new Map<string, boolean>();
+  /** Live colliders requiring JS narrowphase hooks (layers using bits 16..31 or non-zero `overlapMask`). */
+  private customHookColliders = 0;
   private disposed = false;
   private queriesDirty = false;
 
@@ -337,6 +344,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
 
   createBody(desc: RigidBodyDesc): void {
     desc = { ...desc, transform: normalizedPhysicsPose(desc.transform) };
+    if (desc.reportContacts !== undefined) this.reportingByActor.set(desc.actorId, desc.reportContacts);
     const R = this.RAPIER;
     let bodyDesc;
     switch (desc.motionType) {
@@ -545,6 +553,16 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     this.markBodyAwake(record);
   }
 
+  readBodyLinearVelocity(bodyId: string, out: Vec3): boolean {
+    const record = this.bodies.get(bodyId);
+    if (!record) return false;
+    const linear = record.body.linvel();
+    out.x = linear.x;
+    out.y = linear.y;
+    out.z = 0;
+    return true;
+  }
+
   getBodyVelocity(bodyId: string): BodyVelocity | null {
     const record = this.bodies.get(bodyId);
     if (!record) return null;
@@ -620,6 +638,35 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     this.markBodyAwake(record);
   }
 
+  setContactReporting(actorId: string, enabled: boolean): void {
+    this.reportingByActor.set(actorId, enabled);
+  }
+
+  private isActorReporting(actorId: string): boolean {
+    return this.reportingByActor.get(actorId) ?? true;
+  }
+
+  private needsCustomHooks(desc: ColliderDesc): boolean {
+    return (desc.layer >>> 16) !== 0 || (desc.overlapMask ?? 0) !== 0;
+  }
+
+  private nativeCollisionGroups(desc: ColliderDesc): number {
+    const membership = desc.layer & 0xffff;
+    const filter = (desc.isTrigger ? (desc.mask | (desc.overlapMask ?? 0)) : desc.mask) & 0xffff;
+    return ((membership << 16) | filter) >>> 0;
+  }
+
+  private syncColliderHooks(): void {
+    const custom = this.customHookColliders > 0;
+    const hooks = custom
+      ? (this.RAPIER.ActiveHooks.FILTER_CONTACT_PAIRS | this.RAPIER.ActiveHooks.FILTER_INTERSECTION_PAIRS)
+      : 0;
+    for (const record of this.colliders.values()) {
+      record.collider.setCollisionGroups(custom ? 0xffffffff : this.nativeCollisionGroups(record.desc));
+      record.collider.setActiveHooks(hooks);
+    }
+  }
+
   createCollider(desc: ColliderDesc): void {
     this.applyColliderChanges(desc.bodyId, { upsert: [desc], remove: [] });
   }
@@ -644,12 +691,18 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
         refreshed.add(desc.id);
       const colliderDesc = this.toColliderDesc(desc);
       if (!colliderDesc) throw new Error("Unsupported planar collider shape");
+      const custom = this.customHookColliders > 0 || this.needsCustomHooks(desc);
       colliderDesc
         .setFriction(desc.friction)
         .setRestitution(desc.restitution)
         .setSensor(desc.isTrigger)
+        .setCollisionGroups(custom ? 0xffffffff : this.nativeCollisionGroups(desc))
         .setActiveEvents(this.RAPIER.ActiveEvents.COLLISION_EVENTS)
-        .setActiveHooks(this.RAPIER.ActiveHooks.FILTER_CONTACT_PAIRS | this.RAPIER.ActiveHooks.FILTER_INTERSECTION_PAIRS)
+        .setActiveHooks(
+          custom
+            ? (this.RAPIER.ActiveHooks.FILTER_CONTACT_PAIRS | this.RAPIER.ActiveHooks.FILTER_INTERSECTION_PAIRS)
+            : 0,
+        )
         .setActiveCollisionTypes(this.RAPIER.ActiveCollisionTypes.ALL);
       colliderDesc
         .setTranslation(desc.translation!.x, desc.translation!.y)
@@ -673,6 +726,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
         this.world.removeCollider(record.collider, false);
       throw error;
     }
+    const hadCustomHooks = this.customHookColliders > 0;
     for (const id of new Set([
       ...changes.remove,
       ...prepared.map(({ desc }) => desc.id),
@@ -683,7 +737,9 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     for (const record of provisional) {
       this.colliders.set(record.desc.id, record);
       this.colliderIdByHandle.set(record.collider.handle, record.desc.id);
+      if (this.needsCustomHooks(record.desc)) this.customHookColliders++;
     }
+    if (hadCustomHooks !== (this.customHookColliders > 0)) this.syncColliderHooks();
     this.distributeMass(body);
     this.markBodyAwake(body);
     this.queriesDirty = true;
@@ -715,7 +771,9 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
 
   destroyCollider(colliderId: string): void {
     const body = this.bodies.get(this.colliders.get(colliderId)?.desc.bodyId ?? "");
+    const hadCustomHooks = this.customHookColliders > 0;
     this.removeCollider(colliderId, false);
+    if (hadCustomHooks && this.customHookColliders === 0) this.syncColliderHooks();
     // The remaining colliders take over the authored mass.
     if (body) {
       this.distributeMass(body);
@@ -728,6 +786,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     if (!record) return;
     if (refresh) this.refreshColliderContacts(colliderId);
     else this.retireColliderContacts(colliderId);
+    if (this.needsCustomHooks(record.desc)) this.customHookColliders--;
     this.colliderIdByHandle.delete(record.collider.handle);
     this.world.removeCollider(record.collider, true);
     this.colliders.delete(colliderId);
@@ -745,6 +804,7 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
     this.pendingContacts.length = 0;
     for (const pair of this.blockingPairs.values()) {
       if (!pair) continue;
+      if (!this.isActorReporting(pair.actorAId) && !this.isActorReporting(pair.actorBId)) continue;
       const a = this.colliderTranslation(pair.colliderAId);
       const b = this.colliderTranslation(pair.colliderBId);
       events.push({
@@ -759,7 +819,8 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
 
   step(dt: number): void {
     this.world.timestep = dt;
-    this.world.step(this.eventQueue, this.collisionHooks);
+    if (this.customHookColliders > 0) this.world.step(this.eventQueue, this.collisionHooks);
+    else this.world.step(this.eventQueue);
     this.queriesDirty = false;
     for (const record of this.dynamicBodies) {
       const sleeping = record.body.isSleeping();
@@ -1055,13 +1116,17 @@ export class Rapier2DPhysicsBackend implements PhysicsBackend {
    */
   private flushSceneQueries(): void {
     if (!this.queriesDirty) return;
+    const hooks = this.customHookColliders > 0 ? this.collisionHooks : undefined;
     this.world.timestep = 0;
-    this.world.step(this.eventQueue, this.collisionHooks);
+    if (hooks) this.world.step(this.eventQueue, hooks);
+    else this.world.step(this.eventQueue);
     // Rapier 0.21 returns from a zero-length step without re-attaching a tree
     // optimization it deferred, which hides every collider from queries. The
     // next step re-attaches it and, with nothing changed, defers nothing.
-    if (this.colliders.size > 0 && !this.queryTreeHasLeaves())
-      this.world.step(this.eventQueue, this.collisionHooks);
+    if (this.colliders.size > 0 && !this.queryTreeHasLeaves()) {
+      if (hooks) this.world.step(this.eventQueue, hooks);
+      else this.world.step(this.eventQueue);
+    }
     this.queriesDirty = false;
     this.drainCollisionEvents();
   }

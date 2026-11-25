@@ -199,3 +199,37 @@ export function writeObservedPoseSilent(target: Transform, position: Vec3, rotat
   rotRaw.x = rotation.x; rotRaw.y = rotation.y; rotRaw.z = rotation.z; rotRaw.w = rotation.w;
   return true;
 }
+
+/** Write position coordinates in place, firing at most one notification. */
+export function writeObservedPosition(target: Transform, x: number, y: number, z: number): boolean {
+  const raw = (target as ObservedTransform)[RAW].posRaw;
+  if (Object.is(raw.x, x) && Object.is(raw.y, y) && Object.is(raw.z, z)) return false;
+  raw.x = x; raw.y = y; raw.z = z;
+  raw.owner.noteTransformChanged();
+  return true;
+}
+
+/** Write rotation quaternion coordinates in place, firing at most one notification. */
+export function writeObservedRotation(target: Transform, x: number, y: number, z: number, w: number): boolean {
+  const raw = (target as ObservedTransform)[RAW].rotRaw;
+  if (Object.is(raw.x, x) && Object.is(raw.y, y) && Object.is(raw.z, z) && Object.is(raw.w, w)) return false;
+  raw.x = x; raw.y = y; raw.z = z; raw.w = w;
+  raw.owner.noteTransformChanged();
+  return true;
+}
+
+/** Write scale coordinates in place, firing at most one notification. */
+export function writeObservedScale(target: Transform, x: number, y: number, z: number): boolean {
+  const raw = (target as ObservedTransform)[RAW].scaleRaw;
+  if (Object.is(raw.x, x) && Object.is(raw.y, y) && Object.is(raw.z, z)) return false;
+  raw.x = x; raw.y = y; raw.z = z;
+  raw.owner.noteTransformChanged();
+  return true;
+}
+
+/** Write position and rotation in place, firing at most one notification. */
+export function writeObservedPose(target: Transform, position: Vec3, rotation: Quat): boolean {
+  if (!writeObservedPoseSilent(target, position, rotation)) return false;
+  (target as ObservedTransform)[RAW].owner.noteTransformChanged();
+  return true;
+}

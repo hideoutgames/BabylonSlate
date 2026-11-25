@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ClassRegistry } from "./class-registry";
+import { writeObservedPose, writeObservedPosition, writeObservedRotation, writeObservedScale } from "./observed-transform";
 import { World, type WorldChangeObserver } from "./world";
 
 function createTestWorld(): World {
@@ -183,5 +184,33 @@ describe("observed transforms and WorldChangeObserver", () => {
     world.destroyActor(actor.guid);
     world.flushPending();
     expect(log).toEqual([]);
+  });
+
+  it("emits at most one transform notification for batch position, rotation, scale and pose writers", () => {
+    const world = createTestWorld();
+    let notifications = 0;
+    world.addChangeObserver({ onActorTransformChanged: () => { notifications++; } });
+    const actor = world.spawnActorNow(world.createActor({ classId: "Actor", guid: "batch" }));
+
+    expect(writeObservedPosition(actor.transform, 1, 2, 3)).toBe(true);
+    expect(writeObservedPosition(actor.transform, 1, 2, 3)).toBe(false);
+    expect(notifications).toBe(1);
+
+    expect(writeObservedRotation(actor.transform, 0, 0.5, 0, 0.866)).toBe(true);
+    expect(writeObservedRotation(actor.transform, 0, 0.5, 0, 0.866)).toBe(false);
+    expect(notifications).toBe(2);
+
+    expect(writeObservedScale(actor.transform, 2, 3, 4)).toBe(true);
+    expect(writeObservedScale(actor.transform, 2, 3, 4)).toBe(false);
+    expect(notifications).toBe(3);
+
+    expect(writeObservedPose(actor.transform, { x: 4, y: 5, z: 6 }, { x: 0, y: 0, z: 0, w: 1 })).toBe(true);
+    expect(writeObservedPose(actor.transform, { x: 4, y: 5, z: 6 }, { x: 0, y: 0, z: 0, w: 1 })).toBe(false);
+    expect(notifications).toBe(4);
+    expect(actor.transform).toEqual({
+      position: { x: 4, y: 5, z: 6 },
+      rotation: { x: 0, y: 0, z: 0, w: 1 },
+      scale: { x: 2, y: 3, z: 4 },
+    });
   });
 });

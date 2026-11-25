@@ -93,6 +93,13 @@ export {
   type WorldLike,
 } from "./objects";
 export {
+  writeObservedPose,
+  writeObservedPosition,
+  writeObservedRotation,
+  writeObservedScale,
+  writeObservedTransform,
+} from "./observed-transform";
+export {
   TICK_PHASES,
   type PhaseHook,
   type TickPhase,

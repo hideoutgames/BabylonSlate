@@ -18,11 +18,10 @@ import type {
 import { linearSweepPoses, validateColliderShape } from "./collider-validation";
 import { ownIgnoredActors, queryHitsTriggers } from "./query-filter";
 import {
-  colliderShapes,
   createHavokShape,
   isShape3D,
   releaseHavokShape,
-  setShapeMembershipMask,
+  setShapeFilterMasks,
   type BodyRecord,
   type ColliderRecord,
 } from "./havok-records";
@@ -128,8 +127,8 @@ export interface HavokQueryHost {
 export class HavokQueries {
   private readonly host: HavokQueryHost;
   private readonly collector: HP_CollectorId;
-  /** Shapes a running query filter masked and their memberships; empty between queries. */
-  private readonly queryMemberships = new Map<HP_ShapeId, number>();
+  /** Shapes a running query filter masked and their cached `[membership, collide]` masks; empty between queries. */
+  private readonly queryMemberships = new Map<HP_ShapeId, { membership: number; collide: number }>();
   private peelingIgnores = false;
   private queryIgnoredOwn: ReadonlySet<string> | null = null;
   private queryIgnoredSet: ReadonlySet<string> | null = null;
@@ -203,12 +202,13 @@ export class HavokQueries {
   }
 
   /**
-   * Runs `find`, one native query, and returns its hit, peeling ignored actors or non-trigger shapes on demand.
+   * Runs `find`, one native query, and returns its hit, peeling ignored actors, excluded triggers, or non-trigger shapes on demand.
    */
   private untilAdmitted(options: LineTraceOptions | undefined, find: () => NativeHit): NativeHit | null {
+    const excludeTriggers = !queryHitsTriggers(options) && this.host.triggerColliders.size > 0;
     for (;;) {
       const result = find();
-      if ((!options?.onlyTriggers && !this.peelingIgnores) || !result.hasHit) return result;
+      if ((!options?.onlyTriggers && !this.peelingIgnores && !excludeTriggers) || !result.hasHit) return result;
       const bodyId = this.host.bodyIdByHpId.get(Number(result.bodyHpId));
       const peeled = this.peelHit(options, bodyId ? this.host.bodies.get(bodyId) : undefined, result.shapeHpId);
       if (peeled === "keep") return result;
@@ -222,15 +222,22 @@ export class HavokQueries {
     shapeHpId: bigint,
   ): "keep" | "peeled" | "stop" {
     const ignoring = this.peelingIgnores;
-    if (!options?.onlyTriggers && !ignoring) return "keep";
+    const excludeTriggers = !queryHitsTriggers(options);
+    if (!options?.onlyTriggers && !ignoring && !excludeTriggers) return "keep";
     if (!record) return options?.onlyTriggers ? "stop" : "keep";
     const collider = shapeCollider(record, shapeHpId);
     const owner = collider?.desc.actorId ?? record.desc.actorId;
     if (ignoring && (this.queryIgnoredOwn?.has(owner) === true || this.queryIgnoredSet?.has(owner) === true)) {
       const before = this.queryMemberships.size;
       for (const owned of this.host.collidersByOwner.get(owner) ?? []) {
-        for (const masked of colliderShapes(owned)) this.maskQueryShape(masked);
+        this.maskColliderShapes(owned);
       }
+      return this.queryMemberships.size > before ? "peeled" : "stop";
+    }
+    // Safety net if any Havok collector returns a trigger or overlap proxy despite `shouldHitTriggers = false`.
+    if (excludeTriggers && collider && (collider.desc.isTrigger || (collider.proxy !== undefined && collider.proxy[0] === shapeHpId))) {
+      const before = this.queryMemberships.size;
+      this.maskColliderShapes(collider);
       return this.queryMemberships.size > before ? "peeled" : "stop";
     }
     if (!options?.onlyTriggers) return "keep";
@@ -240,7 +247,7 @@ export class HavokQueries {
       (shapeHpId !== 0n && [...this.queryMemberships.keys()].some((s) => s[0] === shapeHpId)) ||
       this.queryMemberships.has(collider.shape);
     if (alreadyMasked) return "stop";
-    for (const owned of colliderShapes(collider)) this.maskQueryShape(owned);
+    this.maskColliderShapes(collider);
     return "peeled";
   }
 
@@ -256,17 +263,14 @@ export class HavokQueries {
         if (own) for (const actorId of own) this.maskOwnerShapes(actorId);
         if (kept) for (const actorId of kept) this.maskOwnerShapes(actorId);
       }
-      if (!queryHitsTriggers(options)) {
-        for (const collider of this.host.triggerColliders) this.maskQueryShape(collider.shape);
-      }
       return query();
     } finally {
       this.peelingIgnores = false;
       this.queryIgnoredOwn = null;
       this.queryIgnoredSet = null;
       try {
-        for (const [shape, membership] of memberships) {
-          setShapeMembershipMask(this.host.havok, shape, membership);
+        for (const [shape, saved] of memberships) {
+          setShapeFilterMasks(this.host.havok, shape, saved.membership, saved.collide);
         }
       } finally {
         memberships.clear();
@@ -297,14 +301,19 @@ export class HavokQueries {
 
   private maskOwnerShapes(actorId: string): void {
     for (const collider of this.host.collidersByOwner.get(actorId) ?? []) {
-      for (const shape of colliderShapes(collider)) this.maskQueryShape(shape);
+      this.maskColliderShapes(collider);
     }
   }
 
-  private maskQueryShape(shape: HP_ShapeId): void {
+  private maskColliderShapes(collider: ColliderRecord): void {
+    this.maskQueryShape(collider.shape, collider.membershipMask, collider.collideMask);
+    if (collider.proxy) this.maskQueryShape(collider.proxy, collider.membershipMask, collider.proxyCollideMask);
+  }
+
+  private maskQueryShape(shape: HP_ShapeId, membership: number, collide: number): void {
     if (this.queryMemberships.has(shape)) return;
-    const prev = setShapeMembershipMask(this.host.havok, shape, 0);
-    this.queryMemberships.set(shape, prev);
+    setShapeFilterMasks(this.host.havok, shape, 0, collide);
+    this.queryMemberships.set(shape, { membership, collide });
   }
 
   sphereOverlap(center: Vec3, radius: number, options?: LineTraceOptions): OverlapResult {
@@ -316,7 +325,7 @@ export class HavokQueries {
       const centerVec = toHavokVec3(center);
       const shouldHitTriggers = queryHitsTriggers(options);
       this.withQueryFilter(options, () => {
-        const memberships = new Map<HP_ShapeId, number>();
+        const memberships = new Map<HP_ShapeId, { membership: number; collide: number }>();
         try {
           for (;;) {
             checked(
@@ -351,15 +360,19 @@ export class HavokQueries {
             found.set(record, owners);
             for (const collider of record.colliders.values()) {
               if ((collider.desc.actorId ?? record.desc.actorId) !== owner) continue;
-              for (const shape of colliderShapes(collider)) {
-                if (memberships.has(shape)) continue;
-                memberships.set(shape, setShapeMembershipMask(havok, shape, 0));
+              if (!memberships.has(collider.shape)) {
+                setShapeFilterMasks(havok, collider.shape, 0, collider.collideMask);
+                memberships.set(collider.shape, { membership: collider.membershipMask, collide: collider.collideMask });
+              }
+              if (collider.proxy && !memberships.has(collider.proxy)) {
+                setShapeFilterMasks(havok, collider.proxy, 0, collider.proxyCollideMask);
+                memberships.set(collider.proxy, { membership: collider.membershipMask, collide: collider.proxyCollideMask });
               }
             }
           }
         } finally {
-          for (const [shape, membership] of memberships) {
-            setShapeMembershipMask(havok, shape, membership);
+          for (const [shape, saved] of memberships) {
+            setShapeFilterMasks(havok, shape, saved.membership, saved.collide);
           }
         }
       });

@@ -57,6 +57,8 @@ export interface PhysicsBackend {
    */
   didBodyMoveLastStep?(bodyId: string): boolean;
   getBodyVelocity(bodyId: string): BodyVelocity | null;
+  /** Optional zero-allocation linear velocity read (avoids angular/COM WASM reads when only linear velocity is needed). */
+  readBodyLinearVelocity?(bodyId: string, out: Vec3): boolean;
   /** Set only the supplied world velocity axes of a dynamic body. */
   setBodyLinearVelocity(bodyId: string, velocity: Partial<Vec3>): void;
   /** Set a dynamic body's world angular velocity in radians/second. 2D uses only Z. */

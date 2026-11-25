@@ -24,6 +24,9 @@ import {
   timelineClipClassId,
   timelineProxyAccepts,
   timelineRefiredDispatcherName,
+  writeObservedPosition,
+  writeObservedRotation,
+  writeObservedScale,
   type EngineObject,
   type TimelineProxyBinding,
 } from "@haptic/object-model";
@@ -402,10 +405,11 @@ export class TimelineRuntime {
     return live();
   }
 
-  /** Writes every unmuted track's value at the clip's time to its actor or bound objects. */
+  /** Writes every unmuted track's value at the clip's time to its actor or bound objects, coalescing actor teleports. */
   apply(clip: TimelineClipObject): void {
     if (clip.destroyed) return;
     const instance = clip instanceof TimelineClipInstance;
+    let teleported: Set<Actor> | null = null;
     for (const object of clip.clip.objects) {
       // A scene clip animates one placed actor: written directly, with no target list built per tick.
       const actor = instance ? null : this.host.ownedActor(clip.owner, object.actorId);
@@ -415,9 +419,19 @@ export class TimelineRuntime {
         if (track.muted) continue;
         const value = evaluateTimelineTrack(track, clip.playback.time);
         if (value === undefined) continue;
-        if (actor) this.write(actor, undefined, object.actorId, track, value);
-        else for (const target of targets) this.write(target.object, target.binding, object.actorId, track, value);
+        if (actor) {
+          if (this.write(actor, undefined, object.actorId, track, value)) (teleported ??= new Set()).add(actor);
+        } else {
+          for (const target of targets) {
+            if (this.write(target.object, target.binding, object.actorId, track, value) && target.object instanceof Actor) {
+              (teleported ??= new Set()).add(target.object);
+            }
+          }
+        }
       }
+    }
+    if (teleported) {
+      for (const actor of teleported) this.host.teleportActor(actor);
     }
   }
 
@@ -452,27 +466,28 @@ export class TimelineRuntime {
     return [];
   }
 
-  private write(object: Actor | ActorComponent, binding: TimelineProxyBinding | undefined, actorId: string, track: TimelinePropertyTrack, value: unknown): void {
+  private write(object: Actor | ActorComponent, binding: TimelineProxyBinding | undefined, actorId: string, track: TimelinePropertyTrack, value: unknown): boolean {
     const { target } = track;
     if (target.kind === "transform") {
       const channel = CHANNEL[target.property as keyof typeof CHANNEL];
       if (channel && this.writeTransform(object, channel, value, binding)) {
-        if (object instanceof Actor) this.host.teleportActor(object);
-        else this.host.refreshComponent(object, "transform");
+        if (object instanceof Actor) return true;
+        this.host.refreshComponent(object, "transform");
       }
-      return;
+      return false;
     }
     if (target.kind === "visible") {
       this.store(object, "visible", value === true);
-      return;
+      return false;
     }
     if (target.kind === "variable") {
       this.store(object, target.property, timelineStoredValue(track, value, object.getVariable(target.property), object instanceof ActorComponent));
-      return;
+      return false;
     }
     const component = this.trackComponent(object, actorId, target.componentId);
-    if (!component) return;
+    if (!component) return false;
     this.store(component, target.property, timelineStoredValue(track, value, component.getVariable(target.property), true));
+    return false;
   }
 
   /** Stores a key's value; a component refreshes unless the property already held it (a held key sends nothing). */
@@ -543,7 +558,16 @@ export class TimelineRuntime {
         const saved = structuredClone(owner.transform[channel]);
         restore.set(key, () => {
           if (owner.destroyed) return;
-          Object.assign(owner.transform[channel], saved);
+          if (channel === "position") {
+            const v = saved as { x: number; y: number; z: number };
+            writeObservedPosition(owner.transform, v.x, v.y, v.z);
+          } else if (channel === "rotation") {
+            const q = saved as { x: number; y: number; z: number; w: number };
+            writeObservedRotation(owner.transform, q.x, q.y, q.z, q.w);
+          } else {
+            const s = saved as { x: number; y: number; z: number };
+            writeObservedScale(owner.transform, s.x, s.y, s.z);
+          }
           if (owner instanceof Actor) this.host.teleportActor(owner);
           else this.host.refreshComponent(owner, "transform");
         });

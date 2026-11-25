@@ -1,6 +1,6 @@
 import type { CommandMessage, DebugNavAgent } from "@haptic/bridge";
 import { eulerDegreesToQuaternion, type Quat, type Transform } from "@haptic/core";
-import type { Actor, ActorComponent, World } from "@haptic/object-model";
+import { writeObservedPose, writeObservedPosition, type Actor, type ActorComponent, type World } from "@haptic/object-model";
 import { parseRigidBodyProperties, type PhysicsWorldKind } from "@haptic/physics";
 import type { BtResult } from "@haptic/behaviour-tree";
 import {
@@ -748,8 +748,8 @@ export class RuntimeNavigation implements RuntimeSubsystem {
         actor,
         parentTransforms,
       );
-      Object.assign(actor.transform.position, local.position);
-      if (heading !== undefined) Object.assign(actor.transform.rotation, local.rotation);
+      if (heading !== undefined) writeObservedPose(actor.transform, local.position, local.rotation);
+      else writeObservedPosition(actor.transform, local.position.x, local.position.y, local.position.z);
     }
     physicalAgents.clear();
     if (removed) this.emitDebug(true);

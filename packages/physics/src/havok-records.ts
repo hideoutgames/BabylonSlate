@@ -46,6 +46,10 @@ export type BodyRecord = {
 export type ColliderRecord = {
   desc: ColliderDesc;
   shape: HP_ShapeId;
+  /** Cached native filter masks written by `applyColliderTuning` so query masking avoids `HP_Shape_GetFilterInfo`. */
+  membershipMask: number;
+  collideMask: number;
+  proxyCollideMask: number;
   /**
    * Overlap proxy: a massless trigger copy of `shape` whose collide mask is the layers this collider overlaps. Havok
    * has no per-pair response, so solids keep `[layer, mask]` (blocking) and the proxy raises the trigger events of
@@ -94,6 +98,20 @@ function getShapeFilterInfo(
   return checkedValue(havok, havok.HP_Shape_GetFilterInfo(shape), "shape filter read");
 }
 
+/** Write a native shape's `[membershipMask, collideMask]` directly in one WASM call when both are known. */
+export function setShapeFilterMasks(
+  havok: HavokPhysicsWithBindings,
+  shape: HP_ShapeId,
+  membershipMask: number,
+  collideMask: number,
+): void {
+  checked(
+    havok,
+    havok.HP_Shape_SetFilterInfo(shape, [membershipMask >>> 0, collideMask >>> 0]),
+    "shape filter update",
+  );
+}
+
 /** Update only a native shape's membership mask while preserving its collide mask. */
 export function setShapeMembershipMask(
   havok: HavokPhysicsWithBindings,
@@ -101,11 +119,7 @@ export function setShapeMembershipMask(
   membershipMask: number,
 ): number {
   const [prevMembership, collideMask] = getShapeFilterInfo(havok, shape);
-  checked(
-    havok,
-    havok.HP_Shape_SetFilterInfo(shape, [membershipMask >>> 0, collideMask >>> 0]),
-    "shape filter update",
-  );
+  setShapeFilterMasks(havok, shape, membershipMask, collideMask);
   return prevMembership;
 }
 

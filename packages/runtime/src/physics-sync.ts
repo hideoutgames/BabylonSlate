@@ -12,7 +12,7 @@ import {
   type Vec3,
   type TeleportOptions,
 } from "@haptic/physics";
-import type { Actor, ActorComponent, World, WorldChangeObserver } from "@haptic/object-model";
+import { writeObservedPose, type Actor, type ActorComponent, type World, type WorldChangeObserver } from "@haptic/object-model";
 import {
   PhysicsChainComposer,
   PhysicsCompositionScratch,
@@ -72,8 +72,17 @@ export class PhysicsWorldSync {
   private readonly simulatedBodyByActor = new Map<string, string>();
   /** Subset of `simulatedBodyByActor` whose current body is dynamic (eligible for sleep/unchanged skip). */
   private readonly dynamicBodyActors = new Set<string>();
-  /** Subset of `simulatedBodyByActor` whose current body is kinematic (targets refreshed each step). */
+  /** Subset of `simulatedBodyByActor` whose current body is kinematic (targets refreshed while moving + 1 settle tick). */
   private readonly kinematicBodyActors = new Map<string, Actor>();
+  /** Last written target pose per kinematic actor guid, with `settleTicks` remaining before skipping stationary updates. */
+  private readonly kinematicTargets = new Map<
+    string,
+    { px: number; py: number; pz: number; rx: number; ry: number; rz: number; rw: number; settleTicks: number }
+  >();
+  /** Actor currently written by `moveMovement`, whose own transform notification should not self-dirty `dirtyTransforms`. */
+  private suppressTransformDirtyActor: Actor | null = null;
+  /** Reused linear velocity scratch for `movementBody`. */
+  private readonly linearVelocityScratch: Vec3 = { x: 0, y: 0, z: 0 };
   private readonly characterByActor = new Map<string, string>();
   private readonly movementControllerDescriptors = new Map<string, readonly unknown[]>();
   private readonly bodyOwnerByActor = new Map<string, Actor>();
@@ -202,11 +211,18 @@ export class PhysicsWorldSync {
       // Physics readback already updated this actor's own body and cached world pose; only descendants
       // (e.g. static children under a moving body) need recomposing. An actor that takes no part in physics
       // (a camera, a prop without collision) is never queued: a participant it gains later marks structure.
-      if (source === "script" && !this.dirtyTransforms.has(actor) && this.participates(actor)) this.dirtyTransforms.add(actor);
+      if (
+        source === "script" &&
+        actor !== this.suppressTransformDirtyActor &&
+        !this.dirtyTransforms.has(actor) &&
+        this.participates(actor)
+      ) {
+        this.dirtyTransforms.add(actor);
+      }
       this.markTransformDescendantsDirty(actor);
     },
     onActorVariableChanged: (actor, name) => {
-      if (name === "parentId" || name === "name") return;
+      if (name !== null && name !== "generateHitEvents" && name !== "generateOverlapEvents") return;
       if (this.observedLayerId !== undefined && actor.sceneLayerId !== this.observedLayerId) return;
       this.dirtyProperties.add(actor);
     },
@@ -461,6 +477,7 @@ export class PhysicsWorldSync {
     this.simulatedBodyByActor.clear();
     this.dynamicBodyActors.clear();
     this.kinematicBodyActors.clear();
+    this.kinematicTargets.clear();
     this.characterByActor.clear();
     this.movementControllerDescriptors.clear();
     this.bodyOwnerByActor.clear();
@@ -623,9 +640,7 @@ export class PhysicsWorldSync {
         for (const [actorId, actor] of this.kinematicBodyActors) {
           if (actor.destroyed) continue;
           const bodyId = this.bodyByActor.get(actorId);
-          if (bodyId) {
-            this.backend.setBodyTargetTransform(bodyId, physicsPoseInto(this.passWorldTransform(actor), this.targetScratch));
-          }
+          if (bodyId) this.syncKinematicTarget(actorId, bodyId, this.passWorldTransform(actor));
         }
       }
       if (refreshAllReporting) {
@@ -773,9 +788,7 @@ export class PhysicsWorldSync {
         for (const [actorId, actor] of this.kinematicBodyActors) {
           if (reconciledGuids.has(actorId) || actor.destroyed) continue;
           const bodyId = this.bodyByActor.get(actorId);
-          if (bodyId) {
-            this.backend.setBodyTargetTransform(bodyId, physicsPoseInto(this.passWorldTransform(actor), this.targetScratch));
-          }
+          if (bodyId) this.syncKinematicTarget(actorId, bodyId, this.passWorldTransform(actor));
         }
       }
 
@@ -904,12 +917,12 @@ export class PhysicsWorldSync {
       const pose = world(actor);
       if (movement && !steered) {
         this.applyBodyPolicy(actor.guid, bodyId, movement, MOVEMENT_BODY_PROPERTIES);
-        this.backend.setBodyTargetTransform(bodyId, physicsPoseInto(pose, this.targetScratch));
+        this.syncKinematicTarget(actor.guid, bodyId, pose);
       } else if (rigid) {
         const props = this.classifier.rigidProps(rigid);
         this.applyBodyPolicy(actor.guid, bodyId, rigid, props, steered);
         if (props.motionType === "kinematic") {
-          this.backend.setBodyTargetTransform(bodyId, physicsPoseInto(pose, this.targetScratch));
+          this.syncKinematicTarget(actor.guid, bodyId, pose);
         } else if (props.motionType === "static") {
           this.syncStaticPose(actor, bodyId, pose);
         }
@@ -1087,10 +1100,12 @@ export class PhysicsWorldSync {
       this.simulatedBodyByActor.delete(actorId);
       this.dynamicBodyActors.delete(actorId);
       this.kinematicBodyActors.delete(actorId);
+      this.kinematicTargets.delete(actorId);
     } else if (motionType === "dynamic") {
       this.simulatedBodyByActor.set(actorId, bodyId);
       this.dynamicBodyActors.add(actorId);
       this.kinematicBodyActors.delete(actorId);
+      this.kinematicTargets.delete(actorId);
     } else {
       this.simulatedBodyByActor.set(actorId, bodyId);
       this.dynamicBodyActors.delete(actorId);
@@ -1231,6 +1246,51 @@ export class PhysicsWorldSync {
     this.staticPoses.set(actor.guid, descriptor.slice());
   }
 
+  /**
+   * Sends a kinematic target when the actor moved or is completing its 1-tick settle
+   * (zeroing Havok's internal kinematic velocity), then skips stationary ticks.
+   */
+  private syncKinematicTarget(actorId: string, bodyId: string, world: Transform): void {
+    const p = world.position;
+    const r = world.rotation;
+    const prev = this.kinematicTargets.get(actorId);
+    if (
+      prev &&
+      Object.is(prev.px, p.x) && Object.is(prev.py, p.y) && Object.is(prev.pz, p.z) &&
+      Object.is(prev.rx, r.x) && Object.is(prev.ry, r.y) && Object.is(prev.rz, r.z) && Object.is(prev.rw, r.w)
+    ) {
+      if (prev.settleTicks <= 0) return;
+      prev.settleTicks--;
+    } else if (prev) {
+      prev.px = p.x; prev.py = p.y; prev.pz = p.z;
+      prev.rx = r.x; prev.ry = r.y; prev.rz = r.z; prev.rw = r.w;
+      prev.settleTicks = 1;
+    } else {
+      this.kinematicTargets.set(actorId, {
+        px: p.x, py: p.y, pz: p.z, rx: r.x, ry: r.y, rz: r.z, rw: r.w, settleTicks: 1,
+      });
+    }
+    this.backend.setBodyTargetTransform(bodyId, physicsPoseInto(world, this.targetScratch));
+  }
+
+  private recordKinematicTargetWritten(actorId: string, pose: PhysicsTransform): void {
+    const p = pose.position;
+    const r = pose.rotation;
+    const prev = this.kinematicTargets.get(actorId);
+    if (prev) {
+      const moved =
+        !Object.is(prev.px, p.x) || !Object.is(prev.py, p.y) || !Object.is(prev.pz, p.z) ||
+        !Object.is(prev.rx, r.x) || !Object.is(prev.ry, r.y) || !Object.is(prev.rz, r.z) || !Object.is(prev.rw, r.w);
+      prev.px = p.x; prev.py = p.y; prev.pz = p.z;
+      prev.rx = r.x; prev.ry = r.y; prev.rz = r.z; prev.rw = r.w;
+      prev.settleTicks = moved ? 1 : Math.max(0, prev.settleTicks - 1);
+    } else {
+      this.kinematicTargets.set(actorId, {
+        px: p.x, py: p.y, pz: p.z, rx: r.x, ry: r.y, rz: r.z, rw: r.w, settleTicks: 1,
+      });
+    }
+  }
+
   private retireActor(actorId: string): void {
     this.invalidateChannels();
     const bodyId = this.bodyByActor.get(actorId);
@@ -1243,6 +1303,7 @@ export class PhysicsWorldSync {
     this.dynamicBodyActors.delete(actorId);
     this.forcedReadback.delete(actorId);
     this.kinematicBodyActors.delete(actorId);
+    this.kinematicTargets.delete(actorId);
     const owner = this.bodyOwnerByActor.get(actorId);
     this.bodyOwnerByActor.delete(actorId);
     this.contactReporting.delete(actorId);
@@ -1424,8 +1485,11 @@ export class PhysicsWorldSync {
     this.backend.teleportBody(bodyId, physicsPose(pose), options);
     // A kinematic body (including Movement) may hold this tick's pre-step
     // target, which the next step would otherwise move it back to.
-    if (this.appliedBodyProperties.get(actor.guid)?.value.motionType === "kinematic")
-      this.backend.setBodyTargetTransform(bodyId, physicsPose(pose));
+    if (this.appliedBodyProperties.get(actor.guid)?.value.motionType === "kinematic") {
+      const target = physicsPose(pose);
+      this.backend.setBodyTargetTransform(bodyId, target);
+      this.recordKinematicTargetWritten(actor.guid, target);
+    }
   }
 
   private isStaticBody(actorId: string): boolean {
@@ -1554,9 +1618,24 @@ export class PhysicsWorldSync {
     const startPose = physicsPose(world(actor));
     const moved = this.backend.moveCharacter(actor.guid, translation, dt, startPose);
     if (!moved) return null;
+    this.recordKinematicTargetWritten(actor.guid, moved);
+    const cachedWorld = this.worldTransforms.get(actor.guid);
+    if (cachedWorld) {
+      cachedWorld.position.x = moved.position.x;
+      cachedWorld.position.y = moved.position.y;
+      cachedWorld.position.z = moved.position.z;
+      cachedWorld.rotation.x = moved.rotation.x;
+      cachedWorld.rotation.y = moved.rotation.y;
+      cachedWorld.rotation.z = moved.rotation.z;
+      cachedWorld.rotation.w = moved.rotation.w;
+    }
     const local = actorLocalPhysicsTransform(moved, actor, transforms());
-    Object.assign(actor.transform.position, local.position);
-    Object.assign(actor.transform.rotation, local.rotation);
+    this.suppressTransformDirtyActor = actor;
+    try {
+      writeObservedPose(actor.transform, local.position, local.rotation);
+    } finally {
+      this.suppressTransformDirtyActor = null;
+    }
     return { position: moved.position, velocity: moved.velocity, grounded: moved.grounded };
   }
 
@@ -1571,6 +1650,13 @@ export class PhysicsWorldSync {
       this.classifier.movementDrive(actor)?.dynamic !== true) return null;
     const bodyId = this.bodyByActor.get(actor.guid);
     if (!bodyId || this.bodyOwnerByActor.get(actor.guid) !== actor) return { velocity: { x: 0, y: 0, z: 0 }, ground: null };
+    if (this.backend.readBodyLinearVelocity) {
+      if (!this.backend.readBodyLinearVelocity(bodyId, this.linearVelocityScratch)) return null;
+      return {
+        velocity: { x: this.linearVelocityScratch.x, y: this.linearVelocityScratch.y, z: this.linearVelocityScratch.z },
+        ground: this.groundUnder(actor, bodyId, props),
+      };
+    }
     const velocity = this.backend.getBodyVelocity(bodyId);
     return velocity && { velocity: velocity.linear, ground: this.groundUnder(actor, bodyId, props) };
   }
@@ -1678,8 +1764,15 @@ export class PhysicsWorldSync {
       });
       this.invalidateChannels();
       // Creation already installed this pose; caching it keeps later syncs
-      // from teleporting an unchanged static body every tick.
+      // from teleporting an unchanged static body or waking a stationary kinematic body.
       if (props.motionType === "static") this.staticPoses.set(actor.guid, physicsPoseDescriptor(pose));
+      else if (props.motionType === "kinematic") {
+        this.kinematicTargets.set(actor.guid, {
+          px: pose.position.x, py: pose.position.y, pz: pose.position.z,
+          rx: pose.rotation.x, ry: pose.rotation.y, rz: pose.rotation.z, rw: pose.rotation.w,
+          settleTicks: 0,
+        });
+      }
     } catch (error) {
       this.backend.destroyBody(bodyId);
       this.colliders.forgetFailedBody(actor.guid);

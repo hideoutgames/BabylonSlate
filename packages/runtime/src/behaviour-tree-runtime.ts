@@ -1,7 +1,7 @@
 import { BT_DEBUG_GRAPH_ID, type CommandMessage, type DebugBehaviourTree } from "@haptic/bridge";
 import { eulerDegreesToQuaternion } from "@haptic/core";
 import type { TraceBtState } from "@haptic/debugger";
-import type { Actor, ActorComponent, EngineObject, World } from "@haptic/object-model";
+import { writeObservedRotation, type Actor, type ActorComponent, type EngineObject, type World } from "@haptic/object-model";
 import type { PhysicsWorldKind } from "@haptic/physics";
 import type { AnimClipCatalogEntry } from "@haptic/anim-graph";
 import {
@@ -353,7 +353,7 @@ export class BehaviourTreeRuntime implements RuntimeSubsystem {
     const local = parentWorld
       ? multiplyQuaternion(inverseQuaternion(parentWorld.rotation), { x, y, z, w })
       : { x, y, z, w };
-    Object.assign(actor.transform.rotation, local);
+    writeObservedRotation(actor.transform, local.x, local.y, local.z, local.w);
     // Trees tick after the physics step: a body must take the new heading too,
     // or its next step writes the old rotation back.
     this.host.scripts().teleportActor(actor);
