@@ -1,3 +1,51 @@
+import type { Matrix } from "@babylonjs/core/Maths/math.vector";
+
+/**
+ * Analytical unproject/project coefficients for standard perspective and orthographic
+ * projection matrices (including off-center frustums), replacing per-pixel `mat4 * vec4`.
+ *
+ * For a UV in `[0, 1]^2` and positive view depth `d = abs(viewZ)`:
+ * - `xy = uv * unproject.xy + unproject.zw`
+ * - view-space position is `vec3(ortho ? xy : xy * d, d * zSign)`
+ * And projecting view-space `p` back to `[0, 1]^2`:
+ * - `clipW = ortho ? 1.0 : p.z * zSign`
+ * - `uv = (ortho ? p.xy : p.xy / clipW) * project.xy + project.zw`
+ */
+export function projectionUnprojectParams(
+  projection: Pick<Matrix, "m">,
+  orthographic: boolean,
+  rightHanded: boolean,
+): {
+  unproject: [number, number, number, number];
+  project: [number, number, number, number];
+  zSign: number;
+} {
+  const m = projection.m;
+  if (orthographic) {
+    const p00 = m[0] || 1;
+    const p11 = m[5] || 1;
+    const offX = m[12]!;
+    const offY = m[13]!;
+    return {
+      unproject: [2 / p00, 2 / p11, (-1 - offX) / p00, (-1 - offY) / p11],
+      project: [0.5 * p00, 0.5 * p11, 0.5 + 0.5 * offX, 0.5 + 0.5 * offY],
+      zSign: rightHanded ? -1 : 1,
+    };
+  }
+  const p23 = m[11] || (rightHanded ? -1 : 1);
+  const zSign = p23 < 0 ? -1 : 1;
+  const absP23 = Math.abs(p23);
+  const p00 = (m[0] || 1) / absP23;
+  const p11 = (m[5] || 1) / absP23;
+  const offX = m[8]! / p23;
+  const offY = m[9]! / p23;
+  return {
+    unproject: [2 / p00, 2 / p11, (-1 - offX) / p00, (-1 - offY) / p11],
+    project: [0.5 * p00, 0.5 * p11, 0.5 + 0.5 * offX, 0.5 + 0.5 * offY],
+    zSign,
+  };
+}
+
 /** Shared GLSL syntax helpers for the ambient occlusion and other spatial passes. */
 export function syntax() {
   const v2 = "vec2",
@@ -38,27 +86,39 @@ export function syntax() {
  * lies within twice the radius of the centre (so an object far in front
  * leaves no halo on the surface behind it).
  *
- * Uniforms: `aoProjection`, `aoInverseProjection`, `aoView`,
+ * Uniforms: `aoProject`, `aoUnproject`, `aoView`,
  * `aoSettings` (radius, strength, max distance, depth bias),
  * `aoCamera` (handedness sign, orthographic flag) and `aoTexelSize`.
  */
 export function ambientOcclusionShader(samples: number): string {
   const { v2, v3, v4, f, uv, u, decl, field, texture, texelUv, sample, loop, output, main } = syntax();
+  const kernelEntries = Array.from({ length: samples }, (_, i) => {
+    const t = (i + 0.5) / samples;
+    const phi = i * 2.3999632;
+    const sinTheta = Math.sqrt(t);
+    const scale = 0.1 + 0.9 * t * t;
+    const x = Math.cos(phi) * sinTheta * scale;
+    const y = Math.sin(phi) * sinTheta * scale;
+    const z = Math.sqrt(1 - t) * scale;
+    return `vec3(${x.toFixed(6)}, ${y.toFixed(6)}, ${z.toFixed(6)})`;
+  }).join(", ");
   /** Declares `name`, the view-space point a depth texel at `at` shows, from its depth. */
-  const point = (name: string, at: string, depth: string) => `
-${decl(v4, `${name}Unprojected`, `${u("aoInverseProjection")} * ${v4}(${at} * 2.0 - ${v2}(1.0), 0.5, 1.0)`)}
-${decl(v3, `${name}Ray`, `${name}Unprojected.xyz / ${name}Unprojected.w`)}
-${decl(v3, name, `${name}Ray * (${depth} / max(abs(${name}Ray.z), 0.000001))`)}
-if (${u("aoCamera")}.y > 0.5) { ${name} = ${v3}(${name}Ray.xy, ${depth} * ${u("aoCamera")}.x); }`;
+  const point = (name: string, at: string, depth: string) =>
+    decl(v3, name, `aoUnprojectPoint(${at}, ${depth})`);
   /** Declares the depth and view-space point of the depth texel `offset` texels from the centre's. */
   const neighbour = (name: string, offset: string) => `
 ${decl(f, `${name}Depth`, `abs(${sample("depthSampler", `centreUv + ${offset} * depthTexel`)}.r)`)}
 ${point(`${name}Point`, `(centreUv + ${offset} * depthTexel)`, `${name}Depth`)}`;
   const header = `varying vec2 vUV;
 ${texture("depthSampler")}${texture("normalSampler")}
-${field("mat4", "aoProjection")}${field("mat4", "aoInverseProjection")}
+${field(v4, "aoProject")}${field(v4, "aoUnproject")}
 ${field("mat4", "aoView")}
 ${field(v4, "aoSettings")}${field(v2, "aoCamera")}${field(v2, "aoTexelSize")}
+const vec3 aoKernel[${samples}] = vec3[${samples}](${kernelEntries});
+vec3 aoUnprojectPoint(vec2 at, float d) {
+  vec2 xy = at * aoUnproject.xy + aoUnproject.zw;
+  return vec3(aoCamera.y > 0.5 ? xy : xy * d, d * aoCamera.x);
+}
 `;
   const body = `
 // The depth is read nearest: each point lies on the ray through the centre of the depth texel it reads, as its depth
@@ -97,15 +157,11 @@ tangent = normalize(tangent);
 ${decl(v3, "bitangent", "cross(surfaceNormal, tangent)")}
 ${decl(f, "occlusion", "0.0")}
 ${loop("i", 0, samples)} {
-  ${decl(f, "t", `(${f}(i) + 0.5) / ${f}(${samples})`)}
-  ${decl(f, "phi", `${f}(i) * 2.3999632`)}
-  ${decl(f, "sinTheta", "sqrt(t)")}
-  ${decl(v3, "direction", `${v3}(cos(phi) * sinTheta, sin(phi) * sinTheta, sqrt(1.0 - t))`)}
-  ${decl(v3, "offset", "tangent * direction.x + bitangent * direction.y + surfaceNormal * direction.z")}
-  ${decl(v3, "samplePosition", `viewPosition + offset * (radius * mix(0.1, 1.0, t * t))`)}
-  ${decl(v4, "clip", `${u("aoProjection")} * ${v4}(samplePosition, 1.0)`)}
-  if (clip.w <= 0.000001) { continue; }
-  ${decl(v2, "sampleUv", `clip.xy / clip.w * 0.5 + ${v2}(0.5)`)}
+  ${decl(v3, "k", "aoKernel[i]")}
+  ${decl(v3, "samplePosition", "viewPosition + (tangent * k.x + bitangent * k.y + surfaceNormal * k.z) * radius")}
+  ${decl(f, "clipW", `${u("aoCamera")}.y > 0.5 ? 1.0 : samplePosition.z * ${u("aoCamera")}.x`)}
+  if (clipW <= 0.000001) { continue; }
+  ${decl(v2, "sampleUv", `(${u("aoCamera")}.y > 0.5 ? samplePosition.xy : samplePosition.xy / clipW) * ${u("aoProject")}.xy + ${u("aoProject")}.zw`)}
   if (sampleUv.x < 0.0 || sampleUv.y < 0.0 || sampleUv.x > 1.0 || sampleUv.y > 1.0) { continue; }
   ${decl(v2, "sceneUv", `(floor(sampleUv / depthTexel) + ${v2}(0.5)) * depthTexel`)}
   ${decl(f, "sceneDepth", `abs(${sample("depthSampler", "sceneUv")}.r)`)}
@@ -134,21 +190,28 @@ ${output(`${v4}(visibility, visibility, visibility, 1.0)`)}
  * occlusion texel along the blur axis; taps across a depth edge are rejected.
  */
 export function ambientOcclusionBlurShader(): string {
-  const { v2, v4, f, uv, u, decl, field, texture, sample, loop, output, main } = syntax();
+  const { v2, v4, f, uv, u, decl, field, texture, sample, output, main } = syntax();
   const header = `varying vec2 vUV;
 ${texture("textureSampler")}${texture("depthSampler")}${field(v2, "aoBlurStep")}
 `;
-  const body = `
-${decl(f, "centerDepth", `abs(${sample("depthSampler", uv)}.r)`)}
-${decl(f, "total", "0.0")}
-${decl(f, "weights", "0.0")}
-${loop("i", -4, 5)} {
-  ${decl(v2, "tap", `${uv} + ${u("aoBlurStep")} * ${f}(i)`)}
+  const taps = [-4, -3, -2, -1, 1, 2, 3, 4]
+    .map((offset) => {
+      const spatial = Math.exp(-(offset * offset) / 8).toFixed(7);
+      return `{
+  ${decl(v2, "tap", `${uv} + ${u("aoBlurStep")} * ${offset.toFixed(1)}`)}
   ${decl(f, "tapDepth", `abs(${sample("depthSampler", "tap")}.r)`)}
-  ${decl(f, "weight", `exp(-${f}(i * i) / 8.0) / (1.0 + 50.0 * abs(tapDepth - centerDepth) / max(centerDepth, 0.1))`)}
+  ${decl(f, "weight", `${spatial} / (1.0 + abs(tapDepth - centerDepth) * invCenter)`)}
   total += ${sample("textureSampler", "tap")}.r * weight;
   weights += weight;
-}
+}`;
+    })
+    .join("\n");
+  const body = `
+${decl(f, "centerDepth", `abs(${sample("depthSampler", uv)}.r)`)}
+${decl(f, "invCenter", "50.0 / max(centerDepth, 0.1)")}
+${decl(f, "total", `${sample("textureSampler", uv)}.r`)}
+${decl(f, "weights", "1.0")}
+${taps}
 ${decl(f, "visibility", "total / max(weights, 0.000001)")}
 ${output(`${v4}(visibility, visibility, visibility, 1.0)`)}
 `;

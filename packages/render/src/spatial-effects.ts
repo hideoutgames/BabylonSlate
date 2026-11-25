@@ -22,7 +22,11 @@ import {
   type VolumeShadow,
 } from "./volumetric-lights";
 import { volumetricShader } from "./volumetric-shader";
-import { ambientOcclusionBlurShader, ambientOcclusionShader } from "./ambient-occlusion-shader";
+import {
+  ambientOcclusionBlurShader,
+  ambientOcclusionShader,
+  projectionUnprojectParams,
+} from "./ambient-occlusion-shader";
 import { spatialComposeShader } from "./spatial-compose-shader";
 import { retireOwnedEffect } from "./owned-effect-retirement";
 import { beginManagedRenderAllocation } from "./managed-render-resources";
@@ -268,9 +272,8 @@ export function createSpatialStages(
       const texelWidth = 1 / Math.max(1, Math.round(width * scale)),
         texelHeight = 1 / Math.max(1, Math.round(height * scale));
       const name = "Scene Ambient Occlusion";
-      const uniforms = ["aoProjection", "aoInverseProjection", "aoView", "aoSettings", "aoCamera", "aoTexelSize"];
+      const uniforms = ["aoProject", "aoUnproject", "aoView", "aoSettings", "aoCamera", "aoTexelSize"];
       const samplers = ["depthSampler", "normalSampler"];
-      const inverseProjection = Matrix.Identity();
       // The march and blurs write visibility to every colour channel, and each reader (the blurs, the compose) takes
       // red alone: one half-float channel holds it, at a quarter of RGBA16F's bytes and fetch bandwidth.
       stages.push({
@@ -280,10 +283,14 @@ export function createSpatialStages(
         format: Constants.TEXTUREFORMAT_R,
         geometry: true,
         bind: (effect) => {
-          const projection = camera.getProjectionMatrix();
-          projection.invertToRef(inverseProjection);
-          effect.setMatrix("aoProjection", projection);
-          effect.setMatrix("aoInverseProjection", inverseProjection);
+          const orthographic = camera.mode === Camera.ORTHOGRAPHIC_CAMERA;
+          const { project, unproject, zSign } = projectionUnprojectParams(
+            camera.getProjectionMatrix(),
+            orthographic,
+            scene.useRightHandedSystem,
+          );
+          effect.setFloat4("aoProject", project[0], project[1], project[2], project[3]);
+          effect.setFloat4("aoUnproject", unproject[0], unproject[1], unproject[2], unproject[3]);
           effect.setMatrix("aoView", camera.getViewMatrix());
           effect.setFloat4(
             "aoSettings",
@@ -292,11 +299,7 @@ export function createSpatialStages(
             Math.min(occlusion.maxDistance, camera.maxZ || occlusion.maxDistance),
             occlusion.radius * 0.025,
           );
-          effect.setFloat2(
-            "aoCamera",
-            scene.useRightHandedSystem ? -1 : 1,
-            camera.mode === Camera.ORTHOGRAPHIC_CAMERA ? 1 : 0,
-          );
+          effect.setFloat2("aoCamera", zSign, orthographic ? 1 : 0);
           effect.setFloat2("aoTexelSize", texelWidth, texelHeight);
         },
       });
@@ -388,7 +391,6 @@ export function createSpatialStages(
       const uniforms = [
         "inverseProjection",
         "inverseView",
-        "volumeView",
         "volumeSettings",
         "volumeCamera",
         "volumeHeight",
@@ -432,7 +434,6 @@ export function createSpatialStages(
           camera.getViewMatrix().invertToRef(inverseView);
           effect.setMatrix("inverseProjection", inverseProjection);
           effect.setMatrix("inverseView", inverseView);
-          effect.setMatrix("volumeView", camera.getViewMatrix());
           // Babylon rebases shadow matrices in large-world mode. Ray positions and
           // light attenuation stay in world space; only shadow lookup is rebased.
           const offset = scene.floatingOriginOffset;

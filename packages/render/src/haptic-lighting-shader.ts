@@ -579,7 +579,13 @@ void hapticDirectLights(hapticSurface surface, vec3 P, vec3 N, vec3 V, inout vec
   // loop, so the shadow lookup has one call site: the Direct3D compiler inlines every call, and each copy of the
   // filter adds over a second to the program's link. A slot's contribution is summed where its own loop summed it.
   hapticSunLookup sun = hapticSunCascade(P);
-  float sunShadow = 1.0;
+  // Dither cascade transitions in screen space with interleaved gradient noise so every fragment evaluates at most one
+  // directional cascade instead of paying double shadow filter taps across the blend strip.
+  int sunCascade = sun.index;
+  if (sun.blends) {
+    float ign = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+    if (ign >= sun.blend) sunCascade = sun.index + 1;
+  }
   // Whether N faces the shadowed sun: a light behind the surface adds nothing its shadow could change.
   bool sunFacing = false;
   for (int d = 0; d < ${HAPTIC_LIGHT_MAXIMUM.directional}; d++) {
@@ -593,7 +599,7 @@ void hapticDirectLights(hapticSurface surface, vec3 P, vec3 N, vec3 V, inout vec
 #endif
   uint points = hapticClusterLights(clusterMask.x, int(hapticCounts.y));
   uint spots = hapticClusterLights(clusterMask.y & 0xffffu, int(hapticCounts.z));
-  for (int slot = 0; slot < 2 + ${HAPTIC_LIGHT_MAXIMUM.point} + ${HAPTIC_LIGHT_MAXIMUM.spot}; slot++) {
+  for (int slot = 0; slot < 1 + ${HAPTIC_LIGHT_MAXIMUM.point} + ${HAPTIC_LIGHT_MAXIMUM.spot}; slot++) {
     bool spot = false;
     int i = 0;
     vec4 position = vec4(0.0);
@@ -607,10 +613,9 @@ void hapticDirectLights(hapticSurface surface, vec3 P, vec3 N, vec3 V, inout vec
     float lightDistance = 0.0;
     vec3 L = vec3(0.0);
     float cone = 1.0;
-    if (slot < 2) {
-      // The sun's cascade, then the next one where it blends into it.
-      if (sun.index >= 0 && (slot == 0 || sun.blends) && sunFacing) {
-        view = sun.first + float(sun.index + slot);
+    if (slot == 0) {
+      if (sunCascade >= 0 && sunFacing) {
+        view = sun.first + float(sunCascade);
         viewDx = dPdx;
         viewDy = dPdy;
       }
@@ -648,12 +653,7 @@ void hapticDirectLights(hapticSurface surface, vec3 P, vec3 N, vec3 V, inout vec
     }
     float lit = hapticShadow(view, P, viewDx, viewDy);
     if (slot == 0) {
-      sunShadow = lit;
-      continue;
-    }
-    if (slot == 1) {
-      if (sun.blends) sunShadow = mix(lit, sunShadow, sun.blend);
-      if (sun.fades) sunShadow = mix(sunShadow, 1.0, sun.fade);
+      float sunShadow = sun.fades ? mix(lit, 1.0, sun.fade) : lit;
       for (int d = 0; d < ${HAPTIC_LIGHT_MAXIMUM.directional}; d++) {
         if (d >= int(hapticCounts.x)) break;
         vec3 L = normalize(-hapticDirectional[d * 2].xyz);

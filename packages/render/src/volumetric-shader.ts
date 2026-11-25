@@ -28,7 +28,7 @@ export function volumetricShader(
     `${result} ${name}(${args.map(([type, n]) => `${type} ${n}`).join(",")}) { ${body} }`;
   let header = `varying vec2 vUV;
 ${texture("depthSampler")}
-${field(m4, "inverseProjection")}${field(m4, "inverseView")}${field(m4, "volumeView")}
+${field(m4, "inverseProjection")}${field(m4, "inverseView")}
 ${field(v4, "volumeSettings")}${field(v4, "volumeCamera")}${field(v2, "volumeHeight")}
 ${field(v3, "volumeShadowOffset")}${field(f, "volumeLightCount")}
 `;
@@ -131,30 +131,34 @@ return hapticSunShadowFactor(P, ${v3}(0.0), ${v3}(0.0));`);
     // A slot's shadow: its light's views of the atlas, as the light block holds them.
     functions += fn(
       `visibility${i}`,
-      [
-        [v3, "p"],
-        [f, "viewZ"],
-      ],
+      [[v3, "p"]],
       f,
       `return volumeLightShadow(${u(`volumeShadow${i}`)}, p, ${u(`volumePosition${i}`)}.xyz);`,
     );
     // Slots past the lights taking part this frame are skipped: one uniform branch per step.
     lighting += `if (${u("volumeLightCount")} > ${i}.5) {
-${decl(v3, "toLight", `${u(`volumePosition${i}`)}.xyz - p`)}
-${decl(f, "distanceToLight", "max(length(toLight), 0.001)")}
-${decl(v3, "lightDirection", "toLight / distanceToLight")}
+${decl(v3, "lightDirection", `-${u(`volumeDirection${i}`)}.xyz`)}
 ${decl(f, "attenuation", "1.0")}
-if (${u(`volumePosition${i}`)}.w < 0.5) { lightDirection = -normalize(${u(`volumeDirection${i}`)}.xyz); }
-else {
-  attenuation = pow(clamp(1.0 - pow(distanceToLight / max(${u(`volumeColor${i}`)}.w, 0.001), 4.0), 0.0, 1.0), 2.0) / max(distanceToLight * distanceToLight, 0.25);
-  if (${u(`volumePosition${i}`)}.w > 1.5) {
-    ${decl(f, "cone", `dot(-lightDirection, normalize(${u(`volumeDirection${i}`)}.xyz))`)}
-    attenuation *= smoothstep(${u(`volumeDirection${i}`)}.w, max(${u(`volumeDirection${i}`)}.w + 0.0001, ${u(`volumeCone${i}`)}.x), cone);
+if (${u(`volumePosition${i}`)}.w >= 0.5) {
+  ${decl(v3, "toLight", `${u(`volumePosition${i}`)}.xyz - p`)}
+  ${decl(f, "d2", "dot(toLight, toLight)")}
+  ${decl(f, "invRange", `1.0 / max(${u(`volumeColor${i}`)}.w, 0.001)`)}
+  ${decl(f, "ratio2", "d2 * (invRange * invRange)")}
+  ${decl(f, "falloff", "max(0.0, 1.0 - ratio2 * ratio2)")}
+  attenuation = (falloff * falloff) / max(d2, 0.25);
+  if (attenuation > 0.0) {
+    lightDirection = toLight * inversesqrt(max(d2, 0.000001));
+    if (${u(`volumePosition${i}`)}.w > 1.5) {
+      ${decl(f, "cone", `dot(-lightDirection, ${u(`volumeDirection${i}`)}.xyz)`)}
+      attenuation *= smoothstep(${u(`volumeDirection${i}`)}.w, max(${u(`volumeDirection${i}`)}.w + 0.0001, ${u(`volumeCone${i}`)}.x), cone);
+    }
   }
 }
-${decl(f, "g", `${u("volumeSettings")}.w`)}
-${decl(f, "phase", `(1.0-g*g) / (12.5663706 * pow(max(0.001, 1.0+g*g-2.0*g*dot(lightDirection, worldDirection)), 1.5))`)}
-illumination += ${u(`volumeColor${i}`)}.rgb * (attenuation * phase * visibility${i}(p, abs((${u("volumeView")} * ${v4}(p,1.0)).z)));
+if (attenuation > 0.0) {
+  ${decl(f, "hgDenom", "max(0.001, hgBase - hgTwoG * dot(lightDirection, worldDirection))")}
+  ${decl(f, "phase", "hgNum / (hgDenom * sqrt(hgDenom))")}
+  illumination += ${u(`volumeColor${i}`)}.rgb * (attenuation * phase * visibility${i}(p));
+}
 }
 `;
   }
@@ -183,6 +187,11 @@ if (sceneSteps > 0) { sceneSegment = sceneSpan / ${f}(sceneSteps); }
 ${decl(integer, "sceneIndex", "0")}
 ${decl(f, "transmittance", "1.0")}
 ${decl(v3, "scattering", `${v3}(0.0)`)}
+${decl(f, "hgG", `${u("volumeSettings")}.w`)}
+${decl(f, "hgG2", "hgG * hgG")}
+${decl(f, "hgNum", "(1.0 - hgG2) * 0.0795774715")}
+${decl(f, "hgBase", "1.0 + hgG2")}
+${decl(f, "hgTwoG", "2.0 * hgG")}
 // Scene-wide fog samples evenly to its span and each Fog Volume over its own chord. Each step takes the nearest next
 // sample of all of them, so in-scattering is gathered front to back through every medium.
 for (int step = 0; step < ${steps}; step++) {

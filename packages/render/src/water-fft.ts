@@ -159,35 +159,31 @@ result = vec4(hapticPack(ih * k.x, ih * k.y), hapticPack(-h * (k.x * u.x), -h * 
 }
 gl_FragColor = result;
 }`;
-// One radix-2 Stockham stage (`waterFftButterfly`): fftStage = (2^stage, horizontal, x offset, N); the result is
-// multiplied by fftScale (1 except the final pass of a cascade's first layer, which restores ∂Dx/∂z).
+// One radix-2 Stockham stage (`waterFftButterfly`): fftStage = (stage, horizontal, x offset, N); fftTwiddle holds
+// precomputed `(direction * cos, direction * sin, j, 0)` at `(i, stage)` so the fragment shader runs zero trig or
+// integer division. The result is multiplied by fftScale (1 except the final pass of a cascade's first layer, which
+// restores ∂Dx/∂z).
 ShaderStore.ShadersStore[`${BUTTERFLY}PixelShader`] = `precision highp float;
 precision highp int;
 precision highp sampler2D;
 uniform sampler2D fftInput;
+uniform sampler2D fftTwiddle;
 uniform vec4 fftStage;
 uniform vec4 fftScale;
 void main(void) {
 ivec2 p = ivec2(gl_FragCoord.xy);
-int span = int(fftStage.x);
 int size = int(fftStage.w);
 int x = p.x + int(fftStage.z);
 int y = p.y;
 bool horizontal = fftStage.y > 0.5;
-int i = horizontal ? x - (x / size) * size : y;
-int block = i / (2 * span);
-int pos = i - block * 2 * span;
-int k = pos >= span ? pos - span : pos;
-int j = block * span + k;
+int i = horizontal ? (x & (size - 1)) : y;
+vec4 tw = texelFetch(fftTwiddle, ivec2(i, int(fftStage.x)), 0);
+int j = int(tw.z);
 ivec2 ia = horizontal ? ivec2(x - i + j, y) : ivec2(x, j);
-ivec2 ib = horizontal ? ivec2(x - i + j + size / 2, y) : ivec2(x, j + size / 2);
+ivec2 ib = horizontal ? ivec2(x - i + j + (size >> 1), y) : ivec2(x, j + (size >> 1));
 vec4 a = texelFetch(fftInput, ia, 0);
 vec4 b = texelFetch(fftInput, ib, 0);
-float angle = 3.141592653589793 * float(k) / float(span);
-float c = cos(angle);
-float s = sin(angle);
-float direction = pos >= span ? -1.0 : 1.0;
-gl_FragColor = fftScale * (a + direction * vec4(c * b.x - s * b.y, c * b.y + s * b.x, c * b.z - s * b.w, c * b.w + s * b.z));
+gl_FragColor = fftScale * (a + vec4(tw.x * b.x - tw.y * b.y, tw.x * b.y + tw.y * b.x, tw.x * b.z - tw.y * b.w, tw.x * b.w + tw.y * b.z));
 }`;
 
 // Persistent foam (FFT-Ocean's turbulence), one cascade layer per draw: the Jacobian determinant J of the displaced
@@ -225,6 +221,72 @@ const RGBA = Constants.TEXTUREFORMAT_RGBA;
 
 /** Completed unit spectra by `spectrumKey`, least recently used first; immutable once stored. */
 const spectrumCaches = new WeakMap<AbstractEngine, Map<string, Float32Array>>();
+
+/** Precomputed RGBA32F Stockham twiddle lookup `(dir * cos, dir * sin, j, 0)` of dimensions `size × log2(size)`. */
+export function buildWaterFftTwiddleData(size: number): Float32Array {
+  const stages = waterFftStages(size);
+  const data = new Float32Array(size * stages * 4);
+  for (let stage = 0; stage < stages; stage++) {
+    const span = 1 << stage;
+    const period = span * 2;
+    const rowOffset = stage * size * 4;
+    for (let i = 0; i < size; i++) {
+      const block = Math.floor(i / period);
+      const pos = i - block * period;
+      const upper = pos >= span;
+      const k = upper ? pos - span : pos;
+      const j = block * span + k;
+      const angle = (Math.PI * k) / span;
+      const dir = upper ? -1 : 1;
+      const at = rowOffset + i * 4;
+      data[at] = dir * Math.cos(angle);
+      data[at + 1] = dir * Math.sin(angle);
+      data[at + 2] = j;
+      data[at + 3] = 0;
+    }
+  }
+  return data;
+}
+
+const twiddleTextures = new WeakMap<AbstractEngine, Map<number, { raw: InternalTexture; wrapper: ThinTexture }>>();
+
+/** Shared per-engine immutable Stockham twiddle lookup texture for FFT `size` (6–32 KiB, disposed with the engine). */
+function waterFftTwiddleTexture(engine: AbstractEngine, size: number): ThinTexture {
+  let bySize = twiddleTextures.get(engine);
+  if (!bySize) {
+    bySize = new Map();
+    twiddleTextures.set(engine, bySize);
+    engine.onDisposeObservable.addOnce(() => {
+      const cached = twiddleTextures.get(engine);
+      if (!cached) return;
+      for (const entry of cached.values()) {
+        entry.wrapper.dispose();
+        entry.raw.dispose();
+      }
+      cached.clear();
+      twiddleTextures.delete(engine);
+    });
+  }
+  let entry = bySize.get(size);
+  if (!entry) {
+    const stages = waterFftStages(size);
+    const data = buildWaterFftTwiddleData(size);
+    const raw = engine.createRawTexture(
+      data,
+      size,
+      stages,
+      RGBA,
+      false,
+      false,
+      Constants.TEXTURE_NEAREST_SAMPLINGMODE,
+      null,
+      Constants.TEXTURETYPE_FLOAT,
+    );
+    entry = { raw, wrapper: new ThinTexture(raw) };
+    bySize.set(size, entry);
+  }
+  return entry.wrapper;
+}
 
 function cachedSpectrum(engine: AbstractEngine, key: string): Float32Array | undefined {
   return spectrumCaches.get(engine)?.get(key);
@@ -362,7 +424,7 @@ class WaterFftSimulation {
     });
     this.butterfly = new EffectWrapper({
       engine, name: BUTTERFLY, vertexShader: VERTEX, fragmentShader: BUTTERFLY, useShaderStore: true, shaderLanguage: 0,
-      uniformNames: ["fftStage", "fftScale"], samplerNames: ["fftInput"],
+      uniformNames: ["fftStage", "fftScale"], samplerNames: ["fftInput", "fftTwiddle"],
     });
     this.foamEffect = new EffectWrapper({
       engine, name: FOAM, vertexShader: VERTEX, fragmentShader: FOAM, useShaderStore: true, shaderLanguage: 0,
@@ -519,7 +581,8 @@ class WaterFftSimulation {
     this.renderer.applyEffectWrapper(this.butterfly);
     const effect = this.butterfly.effect;
     effect.setTexture("fftInput", this.work.textures[source]!);
-    effect.setFloat4("fftStage", 1 << stage, horizontal ? 1 : 0, xOffset, this.layout.size);
+    effect.setTexture("fftTwiddle", waterFftTwiddleTexture(engine, this.layout.size));
+    effect.setFloat4("fftStage", stage, horizontal ? 1 : 0, xOffset, this.layout.size);
     effect.setFloat4("fftScale", 1, 1, 1, shear);
     this.renderer.draw();
     engine.unBindFramebuffer(target, true);

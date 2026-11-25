@@ -122,10 +122,39 @@ export function compareAlphaTestDraws(a: SubMesh, b: SubMesh): number {
   return left.alphaIndex - right.alphaIndex || compareMeshDrawIdentity(left, right);
 }
 
-/** Preserve opaque/blended passes and depth policy while ordering cutout visuals. */
+/**
+ * Sort opaque draws by material first (preserving Babylon's zero-rebind batching),
+ * then coarse front-to-back by squared camera distance so early-Z rejects occluded
+ * PBR fragments without extra material state changes.
+ */
+export function compareOpaqueDraws(a: SubMesh, b: SubMesh): number {
+  const meshA = a.getMesh();
+  const meshB = b.getMesh();
+  const matA = meshA.material?.uniqueId ?? -1;
+  const matB = meshB.material?.uniqueId ?? -1;
+  if (matA !== matB) return matA - matB;
+  const cam = meshA.getScene?.()?.activeCamera?.globalPosition;
+  if (cam) {
+    const centerA = a.getBoundingInfo?.()?.boundingSphere?.centerWorld;
+    const centerB = b.getBoundingInfo?.()?.boundingSphere?.centerWorld;
+    if (centerA && centerB) {
+      const dxA = centerA.x - cam.x;
+      const dyA = centerA.y - cam.y;
+      const dzA = centerA.z - cam.z;
+      const dxB = centerB.x - cam.x;
+      const dyB = centerB.y - cam.y;
+      const dzB = centerB.z - cam.z;
+      const distDiff = (dxA * dxA + dyA * dyA + dzA * dzA) - (dxB * dxB + dyB * dyB + dzB * dzB);
+      if (distDiff !== 0) return distDiff;
+    }
+  }
+  return meshA.uniqueId - meshB.uniqueId;
+}
+
+/** Preserve blended passes and depth policy while ordering opaque front-to-back per material and cutout visuals. */
 export function configureCutoutSorting(scene: Pick<Scene, "setRenderingOrder">): void {
   for (const group of Object.values(RENDERING_GROUP)) {
-    scene.setRenderingOrder(group, null, compareAlphaTestDraws, null);
+    scene.setRenderingOrder(group, compareOpaqueDraws, compareAlphaTestDraws, null);
   }
 }
 

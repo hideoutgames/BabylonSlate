@@ -63,7 +63,7 @@ The **Shadows Quality** setting in **Scalability** applies one of these sets. Ch
 | Level | Distance | Map size | First cascade detail | Cascades | Half-size far cascades | Filter quality | Local shadow lights | Local map size | Smallest far caster | Screen-Space Shadows | Reflection Shadows |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Low | 120 | 2048 | Map Size | 2 | 0 | Low | 1 | 512 | 3 texels | Off | Off |
-| Medium | 250 | 2048 | Map Size | 3 | 1 | High | 2 | 1024 | 2 texels | Off | Off |
+| Medium | 250 | 2048 | Map Size | 3 | 1 | Medium | 2 | 1024 | 2 texels | Off | Off |
 | High | 350 | 2048 | Map Size | 4 | 1 | High | 4 | 2048 | 1.5 texels | Medium | Off |
 | Ultra | 600 | 4096 | Map Size | 4 | 2 | High | 8 | 2048 | 1 texel | High | On |
 
