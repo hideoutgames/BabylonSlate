@@ -1,8 +1,14 @@
 export {
   SNAPSHOT_ACTOR_STRIDE,
+  SNAPSHOT_DIRTY_FLAG_FULL,
+  SNAPSHOT_DIRTY_FLAG_TRACKED,
+  SNAPSHOT_DIRTY_META_WORDS,
   SNAPSHOT_HEADER_FLOATS,
   SNAPSHOT_LAYOUT_VERSION,
   SNAPSHOT_MAGIC_U32,
+  actorSlotOffset,
+  snapshotDirtyBitsetWords,
+  snapshotDirtyMetaOffset,
   snapshotFloatCount,
 } from "./layout";
 export {
@@ -10,20 +16,27 @@ export {
   SNAPSHOT_FLAG_VISIBLE,
   applySnapshotTick,
   isPublishedSnapshot,
+  markSnapshotDirtyRow,
   playInputStampTick,
   readActorSlotInto,
   readSnapshotHeader,
   snapshotActiveFloatCount,
+  snapshotDirtyView,
   snapshotFrameId,
   snapshotTickIndex,
   writeActorSlot,
+  writeSnapshotDirtyMeta,
   writeSnapshotHeader,
   type ActorSlot,
   type Quat,
   type SnapshotHeader,
   type Vec3,
 } from "./snapshot-buffer";
-export { SeqLockSnapshotPair } from "./seq-lock";
+export {
+  SeqLockSnapshotPair,
+  type DirtySnapshotReadResult,
+  type SharedSnapshotBuffers,
+} from "./seq-lock";
 export { TransferablePingPong } from "./transferable";
 export {
   type BridgeHostMessage,

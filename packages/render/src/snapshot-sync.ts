@@ -1,11 +1,22 @@
 import {
+  SNAPSHOT_ACTOR_STRIDE,
+  SNAPSHOT_DIRTY_FLAG_FULL,
+  SNAPSHOT_DIRTY_FLAG_TRACKED,
+  SNAPSHOT_DIRTY_META_WORDS,
+  SNAPSHOT_HEADER_FLOATS,
+  SeqLockSnapshotPair,
+  actorSlotOffset,
   isPublishedSnapshot,
   readActorSlotInto,
   readSnapshotHeader,
   snapshotActiveFloatCount,
-  snapshotFrameId,
+  snapshotDirtyBitsetWords,
+  snapshotDirtyView,
   snapshotFloatCount,
+  snapshotFrameId,
+  snapshotTickIndex,
   type ActorSlot,
+  type SharedSnapshotBuffers,
 } from "@haptic/bridge";
 import type { AudioPose } from "./audio-playback-backend";
 
@@ -14,6 +25,12 @@ export interface SampledSnapshot {
   tickIndex: number;
   actors: ActorSlot[];
   actorCount: number;
+  /** True when the caller must run full visual reconciliation and visit all `actorCount` rows. */
+  full?: boolean;
+  /** Row indices `[0..dirtyCount)` that changed since the last sample when `full === false`. */
+  dirtyRows?: Uint32Array;
+  /** Number of valid dirty row indices in `dirtyRows` when `full === false`. */
+  dirtyCount?: number;
 }
 
 function emptySlot(): ActorSlot {
@@ -35,6 +52,12 @@ export class SnapshotSampler {
   private buffer: Float32Array;
   private maxActors: number;
   private scratch: ActorSlot[];
+  private dirtyRows: Uint32Array;
+  private dirtyCount = 0;
+  private pendingFull = true;
+  private lastSerial = 0;
+  private lastActorCount = -1;
+  private sharedPair: SeqLockSnapshotPair | null = null;
   private readonly sampled: SampledSnapshot;
   private generation = 0;
   private buffered = 0;
@@ -45,11 +68,15 @@ export class SnapshotSampler {
     this.maxActors = maxActors;
     this.buffer = new Float32Array(snapshotFloatCount(maxActors));
     this.scratch = Array.from({ length: maxActors }, () => emptySlot());
+    this.dirtyRows = new Uint32Array(Math.max(1, maxActors));
     this.sampled = {
       frameId: 0,
       tickIndex: 0,
       actors: this.scratch,
       actorCount: 0,
+      full: true,
+      dirtyRows: this.dirtyRows,
+      dirtyCount: 0,
     };
   }
 
@@ -65,15 +92,70 @@ export class SnapshotSampler {
     return this.buffered;
   }
 
-  installLayout(capacity: number, generation: number): boolean {
-    if (generation <= this.generation || capacity < 1) return false;
+  /** True when a cross-thread SharedArrayBuffer snapshot pair is attached. */
+  get isShared(): boolean {
+    return this.sharedPair !== null;
+  }
+
+  installLayout(
+    capacity: number,
+    generation: number,
+    shared?: SharedSnapshotBuffers,
+  ): boolean {
+    const initialSharedAttach =
+      Boolean(shared) && !this.sharedPair && generation === this.generation;
+    if ((!initialSharedAttach && generation <= this.generation) || capacity < 1) {
+      return false;
+    }
     this.maxActors = capacity;
     this.generation = generation;
     this.buffer = new Float32Array(snapshotFloatCount(capacity));
     this.scratch = Array.from({ length: capacity }, () => emptySlot());
+    this.dirtyRows = new Uint32Array(capacity);
+    this.sharedPair = shared
+      ? SeqLockSnapshotPair.fromSharedBuffers(capacity, shared)
+      : null;
     this.sampled.actors = this.scratch;
     this.sampled.actorCount = 0;
+    this.sampled.dirtyRows = this.dirtyRows;
+    this.sampled.dirtyCount = 0;
+    this.sampled.full = true;
     this.clear();
+    return true;
+  }
+
+  /** True when the attached SAB has a newer published snapshot than the last polled one. */
+  hasNewShared(): boolean {
+    if (!this.sharedPair) return false;
+    const serial = this.sharedPair.publishedSerial();
+    return serial !== 0 && serial !== this.lastSerial;
+  }
+
+  /**
+   * Poll the attached SAB snapshot pair directly into the local buffer (copying only
+   * dirty rows on steady-state frames). Returns true when a newer snapshot was read.
+   */
+  pollShared(): boolean {
+    if (!this.sharedPair) return false;
+    const result = this.sharedPair.tryReadDirty(
+      this.buffer,
+      this.lastSerial,
+      this.lastActorCount,
+      this.dirtyRows,
+    );
+    if (!result || !result.changed) return false;
+    const hadUnsampled = this.latest !== null && this.sampledAt !== this.buffered;
+    this.latest = this.buffer;
+    this.lastSerial = result.serial;
+    this.lastActorCount = result.actorCount;
+    if (result.full || hadUnsampled) {
+      this.pendingFull = true;
+      this.dirtyCount = 0;
+    } else {
+      this.pendingFull = false;
+      this.dirtyCount = result.dirtyCount;
+    }
+    this.buffered++;
     return true;
   }
 
@@ -86,8 +168,51 @@ export class SnapshotSampler {
     // Copy only the header and live rows; `sample` never reads past
     // `actorCount`, so a count the buffer cannot hold would expose stale rows.
     const span = snapshotActiveFloatCount(buffer);
-    if (span > dest.length || snapshotFloatCount(header.actorCount) > buffer.length) return false;
-    dest.set(span === buffer.length ? buffer : buffer.subarray(0, span));
+    const minRowLength = SNAPSHOT_HEADER_FLOATS + header.actorCount * SNAPSHOT_ACTOR_STRIDE;
+    if (span > dest.length || minRowLength > buffer.length) return false;
+
+    const dirtyView = snapshotDirtyView(buffer, this.maxActors);
+    const dirtyFlags = dirtyView ? dirtyView[1]! : 0;
+    const serial = dirtyView ? dirtyView[0]! : 0;
+    const serialDelta = (serial - this.lastSerial) >>> 0;
+    const canIncremental =
+      dirtyView !== null &&
+      this.latest === dest &&
+      this.sampledAt === this.buffered &&
+      (dirtyFlags & SNAPSHOT_DIRTY_FLAG_TRACKED) !== 0 &&
+      (dirtyFlags & SNAPSHOT_DIRTY_FLAG_FULL) === 0 &&
+      this.lastSerial > 0 &&
+      serialDelta >= 1 &&
+      serialDelta <= 2 &&
+      header.actorCount === this.lastActorCount;
+
+    if (canIncremental) {
+      dest.set(buffer.subarray(0, SNAPSHOT_HEADER_FLOATS));
+      const words = snapshotDirtyBitsetWords(header.actorCount);
+      let dirtyCount = 0;
+      for (let w = 0; w < words; w++) {
+        let bits = dirtyView[SNAPSHOT_DIRTY_META_WORDS + w]!;
+        while (bits !== 0) {
+          const lsb = bits & -bits;
+          const bit = 31 - Math.clz32(lsb);
+          const row = (w << 5) + bit;
+          if (row < header.actorCount) {
+            const offset = actorSlotOffset(row);
+            dest.set(buffer.subarray(offset, offset + SNAPSHOT_ACTOR_STRIDE), offset);
+            this.dirtyRows[dirtyCount++] = row;
+          }
+          bits ^= lsb;
+        }
+      }
+      this.dirtyCount = dirtyCount;
+      this.pendingFull = false;
+    } else {
+      dest.set(span === buffer.length ? buffer : buffer.subarray(0, span));
+      this.dirtyCount = 0;
+      this.pendingFull = true;
+    }
+    this.lastSerial = (dirtyFlags & SNAPSHOT_DIRTY_FLAG_TRACKED) !== 0 ? serial : 0;
+    this.lastActorCount = header.actorCount;
     this.latest = dest;
     this.buffered++;
     return true;
@@ -96,6 +221,10 @@ export class SnapshotSampler {
   /** Drop the buffered snapshot so the next sample is null until a fresh push. */
   clear(): void {
     this.latest = null;
+    this.lastSerial = 0;
+    this.lastActorCount = -1;
+    this.pendingFull = true;
+    this.dirtyCount = 0;
     this.buffered++;
   }
 
@@ -107,10 +236,15 @@ export class SnapshotSampler {
     return this.latest ? snapshotFrameId(this.latest) : null;
   }
 
+  /** The buffered snapshot's tick index, or null when unpublished. */
+  latestTickIndex(): number | null {
+    return this.latest ? snapshotTickIndex(this.latest) : null;
+  }
+
   /**
    * Decode the buffered snapshot into the scratch rows. The buffer is private
-   * (`push` copies, `clear` and `installLayout` replace it) and the rows are
-   * read-only to callers, so sampling again under the same {@link revision}
+   * (`push`/`pollShared` copy, `clear` and `installLayout` replace it) and the rows
+   * are read-only to callers, so sampling again under the same {@link revision}
    * returns the same decoded result without decoding again.
    */
   sample(): SampledSnapshot | null {
@@ -119,8 +253,23 @@ export class SnapshotSampler {
     if (!this.latest || !isPublishedSnapshot(this.latest)) return (this.sampledResult = null);
     const header = readSnapshotHeader(this.latest);
     const count = Math.min(header.actorCount, this.maxActors);
-    for (let i = 0; i < count; i++) {
-      readActorSlotInto(this.latest, i, this.scratch[i]!);
+    if (!this.pendingFull) {
+      const dirtyRows = this.dirtyRows;
+      const dirtyCount = this.dirtyCount;
+      for (let d = 0; d < dirtyCount; d++) {
+        const row = dirtyRows[d]!;
+        if (row < count) readActorSlotInto(this.latest, row, this.scratch[row]!);
+      }
+      this.sampled.full = false;
+      this.sampled.dirtyRows = dirtyRows;
+      this.sampled.dirtyCount = dirtyCount;
+    } else {
+      for (let i = 0; i < count; i++) {
+        readActorSlotInto(this.latest, i, this.scratch[i]!);
+      }
+      this.sampled.full = true;
+      this.sampled.dirtyRows = this.dirtyRows;
+      this.sampled.dirtyCount = count;
     }
     this.sampled.frameId = header.frameId;
     this.sampled.tickIndex = header.tickIndex;

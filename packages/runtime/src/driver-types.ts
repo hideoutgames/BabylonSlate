@@ -228,6 +228,10 @@ export interface RuntimeDriver {
   /** Most recent resolved input tick (empty before the first tick). */
   getResolvedInput(): ResolvedInputTick;
   copySnapshot(out: Float32Array): boolean;
+  /** SharedArrayBuffer snapshot pair for lock-free cross-thread reads, or null when unavailable. */
+  sharedSnapshotBuffers(): import("@haptic/bridge").SharedSnapshotBuffers | null;
+  /** Update the main-thread visibility bitset for `whenVisible` Animation Graph actors. */
+  setAnimVisibility(visible: Uint32Array, maxSlotId: number): void;
   readonly snapshotCapacity: number;
   readonly snapshotGeneration: number;
   /**

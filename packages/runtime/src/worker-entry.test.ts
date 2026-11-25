@@ -166,6 +166,9 @@ describe("worker entry snapshot transport", () => {
         posts.push({ kind: "snapshot", frameId, buffer: message.payload });
         return;
       }
+      if (message.channel === "snapshotNotify") {
+        return;
+      }
       batch++;
       for (const command of message.channel === "commands" ? message.payload : [message.payload]) {
         posts.push({ kind: "command", command, batch });

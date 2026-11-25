@@ -1,9 +1,12 @@
 import {
   SNAPSHOT_ACTOR_STRIDE,
+  SNAPSHOT_DIRTY_META_WORDS,
   SNAPSHOT_HEADER_FLOATS,
   SNAPSHOT_LAYOUT_VERSION,
   SNAPSHOT_MAGIC_F32,
   actorSlotOffset,
+  snapshotDirtyBitsetWords,
+  snapshotDirtyMetaOffset,
   u32ToFloatBits,
   floatBitsToU32,
 } from "./layout";
@@ -176,4 +179,39 @@ export function readActorSlotInto(buf: Float32Array, slotIndex: number, out: Act
   out.scale.z = buf[o + 10]!;
   out.flags = buf[o + 11]!;
   return out;
+}
+
+/**
+ * Uint32 view over a snapshot buffer's dirty metadata (`[serial, flags]`) and
+ * per-row bitset (`ceil(maxActors / 32)` words). Returns null when `buf` has no
+ * dirty tail (e.g. a zero-capacity or custom-sized view).
+ */
+export function snapshotDirtyView(buf: Float32Array, maxActors: number): Uint32Array | null {
+  if (maxActors <= 0) return null;
+  const offset = snapshotDirtyMetaOffset(maxActors);
+  const words = SNAPSHOT_DIRTY_META_WORDS + snapshotDirtyBitsetWords(maxActors);
+  if (buf.length < offset + words) return null;
+  return new Uint32Array(buf.buffer, buf.byteOffset + offset * 4, words);
+}
+
+/** Clear the active dirty-row bitset words for `actorCount` rows and write `[serial, flags]`. */
+export function writeSnapshotDirtyMeta(
+  dirtyView: Uint32Array,
+  serial: number,
+  flags: number,
+  actorCount: number,
+  clearBitset: boolean,
+): void {
+  dirtyView[0] = serial >>> 0;
+  dirtyView[1] = flags >>> 0;
+  if (clearBitset) {
+    const activeWords = snapshotDirtyBitsetWords(actorCount);
+    dirtyView.fill(0, SNAPSHOT_DIRTY_META_WORDS, SNAPSHOT_DIRTY_META_WORDS + activeWords);
+  }
+}
+
+/** Set row `row`'s bit in the snapshot dirty-row bitset. */
+export function markSnapshotDirtyRow(dirtyView: Uint32Array, row: number): void {
+  const word = SNAPSHOT_DIRTY_META_WORDS + (row >>> 5);
+  if (word < dirtyView.length) dirtyView[word]! |= 1 << (row & 31);
 }

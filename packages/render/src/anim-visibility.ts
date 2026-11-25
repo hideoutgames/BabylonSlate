@@ -70,18 +70,32 @@ function actorSphere(root: AbstractMesh): ActorSphere | null {
 export class AnimVisibilityGate {
   /** Slots whose latest state (the binding's pending one) is not posed yet: arrived since the last flush, or unseen. */
   private readonly waiting = new Set<number>();
+  /** Slots currently running in `whenVisible` mode, checked during `flush()` to report visibility transitions back to the worker. */
+  private readonly trackedWhenVisible = new Set<number>();
+  private lastVisibilityMask = new Uint32Array(0);
+  private lastVisibilityMaxSlot = -1;
+  private scratchVisibilityMask = new Uint32Array(0);
   private readonly scene: Scene;
   private readonly binding: AnimVisibilityBinding;
   private readonly apply: (command: AnimStateCommand) => void;
+  private readonly onVisibilityChanged?: (visible: Uint32Array, maxSlotId: number) => void;
 
-  constructor(scene: Scene, binding: AnimVisibilityBinding, apply: (command: AnimStateCommand) => void) {
+  constructor(
+    scene: Scene,
+    binding: AnimVisibilityBinding,
+    apply: (command: AnimStateCommand) => void,
+    onVisibilityChanged?: (visible: Uint32Array, maxSlotId: number) => void,
+  ) {
     this.scene = scene;
     this.binding = binding;
     this.apply = apply;
+    this.onVisibilityChanged = onVisibilityChanged;
   }
 
   /** Takes the slot's latest state: posed at the next flush, or now when every command of it must be posed. */
   offer(command: AnimStateCommand): void {
+    if (command.whenVisible) this.trackedWhenVisible.add(command.slotId);
+    else this.trackedWhenVisible.delete(command.slotId);
     if (!posesEveryCommand(command.boneModifiers)) {
       this.waiting.add(command.slotId);
       return;
@@ -96,15 +110,57 @@ export class AnimVisibilityGate {
 
   /** Before a snapshot is applied and before each render: poses the waiting slots that are Always or in view. */
   flush(): void {
-    if (this.waiting.size === 0) return;
-    for (const slotId of this.waiting) {
-      const pending = this.binding.pendingAnimState?.get(slotId);
-      if (!pending) this.waiting.delete(slotId);
-      else if (!pending.whenVisible || this.seen(slotId)) {
-        this.waiting.delete(slotId);
-        this.apply(pending);
+    if (this.waiting.size > 0) {
+      for (const slotId of this.waiting) {
+        const pending = this.binding.pendingAnimState?.get(slotId);
+        if (!pending) this.waiting.delete(slotId);
+        else if (!pending.whenVisible || this.seen(slotId)) {
+          this.waiting.delete(slotId);
+          this.apply(pending);
+        }
       }
     }
+    if (this.onVisibilityChanged && this.trackedWhenVisible.size > 0) {
+      this.publishVisibilityMask();
+    }
+  }
+
+  private publishVisibilityMask(): void {
+    let maxSlot = -1;
+    const pendingMap = this.binding.pendingAnimState;
+    for (const slotId of this.trackedWhenVisible) {
+      const pending = pendingMap?.get(slotId);
+      if (!pending || !pending.whenVisible) {
+        this.trackedWhenVisible.delete(slotId);
+        continue;
+      }
+      if (slotId > maxSlot) maxSlot = slotId;
+    }
+    const wordCount = maxSlot >= 0 ? (maxSlot >>> 5) + 1 : 0;
+    if (this.scratchVisibilityMask.length < wordCount) {
+      this.scratchVisibilityMask = new Uint32Array(wordCount);
+    }
+    // Untracked slots default to 1 (visible) so non-whenVisible or freshly spawned slots are never culled.
+    this.scratchVisibilityMask.fill(0xffffffff, 0, wordCount);
+    for (const slotId of this.trackedWhenVisible) {
+      if (!this.seen(slotId)) {
+        this.scratchVisibilityMask[slotId >>> 5]! &= ~(1 << (slotId & 31));
+      }
+    }
+    let changed = maxSlot !== this.lastVisibilityMaxSlot || this.lastVisibilityMask.length !== wordCount;
+    if (!changed) {
+      for (let i = 0; i < wordCount; i++) {
+        if (this.scratchVisibilityMask[i] !== this.lastVisibilityMask[i]) {
+          changed = true;
+          break;
+        }
+      }
+    }
+    if (!changed) return;
+    this.lastVisibilityMaxSlot = maxSlot;
+    this.lastVisibilityMask = this.scratchVisibilityMask.slice(0, wordCount);
+    // Pass a fresh copy so controlTransferables can transfer ownership without detaching `lastVisibilityMask`.
+    this.onVisibilityChanged!(this.lastVisibilityMask.slice(), maxSlot);
   }
 
   /** Poses the slot's waiting state now, seen or not: something is about to read its pose. */

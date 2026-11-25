@@ -1351,6 +1351,14 @@ class InProcessRuntime implements RuntimeDriver, RuntimeComposition {
     return this.snapshots.copy(out);
   }
 
+  sharedSnapshotBuffers() {
+    return this.snapshots.sharedBuffers();
+  }
+
+  setAnimVisibility(visible: Uint32Array, maxSlotId: number): void {
+    this.animGraphs.setVisibility(visible, maxSlotId);
+  }
+
   getWorld(): World {
     return this.world;
   }

@@ -358,6 +358,39 @@ function reconcileSnapshotVisuals(
     // Explicit despawn remains the removal path for these unseen slots.
     if (!live.has(slotId) && seen.has(slotId)) retirePlaySlot(binding, slotId);
   }
+  binding.reconciledMeshesRevision = binding.meshes.revision;
+}
+
+/** True when an incremental dirty-row snapshot can safely bypass full visual reconciliation. */
+function canApplyIncrementalSnapshot(
+  binding: SnapshotSceneBinding,
+  snapshot: SampledSnapshot,
+  count: number,
+): boolean {
+  if (
+    snapshot.full !== false ||
+    !snapshot.dirtyRows ||
+    snapshot.dirtyCount === undefined ||
+    binding.despawnedSlots.size > 0 ||
+    binding.snapshotMeshes.length !== count ||
+    binding.reconciledMeshesRevision !== binding.meshes.revision
+  ) {
+    return false;
+  }
+  const overlaySlots = binding.overlaySlots;
+  const dirtyRows = snapshot.dirtyRows;
+  const dirtyCount = snapshot.dirtyCount;
+  for (let d = 0; d < dirtyCount; d++) {
+    const row = dirtyRows[d]!;
+    if (row >= count) return false;
+    const actor = snapshot.actors[row]!;
+    const mesh = binding.snapshotMeshes[row];
+    if (!mesh || mesh.isDisposed()) return false;
+    const wantsOverlay = snapshotSlotWantsOverlay(actor, binding);
+    const wasOverlay = overlaySlots?.has(actor.slotId) === true;
+    if (wantsOverlay !== wasOverlay) return false;
+  }
+  return true;
 }
 
 /** Apply a sample without changing caller-owned global Babylon flags. */
@@ -369,8 +402,9 @@ export function applySnapshotToScene(
   // Play samples the latest snapshot, so cables and water pair with its frame alone.
   sampleCableFrame(scene, snapshot.frameId);
   sampleSceneWaterFrame(scene, snapshot.frameId);
-  reconcileSnapshotVisuals(scene, binding, snapshot);
   const count = snapshot.actorCount ?? snapshot.actors.length;
+  const incremental = canApplyIncrementalSnapshot(binding, snapshot, count);
+  if (!incremental) reconcileSnapshotVisuals(scene, binding, snapshot);
   // Lights and cameras follow their helpers (after this loop); one that no helper on its slot's root drives is posed from
   // its actor row here. Play builds each with a helper, so there is usually none and no actor looks one up; likewise
   // fog volumes and slot light groups.
@@ -379,7 +413,10 @@ export function applySnapshotToScene(
   const hasFogVolumes = binding.fogVolumes.size > 0;
   const hasDecals = binding.decals.size > 0;
   const hasSlotLightGroups = binding.areaLights.size > 0 || binding.lights2D.size > 0 || binding.occluders2D.size > 0;
-  for (let i = 0; i < count; i++) {
+  const iterCount = incremental ? snapshot.dirtyCount! : count;
+  const dirtyRows = incremental ? snapshot.dirtyRows! : null;
+  for (let idx = 0; idx < iterCount; idx++) {
+    const i = dirtyRows ? dirtyRows[idx]! : idx;
     const actor = snapshot.actors[i]!;
     const mesh = binding.snapshotMeshes[i];
     if (!mesh) continue;

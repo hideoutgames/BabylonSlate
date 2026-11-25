@@ -144,10 +144,35 @@ function movingRuleGraph(registry: NodeRegistry): LogicGraph {
 function lastAnimState(
   commands: readonly CommandMessage[],
 ): Extract<CommandMessage, { type: "animState" }> | undefined {
-  return [...commands]
-    .reverse()
-    .find((command) => command.type === "animState") as
-    Extract<CommandMessage, { type: "animState" }> | undefined;
+  let state: Extract<CommandMessage, { type: "animState" }> | undefined;
+  for (const command of commands) {
+    if (command.type === "animState") {
+      state = { ...command, layers: command.layers?.map((layer) => ({ ...layer })) };
+    } else if (command.type === "animClocks" && state) {
+      const data = command.data;
+      for (let offset = 0; offset + 3 <= data.length; ) {
+        const slotId = data[offset]!;
+        const stateNormTime = data[offset + 1]!;
+        const layerCount = data[offset + 2]!;
+        offset += 3;
+        const end = offset + layerCount * 2;
+        if (end > data.length) break;
+        if (slotId === state.slotId) {
+          state.normalisedTime = stateNormTime;
+          state.justFinished = false;
+          state.justLooped = false;
+          if (state.layers && state.layers.length === layerCount) {
+            for (let i = 0; i < layerCount; i++) {
+              state.layers[i]!.normalisedTime = data[offset + i * 2]!;
+              state.layers[i]!.weight = data[offset + i * 2 + 1]!;
+            }
+          }
+        }
+        offset = end;
+      }
+    }
+  }
+  return state;
 }
 
 describe("runtime AnimationGraph scripts", () => {

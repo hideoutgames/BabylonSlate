@@ -43,6 +43,7 @@ const loopVoiceId = (component: ActorComponent) => `${component.guid}:appearSoun
 export class Text2DAppearRuntime implements RuntimeSubsystem {
   private host: Text2DAppearHost | null = null;
   private readonly states = new WeakMap<ActorComponent, AppearState>();
+  private readonly idleComponents = new WeakMap<ActorComponent, number>();
   private readonly dirty = new Set<ActorComponent>();
   private sounds: Text2DAppearSoundEvent[] = [];
   /** Scripted Appear Modes and Letter Effects, which follow the reveal this runtime owns. */
@@ -95,11 +96,12 @@ export class Text2DAppearRuntime implements RuntimeSubsystem {
   }
 
   /** The scripted letter poses the renderer holds; undefined while every letter is at rest. */
-  letterPoses(component: ActorComponent): number[] | undefined {
+  letterPoses(component: ActorComponent): Float32Array | undefined {
     return this.letters.poses(component);
   }
 
   refresh(component: ActorComponent): void {
+    this.idleComponents.delete(component);
     const state = this.state(component);
     state.duration = this.duration(component);
     if (state.shown) this.refreshShown(component, state);
@@ -112,6 +114,7 @@ export class Text2DAppearRuntime implements RuntimeSubsystem {
 
   execute(component: ActorComponent, operation: Text2DAppearOperation): void {
     if (component.classId !== "2DRichTextComponent" || component.destroyed || !component.owner || component.owner.destroyed) return;
+    this.idleComponents.delete(component);
     const state = this.state(component);
     if (operation === "triggerAppear") state.progress = 0;
     state.direction = operation === "playReverse" ? -1 : 1;
@@ -133,6 +136,8 @@ export class Text2DAppearRuntime implements RuntimeSubsystem {
       if (actor.destroyed || !canTick(actor)) continue;
       for (const component of actor.components) {
         if (component.classId !== "2DRichTextComponent" || component.destroyed) continue;
+        const rev = component.variablesRevision;
+        if (this.idleComponents.get(component) === rev) continue;
         const state = this.state(component);
         if (state.sound) this.advanceSound(component, state, deltaSeconds);
         if (state.direction) {
@@ -148,6 +153,9 @@ export class Text2DAppearRuntime implements RuntimeSubsystem {
         this.letters.advance(component, state.progress, deltaSeconds);
         // After the reveal and the letter poses moved, so handlers read where the text is now.
         if (state.events?.length) this.dispatchEvents(component, state.events);
+        if (state.direction === 0 && !state.sound && !state.events?.length && this.letters.isIdleAt(component, rev)) {
+          this.idleComponents.set(component, rev);
+        }
       }
     }
   }
@@ -155,7 +163,7 @@ export class Text2DAppearRuntime implements RuntimeSubsystem {
   flush(
     send: (component: ActorComponent, progress: number) => void,
     sound?: (event: Text2DAppearSoundEvent) => void,
-    letterPoses?: (component: ActorComponent, poses: number[]) => void,
+    letterPoses?: (component: ActorComponent, poses: Float32Array) => void,
   ): void {
     for (const component of this.dirty) {
       if (!component.destroyed && component.owner && !component.owner.destroyed) send(component, this.state(component).progress);
@@ -178,6 +186,7 @@ export class Text2DAppearRuntime implements RuntimeSubsystem {
     }
     this.letters.remove(component);
     this.states.delete(component);
+    this.idleComponents.delete(component);
     this.dirty.delete(component);
   }
 
@@ -188,6 +197,7 @@ export class Text2DAppearRuntime implements RuntimeSubsystem {
 
   /** The drawn text changed without a variable write: the letter scripts read it again (the reveal on `refresh`). */
   private textChanged(component: ActorComponent): void {
+    this.idleComponents.delete(component);
     this.letters.invalidate(component);
   }
 
@@ -204,14 +214,15 @@ export class Text2DAppearRuntime implements RuntimeSubsystem {
     let state = this.states.get(component);
     if (!state) {
       const properties = this.properties(component);
+      const duration = text2DAppearDuration(countText2DRevealCharacters(properties), properties);
       state = { progress: properties.appearStart === "revealed" ? 1 : 0,
-        direction: properties.appearStart === "play" ? 1 : 0, duration: this.duration(component), sound: null,
+        direction: properties.appearStart === "play" ? 1 : 0, duration, sound: null,
         shown: null, events: null };
       this.states.set(component, state);
       // Play On Start is a forward play from hidden.
       if (state.direction === 1) {
         this.startSound(component, state);
-        this.startShown(component, state);
+        this.startShown(component, state, properties);
       }
       this.finishInstant(component, state);
     }

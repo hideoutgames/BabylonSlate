@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   SNAPSHOT_ACTOR_STRIDE,
+  SNAPSHOT_DIRTY_FLAG_FULL,
+  SNAPSHOT_DIRTY_FLAG_TRACKED,
   SNAPSHOT_LAYOUT_VERSION,
   SNAPSHOT_MAGIC_F32,
   SNAPSHOT_MAGIC_U32,
@@ -11,10 +13,12 @@ import {
 import {
   applySnapshotTick,
   isPublishedSnapshot,
+  markSnapshotDirtyRow,
   playInputStampTick,
   readSnapshotHeader,
   snapshotTickIndex,
   writeActorSlot,
+  writeSnapshotDirtyMeta,
   writeSnapshotHeader,
   SNAPSHOT_FLAG_OVERLAY,
   SNAPSHOT_FLAG_VISIBLE,
@@ -194,6 +198,68 @@ describe("SAB seq-lock transport", () => {
     expect(readSnapshotHeader(copy)).toMatchObject({ frameId: 3, actorCount: 2 });
     expect(readActorSlot(copy, 0)).toEqual(row(41, 6));
     expect(readActorSlot(copy, 1)).toEqual(row(63, 7));
+  });
+
+  it("reads only dirty rows via tryReadDirty across shared buffers and falls back to full when flagged or skipped", () => {
+    const capacity = 128;
+    const writer = SeqLockSnapshotPair.create(capacity);
+    const shared = writer.sharedBuffers();
+    expect(shared).not.toBeNull();
+    const reader = SeqLockSnapshotPair.fromSharedBuffers(capacity, shared!);
+    const row = (slotId: number, x: number): ActorSlot => ({
+      slotId,
+      position: { x, y: 0, z: 0 },
+      rotation: { x: 0, y: 0, z: 0, w: 1 },
+      scale: { x: 1, y: 1, z: 1 },
+      flags: SNAPSHOT_FLAG_VISIBLE,
+    });
+    // Publish frame 1 (full initial population of 100 actors into both buffers).
+    for (let pass = 1; pass <= 2; pass++) {
+      const buf = writer.beginWrite();
+      for (let i = 0; i < 100; i++) writeActorSlot(buf, i, row(i, i));
+      writeSnapshotHeader(buf, { frameId: pass, tickIndex: pass, actorCount: 100, scriptMs: 0, physicsMs: 0 });
+      writeSnapshotDirtyMeta(writer.writerDirtyView()!, pass, SNAPSHOT_DIRTY_FLAG_TRACKED | SNAPSHOT_DIRTY_FLAG_FULL, 100, false);
+      writer.publish();
+    }
+    const out = new Float32Array(writer.floatCount);
+    const dirtyRows = new Uint32Array(capacity);
+    const first = reader.tryReadDirty(out, 0, -1, dirtyRows)!;
+    expect(first).toMatchObject({ changed: true, full: true, serial: 2, actorCount: 100 });
+    expect(readActorSlot(out, 42).position.x).toBe(42);
+
+    // Unchanged serial returns changed: false with zero work.
+    const unchanged = reader.tryReadDirty(out, first.serial, first.actorCount, dirtyRows)!;
+    expect(unchanged.changed).toBe(false);
+
+    // Publish frame 3 moving only rows 3, 42, and 99.
+    const buf3 = writer.beginWrite();
+    const dirtyView3 = writer.writerDirtyView()!;
+    writeSnapshotDirtyMeta(dirtyView3, 3, SNAPSHOT_DIRTY_FLAG_TRACKED, 100, true);
+    for (const r of [3, 42, 99]) {
+      writeActorSlot(buf3, r, row(r, r + 500));
+      markSnapshotDirtyRow(dirtyView3, r);
+    }
+    writeSnapshotHeader(buf3, { frameId: 3, tickIndex: 3, actorCount: 100, scriptMs: 0, physicsMs: 0 });
+    writer.publish();
+
+    const inc = reader.tryReadDirty(out, first.serial, first.actorCount, dirtyRows)!;
+    expect(inc).toMatchObject({ changed: true, full: false, dirtyCount: 3, serial: 3, actorCount: 100 });
+    expect(Array.from(dirtyRows.subarray(0, inc.dirtyCount))).toEqual([3, 42, 99]);
+    expect(readActorSlot(out, 3).position.x).toBe(503);
+    expect(readActorSlot(out, 42).position.x).toBe(542);
+    expect(readActorSlot(out, 99).position.x).toBe(599);
+    // Untouched rows remain intact in `out`.
+    expect(readActorSlot(out, 50).position.x).toBe(50);
+
+    // Skipping >2 publishes forces full fallback automatically.
+    for (let pass = 4; pass <= 6; pass++) {
+      const buf = writer.beginWrite();
+      writeSnapshotDirtyMeta(writer.writerDirtyView()!, pass, SNAPSHOT_DIRTY_FLAG_TRACKED, 100, true);
+      writeSnapshotHeader(buf, { frameId: pass, tickIndex: pass, actorCount: 100, scriptMs: 0, physicsMs: 0 });
+      writer.publish();
+    }
+    const skipped = reader.tryReadDirty(out, inc.serial, inc.actorCount, dirtyRows)!;
+    expect(skipped).toMatchObject({ changed: true, full: true, serial: 6, actorCount: 100 });
   });
 });
 

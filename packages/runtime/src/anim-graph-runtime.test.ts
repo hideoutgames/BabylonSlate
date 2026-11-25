@@ -351,10 +351,11 @@ describe("AnimGraphRuntime slots", () => {
       };
       return { loader, loads };
     }
-    /** The clips the last evaluation showed. */
-    const shown = (emitted: readonly CommandMessage[]) =>
-      ((emitted.at(-1) as Extract<CommandMessage, { type: "animState" }> | undefined)?.layers ?? [])
-        .map((layer) => layer.clipAssetGuid).filter(Boolean);
+    /** The clips the last evaluation showed (structural `animState`, which `animClocks` keeps unchanged). */
+    const shown = (emitted: readonly CommandMessage[]) => {
+      const latest = [...emitted].reverse().find((command): command is Extract<CommandMessage, { type: "animState" }> => command.type === "animState");
+      return (latest?.layers ?? []).map((layer) => layer.clipAssetGuid).filter(Boolean);
+    };
     /** Records how each of a play's waits answers. */
     function outcome(runtime: AnimGraphRuntime, handle: number): string[] {
       const answers: string[] = [];
@@ -468,5 +469,60 @@ describe("AnimGraphRuntime slots", () => {
       session.tick(0.1);
       expect(shown(sessionEmitted)).toEqual([]);
     });
+  });
+
+  it("emits compact binary animClocks on steady-state ticks after the initial structural animState", () => {
+    const document = slottedGraph();
+    const { actors, emitted, runtime } = setup(document);
+    runtime.replaceAnimClipCatalog(catalog);
+    runtime.control(actors[0]!.components[0]!)!.playSlotAnimation({ ...request, loopCount: 0 });
+    runtime.tick(0.05);
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0]?.type).toBe("animState");
+
+    runtime.tick(0.05);
+    expect(emitted).toHaveLength(2);
+    const clocks = emitted[1];
+    expect(clocks?.type).toBe("animClocks");
+    if (clocks?.type !== "animClocks") throw new Error("expected animClocks");
+    // [slotId, stateNormalisedTime, layerCount, layer0Time, layer0Weight]
+    expect(clocks.data[0]).toBe(0);
+    expect(clocks.data[1]).toBeCloseTo(0.1, 5);
+    expect(clocks.data[2]).toBe(1);
+    expect(clocks.data[3]).toBeCloseTo(100 / 300, 5);
+    expect(clocks.data[4]).toBeCloseTo(1, 5);
+  });
+
+  it("culls off-screen whenVisible evaluation for side-effect-free graphs and catches up with deferredDt on re-entry", () => {
+    const document = createDefaultAnimGraph();
+    const { actors, emitted, runtime } = setup(document);
+    actors[0]!.components[0]!.setVariable("tickMode", "whenVisible");
+    // Initial tick runs while visible (default).
+    runtime.tick(0.1);
+    expect(emitted).toHaveLength(1);
+
+    // Mark slot 0 off-screen: steady-state ticks emit nothing while invisible.
+    runtime.setVisibility(new Uint32Array([0]), 0);
+    runtime.tick(0.1);
+    runtime.tick(0.1);
+    expect(emitted).toHaveLength(1);
+
+    // Return slot 0 to view: accumulated deferredDt (0.2s) + current tick (0.1s) catches phase up to 0.4s.
+    runtime.setVisibility(new Uint32Array([1]), 0);
+    runtime.tick(0.1);
+    expect(emitted).toHaveLength(2);
+    const clocks = emitted[1];
+    expect(clocks?.type).toBe("animClocks");
+    if (clocks?.type === "animClocks") expect(clocks.data[1]).toBeCloseTo(0.4, 5);
+
+    // A graph with state/clip events is never culled off-screen so notifies still fire.
+    const withEvents = createDefaultAnimGraph();
+    withEvents.stateMachine.states[0]!.events = { enter: "Started" };
+    const ev = setup(withEvents);
+    ev.actors[0]!.components[0]!.setVariable("tickMode", "whenVisible");
+    ev.runtime.tick(0.1);
+    ev.runtime.setVisibility(new Uint32Array([0]), 0);
+    ev.runtime.tick(0.1);
+    expect(ev.emitted).toHaveLength(2);
   });
 });

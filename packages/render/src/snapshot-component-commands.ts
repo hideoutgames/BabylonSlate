@@ -244,7 +244,7 @@ export function applyText2DLetterPosesCommand(binding: SnapshotSceneBinding, com
   const primary = binding.primaryComponentIds.get(command.slotId) === command.componentId && binding.meshKinds.get(command.slotId) === "2drichtext";
   if (!part && !primary) return;
   // Stored as the runtime's next assignment carries them: absent when every letter is at rest.
-  const record = (text2d: { letterPoses?: number[] } | undefined) => {
+  const record = (text2d: { letterPoses?: Float32Array | number[] } | undefined) => {
     if (!text2d) return;
     if (command.poses.length) text2d.letterPoses = command.poses;
     else delete text2d.letterPoses;

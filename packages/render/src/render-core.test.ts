@@ -4,8 +4,14 @@ import { accountedEntry, setTestTextureBudget } from "./test-support/resource-ca
 import { RenderScheduler } from "./render-scheduler";
 import { SnapshotSampler, writeSampledAudioPoses } from "./snapshot-sync";
 import {
+  SNAPSHOT_DIRTY_FLAG_FULL,
+  SNAPSHOT_DIRTY_FLAG_TRACKED,
+  SNAPSHOT_FLAG_VISIBLE,
+  SeqLockSnapshotPair,
+  markSnapshotDirtyRow,
   snapshotFloatCount,
   writeActorSlot,
+  writeSnapshotDirtyMeta,
   writeSnapshotHeader,
 } from "@haptic/bridge";
 
@@ -559,6 +565,69 @@ describe("snapshot sampler", () => {
         { slotId: 5, x: 16, y: 1, scale: { x: 1, y: 2, z: 3 } },
         { slotId: 4, x: 6, y: 1, scale: { x: 1, y: 2, z: 3 } },
       ]);
+  });
+
+  it("polls attached shared buffers and decodes only dirty rows on steady-state frames", () => {
+    const capacity = 32;
+    const pair = SeqLockSnapshotPair.create(capacity);
+    const shared = pair.sharedBuffers()!;
+    const sampler = new SnapshotSampler(capacity);
+    expect(sampler.installLayout(capacity, 0, shared)).toBe(true);
+    expect(sampler.isShared).toBe(true);
+
+    const publishFull = (frameId: number) => {
+      const buf = pair.beginWrite();
+      for (let i = 0; i < 16; i++) {
+        writeActorSlot(buf, i, {
+          slotId: i,
+          position: { x: i * 10, y: 0, z: 0 },
+          rotation: { x: 0, y: 0, z: 0, w: 1 },
+          scale: { x: 1, y: 1, z: 1 },
+          flags: SNAPSHOT_FLAG_VISIBLE,
+        });
+      }
+      writeSnapshotHeader(buf, { frameId, tickIndex: frameId, actorCount: 16, scriptMs: 0, physicsMs: 0 });
+      writeSnapshotDirtyMeta(pair.writerDirtyView()!, frameId, SNAPSHOT_DIRTY_FLAG_TRACKED | SNAPSHOT_DIRTY_FLAG_FULL, 16, false);
+      pair.publish();
+    };
+    publishFull(1);
+    publishFull(2);
+    expect(sampler.hasNewShared()).toBe(true);
+    expect(sampler.pollShared()).toBe(true);
+    expect(sampler.hasNewShared()).toBe(false);
+    const first = sampler.sample()!;
+    expect(first.full).toBe(true);
+    expect(first.actorCount).toBe(16);
+
+    // Watch writes to an untouched row to prove incremental sample does not re-decode it.
+    let untouchedWrites = 0;
+    let untouchedX = first.actors[5]!.position.x;
+    Object.defineProperty(first.actors[5]!.position, "x", {
+      get: () => untouchedX,
+      set: (value: number) => { untouchedWrites++; untouchedX = value; },
+    });
+
+    const buf3 = pair.beginWrite();
+    const dirtyView3 = pair.writerDirtyView()!;
+    writeSnapshotDirtyMeta(dirtyView3, 3, SNAPSHOT_DIRTY_FLAG_TRACKED, 16, true);
+    writeActorSlot(buf3, 2, {
+      slotId: 2,
+      position: { x: 999, y: 0, z: 0 },
+      rotation: { x: 0, y: 0, z: 0, w: 1 },
+      scale: { x: 1, y: 1, z: 1 },
+      flags: SNAPSHOT_FLAG_VISIBLE,
+    });
+    markSnapshotDirtyRow(dirtyView3, 2);
+    writeSnapshotHeader(buf3, { frameId: 3, tickIndex: 3, actorCount: 16, scriptMs: 0, physicsMs: 0 });
+    pair.publish();
+
+    expect(sampler.pollShared()).toBe(true);
+    const second = sampler.sample()!;
+    expect(second.full).toBe(false);
+    expect(second.dirtyCount).toBe(1);
+    expect(second.dirtyRows?.[0]).toBe(2);
+    expect(second.actors[2]?.position.x).toBe(999);
+    expect(untouchedWrites).toBe(0);
   });
 });
 
