@@ -7,6 +7,7 @@ import { CubeTexture, type ICubeTextureCreationOptions } from "@babylonjs/core/M
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { Constants } from "@babylonjs/core/Engines/constants";
 import { InternalTextureSource, type InternalTexture } from "@babylonjs/core/Materials/Textures/internalTexture";
+import { KhronosTextureContainer2 } from "@babylonjs/core/Misc/khronosTextureContainer2";
 import { assetByteFingerprint as contentKey } from "./asset-byte-fingerprint";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { trackMaterialTexture } from "./nearest-textures";
@@ -715,8 +716,13 @@ export class ResourceCache {
           useSRGBBuffer: false,
           mimeType: ktx2.mimeType,
           forcedExtension: ktx2.forcedExtension,
-          // A copy: the decoder may take ownership of the buffer it is given.
-          buffer: fromBuffer ? raw.slice() : undefined,
+          // Copy only when KTX2 worker threads are active (they transfer and detach the buffer)
+          // or when the view is a slice into a larger ArrayBuffer.
+          buffer: fromBuffer
+            ? (KhronosTextureContainer2.DefaultNumWorkers === 0 && raw.byteOffset === 0 && raw.byteLength === raw.buffer.byteLength
+              ? raw
+              : raw.slice())
+            : undefined,
           onLoad: preparation.onLoad, onError: preparation.onError,
         });
     } catch (error) {

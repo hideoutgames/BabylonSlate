@@ -263,4 +263,35 @@ describe("hasset codec", () => {
     const decoded = await decodeHasset(bundled);
     expect(decoded.nestedAssets.get("dep-1")).toEqual(nested);
   });
+
+  it("rejects malformed .hasset headers in structural validation", () => {
+    const valid = {
+      chunks: [{ id: "c", kind: "bin", mime: "application/octet-stream", sha256: "a".repeat(64), byteLength: 4, locator: { inline: { offset: 0, length: 4 } } }],
+      dependencies: [],
+      requiredDependencies: [],
+      dependencyMetadataVersion: 1,
+      engineVersion: "0.0.0",
+      guid: "g",
+      mode: "thin",
+      name: "N",
+      payload: {},
+      type: "Model",
+      version: 1,
+    };
+    const invalidCases: unknown[] = [
+      null,
+      [],
+      { ...valid, mode: "invalid" },
+      { ...valid, version: -1 },
+      { ...valid, payload: "not-an-object" },
+      { ...valid, dependencies: [123] },
+      { ...valid, chunks: [{ ...valid.chunks[0], byteLength: -5 }] },
+      { ...valid, chunks: [{ ...valid.chunks[0], locator: { blob: "" } }] },
+      { ...valid, chunks: [{ ...valid.chunks[0], locator: { inline: { offset: -1, length: 4 } } }] },
+      { ...valid, consoleCommand: { name: "cmd", description: "d", category: "c", parameters: [{ name: "p", type: "invalid" }] } },
+    ];
+    for (const bad of invalidCases) {
+      expect(() => readHassetHeader(rawHasset(bad as object, new Uint8Array()))).toThrow();
+    }
+  });
 });

@@ -18,12 +18,17 @@ function sortKeys(value: unknown): unknown {
   return value;
 }
 
+const HEX_LUT = Array.from({ length: 256 }, (_, byte) => byte.toString(16).padStart(2, "0"));
+
 export async function sha256Hex(data: Uint8Array): Promise<string> {
   // Asset bytes are never SharedArrayBuffer-backed (BufferSource needs ArrayBuffer).
   const digest = await crypto.subtle.digest("SHA-256", data as Uint8Array<ArrayBuffer>);
-  return [...new Uint8Array(digest)]
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
+  const bytes = new Uint8Array(digest);
+  let hex = "";
+  for (let index = 0; index < bytes.length; index++) {
+    hex += HEX_LUT[bytes[index]!]!;
+  }
+  return hex;
 }
 
 export function concatBytes(parts: Uint8Array[]): Uint8Array<ArrayBuffer> {

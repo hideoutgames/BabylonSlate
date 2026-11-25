@@ -15,6 +15,14 @@ import type {
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 
+/**
+ * Monotonic in-process write generations per resolved target path. Combined with
+ * `dev:ino:size:mtimeNs:ctimeNs`, this guarantees rapid same-size rewrites on
+ * coarse-mtime filesystems always yield distinct revisions.
+ */
+const nodeWriteRevisions = new Map<string, number>();
+let nodeWriteSequence = 0;
+
 /** Staged writes are renamed over their file; listings hide one a crash left behind. */
 
 function errorCode(error: unknown): unknown {
@@ -39,6 +47,7 @@ interface NodeRoot {
  */
 export class NodeStorageAdapter implements ProjectStorage {
   readonly speculativeRangeReads = true;
+  readonly hasStrongSourceRevisions = true;
   private readonly reads = new StorageReadCounter();
   getReadMetrics() { return this.reads.snapshot(); }
 
@@ -211,22 +220,28 @@ export class NodeStorageAdapter implements ProjectStorage {
     const handle = await open(full, "r").catch((error: unknown) => { throw nodeStorageError(error, path); });
     let actualBytesRead = 0;
     try {
+      const target = await realpath(full).catch(() => full);
+      const beforeGen = nodeWriteRevisions.get(target) ?? 0;
       const before = await handle.stat({ bigint: true });
       if (!before.isFile()) throw new Error(`Not a file: ${path}`);
-      const revisionOf = (value: typeof before) => `${value.dev}:${value.ino}:${value.size}:${value.mtimeNs}:${value.ctimeNs}`;
-      const revision = revisionOf(before);
+      const revisionOf = (value: typeof before, gen: number) => `${value.dev}:${value.ino}:${value.size}:${value.mtimeNs}:${value.ctimeNs}:${gen}`;
+      const revision = revisionOf(before, beforeGen);
       checkStorageRevision(path, revision, expectedRevision);
       const totalSize = Number(before.size);
       validateStorageRange(offset, length, totalSize);
+      if (length === 0) {
+        return { bytes: new Uint8Array(0), totalSize, revision, actualBytesRead: 0 };
+      }
       const bytes = new Uint8Array(length);
       while (actualBytesRead < length) {
         const read = await handle.read(bytes, actualBytesRead, length - actualBytesRead, offset + actualBytesRead);
         if (read.bytesRead === 0) throw new Error(`Unexpected end of file: ${path}`);
         actualBytesRead += read.bytesRead;
       }
-      checkStorageRevision(path, revisionOf(await handle.stat({ bigint: true })), revision);
+      const afterGen = nodeWriteRevisions.get(target) ?? 0;
+      checkStorageRevision(path, revisionOf(await handle.stat({ bigint: true }), afterGen), revision);
       // An atomic replacement leaves the old descriptor valid; reject it too.
-      checkStorageRevision(path, revisionOf(await stat(full, { bigint: true })), revision);
+      checkStorageRevision(path, revisionOf(await stat(full, { bigint: true }), afterGen), revision);
       return { bytes, totalSize, revision, actualBytesRead };
     } catch (error) {
       throw Object.assign(error instanceof Error ? error : new Error(String(error)), { actualBytesRead });
@@ -255,6 +270,7 @@ export class NodeStorageAdapter implements ProjectStorage {
         await file.close();
       }
       await rename(staged, target);
+      nodeWriteRevisions.set(target, ++nodeWriteSequence);
     } catch (error) {
       await unlink(staged).catch(() => {});
       throw error;

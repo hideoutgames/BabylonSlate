@@ -144,6 +144,7 @@ const textEncoder = new TextEncoder();
  */
 export class DocumentsStorageAdapter implements ProjectStorage {
   readonly speculativeRangeReads = true;
+  readonly hasStrongSourceRevisions = true;
   private readonly reads = new StorageReadCounter();
   getReadMetrics() { return this.reads.snapshot(); }
   private folder: ProjectFolderHandle | null = null;
