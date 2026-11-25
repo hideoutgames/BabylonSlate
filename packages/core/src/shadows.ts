@@ -76,7 +76,7 @@ export const SHADOW_PROFILES = {
     distance: 250,
     mapSize: 2048,
     cascades: 3,
-    filterQuality: "high",
+    filterQuality: "medium",
     localMapSize: 1024,
     maxLocalLights: 2,
   },

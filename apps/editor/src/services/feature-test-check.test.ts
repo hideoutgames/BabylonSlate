@@ -518,7 +518,7 @@ describe("runFeatureTestCheck", () => {
     });
     const measured = report.scenes[0]!.play.benchmark.filter((sample) => !sample.warmup);
     expect(measured.filter((sample) => !sample.baseline).map((sample) => sample.label)).toEqual([
-      "MSAA 2x", "MSAA 4x", "AA fxaa", "shadow filter high", "post-processing", "AO", "SSR", "water detail medium", "water detail high",
+      "MSAA 2x", "MSAA 4x", "AA fxaa", "shadow filter medium", "post-processing", "AO", "SSR", "water detail medium", "water detail high",
       "water refraction", "screen-space water reflection", "planar water reflection", "captures", "resolution 0.85",
     ]);
     const base = FEATURE_TEST_BREAKDOWN_BASES["add-one"].commands;
@@ -556,19 +556,20 @@ describe("runFeatureTestCheck", () => {
     const measured = report.scenes[0]!.play.benchmark.filter((sample) => !sample.warmup);
     const skipped = measured.filter((sample) => sample.skipped);
     expect(skipped.map((sample) => [sample.label, sample.skipped])).toEqual([
-      ["shadows medium", "already shadows medium 2048, shadows.filter high"],
+      ["shadows medium", "already shadows medium 2048, shadows.filter medium"],
+      ["shadow filter medium", "already shadows.filter medium"],
       ["water detail medium", "already water.shadingDetail medium, water.fft 64x3"],
       ["volumetrics off", "already post.volumetricLighting false"],
       ["MSAA 2x", "already post.antiAliasing msaa2, post.samples 2"],
     ]);
     expect(skipped.every((sample) => sample.frames === null)).toBe(true);
-    // The filter step changes the fingerprint now, so it is measured.
-    expect(measured.find((sample) => sample.label === "shadow filter medium")).toMatchObject({ settings: { "shadows.filter": "medium" } });
-    expect(measured.find((sample) => sample.label === "shadow filter medium")!.skipped).toBeUndefined();
-    // shadows off, its baseline, the skipped step, then straight to the next step: the baseline before it is adjacent.
+    // The water refraction step changes the fingerprint, so it is measured.
+    expect(measured.find((sample) => sample.label === "water refraction off")).toMatchObject({ settings: { "water.refraction": "false" } });
+    expect(measured.find((sample) => sample.label === "water refraction off")!.skipped).toBeUndefined();
+    // shadows off, its baseline, the two skipped steps, then straight to the next measured step: the baseline before them is adjacent.
     const labels = measured.map((sample) => sample.label);
-    expect(labels.slice(labels.indexOf("shadows off"), labels.indexOf("shadows off") + 5))
-      .toEqual(["shadows off", "baseline 2", "shadows medium", "shadow filter medium", "baseline 4"]);
+    expect(labels.slice(labels.indexOf("shadows off"), labels.indexOf("shadows off") + 6))
+      .toEqual(["shadows off", "baseline 2", "shadows medium", "shadow filter medium", "water refraction off", "baseline 5"]);
     expect(editor.sampled.length).toBe(report.scenes[0]!.play.benchmark.filter((sample) => !sample.skipped).length + 2);
   });
 
@@ -724,10 +725,10 @@ describe("breakdown settling", () => {
       await deps.sleep(ms, signal);
     } };
     const report = await runFeatureTestCheck({ mode: "breakdown", scenes: [scene("FT_World")], deps: tracked, signal: new AbortController().signal });
-    const sampledAt = editor.sampled.find((sample) => sample.after === "quality shadows filter high")!.now;
+    const sampledAt = editor.sampled.find((sample) => sample.after === "quality shadows filter medium")!.now;
     // 12 s of first draws and compiles, then the 3 s quiet time.
-    expect(sampledAt - issued.get("quality shadows filter high")!).toBeGreaterThanOrEqual(15_000);
-    const shadows = report.scenes[0]!.play.benchmark.find((sample) => sample.label === "shadow filter high")!;
+    expect(sampledAt - issued.get("quality shadows filter medium")!).toBeGreaterThanOrEqual(15_000);
+    const shadows = report.scenes[0]!.play.benchmark.find((sample) => sample.label === "shadow filter medium")!;
     expect(shadows.unsettled).toMatchObject({ firstDraws: 0, compiling: 0 });
     // 12 s busy, then the 3 s quiet time, within one 250 ms poll.
     expect(shadows.unsettled!.settleMs).toBeGreaterThanOrEqual(14_750);
@@ -1165,8 +1166,8 @@ describe("frame pacing", () => {
   });
 
   it("changes, with every Breakdown step, only that step's fingerprint fields, or skips it where the base already holds its value", () => {
-    // At Medium, Medium's shadows, water detail and volumetrics already hold; the add-one base turns every feature off.
-    const expectedSkips = { "remove-one": ["shadows medium", "water detail medium", "volumetrics off", "MSAA 2x"], "add-one": [] as string[], water: [] as string[],
+    // At Medium, Medium's shadows, shadow filter, water detail, volumetrics and MSAA 2x already hold; the add-one base turns every feature off.
+    const expectedSkips = { "remove-one": ["shadows medium", "shadow filter medium", "water detail medium", "volumetrics off", "MSAA 2x"], "add-one": [] as string[], water: [] as string[],
       // Medium draws neither screen-space nor reflection shadows.
       shadows: ["screen-space shadows off", "reflection shadows off"],
     };

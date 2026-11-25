@@ -1,3 +1,7 @@
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
+import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
+import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import { ParticleSystem } from "@babylonjs/core/Particles/particleSystem";
 import { Scene } from "@babylonjs/core/scene";
@@ -7,6 +11,7 @@ import {
   RENDERING_GROUP,
   applySortingToMesh,
   applySortingToParticleSystem,
+  compareOpaqueDraws,
   particleDrawOrderRevision,
   renderingGroupForLayer,
   resolveSortingLayer,
@@ -69,5 +74,38 @@ describe("applySorting", () => {
     expect(particleDrawOrderRevision(scene)).not.toBe(before);
     scene.dispose();
     engine.dispose();
+  });
+
+  it("sorts opaque draws by material first and front-to-back within each material", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    try {
+      const camera = new FreeCamera("cam", new Vector3(0, 0, 0), scene);
+      scene.activeCamera = camera;
+      camera.computeWorldMatrix();
+      const matA = new StandardMaterial("matA", scene);
+      const matB = new StandardMaterial("matB", scene);
+      const farA = MeshBuilder.CreateBox("farA", { size: 1 }, scene);
+      farA.material = matA;
+      farA.position.set(0, 0, 20);
+      const nearA = MeshBuilder.CreateBox("nearA", { size: 1 }, scene);
+      nearA.material = matA;
+      nearA.position.set(0, 0, 4);
+      const midB = MeshBuilder.CreateBox("midB", { size: 1 }, scene);
+      midB.material = matB;
+      midB.position.set(0, 0, 10);
+      for (const mesh of [farA, nearA, midB]) mesh.computeWorldMatrix(true);
+      const subMeshes = [farA.subMeshes[0]!, midB.subMeshes[0]!, nearA.subMeshes[0]!];
+      subMeshes.sort(compareOpaqueDraws);
+      expect(subMeshes.map((sub) => sub.getMesh().name)).toEqual(["nearA", "farA", "midB"]);
+      // Unlit 2D/HUD scenes keep creation order instead of reordering coplanar quads by distance.
+      scene.lightsEnabled = false;
+      const hudMeshes = [farA.subMeshes[0]!, nearA.subMeshes[0]!];
+      hudMeshes.sort(compareOpaqueDraws);
+      expect(hudMeshes.map((sub) => sub.getMesh().name)).toEqual(["farA", "nearA"]);
+    } finally {
+      scene.dispose();
+      engine.dispose();
+    }
   });
 });

@@ -4,9 +4,10 @@ import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import { Scene } from "@babylonjs/core/scene";
 import { ShaderStore } from "@babylonjs/core/Engines/shaderStore";
-import { Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Matrix, Vector3, Vector4 } from "@babylonjs/core/Maths/math.vector";
 import type { WebGLPipelineContext } from "@babylonjs/core/Engines/WebGL/webGLPipelineContext";
 import { DEFAULT_RENDER_EFFECTS, normalizeRenderingQuality, qualityPresetPatch } from "@haptic/core";
+import { projectionUnprojectParams } from "./ambient-occlusion-shader";
 import { EffectCompileFailure } from "./effect-compile-failure";
 import { sceneRenderingSettings, updateSceneRenderingSettings } from "./render-settings";
 import { createSpatialStages, type SpatialStage } from "./spatial-effects";
@@ -202,4 +203,42 @@ it("gives the orthographic reflection compose the parallel view direction and th
   // Babylon's view-position helper (`computeViewPosFromUVDepth`): depth is linear in an orthographic projection.
   expect(orthographic).toMatch(/ndc\.z\s*=\s*projection\[2\]\.z\s*\*\s*depth\s*\+\s*projection\[3\]\.z/);
   expect(perspective).toMatch(/ndc\.z\s*=\s*projection\[2\]\.z\s*\+\s*projection\[3\]\.z\s*\/\s*depth/);
+});
+
+it("matches full matrix inverse unprojection and projection for perspective and orthographic frustums", () => {
+  const offCenterPersp = Matrix.PerspectiveFovLH(0.9, 16 / 9, 0.1, 200);
+  offCenterPersp.setRowFromFloats(2, 0.25, -0.15, offCenterPersp.m[10]!, offCenterPersp.m[11]!);
+  const cases: Array<{ name: string; matrix: Matrix; ortho: boolean; rh: boolean }> = [
+    { name: "perspective LH", matrix: Matrix.PerspectiveFovLH(0.9, 16 / 9, 0.1, 200), ortho: false, rh: false },
+    { name: "perspective RH", matrix: Matrix.PerspectiveFovRH(1.1, 4 / 3, 0.2, 500), ortho: false, rh: true },
+    { name: "perspective off-center LH", matrix: offCenterPersp, ortho: false, rh: false },
+    { name: "ortho LH", matrix: Matrix.OrthoLH(12, 8, 0.1, 100), ortho: true, rh: false },
+    { name: "ortho RH", matrix: Matrix.OrthoOffCenterRH(-6, 6, -4, 4, 0.1, 100), ortho: true, rh: true },
+    { name: "ortho off-center LH", matrix: Matrix.OrthoOffCenterLH(-3, 9, -2, 6, 0.1, 100), ortho: true, rh: false },
+    { name: "ortho off-center RH", matrix: Matrix.OrthoOffCenterRH(-3, 9, -2, 6, 0.1, 100), ortho: true, rh: true },
+  ];
+  for (const { name, matrix, ortho, rh } of cases) {
+    const inv = matrix.clone().invert();
+    const { unproject, project, zSign } = projectionUnprojectParams(matrix, ortho, rh);
+    for (const [u, v, depth] of [[0.15, 0.25, 1.5], [0.5, 0.5, 12], [0.87, 0.73, 42]] as const) {
+      const ndc = new Vector3(u * 2 - 1, v * 2 - 1, 0.5);
+      const ref4 = Vector4.TransformCoordinates(ndc, inv);
+      const refRay = new Vector3(ref4.x / ref4.w, ref4.y / ref4.w, ref4.z / ref4.w);
+      const expected = ortho
+        ? new Vector3(refRay.x, refRay.y, depth * (rh ? -1 : 1))
+        : refRay.scale(depth / Math.abs(refRay.z));
+      const xyX = u * unproject[0] + unproject[2];
+      const xyY = v * unproject[1] + unproject[3];
+      const actual = new Vector3(ortho ? xyX : xyX * depth, ortho ? xyY : xyY * depth, depth * zSign);
+      expect(actual.x, `${name} x`).toBeCloseTo(expected.x, 4);
+      expect(actual.y, `${name} y`).toBeCloseTo(expected.y, 4);
+      expect(actual.z, `${name} z`).toBeCloseTo(expected.z, 4);
+
+      const clipW = ortho ? 1 : actual.z * zSign;
+      const projU = (ortho ? actual.x : actual.x / clipW) * project[0] + project[2];
+      const projV = (ortho ? actual.y : actual.y / clipW) * project[1] + project[3];
+      expect(projU, `${name} roundtrip u`).toBeCloseTo(u, 4);
+      expect(projV, `${name} roundtrip v`).toBeCloseTo(v, 4);
+    }
+  }
 });

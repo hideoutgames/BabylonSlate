@@ -178,6 +178,8 @@ export function bindVolumetricLights(
             ? light.transformedDirection
             : light.direction
           : Vector3.Forward();
+      const dirLen = Math.hypot(direction.x, direction.y, direction.z);
+      const invDirLen = dirLen > 1e-6 ? 1 / dirLen : 0;
       effect.setFloat4(
         `volumePosition${i}`,
         position.x,
@@ -187,9 +189,9 @@ export function bindVolumetricLights(
       );
       effect.setFloat4(
         `volumeDirection${i}`,
-        direction.x,
-        direction.y,
-        direction.z,
+        invDirLen > 0 ? direction.x * invDirLen : 0,
+        invDirLen > 0 ? direction.y * invDirLen : 0,
+        invDirLen > 0 ? direction.z * invDirLen : 1,
         spot ? Math.cos(light.angle / 2) : -1,
       );
       const intensity = light.isEnabled() ? light.getScaledIntensity() : 0;

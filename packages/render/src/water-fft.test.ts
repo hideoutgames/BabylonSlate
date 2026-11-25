@@ -11,7 +11,13 @@ import {
 } from "@haptic/core";
 import { limitManagedRenderBytes, managedRenderReservations } from "./managed-render-resources";
 import { sceneWaterQualityDeviceClamp, updateSceneRenderingSettings } from "./render-settings";
-import { WATER_FFT_IDLE_RUNS, WATER_FFT_MAX_SIMULATIONS, waterFftDiagnostics, waterFftForSurface } from "./water-fft";
+import {
+  WATER_FFT_IDLE_RUNS,
+  WATER_FFT_MAX_SIMULATIONS,
+  buildWaterFftTwiddleData,
+  waterFftDiagnostics,
+  waterFftForSurface,
+} from "./water-fft";
 import { WATER_FFT_BUILD_TEXELS, waterSpectrumLayout } from "./water-fft-spectrum";
 import { createWaterMesh, setSceneWaterTime, updateSceneWater } from "./water-mesh";
 import { meshWaterNodeSurface } from "./water-node-blocks";
@@ -318,4 +324,27 @@ it("keeps water flat when the managed ledger cannot admit the spectrum, retries 
   await untilReady(engine, scene, [a.water, b.water], b.water);
   expect(waterFftDiagnostics(scene)).toMatchObject({ created: 1, denied: 1, respectrummed: 1, simulations: [{}] });
   expect(managedRenderReservations(engine).categoryBytes.water).toBe(footprint(64, 1));
+});
+
+it("precomputes exact Stockham butterfly twiddle factors and partner indices for every supported FFT size", () => {
+  for (const size of [64, 128, 256]) {
+    const stages = Math.round(Math.log2(size));
+    const data = buildWaterFftTwiddleData(size);
+    expect(data.length).toBe(size * stages * 4);
+    for (let stage = 0; stage < stages; stage++) {
+      const span = 1 << stage;
+      for (let i = 0; i < size; i++) {
+        const block = Math.floor(i / (2 * span));
+        const pos = i - block * 2 * span;
+        const k = pos >= span ? pos - span : pos;
+        const j = block * span + k;
+        const angle = (Math.PI * k) / span;
+        const dir = pos >= span ? -1 : 1;
+        const at = (stage * size + i) * 4;
+        expect(data[at]).toBeCloseTo(dir * Math.cos(angle), 5);
+        expect(data[at + 1]).toBeCloseTo(dir * Math.sin(angle), 5);
+        expect(data[at + 2]).toBe(j);
+      }
+    }
+  }
 });

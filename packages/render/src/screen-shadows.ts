@@ -4,12 +4,13 @@ import type { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
 import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
 import { ThinTexture } from "@babylonjs/core/Materials/Textures/thinTexture";
 import type { Effect } from "@babylonjs/core/Materials/effect";
-import { Matrix, Vector3 } from "@babylonjs/core/Maths/math.vector";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { Scene } from "@babylonjs/core/scene";
 import type { FrameGraph } from "@babylonjs/core/FrameGraph/frameGraph";
 import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGraphTypes";
 import { FrameGraphPostProcessTask } from "@babylonjs/core/FrameGraph/Tasks/PostProcesses/postProcessTask";
 import type { ScreenShadowsQuality } from "@haptic/core";
+import { projectionUnprojectParams } from "./ambient-occlusion-shader";
 import type { EffectCompileFailure } from "./effect-compile-failure";
 import { hapticShadowedSun } from "./haptic-lights";
 import { retireOwnedEffect, type OwnedEffectRetirement } from "./owned-effect-retirement";
@@ -65,7 +66,7 @@ function screenShadowsShader(): string {
   const header = `varying vec2 vUV;
 uniform sampler2D depthSampler;
 uniform mat4 ssProjection;
-uniform mat4 ssInverseProjection;
+uniform vec4 ssUnproject;
 uniform vec4 ssSun;
 uniform vec4 ssMarch;
 uniform vec4 ssFade;
@@ -74,22 +75,22 @@ uniform vec4 ssCascadeEnds;
 uniform vec4 ssCascadeCaps;
 `;
   const functions = `// The view-space point the depth texel at \`pixel\` shows (on the ray through its centre), and that depth.
-vec3 ssPoint(ivec2 pixel, ivec2 size, out float depth) {
+vec3 ssPoint(ivec2 pixel, ivec2 size, vec2 invSize, out float depth) {
   pixel = clamp(pixel, ivec2(0), size - ivec2(1));
   depth = abs(texelFetch(depthSampler, pixel, 0).r);
-  vec4 unprojected = ssInverseProjection * vec4((vec2(pixel) + 0.5) / vec2(size) * 2.0 - 1.0, 0.5, 1.0);
-  vec3 ray = unprojected.xyz / unprojected.w;
-  return ray * (depth / max(abs(ray.z), 0.000001));
+  vec2 uv = (vec2(pixel) + 0.5) * invSize;
+  return vec3((uv * ssUnproject.xy + ssUnproject.zw) * depth, depth * ssMarch.w);
 }
 `;
   const body = `  ivec2 size = textureSize(depthSampler, 0);
+  vec2 invSize = 1.0 / vec2(size);
   ivec2 corner = ivec2(gl_FragCoord.xy) * ${SCREEN_SHADOW_SCALE};
   vec3 points[4];
   float depths[4];
   int marched = -1;
   float farthest = -1.0;
   for (int i = 0; i < 4; i++) {
-    points[i] = ssPoint(corner + ivec2(i % 2, i / 2), size, depths[i]);
+    points[i] = ssPoint(corner + ivec2(i % 2, i / 2), size, invSize, depths[i]);
     float eye = depths[i] > 0.000001 ? length(points[i]) : -1.0;
     if (eye > farthest) { farthest = eye; marched = i; }
   }
@@ -101,8 +102,8 @@ vec3 ssPoint(ivec2 pixel, ivec2 size, out float depth) {
   // The surface's plane from the depth two pixels to each side, each axis toward the side nearer in depth (the same
   // face); one pixel's difference of a coarse depth is noisy.
   float leftDepth, rightDepth, downDepth, upDepth;
-  vec3 left = ssPoint(origin - ivec2(2, 0), size, leftDepth), right = ssPoint(origin + ivec2(2, 0), size, rightDepth);
-  vec3 down = ssPoint(origin - ivec2(0, 2), size, downDepth), up = ssPoint(origin + ivec2(0, 2), size, upDepth);
+  vec3 left = ssPoint(origin - ivec2(2, 0), size, invSize, leftDepth), right = ssPoint(origin + ivec2(2, 0), size, invSize, rightDepth);
+  vec3 down = ssPoint(origin - ivec2(0, 2), size, invSize, downDepth), up = ssPoint(origin + ivec2(0, 2), size, invSize, upDepth);
   vec3 dx = abs(rightDepth - depth) < abs(leftDepth - depth) ? right - P : P - left;
   vec3 dy = abs(upDepth - depth) < abs(downDepth - depth) ? up - P : P - down;
   vec3 N = cross(dx, dy);
@@ -137,28 +138,37 @@ vec3 ssPoint(ivec2 pixel, ivec2 size, out float depth) {
   if (depth <= ends.z) { cap = caps.z; }
   if (depth <= ends.y) { cap = caps.y; }
   if (depth <= ends.x) { cap = caps.x; }
-  float stepDepth = abs(L.z) * reach / ssMarch.x;
+  float invSteps = 1.0 / ssMarch.x;
+  float stepDepth = abs(L.z) * reach * invSteps;
   float thickness = min(0.15 + 0.02 * depth, bias + max(stepDepth, cap));
   vec3 start = P + L * (1.5 * footprint);
   vec2 pixel = floor(vUV / ssTexel);
   float dither = fract(52.9829189 * fract(dot(pixel, vec2(0.06711056, 0.00583715))));
+  vec4 clipStart4 = ssProjection * vec4(start, 1.0);
+  vec4 clipEnd4 = ssProjection * vec4(start + L * reach, 1.0);
+  vec3 clipStart = vec3(clipStart4.xy, clipStart4.w);
+  vec3 clipDelta = (vec3(clipEnd4.xy, clipEnd4.w) - clipStart) * invSteps;
+  vec3 clip = clipStart + clipDelta * dither;
+  float qzDelta = L.z * reach * invSteps;
+  float qz = start.z + qzDelta * dither;
+  float frac = dither * invSteps;
   float occlusion = 0.0;
   for (int i = 0; i < ${MAX_STEPS}; i++) {
     if (float(i) >= ssMarch.x) { break; }
-    float t = (float(i) + dither) / ssMarch.x * reach;
-    vec3 q = start + L * t;
-    vec4 clip = ssProjection * vec4(q, 1.0);
-    if (clip.w <= 0.0) { break; }
-    vec2 at = clip.xy / clip.w * 0.5 + 0.5;
+    if (clip.z <= 0.0) { break; }
+    vec2 at = clip.xy / clip.z * 0.5 + 0.5;
     if (at.x < 0.0 || at.y < 0.0 || at.x > 1.0 || at.y > 1.0) { break; }
     vec2 stored = texture2D(depthSampler, at).rg;
     float scene = abs(stored.x);
-    float delta = abs(q.z) - scene;
+    float delta = abs(qz) - scene;
     // Only a shadow caster's pixel occludes (the geometry pass's caster mark, G).
     if (stored.y > 0.5 && scene > 0.000001 && delta > bias && delta < thickness) {
       float edge = min(min(at.x, 1.0 - at.x), min(at.y, 1.0 - at.y));
-      occlusion = max(occlusion, (1.0 - 0.5 * t / reach) * clamp(edge * 20.0, 0.0, 1.0));
+      occlusion = max(occlusion, (1.0 - 0.5 * frac) * clamp(edge * 20.0, 0.0, 1.0));
     }
+    clip += clipDelta;
+    qz += qzDelta;
+    frac += invSteps;
   }
   float fade = 1.0 - smoothstep(ssFade.x, ssFade.y, eye);
   ${last("vec4(1.0 - occlusion * fade, eye, info, otherEye)")}
@@ -288,7 +298,7 @@ export class ScreenShadowsGraph {
     this.scene = scene;
     this.camera = camera;
     const wrapper = customWrapper(scene, "Screen shadows", screenShadowsShader(),
-      ["ssProjection", "ssInverseProjection", "ssSun", "ssMarch", "ssFade", "ssTexel", "ssCascadeEnds", "ssCascadeCaps"], ["depthSampler"], failure);
+      ["ssProjection", "ssUnproject", "ssSun", "ssMarch", "ssFade", "ssTexel", "ssCascadeEnds", "ssCascadeCaps"], ["depthSampler"], failure);
     const marchWidth = Math.ceil(width / SCREEN_SHADOW_SCALE), marchHeight = Math.ceil(height / SCREEN_SHADOW_SCALE);
     this.output = graph.textureManager.createRenderTargetTexture("Screen shadows", {
       size: { width: marchWidth, height: marchHeight },
@@ -301,13 +311,12 @@ export class ScreenShadowsGraph {
         useSRGBBuffers: [false],
       },
     });
-    const inverse = new Matrix();
     const toSun = new Vector3();
     this.task = new ScreenShadowsTask(graph, wrapper, { depthSampler: depth }, (effect) => {
       const projection = camera.getProjectionMatrix();
-      projection.invertToRef(inverse);
+      const { unproject, zSign } = projectionUnprojectParams(projection, false, scene.useRightHandedSystem);
       effect.setMatrix("ssProjection", projection);
-      effect.setMatrix("ssInverseProjection", inverse);
+      effect.setFloat4("ssUnproject", unproject[0], unproject[1], unproject[2], unproject[3]);
       const sun = hapticShadowedSun(scene);
       if (sun && camera.mode === Camera.PERSPECTIVE_CAMERA) {
         const direction = sun.computeTransformedInformation() ? sun.transformedDirection : sun.direction;
@@ -320,7 +329,7 @@ export class ScreenShadowsGraph {
       effect.setFloat4("ssCascadeEnds", ends[0], ends[1], ends[2], ends[3]);
       effect.setFloat4("ssCascadeCaps", reach[0], reach[1], reach[2], reach[3]);
       const settings = SCREEN_SHADOW_LEVELS[sceneRenderingSettings(scene).effectsPlan?.screenShadows ?? level];
-      effect.setFloat4("ssMarch", settings.steps, settings.pixels, settings.length, 0);
+      effect.setFloat4("ssMarch", settings.steps, settings.pixels, settings.length, zSign);
       effect.setFloat4("ssFade", settings.fadeStart, settings.fadeEnd, height * Math.abs(projection.m[5]!), 0);
       effect.setFloat2("ssTexel", 1 / marchWidth, 1 / marchHeight);
     });

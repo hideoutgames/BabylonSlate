@@ -782,7 +782,7 @@ describe("syncAuthoredIllumination", () => {
     const generator = key.getShadowGenerator() as AtlasCascadedShadowGenerator;
     expect(generator).toBeInstanceOf(AtlasCascadedShadowGenerator);
     expect(generator.usePercentageCloserFiltering).toBe(true);
-    expect(generator.filteringQuality).toBe(ShadowGenerator.QUALITY_HIGH);
+    expect(generator.filteringQuality).toBe(ShadowGenerator.QUALITY_MEDIUM);
     expect(generator.bias).toBeCloseTo(0.0001);
     expect(generator.normalBias).toBeCloseTo(0.005);
     expect(generator.frustumEdgeFalloff).toBe(0);
@@ -793,7 +793,7 @@ describe("syncAuthoredIllumination", () => {
     expect(key.customProjectionMatrixBuilder).toBeUndefined();
     for (const [filterQuality, expected] of [
       ["low", ShadowGenerator.QUALITY_LOW],
-      ["medium", ShadowGenerator.QUALITY_MEDIUM],
+      ["high", ShadowGenerator.QUALITY_HIGH],
     ] as const) {
       setSceneRenderSettings(scene, {
         shadows: normalizeShadowSettings({ filterQuality }),
