@@ -1,4 +1,3 @@
-import { z } from "zod";
 import {
   concatBytes,
   readU32LE,
@@ -17,50 +16,197 @@ export const MAX_HASSET_HEADER_BYTES = 16 * 1024 * 1024;
 /** Chunks at or above this size externalise to the blob store in thin mode. */
 export const DEFAULT_BLOB_THRESHOLD = 64 * 1024;
 
-const chunkLocatorSchema = z.union([
-  z.object({
-    inline: z.object({ offset: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER), length: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER) }),
-  }),
-  z.object({ blob: z.string().min(1) }),
-]);
+export type ChunkLocator =
+  | { inline: { offset: number; length: number } }
+  | { blob: string };
 
-const chunkEntrySchema = z.object({
-  id: z.string(),
-  kind: z.string(),
-  mime: z.string(),
-  sha256: z.string(),
-  byteLength: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
-  locator: chunkLocatorSchema,
-});
+export interface ChunkEntry {
+  id: string;
+  kind: string;
+  mime: string;
+  sha256: string;
+  byteLength: number;
+  locator: ChunkLocator;
+}
 
-const hassetHeaderSchema = z.object({
-  chunks: z.array(chunkEntrySchema),
-  dependencies: z.array(z.string()),
+export interface HassetConsoleCommandParameter {
+  name: string;
+  type: "string" | "float" | "int" | "bool" | "enum";
+  optional?: boolean;
+  defaultValue?: unknown;
+  enumValues?: string[];
+}
+
+export interface HassetConsoleCommandMetadata {
+  name: string;
+  description: string;
+  category: string;
+  parameters: HassetConsoleCommandParameter[];
+}
+
+export interface HassetHeader {
+  chunks: ChunkEntry[];
+  dependencies: string[];
   /** Complete references above; only these edges prepare an immediate consumer. */
-  requiredDependencies: z.array(z.string()),
+  requiredDependencies: string[];
   /** Class properties consumed by synchronous graph readers; applies to instance overrides. */
-  requiredVariableNames: z.array(z.string()).optional(),
-  classReferences: z.array(z.string()).optional(),
-  requiredClassReferences: z.array(z.string()).optional(),
-  consoleCommand: z.object({
-    name: z.string(), description: z.string(), category: z.string(),
-    parameters: z.array(z.object({ name: z.string(), type: z.enum(["string", "float", "int", "bool", "enum"]),
-      optional: z.boolean().optional(), defaultValue: z.unknown().optional(), enumValues: z.array(z.string()).optional() })),
-  }).optional(),
+  requiredVariableNames?: string[];
+  classReferences?: string[];
+  requiredClassReferences?: string[];
+  consoleCommand?: HassetConsoleCommandMetadata;
   /** Always {@link ASSET_DEPENDENCY_METADATA_VERSION}; other values are refused. */
-  dependencyMetadataVersion: z.number().int().nonnegative(),
-  engineVersion: z.string(),
-  guid: z.string(),
-  mode: z.enum(["thin", "bundled"]).default("thin"),
-  name: z.string(),
-  parentClass: z.string().nullable().optional(),
-  payload: z.record(z.string(), z.unknown()).default({}),
-  type: z.string(),
-  version: z.number().int().nonnegative(),
-});
+  dependencyMetadataVersion: number;
+  engineVersion: string;
+  guid: string;
+  mode: "thin" | "bundled";
+  name: string;
+  parentClass?: string | null;
+  payload: Record<string, unknown>;
+  type: string;
+  version: number;
+}
 
-export type HassetHeader = z.infer<typeof hassetHeaderSchema>;
-export type ChunkEntry = z.infer<typeof chunkEntrySchema>;
+const CONSOLE_PARAM_TYPES = new Set(["string", "float", "int", "bool", "enum"]);
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isNonNegativeSafeInt(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+function assertString(value: unknown, label: string): string {
+  if (typeof value !== "string") throw new Error(`Invalid .hasset header: ${label} must be a string`);
+  return value;
+}
+
+function assertStringArray(value: unknown, label: string): string[] {
+  if (!Array.isArray(value)) throw new Error(`Invalid .hasset header: ${label} must be an array`);
+  for (let i = 0; i < value.length; i++) {
+    if (typeof value[i] !== "string") throw new Error(`Invalid .hasset header: ${label}[${i}] must be a string`);
+  }
+  return value as string[];
+}
+
+function validateChunkEntry(raw: unknown, index: number): ChunkEntry {
+  if (!isPlainRecord(raw)) throw new Error(`Invalid .hasset header: chunks[${index}] must be an object`);
+  const id = assertString(raw.id, `chunks[${index}].id`);
+  const kind = assertString(raw.kind, `chunks[${index}].kind`);
+  const mime = assertString(raw.mime, `chunks[${index}].mime`);
+  const sha256 = assertString(raw.sha256, `chunks[${index}].sha256`);
+  if (!isNonNegativeSafeInt(raw.byteLength)) {
+    throw new Error(`Invalid .hasset header: chunks[${index}].byteLength must be a non-negative integer`);
+  }
+  const loc = raw.locator;
+  if (!isPlainRecord(loc)) throw new Error(`Invalid .hasset header: chunks[${index}].locator must be an object`);
+  let locator: ChunkLocator;
+  if ("inline" in loc && isPlainRecord(loc.inline)) {
+    if (!isNonNegativeSafeInt(loc.inline.offset) || !isNonNegativeSafeInt(loc.inline.length)) {
+      throw new Error(`Invalid .hasset header: chunks[${index}].locator.inline must have non-negative integer offset and length`);
+    }
+    locator = { inline: { offset: loc.inline.offset, length: loc.inline.length } };
+  } else if ("blob" in loc && typeof loc.blob === "string" && loc.blob.length > 0) {
+    locator = { blob: loc.blob };
+  } else {
+    throw new Error(`Invalid .hasset header: chunks[${index}].locator must be inline or non-empty blob`);
+  }
+  return { id, kind, mime, sha256, byteLength: raw.byteLength, locator };
+}
+
+function validateConsoleCommand(raw: unknown): HassetConsoleCommandMetadata {
+  if (!isPlainRecord(raw)) throw new Error("Invalid .hasset header: consoleCommand must be an object");
+  const name = assertString(raw.name, "consoleCommand.name");
+  const description = assertString(raw.description, "consoleCommand.description");
+  const category = assertString(raw.category, "consoleCommand.category");
+  if (!Array.isArray(raw.parameters)) throw new Error("Invalid .hasset header: consoleCommand.parameters must be an array");
+  const parameters: HassetConsoleCommandParameter[] = [];
+  for (let i = 0; i < raw.parameters.length; i++) {
+    const param = raw.parameters[i];
+    if (!isPlainRecord(param)) throw new Error(`Invalid .hasset header: consoleCommand.parameters[${i}] must be an object`);
+    const pName = assertString(param.name, `consoleCommand.parameters[${i}].name`);
+    if (typeof param.type !== "string" || !CONSOLE_PARAM_TYPES.has(param.type)) {
+      throw new Error(`Invalid .hasset header: consoleCommand.parameters[${i}].type is invalid`);
+    }
+    if (param.optional !== undefined && typeof param.optional !== "boolean") {
+      throw new Error(`Invalid .hasset header: consoleCommand.parameters[${i}].optional must be a boolean`);
+    }
+    const enumValues = param.enumValues === undefined
+      ? undefined
+      : assertStringArray(param.enumValues, `consoleCommand.parameters[${i}].enumValues`);
+    const entry: HassetConsoleCommandParameter = {
+      name: pName,
+      type: param.type as HassetConsoleCommandParameter["type"],
+    };
+    if (param.optional !== undefined) entry.optional = param.optional;
+    if ("defaultValue" in param && param.defaultValue !== undefined) entry.defaultValue = param.defaultValue;
+    if (enumValues !== undefined) entry.enumValues = enumValues;
+    parameters.push(entry);
+  }
+  return { name, description, category, parameters };
+}
+
+/** Fast structural validator for `.hasset` headers (replaces Zod on the hot scan/read path). */
+export function validateHassetHeader(raw: unknown): HassetHeader {
+  if (!isPlainRecord(raw)) throw new Error("Invalid .hasset header: expected an object");
+  if (!Array.isArray(raw.chunks)) throw new Error("Invalid .hasset header: chunks must be an array");
+  const chunks: ChunkEntry[] = new Array(raw.chunks.length);
+  for (let i = 0; i < raw.chunks.length; i++) {
+    chunks[i] = validateChunkEntry(raw.chunks[i], i);
+  }
+  const dependencies = assertStringArray(raw.dependencies, "dependencies");
+  const requiredDependencies = assertStringArray(raw.requiredDependencies, "requiredDependencies");
+  if (!isNonNegativeSafeInt(raw.dependencyMetadataVersion)) {
+    throw new Error("Invalid .hasset header: dependencyMetadataVersion must be a non-negative integer");
+  }
+  const engineVersion = assertString(raw.engineVersion, "engineVersion");
+  const guid = assertString(raw.guid, "guid");
+  const mode = raw.mode === undefined ? "thin" : raw.mode;
+  if (mode !== "thin" && mode !== "bundled") {
+    throw new Error(`Invalid .hasset header: unsupported mode ${String(mode)}`);
+  }
+  const name = assertString(raw.name, "name");
+  if (raw.parentClass !== undefined && raw.parentClass !== null && typeof raw.parentClass !== "string") {
+    throw new Error("Invalid .hasset header: parentClass must be a string or null");
+  }
+  const payload = raw.payload === undefined ? {} : raw.payload;
+  if (!isPlainRecord(payload)) {
+    throw new Error("Invalid .hasset header: payload must be an object");
+  }
+  const type = assertString(raw.type, "type");
+  if (!isNonNegativeSafeInt(raw.version)) {
+    throw new Error("Invalid .hasset header: version must be a non-negative integer");
+  }
+  const header: HassetHeader = {
+    chunks,
+    dependencies,
+    requiredDependencies,
+    dependencyMetadataVersion: raw.dependencyMetadataVersion,
+    engineVersion,
+    guid,
+    mode,
+    name,
+    payload,
+    type,
+    version: raw.version,
+  };
+  if (raw.requiredVariableNames !== undefined) {
+    header.requiredVariableNames = assertStringArray(raw.requiredVariableNames, "requiredVariableNames");
+  }
+  if (raw.classReferences !== undefined) {
+    header.classReferences = assertStringArray(raw.classReferences, "classReferences");
+  }
+  if (raw.requiredClassReferences !== undefined) {
+    header.requiredClassReferences = assertStringArray(raw.requiredClassReferences, "requiredClassReferences");
+  }
+  if (raw.consoleCommand !== undefined) {
+    header.consoleCommand = validateConsoleCommand(raw.consoleCommand);
+  }
+  if (raw.parentClass !== undefined) {
+    header.parentClass = raw.parentClass;
+  }
+  return header;
+}
 
 export interface ChunkInput {
   id: string;
@@ -175,7 +321,7 @@ function assertCurrentHeaderLayout(raw: unknown): void {
 /** Validate a header in the current layout; older layouts throw {@link AssetFormatVersionError}. */
 function parseHassetHeader(raw: unknown): HassetHeader {
   assertCurrentHeaderLayout(raw);
-  return hassetHeaderSchema.parse(raw);
+  return validateHassetHeader(raw);
 }
 
 /** Shared: a non-streaming `decode` keeps no state between calls. */

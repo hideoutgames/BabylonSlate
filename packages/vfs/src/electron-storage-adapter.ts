@@ -39,6 +39,7 @@ async function remote<T>(path: string, call: () => Promise<T>): Promise<T> {
  */
 export class ElectronStorageAdapter implements ProjectStorage {
   readonly speculativeRangeReads = true;
+  readonly hasStrongSourceRevisions = true;
   private readonly reads = new StorageReadCounter();
   getReadMetrics() { return this.reads.snapshot(); }
 

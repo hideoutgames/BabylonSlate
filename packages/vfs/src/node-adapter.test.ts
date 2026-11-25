@@ -224,4 +224,19 @@ describe("node storage adapter", () => {
     expect(await readFile(join(outside, "keep.txt"), "utf8")).toBe("outside");
     expect(storage.getCurrentFolder()?.name).toBe("Open");
   });
+
+  it("reports distinct strong source revisions across rapid back-to-back same-size writes", async () => {
+    dir = await mkdtemp(join(tmpdir(), "haptic-node-rev-"));
+    const storage = new NodeStorageAdapter(dir);
+    expect(storage.hasStrongSourceRevisions).toBe(true);
+    await storage.openDocumentsProject("Game");
+    await storage.writeBinary("a.bin", new Uint8Array([1, 2, 3, 4]));
+    const first = await storage.readBinaryRange("a.bin", 0, 0);
+    expect(first.bytes.byteLength).toBe(0);
+    expect(first.totalSize).toBe(4);
+    await storage.writeBinary("a.bin", new Uint8Array([5, 6, 7, 8]));
+    const second = await storage.readBinaryRange("a.bin", 0, 0);
+    expect(second.revision).not.toBe(first.revision);
+    await expect(storage.readBinaryRange("a.bin", 0, 0, first.revision)).rejects.toThrow(/revision/i);
+  });
 });

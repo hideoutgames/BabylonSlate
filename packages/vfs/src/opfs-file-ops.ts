@@ -561,6 +561,9 @@ export function createOpfsFileOps(getRoot: () => Promise<FileSystemDirectoryHand
       if (!(offset + length <= file.size)) {
         throw new OpfsFailure({ kind: "range", path, message: "Storage byte range exceeds the file", totalSize: file.size });
       }
+      if (length === 0) {
+        return { bytes: new Uint8Array(0), totalSize: file.size, revision, actualBytesRead: 0 };
+      }
       // Reading the Blob slice is essential: slicing an ArrayBuffer already read
       // from the complete File would eagerly retain every inline asset payload.
       let bytes: Uint8Array;

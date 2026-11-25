@@ -161,6 +161,7 @@ export interface OpfsStorageOptions {
  */
 export class OpfsStorageAdapter implements ProjectStorage {
   readonly speculativeRangeReads = true;
+  readonly hasStrongSourceRevisions = true;
   private readonly reads = new StorageReadCounter();
   getReadMetrics() { return this.reads.snapshot(); }
 

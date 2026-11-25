@@ -39,7 +39,7 @@ import { spawnableLightsOfLoad } from "@haptic/render/spawnable-lights";
 import { pixelatedExtend, playFramebufferSize, type SerializedScene } from "@haptic/core";
 import { gameSourceSubset, packedBootControls, packedContentFromGame, packedSourceControls, requiredGameAssets, runtimeAssetCatalogFromManifest, type GameSourceContent, type GameManifest, type PackedGameContent } from "@haptic/exporter";
 import { createPlayerWorkerHost, playerHavokWasmUrl, type PlayerWorkerHost } from "./worker-host";
-import { playerDecoderPaths } from "./decoder-paths";
+import { playerCanUseWorkerDecoders, playerDecoderPaths } from "./decoder-paths";
 import { manifestConsoleCommands } from "./console-catalog";
 import {
   createGameAudioSourceLoader,
@@ -320,6 +320,7 @@ function initializePlayer(
     navmeshBytes: content.navmeshBytes,
     navBlockers: navDebugBlockersFromActors(scene.actors),
     ...playerDecoderPaths(),
+    workerDecoders: playerCanUseWorkerDecoders(),
     onPostProcessDiagnostic: (diagnostic) => {
       const message = postProcessDiagnosticMessage(diagnostic, (guid) => manifest.assets.find((entry) => entry.guid === guid)?.name);
       options.onConsoleEvent?.({

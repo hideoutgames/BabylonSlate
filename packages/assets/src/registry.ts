@@ -126,6 +126,8 @@ export class AssetRegistry {
   private classAliasMemo: { generation: number; index: ClassAliasIndex } | null = null;
   /** Symbolic inbound references of the catalog as of `generation`; dropped like `classAliasMemo`. */
   private symbolicInboundMemo: { generation: number; index: ReadonlyMap<string, readonly string[]> } | null = null;
+  /** Cached `list()` results as of `generation`; dropped whenever any index change advances it. */
+  private listMemo: { generation: number; all: IndexedAsset[]; filtered: Map<string, IndexedAsset[]> } | null = null;
 
   constructor(storage: ProjectStorage, options: AssetRegistryOptions = {}) {
     this.storage = storage;
@@ -548,12 +550,20 @@ export class AssetRegistry {
   }
 
   list(filter?: { rootId?: string; type?: string }): IndexedAsset[] {
-    let out = [...this.byGuid.values()];
-    if (filter?.rootId) {
-      out = out.filter((asset) => asset.rootId === filter.rootId);
+    const generation = this.generation;
+    if (this.listMemo?.generation !== generation) {
+      this.listMemo = { generation, all: [...this.byGuid.values()], filtered: new Map() };
     }
-    if (filter?.type) {
-      out = out.filter((asset) => asset.header.type === filter.type);
+    const rootId = filter?.rootId;
+    const type = filter?.type;
+    if (!rootId && !type) return this.listMemo.all;
+    const key = `${rootId ?? ""}\0${type ?? ""}`;
+    let out = this.listMemo.filtered.get(key);
+    if (!out) {
+      out = this.listMemo.all.filter((asset) =>
+        (!rootId || asset.rootId === rootId) && (!type || asset.header.type === type),
+      );
+      this.listMemo.filtered.set(key, out);
     }
     return out;
   }

@@ -391,4 +391,53 @@ describe("bounded catalog and payload loading", () => {
     await expect(loader.loadChunk(old.locator, old.header.chunks[0]!)).rejects.toThrow("Asset changed");
     expect(loader.accountedPayloadBytes).toBe(0);
   });
+
+  it("reads an inline chunk on strong storage in one range read and caches verified hashes per storageRevision", async () => {
+    const storage = await fixture();
+    const path = "assets/inline-fast.hasset";
+    const payload = new Uint8Array([11, 22, 33, 44]);
+    await storage.writeBinary(path, await encodeHasset({ header, chunks: [chunk("source", payload)] }));
+    const { header: catalog, locator } = await readAssetCatalog(storage, path);
+    const entry = catalog.chunks[0]!;
+    const loader = new AccountedPayloadLoader(storage);
+    const rangeSpy = vi.spyOn(storage, "readBinaryRange");
+    const digestSpy = vi.spyOn(crypto.subtle, "digest");
+
+    // First read: exactly 1 range read (no post-read validateAssetSourceLocator) and 1 SHA-256 verification.
+    expect(await loader.loadChunk(locator, entry)).toEqual(payload);
+    expect(rangeSpy).toHaveBeenCalledTimes(1);
+    expect(digestSpy).toHaveBeenCalledTimes(1);
+
+    // Second read at the same storageRevision: still 1 range read and 0 SHA-256 calls.
+    expect(await loader.loadChunk(locator, entry)).toEqual(payload);
+    expect(rangeSpy).toHaveBeenCalledTimes(2);
+    expect(digestSpy).toHaveBeenCalledTimes(1);
+
+    // A rewritten file bumps storageRevision, forcing re-verification and rejecting corruption.
+    const nextPayload = new Uint8Array([55, 66, 77, 88]);
+    await storage.writeBinary(path, await encodeHasset({ header, chunks: [chunk("source", nextPayload)] }));
+    const next = await readAssetCatalog(storage, path);
+    const badEntry = { ...next.header.chunks[0]!, sha256: "0".repeat(64) };
+    digestSpy.mockClear();
+    await expect(loader.loadChunk(next.locator, badEntry)).rejects.toThrow("Hash mismatch");
+    expect(digestSpy).toHaveBeenCalledTimes(1);
+    rangeSpy.mockRestore();
+    digestSpy.mockRestore();
+  });
+
+  it("memoizes AssetRegistry.list() across calls until an asset index change occurs", async () => {
+    const storage = await fixture();
+    await storage.writeBinary("assets/one.hasset", await encodeHasset({ header: { ...header, guid: "one" }, chunks: [] }));
+    const registry = new AssetRegistry(storage);
+    await registry.mountRoot(projectContentRoot());
+    const first = registry.list();
+    const second = registry.list();
+    expect(second).toBe(first);
+    expect(registry.list({ type: "Model" })).toBe(registry.list({ type: "Model" }));
+    await storage.writeBinary("assets/two.hasset", await encodeHasset({ header: { ...header, guid: "two" }, chunks: [] }));
+    await registry.reindexPath("assets/two.hasset");
+    const after = registry.list();
+    expect(after).not.toBe(first);
+    expect(after).toHaveLength(2);
+  });
 });

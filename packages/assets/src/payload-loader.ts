@@ -83,9 +83,14 @@ export async function readAssetCatalog(
     headerBytes = concatBytes([prefix.bytes, body.bytes]);
   }
   const header = readHassetHeader(headerBytes);
+  // Strong-revision storage guarantees distinct storage revisions on every write, so
+  // the adapter token itself uniquely identifies the catalog without hashing the header.
+  const revision = storage.hasStrongSourceRevisions
+    ? prefix.revision
+    : JSON.stringify([prefix.revision, await sha256Hex(headerBytes)]);
   const locator = {
     path,
-    revision: JSON.stringify([prefix.revision, await sha256Hex(headerBytes)]),
+    revision,
     storageRevision: prefix.revision,
     totalSize: prefix.totalSize,
     payloadOffset,
@@ -152,6 +157,8 @@ export interface PayloadLoaderSnapshot {
  * successfully validated payload requests; actual I/O belongs to storage
  * diagnostics, and retained bytes belong to the session loading service.
  */
+const MAX_VERIFIED_INLINE_CHUNKS = 4096;
+
 export class AccountedPayloadLoader {
   private readonly blobs: BlobStore;
   private readonly storage: ProjectStorage;
@@ -160,10 +167,23 @@ export class AccountedPayloadLoader {
   private succeeded = 0;
   private failed = 0;
   private readonly recentRequests: PayloadChunkRequest[] = [];
+  /** Session-verified inline chunks keyed by `(path, storageRevision, chunkId, sha256)`. */
+  private readonly verifiedInlineChunks = new Set<string>();
 
   constructor(storage: ProjectStorage, options: AccountedPayloadLoaderOptions = {}) {
     this.storage = storage;
     this.blobs = options.blobs ?? createVfsBlobStore(storage);
+  }
+
+  /** Record a chunk already hashed by this session (e.g. just written) so immediate read-back skips re-hashing. */
+  markInlineChunkVerified(path: string, storageRevision: string, chunkId: string, sha256: string): void {
+    const key = `${path}\0${storageRevision}\0${chunkId}\0${sha256}`;
+    if (this.verifiedInlineChunks.has(key)) return;
+    if (this.verifiedInlineChunks.size >= MAX_VERIFIED_INLINE_CHUNKS) {
+      const oldest = this.verifiedInlineChunks.values().next().value;
+      if (oldest !== undefined) this.verifiedInlineChunks.delete(oldest);
+    }
+    this.verifiedInlineChunks.add(key);
   }
 
   async loadChunk(
@@ -229,13 +249,23 @@ export class AccountedPayloadLoader {
     if (data.byteLength !== entry.byteLength) {
       throw new Error(`Length mismatch for chunk ${entry.id} in ${asset.path}`);
     }
-    const hash = await sha256Hex(data);
-    options.signal?.throwIfAborted();
-    if (hash !== entry.sha256) {
-      throw new Error(`Hash mismatch for chunk ${entry.id} in ${asset.path}`);
+    const isInline = "inline" in entry.locator;
+    const strongInline = isInline && storage.hasStrongSourceRevisions === true;
+    const cacheKey = strongInline ? `${asset.path}\0${asset.storageRevision}\0${entry.id}\0${entry.sha256}` : null;
+    if (!cacheKey || !this.verifiedInlineChunks.has(cacheKey)) {
+      const hash = await sha256Hex(data);
+      options.signal?.throwIfAborted();
+      if (hash !== entry.sha256) {
+        throw new Error(`Hash mismatch for chunk ${entry.id} in ${asset.path}`);
+      }
+      if (cacheKey) this.markInlineChunkVerified(asset.path, asset.storageRevision, entry.id, entry.sha256);
     }
-    // Blobs are content-addressed and hash-verified, so only this check after the read can show the locator went stale.
-    await validateAssetSourceLocator(storage, asset, options);
+    // For inline chunks on strong-revision storage, readBinaryRange already asserted
+    // result.revision === asset.storageRevision && result.totalSize === asset.totalSize atomically.
+    // Blobs and weak-revision storage still validate the locator after the read.
+    if (!strongInline) {
+      await validateAssetSourceLocator(storage, asset, options);
+    }
     this.accounted += data.byteLength;
     return data;
   }
