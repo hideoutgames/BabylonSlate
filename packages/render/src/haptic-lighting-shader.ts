@@ -23,7 +23,7 @@ export const HAPTIC_ENVIRONMENT_GLSL = `layout(std140) uniform ${HAPTIC_ENVIRONM
   vec4 hapticEnvironmentForm;
   vec4 hapticEnvironmentBoxPosition;
   vec4 hapticEnvironmentBoxSize;
-  vec4 hapticIrradiance[9];
+  vec4 hapticEnvironmentIrradiance[9];
 };
 `;
 /** The shadow atlas's compare sampler, which the block's shadows read (`shadowAtlasTexture`). */
@@ -940,9 +940,9 @@ vec3 hapticEnvironmentDirection(vec3 direction) {
 }
 vec3 hapticIrradiance(vec3 N) {
   vec3 n = hapticEnvironmentDirection(N);
-  return hapticIrradiance[0].rgb + hapticIrradiance[1].rgb * n.y + hapticIrradiance[2].rgb * n.z + hapticIrradiance[3].rgb * n.x +
-    hapticIrradiance[4].rgb * (n.y * n.x) + hapticIrradiance[5].rgb * (n.y * n.z) + hapticIrradiance[6].rgb * (3.0 * n.z * n.z - 1.0) +
-    hapticIrradiance[7].rgb * (n.z * n.x) + hapticIrradiance[8].rgb * (n.x * n.x - n.y * n.y);
+  return hapticEnvironmentIrradiance[0].rgb + hapticEnvironmentIrradiance[1].rgb * n.y + hapticEnvironmentIrradiance[2].rgb * n.z + hapticEnvironmentIrradiance[3].rgb * n.x +
+    hapticEnvironmentIrradiance[4].rgb * (n.y * n.x) + hapticEnvironmentIrradiance[5].rgb * (n.y * n.z) + hapticEnvironmentIrradiance[6].rgb * (3.0 * n.z * n.z - 1.0) +
+    hapticEnvironmentIrradiance[7].rgb * (n.z * n.x) + hapticEnvironmentIrradiance[8].rgb * (n.x * n.x - n.y * n.y);
 }
 // The prefiltered cube along the reflection, box-projected onto a reflection probe's volume.
 vec3 hapticRadiance(vec3 P, vec3 N, vec3 V, float alpha) {

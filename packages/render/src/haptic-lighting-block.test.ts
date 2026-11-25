@@ -6,6 +6,7 @@ import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
 import { Scene } from "@babylonjs/core/scene";
 import { isGeometryPassWithoutColor } from "./geometry-surface-output-block";
 import { HapticLightingBlock } from "./haptic-lighting-block";
+import { HAPTIC_ENVIRONMENT_GLSL, HAPTIC_LIGHTING_FUNCTIONS_GLSL } from "./haptic-lighting-shader";
 
 const disposers: Array<() => void> = [];
 afterEach(() => {
@@ -85,5 +86,12 @@ describe("HapticLightingBlock bindings", () => {
     colour.calls.length = 0;
     block.bindReceiver(colour.effect, mesh);
     expect(colour.calls).toEqual(expect.arrayContaining(["block HapticEnvironment", "float hapticShadowReceiver"]));
+  });
+
+  it("declares HapticEnvironment UBO members with names distinct from lighting GLSL functions", () => {
+    const members = [...HAPTIC_ENVIRONMENT_GLSL.matchAll(/^\s+(?:mat4|vec4|float|int|uint)\s+(\w+)/gm)].map((m) => m[1]!);
+    const functions = new Set([...HAPTIC_LIGHTING_FUNCTIONS_GLSL.matchAll(/^\s*(?:void|float|int|uint|bool|vec[234]|mat[234]|haptic\w+)\s+(\w+)\s*\(/gm)].map((m) => m[1]!));
+    expect(members.length).toBeGreaterThanOrEqual(6);
+    expect(members.filter((name) => functions.has(name))).toEqual([]);
   });
 });
