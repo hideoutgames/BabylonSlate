@@ -4,11 +4,13 @@ import {
   SPRING_ARM_COMPONENT_CLASS_ID,
   stepSpringArmProbeLength,
   type SpringArmProperties,
+  type Transform,
 } from "@haptic/core";
 import type { CommandMessage } from "@haptic/bridge";
 import type { Actor, ActorComponent, World } from "@haptic/object-model";
 import type { LineTraceOptions, PhysicsTransform } from "@haptic/physics";
 import { actorParentGuid, composeParentChildTransform } from "./actor-world-transform";
+import { ParsedComponentProperties } from "./parsed-component-properties";
 import type { RuntimeSubsystem } from "./runtime-subsystems";
 import { setProbedSpringArmLength } from "./spring-arm-socket";
 import { componentWorldTransform } from "./tween-transforms";
@@ -56,9 +58,13 @@ const MIN_PROBE_SPAN = 1e-6;
  */
 export class SpringArmProbeSync implements RuntimeSubsystem {
   private readonly arms = new Map<ActorComponent, ProbeState>();
+  private readonly parsedProperties = new ParsedComponentProperties<SpringArmProperties>((raw) => parseSpringArmProperties(raw));
   private readonly host: SpringArmProbeHost;
   private readonly start: PhysicsTransform = { position: { x: 0, y: 0, z: 0 }, rotation: IDENTITY_ROTATION };
   private readonly end: PhysicsTransform = { position: { x: 0, y: 0, z: 0 }, rotation: IDENTITY_ROTATION };
+  private readonly socketLocal: Transform = identityTransform();
+  private readonly sphereShape: { kind: "sphere"; radius: number } = { kind: "sphere", radius: 0.1 };
+  private readonly attachmentIds: string[] = [];
   private readonly findActor = (guid: string) => this.host.world.findActor(guid);
 
   constructor(host: SpringArmProbeHost) {
@@ -81,7 +87,7 @@ export class SpringArmProbeSync implements RuntimeSubsystem {
       state.owner = actor;
       // Spring arms are World-scene components; a Scene Layer's arm keeps its full length.
       if (actor.sceneLayerId || !this.host.eligible(actor)) continue;
-      const properties = parseSpringArmProperties(Object.fromEntries(component.variables));
+      const properties = this.parsedProperties.get(component);
       state.length = properties.cameraProbe ? this.probe(component, actor, properties, state.length, dt) : null;
       setProbedSpringArmLength(component, state.length);
       const slotId = this.host.slot(actor) ?? -1;
@@ -124,20 +130,23 @@ export class SpringArmProbeSync implements RuntimeSubsystem {
   ): number | null {
     const pivot = componentWorldTransform(component, this.findActor);
     if (!pivot) return current;
-    const socket = composeParentChildTransform(pivot, {
-      ...identityTransform(),
-      position: { x: 0, y: 0, z: -properties.armLength },
-    });
+    this.socketLocal.position.z = -properties.armLength;
+    const socket = composeParentChildTransform(pivot, this.socketLocal);
     const dx = socket.position.x - pivot.position.x;
     const dy = socket.position.y - pivot.position.y;
     const dz = socket.position.z - pivot.position.z;
     const span = Math.hypot(dx, dy, dz);
     let target = properties.armLength;
     if (span > MIN_PROBE_SPAN) {
-      Object.assign(this.start.position, pivot.position);
-      Object.assign(this.end.position, socket.position);
+      this.start.position.x = pivot.position.x;
+      this.start.position.y = pivot.position.y;
+      this.start.position.z = pivot.position.z;
+      this.end.position.x = socket.position.x;
+      this.end.position.y = socket.position.y;
+      this.end.position.z = socket.position.z;
+      this.sphereShape.radius = properties.probeSize;
       const hit = this.host.physics().shapeSweep(
-        { kind: "sphere", radius: properties.probeSize },
+        this.sphereShape,
         this.start,
         this.end,
         { channel: properties.probeChannel, ignoreActorIds: this.attachmentChain(actor), includeTriggers: false },
@@ -150,7 +159,8 @@ export class SpringArmProbeSync implements RuntimeSubsystem {
 
   /** The arm's actor and every actor it is attached to: a camera never collides with its own rig. */
   private attachmentChain(actor: Actor): string[] {
-    const ids: string[] = [];
+    const ids = this.attachmentIds;
+    ids.length = 0;
     for (let current: Actor | undefined = actor; current && !ids.includes(current.guid);) {
       ids.push(current.guid);
       const parentId = actorParentGuid(current);

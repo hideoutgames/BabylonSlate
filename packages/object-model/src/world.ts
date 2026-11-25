@@ -212,9 +212,6 @@ export class World {
   private spawnCount = 0;
   /** Earliest `actors` position a removed actor still holds. */
   private firstRemovedIndex = Number.POSITIVE_INFINITY;
-  /** Phase views by re-entrancy depth; reused so ticking allocates no actor/component copies. */
-  private readonly actorIterations: ActorIteration[] = [];
-  private actorIterationDepth = 0;
   private readonly componentScratch: Array<Array<ActorComponent | undefined>> = [];
   /** Deferred queues; entries before each cursor are already consumed by the running flush. */
   private readonly pendingSpawn: Actor[] = [];
@@ -223,6 +220,17 @@ export class World {
   private destroyCursor = 0;
   /** Tickable Object objects in creation order; not roots, and destroyed ones are dropped as the phase runs. */
   private readonly tickingObjects: EngineObject[] = [];
+  /** Subset of live actors whose `hasTickHook` is true, in ascending `spawnOrder`. */
+  private readonly tickHookActors: Actor[] = [];
+  private tickHookActorsDirty = false;
+  private readonly tickActorIterations: ActorIteration[] = [];
+  private tickActorIterationDepth = 0;
+  /** Subset of live actors that have at least one component with `hasTickHook === true`, in ascending `spawnOrder`. */
+  private readonly tickHookComponentActors: Actor[] = [];
+  private readonly tickHookComponentActorSet = new Set<Actor>();
+  private tickHookComponentActorsDirty = false;
+  private readonly tickComponentCursors: number[] = [];
+  private tickComponentIterationDepth = 0;
   private started = false;
   /** Set once `start()` reaches the Game Instance's On Init; replacements then end and init. */
   private gameInstanceStarted = false;
@@ -592,8 +600,6 @@ export class World {
   }
 
   private compactActors(): void {
-    // A running phase keeps reading the positions it started with.
-    this.detachActorIterations();
     const actors = this.actors;
     const removed = this.removedActors;
     let kept = this.firstRemovedIndex;
@@ -832,6 +838,9 @@ export class World {
     component: ActorComponent,
     kind: ComponentChangeKind,
   ): void {
+    if (kind === "attached" && component.hasTickHook && this.findActor(actor.guid) === actor) {
+      this.registerTickHookComponentActor(actor);
+    }
     for (let i = 0; i < this.changeObservers.length; i++) {
       this.changeObservers[i]!.onActorComponentChanged?.(actor, component, kind);
     }
@@ -860,6 +869,14 @@ export class World {
     actor.spawnIndex = actors.length;
     actor.spawnOrder = this.spawnCount++;
     actors.push(actor);
+    if (actor.hasTickHook) this.tickHookActors.push(actor);
+    for (let i = 0; i < actor.components.length; i++) {
+      if (actor.components[i]!.hasTickHook) {
+        this.tickHookComponentActorSet.add(actor);
+        this.tickHookComponentActors.push(actor);
+        break;
+      }
+    }
     this.markStructureChanged();
     this.actorsByGuid.set(actor.guid, actor);
     const parentGuid = this.parentGuidOf(actor);
@@ -913,6 +930,8 @@ export class World {
     if (index < 0) return;
     this.removedActors.add(actor);
     if (index < this.firstRemovedIndex) this.firstRemovedIndex = index;
+    if (actor.hasTickHook) this.tickHookActorsDirty = true;
+    if (this.tickHookComponentActorSet.delete(actor)) this.tickHookComponentActorsDirty = true;
     this.markStructureChanged();
     this.actorsByGuid.delete(actor.guid);
     const parentGuid = this.parentGuidOf(actor);
@@ -941,34 +960,6 @@ export class World {
     // Every hook and observer has run: a stale reference now keeps none of their state alive.
     for (const component of components) component.releaseState();
     actor.releaseState();
-  }
-
-  /**
-   * A phase ticks the actors present when it started. The live array only
-   * grows at its end until a removal, so a phase reads it in place and copies
-   * its starting prefix only when an actor is removed mid-phase.
-   */
-  private beginActorIteration(): ActorIteration {
-    this.liveActors();
-    const depth = this.actorIterationDepth++;
-    const iteration = (this.actorIterations[depth] ??= { list: this.actors, length: 0 });
-    iteration.list = this.actors;
-    iteration.length = this.actors.length;
-    return iteration;
-  }
-
-  private endActorIteration(): void {
-    // Release a detached copy so it does not retain destroyed actors.
-    this.actorIterations[--this.actorIterationDepth]!.list = this.actors;
-  }
-
-  private detachActorIterations(): void {
-    for (let depth = 0; depth < this.actorIterationDepth; depth++) {
-      const iteration = this.actorIterations[depth]!;
-      if (iteration.list === this.actors) {
-        iteration.list = this.actors.slice(0, iteration.length);
-      }
-    }
   }
 
   /**
@@ -1045,13 +1036,51 @@ export class World {
     this.flushDeferred();
   }
 
+  private registerTickHookComponentActor(actor: Actor): void {
+    if (this.tickHookComponentActorSet.has(actor)) return;
+    this.tickHookComponentActorSet.add(actor);
+    const list = this.tickHookComponentActors;
+    if (list.length === 0 || list[list.length - 1]!.spawnOrder < actor.spawnOrder) {
+      list.push(actor);
+      return;
+    }
+    let lo = 0;
+    let hi = list.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      if (list[mid]!.spawnOrder < actor.spawnOrder) lo = mid + 1;
+      else hi = mid;
+    }
+    list.splice(lo, 0, actor);
+    // Keep active phase cursors pointing at the same actor when inserting at or before them.
+    for (let depth = 0; depth < this.tickComponentIterationDepth; depth++) {
+      if (lo <= this.tickComponentCursors[depth]!) this.tickComponentCursors[depth]!++;
+    }
+  }
+
+  private compactTickList(list: Actor[]): void {
+    let kept = 0;
+    for (let i = 0; i < list.length; i++) {
+      const actor = list[i]!;
+      if (!actor.destroyed && !this.removedActors.has(actor)) list[kept++] = actor;
+    }
+    list.length = kept;
+  }
+
   /**
-   * Admission is checked right before each tick hook runs. An actor without a
-   * hook is skipped first: the checks have no side effects and only a hook can
-   * change their answers, so the same hooks run in the same order.
+   * Admission is checked right before each tick hook runs. Only actors with a
+   * bound `onTick` hook are visited (`tickHookActors`, ascending `spawnOrder`).
    */
   private tickActors(ctx: TickContext): void {
-    const iteration = this.beginActorIteration();
+    const list = this.tickHookActors;
+    if (this.tickHookActorsDirty && this.tickActorIterationDepth === 0) {
+      this.compactTickList(list);
+      this.tickHookActorsDirty = false;
+    }
+    const depth = this.tickActorIterationDepth++;
+    const iteration = (this.tickActorIterations[depth] ??= { list, length: 0 });
+    iteration.list = list;
+    iteration.length = list.length;
     try {
       for (let i = 0; i < iteration.length; i++) {
         const actor = iteration.list[i]!;
@@ -1061,22 +1090,32 @@ export class World {
         if (this.canTickActor(actor)) actor.callOnTick(ctx);
       }
     } finally {
-      this.endActorIteration();
+      iteration.list = list;
+      this.tickActorIterationDepth--;
     }
   }
 
   /**
-   * As `tickActors`, admission is checked only right before a component's tick
-   * hook, so actors and components without one cost no checks. An actor's
-   * component list is captured into reused scratch before its first callback.
+   * As `tickActors`, only actors with at least one component carrying a bound
+   * `onTick` hook are visited (`tickHookComponentActors`, ascending `spawnOrder`).
+   * Actors present when the phase started (`spawnOrder < phaseSpawnCutoff`) that
+   * receive a ticking component before the loop reaches them still tick in order.
    */
   private tickComponents(ctx: TickContext): void {
-    const iteration = this.beginActorIteration();
-    const scratch = (this.componentScratch[this.actorIterationDepth - 1] ??= []);
+    const list = this.tickHookComponentActors;
+    if (this.tickHookComponentActorsDirty && this.tickComponentIterationDepth === 0) {
+      this.compactTickList(list);
+      this.tickHookComponentActorsDirty = false;
+    }
+    const phaseSpawnCutoff = this.spawnCount;
+    const depth = this.tickComponentIterationDepth++;
+    this.tickComponentCursors[depth] = 0;
+    const scratch = (this.componentScratch[depth] ??= []);
     try {
       let tickable = true;
-      for (let i = 0; tickable && i < iteration.length; i++) {
-        const actor = iteration.list[i]!;
+      for (; tickable && this.tickComponentCursors[depth]! < list.length; this.tickComponentCursors[depth]!++) {
+        const actor = list[this.tickComponentCursors[depth]!]!;
+        if (actor.spawnOrder >= phaseSpawnCutoff) break;
         if (actor.destroyed) continue;
         if (this.gamePaused && !this.ticksWhilePaused(actor)) continue;
         const components = actor.components;
@@ -1096,7 +1135,7 @@ export class World {
       }
     } finally {
       scratch.fill(undefined);
-      this.endActorIteration();
+      this.tickComponentIterationDepth--;
     }
   }
 

@@ -318,6 +318,11 @@ export class EngineObject {
     this.hooks.onCreation?.(this);
   }
 
+  /** Whether an `onTick` hook was bound at construction (immutable for the object's lifetime). */
+  get hasTickHook(): boolean {
+    return this.hooks.onTick !== undefined;
+  }
+
   /** Whether a tick hook is bound and has something to run: otherwise `callOnTick` does nothing, so the World skips its tick admission. */
   get ticks(): boolean {
     const hooks = this.hooks;

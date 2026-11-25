@@ -10,8 +10,8 @@ import type { CharacterControllerDesc, CharacterMovementResult, PhysicsTransform
 import { normalizedPhysicsPose } from "./collider-validation";
 import { rotateQuatVec } from "./collider-bake";
 import {
-  colliderShapes,
   releaseHavokShape,
+  setShapeFilterMasks,
   setShapeMembershipMask,
   type BodyRecord,
 } from "./havok-records";
@@ -30,6 +30,8 @@ type CharacterRecord = {
   maxSlopeCosine: number;
   position: Vec3;
   grounded: boolean;
+  filterLayer: number;
+  filterMask: number;
 };
 
 /** Max slide iterations per `moveCharacter` call. */
@@ -78,6 +80,11 @@ export class HavokCharacters {
   private readonly characters = new Map<string, CharacterRecord>();
   private readonly proximityCollector: HP_CollectorId;
   private readonly castCollector: HP_CollectorId;
+  private readonly memberships = new Map<HP_ShapeId, { membership: number; collide: number | null }>();
+  private readonly touched: CharacterContact[] = [];
+  private readonly planes: Vec3[] = [];
+  private readonly scratchPos: [number, number, number] = [0, 0, 0];
+  private readonly scratchEnd: [number, number, number] = [0, 0, 0];
 
   constructor(host: HavokCharacterHost) {
     this.host = host;
@@ -147,6 +154,8 @@ export class HavokCharacters {
       maxSlopeCosine: Math.cos(((desc.maxSlopeAngle ?? 50) * Math.PI) / 180),
       position: { ...record.pose.position },
       grounded: false,
+      filterLayer: -1,
+      filterMask: -1,
     });
   }
 
@@ -213,40 +222,59 @@ export class HavokCharacters {
     const startY = character.position.y;
     const startZ = character.position.z;
 
-    // Filter the controller's capsule using the actor's own solid collider layer & mask.
-    const self = [...body.colliders.values()].find(
-      (c) => !c.desc.isTrigger && (c.desc.actorId ?? body.desc.actorId) === body.desc.actorId,
-    );
-    const layer = (self?.desc.layer ?? 0xffffffff) >>> 0;
-    const mask = (self?.desc.mask ?? 0xffffffff) >>> 0;
-    checked(havok, havok.HP_Shape_SetFilterInfo(character.shape, [layer, mask]), "character capsule filter");
+    // Filter the controller's capsule using the actor's own solid collider layer & mask (cached to skip redundant WASM calls).
+    let layer = 0xffffffff;
+    let mask = 0xffffffff;
+    for (const c of body.colliders.values()) {
+      if (!c.desc.isTrigger && (c.desc.actorId ?? body.desc.actorId) === body.desc.actorId) {
+        layer = c.desc.layer >>> 0;
+        mask = c.desc.mask >>> 0;
+        break;
+      }
+    }
+    if (character.filterLayer !== layer || character.filterMask !== mask) {
+      checked(havok, havok.HP_Shape_SetFilterInfo(character.shape, [layer, mask]), "character capsule filter");
+      character.filterLayer = layer;
+      character.filterMask = mask;
+    }
 
     // Mask the actor's own compound shapes so self-collision is excluded even when hosted shapes exist.
-    const memberships = new Map<HP_ShapeId, number>();
+    const memberships = this.memberships;
+    memberships.clear();
     let grounded = false;
     let posX = startX;
     let posY = startY;
     let posZ = startZ;
-    const touched: CharacterContact[] = [];
+    const touched = this.touched;
+    touched.length = 0;
+    const planes = this.planes;
+    planes.length = 0;
+    const scratchPos = this.scratchPos;
+    const scratchEnd = this.scratchEnd;
 
     try {
-      const ownShapes: HP_ShapeId[] = [];
-      if (body.attachedShape) ownShapes.push(body.attachedShape);
       for (const collider of body.colliders.values()) {
-        for (const s of colliderShapes(collider)) ownShapes.push(s);
+        if (!memberships.has(collider.shape)) {
+          setShapeFilterMasks(havok, collider.shape, 0, collider.collideMask);
+          memberships.set(collider.shape, { membership: collider.membershipMask, collide: collider.collideMask });
+        }
+        if (collider.proxy && !memberships.has(collider.proxy)) {
+          setShapeFilterMasks(havok, collider.proxy, 0, collider.proxyCollideMask);
+          memberships.set(collider.proxy, { membership: collider.membershipMask, collide: collider.proxyCollideMask });
+        }
       }
-      for (const shape of ownShapes) {
-        if (memberships.has(shape)) continue;
-        memberships.set(shape, setShapeMembershipMask(havok, shape, 0));
+      if (body.attachedShape && !memberships.has(body.attachedShape)) {
+        memberships.set(body.attachedShape, { membership: setShapeMembershipMask(havok, body.attachedShape, 0), collide: null });
       }
 
       // 1. Depenetration: resolve any existing overlap within `keepDistance`.
       for (let depen = 0; depen < 3; depen++) {
+        scratchPos[0] = posX; scratchPos[1] = posY; scratchPos[2] = posZ;
         checked(
           havok,
           havok.HP_World_ShapeProximityWithCollector(worldId, this.proximityCollector, [
             character.shape,
-            [posX, posY, posZ],
+            scratchPos,
             IDENTITY_HAVOK_QUAT,
             keepDistance,
             false,
@@ -287,20 +315,22 @@ export class HavokCharacters {
       let remX = Number.isFinite(translation.x) ? translation.x : 0;
       let remY = Number.isFinite(translation.y) ? translation.y : 0;
       let remZ = Number.isFinite(translation.z) ? translation.z : 0;
-      const planes: Vec3[] = [];
       let touchedWalkable = false;
+      let endedOnWalkable = false;
 
       for (let iter = 0; iter < MAX_SLIDE_ITERATIONS; iter++) {
         const len = Math.hypot(remX, remY, remZ);
         if (len <= MOVE_EPS) break;
 
+        scratchPos[0] = posX; scratchPos[1] = posY; scratchPos[2] = posZ;
+        scratchEnd[0] = posX + remX; scratchEnd[1] = posY + remY; scratchEnd[2] = posZ + remZ;
         checked(
           havok,
           havok.HP_World_ShapeCastWithCollector(worldId, this.castCollector, [
             character.shape,
             IDENTITY_HAVOK_QUAT,
-            [posX, posY, posZ],
-            [posX + remX, posY + remY, posZ + remZ],
+            scratchPos,
+            scratchEnd,
             false,
             body.hpBodyId,
           ]),
@@ -312,6 +342,7 @@ export class HavokCharacters {
           "character slide hit count",
         );
         if (numHits <= 0) {
+          if (Math.hypot(remX, remZ) > MOVE_EPS) endedOnWalkable = false;
           posX += remX;
           posY += remY;
           posZ += remZ;
@@ -337,6 +368,7 @@ export class HavokCharacters {
           }
         }
         if (minFrac > 1) {
+          if (Math.hypot(remX, remZ) > MOVE_EPS) endedOnWalkable = false;
           posX += remX;
           posY += remY;
           posZ += remZ;
@@ -361,7 +393,8 @@ export class HavokCharacters {
         remY = dirY * leftover;
         remZ = dirZ * leftover;
 
-        if (hitNy >= character.maxSlopeCosine) {
+        const isWalkableHit = hitNy >= character.maxSlopeCosine;
+        if (isWalkableHit) {
           touchedWalkable = true;
         } else if (hitNy > 0 && translation.y <= 0) {
           // Steep slope: block upward climbing by treating it as a vertical wall.
@@ -415,40 +448,55 @@ export class HavokCharacters {
               break;
             }
           }
-          if (blocked) break;
+          if (blocked) {
+            endedOnWalkable = isWalkableHit;
+            break;
+          }
         }
+        endedOnWalkable = isWalkableHit && Math.hypot(remX, remZ) <= MOVE_EPS;
       }
 
-      // 3. Support check: grounded when moving down/level and touching or immediately above a walkable surface.
+      // 3 & 4. Combined support check + ground snap down short ledges when moving down/level.
+      // When the final slide iteration stopped directly on walkable ground with no horizontal leftover,
+      // the capsule is already resting at `keepDistance` above the floor so both casts can be skipped.
+      const snap = character.desc.groundSnapDistance ?? 0.1;
+      const wantsSnap = character.grounded && translation.y <= 0 && snap > 0;
       if (translation.y <= 0) {
-        if (touchedWalkable) {
-          grounded = true;
-        } else {
-          const probeDist = keepDistance + SUPPORT_PROBE_EXTRA;
+        if (touchedWalkable) grounded = true;
+        const needsSupportCast = !touchedWalkable;
+        const needsSnapCast = wantsSnap && !endedOnWalkable;
+        if (needsSupportCast || needsSnapCast) {
+          const supportDist = keepDistance + SUPPORT_PROBE_EXTRA;
+          const snapCastDist = snap + keepDistance;
+          const castDist = needsSupportCast && needsSnapCast
+            ? Math.max(supportDist, snapCastDist)
+            : needsSnapCast ? snapCastDist : supportDist;
+          scratchPos[0] = posX; scratchPos[1] = posY; scratchPos[2] = posZ;
+          scratchEnd[0] = posX; scratchEnd[1] = posY - castDist; scratchEnd[2] = posZ;
           checked(
             havok,
             havok.HP_World_ShapeCastWithCollector(worldId, this.castCollector, [
               character.shape,
               IDENTITY_HAVOK_QUAT,
-              [posX, posY, posZ],
-              [posX, posY - probeDist, posZ],
+              scratchPos,
+              scratchEnd,
               false,
               body.hpBodyId,
             ]),
-            "character support cast",
+            "character ground cast",
           );
-          const supportHits = checkedValue(
+          const groundHits = checkedValue(
             havok,
             havok.HP_QueryCollector_GetNumHits(this.castCollector),
-            "character support count",
+            "character ground count",
           );
           let bestFrac = 2;
           let bestNy = -1;
-          for (let i = 0; i < supportHits; i++) {
+          for (let i = 0; i < groundHits; i++) {
             const [fraction, , hitWorld] = checkedValue(
               havok,
               havok.HP_QueryCollector_GetShapeCastResult(this.castCollector, i),
-              "character support result",
+              "character ground result",
             );
             const ny = hitWorld[4][1];
             // Ignore vertical side-wall or ceiling grazing contacts so hugging a wall never masks the floor underneath.
@@ -459,53 +507,17 @@ export class HavokCharacters {
             }
           }
           if (bestFrac <= 1 && bestNy >= character.maxSlopeCosine) {
-            grounded = true;
-          }
-        }
-      }
-
-      // 4. Ground snap down short ledges when previously grounded and moving down/level.
-      const snap = character.desc.groundSnapDistance ?? 0.1;
-      if (character.grounded && translation.y <= 0 && snap > 0) {
-        const snapCastDist = snap + keepDistance;
-        checked(
-          havok,
-          havok.HP_World_ShapeCastWithCollector(worldId, this.castCollector, [
-            character.shape,
-            IDENTITY_HAVOK_QUAT,
-            [posX, posY, posZ],
-            [posX, posY - snapCastDist, posZ],
-            false,
-            body.hpBodyId,
-          ]),
-          "character ground snap cast",
-        );
-        const snapHits = checkedValue(
-          havok,
-          havok.HP_QueryCollector_GetNumHits(this.castCollector),
-          "character ground snap count",
-        );
-        let bestFrac = 2;
-        let bestNy = -1;
-        for (let i = 0; i < snapHits; i++) {
-          const [fraction, , hitWorld] = checkedValue(
-            havok,
-            havok.HP_QueryCollector_GetShapeCastResult(this.castCollector, i),
-            "character ground snap result",
-          );
-          const ny = hitWorld[4][1];
-          // Ignore vertical side-wall or ceiling grazing contacts so stepping off a ledge beside a wall still snaps.
-          if (ny <= 1e-3) continue;
-          if (fraction < bestFrac) {
-            bestFrac = fraction;
-            bestNy = ny;
-          }
-        }
-        if (bestFrac <= 1 && bestNy >= character.maxSlopeCosine) {
-          const drop = Math.max(0, bestFrac * snapCastDist - keepDistance);
-          if (drop <= snap) {
-            posY -= drop;
-            grounded = true;
+            const hitDist = bestFrac * castDist;
+            if (needsSupportCast && hitDist <= supportDist + 1e-6) {
+              grounded = true;
+            }
+            if (needsSnapCast) {
+              const drop = Math.max(0, hitDist - keepDistance);
+              if (drop <= snap) {
+                posY -= drop;
+                grounded = true;
+              }
+            }
           }
         }
       }
@@ -516,8 +528,15 @@ export class HavokCharacters {
         this.pushDynamicBodies(touched, translation.x / solveDt, translation.y / solveDt, translation.z / solveDt, solveDt);
       }
     } finally {
-      for (const [shape, membership] of memberships) {
-        setShapeMembershipMask(havok, shape, membership);
+      try {
+        for (const [shape, saved] of memberships) {
+          if (saved.collide !== null) setShapeFilterMasks(havok, shape, saved.membership, saved.collide);
+          else setShapeMembershipMask(havok, shape, saved.membership);
+        }
+      } finally {
+        memberships.clear();
+        touched.length = 0;
+        planes.length = 0;
       }
     }
 

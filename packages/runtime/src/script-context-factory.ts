@@ -26,6 +26,11 @@ import {
   SceneCameraManager,
   SceneLayer,
   dispatchInterface,
+  writeObservedPose,
+  writeObservedPosition,
+  writeObservedRotation,
+  writeObservedScale,
+  writeObservedTransform,
   type InterfaceDispatchTarget,
 } from "@haptic/object-model";
 import { animExitTimeReached } from "@haptic/anim-graph";
@@ -512,34 +517,33 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
           const target = transformTarget(actor);
           const position = finiteVector(location, 0);
           if (!target || !position) return;
-          Object.assign(target.transform.position, position);
+          writeObservedPosition(target.transform, position.x, position.y, position.z);
           services.teleportActor?.(target);
         },
         addActorWorldOffset(actor, offset) {
           const target = transformTarget(actor);
           const delta = finiteVector(offset, 0);
           if (!target || !delta) return;
-          const position = finiteVector({
-            x: target.transform.position.x + delta.x,
-            y: target.transform.position.y + delta.y,
-            z: target.transform.position.z + delta.z,
-          }, 0);
-          if (!position) return;
-          Object.assign(target.transform.position, position);
+          const x = target.transform.position.x + delta.x;
+          const y = target.transform.position.y + delta.y;
+          const z = target.transform.position.z + delta.z;
+          if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return;
+          writeObservedPosition(target.transform, x, y, z);
           services.teleportActor?.(target);
         },
         setActorRotation(actor, rotation) {
           const target = transformTarget(actor);
           const rotator = finiteRotator(rotation);
           if (!target || !rotator) return;
-          Object.assign(target.transform.rotation, rotatorToQuat(rotator));
+          const q = rotatorToQuat(rotator);
+          writeObservedRotation(target.transform, q.x, q.y, q.z, q.w);
           services.teleportActor?.(target);
         },
         setActorScale(actor, scale) {
           const target = transformTarget(actor);
           const next = finiteVector(scale, 1);
           if (!target || !next) return;
-          Object.assign(target.transform.scale, next);
+          writeObservedScale(target.transform, next.x, next.y, next.z);
           services.teleportActor?.(target);
         },
         setActorTransform(actor, transform, options) {
@@ -550,9 +554,15 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
           const rotation = transform.rotation ? finiteQuat(transform.rotation) : undefined;
           const scale = transform.scale ? finiteVector(transform.scale, 1) : undefined;
           if (position === null || rotation === null || scale === null) return;
-          if (position) Object.assign(target.transform.position, position);
-          if (rotation) Object.assign(target.transform.rotation, rotation);
-          if (scale) Object.assign(target.transform.scale, scale);
+          if (position && rotation && scale) {
+            writeObservedTransform(target.transform, { position, rotation, scale });
+          } else if (position && rotation) {
+            writeObservedPose(target.transform, position, rotation);
+          } else {
+            if (position) writeObservedPosition(target.transform, position.x, position.y, position.z);
+            if (rotation) writeObservedRotation(target.transform, rotation.x, rotation.y, rotation.z, rotation.w);
+            if (scale) writeObservedScale(target.transform, scale.x, scale.y, scale.z);
+          }
           services.teleportActor?.(target, options);
         },
         attachToBone(actor, target, boneName) {

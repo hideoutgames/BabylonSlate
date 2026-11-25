@@ -467,6 +467,16 @@ export class HavokPhysicsBackend implements PhysicsBackend {
     return record !== undefined && record.desc.motionType !== "static" && record.movedLastStep;
   }
 
+  readBodyLinearVelocity(bodyId: string, out: Vec3): boolean {
+    const record = this.bodies.get(bodyId);
+    if (!record) return false;
+    const linear = checkedValue(this.havok, this.havok.HP_Body_GetLinearVelocity(record.hpBodyId), "read linear velocity");
+    out.x = linear[0];
+    out.y = linear[1];
+    out.z = linear[2];
+    return true;
+  }
+
   getBodyVelocity(bodyId: string): BodyVelocity | null {
     const record = this.bodies.get(bodyId);
     const transform = this.getBodyTransform(bodyId);
@@ -661,7 +671,10 @@ export class HavokPhysicsBackend implements PhysicsBackend {
         }
         topologyChanged ||=
           !previous || !sameGeometry || !sameColliderPose(previous.desc, desc) || proxy !== previous.proxy;
-        next.set(desc.id, { desc, shape, ...(proxy ? { proxy } : {}), seq: 0 });
+        const membershipMask = desc.layer >>> 0;
+        const collideMask = desc.isTrigger ? (desc.mask | (desc.overlapMask ?? 0)) >>> 0 : desc.mask >>> 0;
+        const proxyCollideMask = (desc.overlapMask ?? 0) >>> 0;
+        next.set(desc.id, { desc, shape, membershipMask, collideMask, proxyCollideMask, ...(proxy ? { proxy } : {}), seq: 0 });
       }
       if (
         topologyChanged &&
@@ -788,15 +801,20 @@ export class HavokPhysicsBackend implements PhysicsBackend {
       ]),
       "shape material",
     );
+    const membershipMask = desc.layer >>> 0;
     const collideMask = desc.isTrigger ? (desc.mask | (desc.overlapMask ?? 0)) >>> 0 : desc.mask >>> 0;
-    checked(havok, havok.HP_Shape_SetFilterInfo(shape, [desc.layer >>> 0, collideMask]), "shape filter");
+    const proxyCollideMask = (desc.overlapMask ?? 0) >>> 0;
+    collider.membershipMask = membershipMask;
+    collider.collideMask = collideMask;
+    collider.proxyCollideMask = proxyCollideMask;
+    checked(havok, havok.HP_Shape_SetFilterInfo(shape, [membershipMask, collideMask]), "shape filter");
     if (!proxy) return;
     checked(havok, havok.HP_Shape_SetTrigger(proxy, true), "proxy trigger flag");
     // Havok 1.3.14 rejects density 0 (`E_INVALIDARG`); 1e-6 keeps the proxy negligible vs default 1000.
     checked(havok, havok.HP_Shape_SetDensity(proxy, 1e-6), "proxy density");
     checked(
       havok,
-      havok.HP_Shape_SetFilterInfo(proxy, [desc.layer >>> 0, (desc.overlapMask ?? 0) >>> 0]),
+      havok.HP_Shape_SetFilterInfo(proxy, [membershipMask, proxyCollideMask]),
       "proxy filter",
     );
   }

@@ -1,7 +1,7 @@
 import type { TilemapPayload, TilesetPayload } from "@haptic/assets";
 import { multiplyQuats, rotatorToQuat, ScalabilitySession, setCustomEasingCurves } from "@haptic/core";
 import type { AnimRootMotionDelta } from "@haptic/anim-graph";
-import { World, type Actor, type ClassRegistry, type WorldInputProvider } from "@haptic/object-model";
+import { World, writeObservedPose, writeObservedPosition, writeObservedRotation, type Actor, type ClassRegistry, type WorldInputProvider } from "@haptic/object-model";
 import { AnimGraphRuntime } from "./anim-graph-runtime";
 import { rotateVector } from "./actor-world-transform";
 import { AudioParticleEmitter } from "./audio-particle-emitter";
@@ -117,11 +117,14 @@ function applyAnimRootMotion(rt: RuntimeComposition, actor: Actor, motion: AnimR
   const local = { x: motion.x * transform.scale.x, y: 0, z: motion.z * transform.scale.z };
   const world = rotateVector(transform.rotation, local);
   const moved = dtSeconds > 0 && rt.movement.applyRootMotion(actor, { x: world.x / dtSeconds, z: world.z / dtSeconds });
-  if (!moved) {
-    transform.position.x += world.x;
-    transform.position.z += world.z;
+  const nextRot = motion.yaw ? multiplyQuats(rotatorToQuat({ pitch: 0, yaw: motion.yaw, roll: 0 }), transform.rotation) : null;
+  if (!moved && nextRot) {
+    writeObservedPose(transform, { x: transform.position.x + world.x, y: transform.position.y, z: transform.position.z + world.z }, nextRot);
+  } else if (!moved) {
+    writeObservedPosition(transform, transform.position.x + world.x, transform.position.y, transform.position.z + world.z);
+  } else if (nextRot) {
+    writeObservedRotation(transform, nextRot.x, nextRot.y, nextRot.z, nextRot.w);
   }
-  if (motion.yaw) Object.assign(transform.rotation, multiplyQuats(rotatorToQuat({ pitch: 0, yaw: motion.yaw, roll: 0 }), transform.rotation));
   if (!moved || motion.yaw) rt.physics.forActor(actor)?.teleportActor(actor, rt.world);
 }
 
