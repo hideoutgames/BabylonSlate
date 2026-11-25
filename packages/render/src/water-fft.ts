@@ -178,7 +178,7 @@ int y = p.y;
 bool horizontal = fftStage.y > 0.5;
 int i = horizontal ? (x & (size - 1)) : y;
 vec4 tw = texelFetch(fftTwiddle, ivec2(i, int(fftStage.x)), 0);
-int j = int(tw.z);
+int j = int(tw.z + 0.5);
 ivec2 ia = horizontal ? ivec2(x - i + j, y) : ivec2(x, j);
 ivec2 ib = horizontal ? ivec2(x - i + j + (size >> 1), y) : ivec2(x, j + (size >> 1));
 vec4 a = texelFetch(fftInput, ia, 0);
@@ -259,10 +259,7 @@ function waterFftTwiddleTexture(engine: AbstractEngine, size: number): ThinTextu
     engine.onDisposeObservable.addOnce(() => {
       const cached = twiddleTextures.get(engine);
       if (!cached) return;
-      for (const entry of cached.values()) {
-        entry.wrapper.dispose();
-        entry.raw.dispose();
-      }
+      for (const entry of cached.values()) entry.wrapper.dispose();
       cached.clear();
       twiddleTextures.delete(engine);
     });
@@ -380,6 +377,7 @@ class WaterFftSimulation {
   disposed = false;
   dispatches = 0;
   private readonly h0Texture: ThinTexture;
+  private readonly twiddleTexture: ThinTexture;
   private readonly renderer: EffectRenderer;
   private readonly evolve: EffectWrapper;
   private readonly butterfly: EffectWrapper;
@@ -417,6 +415,7 @@ class WaterFftSimulation {
     this.foamTargets = foam;
     this.foamTextures = [wrap(foam[0], "Water FFT Foam A"), wrap(foam[1], "Water FFT Foam B")];
     this.h0Texture = new ThinTexture(h0);
+    this.twiddleTexture = waterFftTwiddleTexture(engine, layout.size);
     this.renderer = new EffectRenderer(engine);
     this.evolve = new EffectWrapper({
       engine, name: EVOLVE, vertexShader: VERTEX, fragmentShader: EVOLVE, useShaderStore: true, shaderLanguage: 0,
@@ -581,7 +580,7 @@ class WaterFftSimulation {
     this.renderer.applyEffectWrapper(this.butterfly);
     const effect = this.butterfly.effect;
     effect.setTexture("fftInput", this.work.textures[source]!);
-    effect.setTexture("fftTwiddle", waterFftTwiddleTexture(engine, this.layout.size));
+    effect.setTexture("fftTwiddle", this.twiddleTexture);
     effect.setFloat4("fftStage", stage, horizontal ? 1 : 0, xOffset, this.layout.size);
     effect.setFloat4("fftScale", 1, 1, 1, shear);
     this.renderer.draw();

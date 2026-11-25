@@ -98,6 +98,11 @@ describe("applySorting", () => {
       const subMeshes = [farA.subMeshes[0]!, midB.subMeshes[0]!, nearA.subMeshes[0]!];
       subMeshes.sort(compareOpaqueDraws);
       expect(subMeshes.map((sub) => sub.getMesh().name)).toEqual(["nearA", "farA", "midB"]);
+      // Unlit 2D/HUD scenes keep creation order instead of reordering coplanar quads by distance.
+      scene.lightsEnabled = false;
+      const hudMeshes = [farA.subMeshes[0]!, nearA.subMeshes[0]!];
+      hudMeshes.sort(compareOpaqueDraws);
+      expect(hudMeshes.map((sub) => sub.getMesh().name)).toEqual(["farA", "nearA"]);
     } finally {
       scene.dispose();
       engine.dispose();
