@@ -176,10 +176,10 @@ test("HapticLightingBlock shades graph Materials as its model predicts, and ligh
     expect(outliers(captures.get(pose)!, captures.get("all lights")!), pose).toBeGreaterThan(300);
   for (const pose of ["rotated environment", "box-projected environment", "rect light"])
     expect(outliers(captures.get(pose)!, captures.get("environment only")!), pose).toBeGreaterThan(300);
-  // One program per Material, whatever environment lit it (the sky cube, plain and box-projected, the face-coloured
-  // and the uniform cubes): the three regular ones and the white metal, the matte, the black and the mirror, seven;
-  // none carries Babylon's light defines.
-  expect(result.hapticEffects).toBe(7);
+  // With the Material record always on, Materials differing only in their hoisted Base Color, Metallic and Roughness
+  // literals share one GPU program, whatever environment lit them (the sky cube, plain and box-projected, the
+  // face-coloured and the uniform cubes): 3 Effects cover all seven surfaces, and none carries Babylon's light defines.
+  expect(result.hapticEffects).toBe(3);
   expect(result.lightDefines).toBe(0);
   expect(result.steps).toEqual(LIGHT_STEPS);
 
