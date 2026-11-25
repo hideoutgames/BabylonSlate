@@ -84,7 +84,7 @@ describe("hasset codec", () => {
     // A writer cannot produce a file the reader refuses.
     const header = { ...withoutMetadata };
     delete header.chunks;
-    await expect(encodeHasset({ header: header as HassetHeader, chunks: [] })).rejects.toThrow(AssetFormatVersionError);
+    await expect(encodeHasset({ header: header as unknown as HassetHeader, chunks: [] })).rejects.toThrow(AssetFormatVersionError);
   });
 
   it("externalises large chunks to the blob store", async () => {
