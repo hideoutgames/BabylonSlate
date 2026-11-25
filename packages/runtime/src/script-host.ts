@@ -701,6 +701,19 @@ export class ScriptHost {
     this.services.teleportActor?.(actor);
   }
 
+  /** True when `classId` has at least one compiled entry point for `event`. */
+  hasAnimEvent(classId: string, event: string): boolean {
+    const loaded = this.byClassId.get(classId);
+    if (!loaded || loaded.length === 0) return false;
+    for (let i = 0; i < loaded.length; i++) {
+      const entries = loaded[i]!.script.entryPoints;
+      for (let j = 0; j < entries.length; j++) {
+        if (entries[j]!.event === event) return true;
+      }
+    }
+    return false;
+  }
+
   /** Runs an Animation Graph script's event; `args` reaches its nodes (an Animation Event's name and phase). */
   invokeAnimEvent(
     classId: string,

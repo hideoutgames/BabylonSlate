@@ -92,13 +92,27 @@ const MOTION_FIELDS = [
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 
-function writeString(view: DataView, offset: number, value: string): number {
-  const bytes = textEncoder.encode(value);
-  view.setUint16(offset, bytes.length, true);
-  new Uint8Array(view.buffer, view.byteOffset + offset + 2, bytes.length).set(
-    bytes,
-  );
-  return 2 + bytes.length;
+/** Module-level reusable encode buffer for single-pass input event serialization (grown on demand). */
+let encodeScratch = new Uint8Array(1024);
+let encodeScratchView = new DataView(encodeScratch.buffer);
+
+function ensureEncodeScratch(needed: number): void {
+  if (needed <= encodeScratch.byteLength) return;
+  let next = encodeScratch.byteLength;
+  while (next < needed) next *= 2;
+  const grown = new Uint8Array(next);
+  grown.set(encodeScratch);
+  encodeScratch = grown;
+  encodeScratchView = new DataView(encodeScratch.buffer);
+}
+
+function writeStringSinglePass(offset: number, value: string): number {
+  // Worst-case UTF-8 expansion is 3 bytes per UTF-16 code unit, plus 2-byte u16 length prefix.
+  const maxBytes = value.length * 3;
+  ensureEncodeScratch(offset + 2 + maxBytes);
+  const { written } = textEncoder.encodeInto(value, encodeScratch.subarray(offset + 2));
+  encodeScratchView.setUint16(offset, written, true);
+  return 2 + written;
 }
 
 function readString(
@@ -110,33 +124,22 @@ function readString(
   return { value: textDecoder.decode(bytes), size: 2 + len };
 }
 
-/** Encode a batch of raw input events into a transferable ArrayBuffer. */
+/** Encode a batch of raw input events into a transferable ArrayBuffer in a single pass. */
 export function encodeInputEvents(events: readonly RawInputEvent[]): ArrayBuffer {
-  // Samples may contain more controls than a standard gamepad, and identifiers
-  // are UTF-8 strings. Size the actual wire payload rather than an event average.
-  let size = 4;
-  for (const event of events) {
-    size += 5;
-    switch (event.kind) {
-      case "pointer": size += 19; break;
-      case "key": size += 3 + textEncoder.encode(event.code).length; break;
-      case "gamepad": size += 3 + 4 * (event.axes.length + event.buttons.length); break;
-      case "touchAxis": size += 6 + textEncoder.encode(event.controlId).length; break;
-      case "gamepadDisconnect": size += 1; break;
-      case "motion": size += 4 * MOTION_FIELDS.length; break;
-    }
-  }
-  const scratch = new ArrayBuffer(size);
-  const view = new DataView(scratch);
+  ensureEncodeScratch(4);
   let o = 0;
-  view.setUint32(o, events.length, true);
+  encodeScratchView.setUint32(o, events.length, true);
   o += 4;
-  for (const event of events) {
-    view.setUint8(o, KIND[event.kind]);
+  for (let i = 0; i < events.length; i++) {
+    const event = events[i]!;
+    ensureEncodeScratch(o + 5);
+    encodeScratchView.setUint8(o, KIND[event.kind]);
     o += 1;
-    view.setUint32(o, event.tick >>> 0, true);
+    encodeScratchView.setUint32(o, event.tick >>> 0, true);
     o += 4;
     if (event.kind === "pointer") {
+      ensureEncodeScratch(o + 19);
+      const view = encodeScratchView;
       // `PointerEvent.pointerId` is a signed 32-bit long; pen and touch ids exceed 16 bits.
       view.setInt32(o, event.pointerId, true);
       o += 4;
@@ -155,39 +158,46 @@ export function encodeInputEvents(events: readonly RawInputEvent[]): ArrayBuffer
       view.setFloat32(o, event.pressure ?? Number.NaN, true);
       o += 4;
     } else if (event.kind === "key") {
-      view.setUint8(o, PHASE[event.phase]);
+      ensureEncodeScratch(o + 1);
+      encodeScratchView.setUint8(o, PHASE[event.phase]);
       o += 1;
-      o += writeString(view, o, event.code);
+      o += writeStringSinglePass(o, event.code);
     } else if (event.kind === "gamepad") {
+      ensureEncodeScratch(o + 3 + 4 * (event.axes.length + event.buttons.length));
+      const view = encodeScratchView;
       view.setUint8(o, event.gamepadIndex);
       o += 1;
       view.setUint8(o, event.axes.length);
       o += 1;
-      for (const axis of event.axes) {
-        view.setFloat32(o, axis, true);
+      for (let a = 0; a < event.axes.length; a++) {
+        view.setFloat32(o, event.axes[a]!, true);
         o += 4;
       }
       view.setUint8(o, event.buttons.length);
       o += 1;
-      for (const button of event.buttons) {
-        view.setFloat32(o, button, true);
+      for (let b = 0; b < event.buttons.length; b++) {
+        view.setFloat32(o, event.buttons[b]!, true);
         o += 4;
       }
     } else if (event.kind === "touchAxis") {
-      o += writeString(view, o, event.controlId);
-      view.setFloat32(o, event.value, true);
+      o += writeStringSinglePass(o, event.controlId);
+      ensureEncodeScratch(o + 4);
+      encodeScratchView.setFloat32(o, event.value, true);
       o += 4;
     } else if (event.kind === "motion") {
-      for (const field of MOTION_FIELDS) {
-        view.setFloat32(o, event[field], true);
+      ensureEncodeScratch(o + 4 * MOTION_FIELDS.length);
+      const view = encodeScratchView;
+      for (let m = 0; m < MOTION_FIELDS.length; m++) {
+        view.setFloat32(o, event[MOTION_FIELDS[m]!], true);
         o += 4;
       }
     } else {
-      view.setUint8(o, event.gamepadIndex);
+      ensureEncodeScratch(o + 1);
+      encodeScratchView.setUint8(o, event.gamepadIndex);
       o += 1;
     }
   }
-  return scratch;
+  return encodeScratch.buffer.slice(0, o);
 }
 
 export function decodeInputEvents(

@@ -324,7 +324,7 @@ describe("2D rich text appearance runtime", () => {
           }` },
       ]);
       runtime.realizePlayWorld(); runtime.createSceneLayer("labels"); runtime.start();
-      const poses = () => commands.filter((command) => command.type === "setText2DLetterPoses").at(-1)?.poses.map((value) => Number(value.toFixed(6)));
+      const poses = () => Array.from(commands.filter((command) => command.type === "setText2DLetterPoses").at(-1)?.poses ?? [], (value) => Number(value.toFixed(6)));
       runtime.tick();
       // 0.1 s into a 0.4 s reveal: A is half revealed, B starts, C has not.
       expect(poses()).toEqual([
@@ -425,7 +425,10 @@ describe("2D rich text appearance runtime", () => {
           }` },
       ]);
       runtime.realizePlayWorld(); runtime.createSceneLayer("labels"); runtime.start();
-      const poses = () => commands.filter((command) => command.type === "setText2DLetterPoses").at(-1)?.poses;
+      const poses = () => {
+        const raw = commands.filter((command) => command.type === "setText2DLetterPoses").at(-1)?.poses;
+        return raw ? Array.from(raw) : undefined;
+      };
       for (let i = 0; i < 3; i++) runtime.tick();
       // A, B and C share Speed 2 and Height 4 (their Moods differ but Mood is not declared): one call of three letters.
       // D has Speed 3: a call of its own, with its Tint clamped to 0..1.

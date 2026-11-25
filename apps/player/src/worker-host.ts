@@ -1,4 +1,5 @@
 import {
+  controlTransferables,
   dispatchCommandBatch,
   type BridgeHostMessage,
   type BridgeWorkerMessage,
@@ -13,6 +14,7 @@ export type PlayerWorkerHost = {
   pushInput: (events: readonly RawInputEvent[]) => void;
   onCommand: (handler: (command: CommandMessage) => void) => void;
   onSnapshot: (handler: (buffer: Float32Array) => void) => void;
+  onSnapshotNotify?: (handler: () => void) => void;
   onError: (handler: (error: Error) => void) => void;
   /** Whether the worker has reported an error, with or without a handler attached: a prewarmed host is then replaced. */
   failed: () => boolean;
@@ -47,6 +49,7 @@ export function createPlayerWorkerHost(): PlayerWorkerHost {
   );
   const commandHandlers: Array<(command: CommandMessage) => void> = [];
   const snapshotHandlers: Array<(buffer: Float32Array) => void> = [];
+  const snapshotNotifyHandlers: Array<() => void> = [];
   const errorHandlers: Array<(error: Error) => void> = [];
   let installedGeneration = 0;
   let stopped = false;
@@ -113,6 +116,11 @@ export function createPlayerWorkerHost(): PlayerWorkerHost {
       dispatchCommandBatch(msg.payload, dispatchCommand, isStopped);
       return;
     }
+    if (msg.channel === "snapshotNotify") {
+      if (msg.generation !== installedGeneration) return;
+      for (const handler of snapshotNotifyHandlers) handler();
+      return;
+    }
     if (msg.channel === "snapshot") {
       const ab = msg.payload;
       if (msg.generation !== installedGeneration) {
@@ -129,7 +137,7 @@ export function createPlayerWorkerHost(): PlayerWorkerHost {
     }
   };
   return {
-    postControl: (message) => post({ channel: "control", payload: message }),
+    postControl: (message) => post({ channel: "control", payload: message }, controlTransferables(message) ?? noTransfer),
     pushInput: (events) => {
       const buffer = encodeInputEvents(events);
       inputMessage.payload = inputTransfer[0] = buffer;
@@ -140,6 +148,9 @@ export function createPlayerWorkerHost(): PlayerWorkerHost {
     },
     onSnapshot: (handler) => {
       snapshotHandlers.push(handler);
+    },
+    onSnapshotNotify: (handler) => {
+      snapshotNotifyHandlers.push(handler);
     },
     onError: (handler) => {
       errorHandlers.push(handler);
@@ -155,6 +166,7 @@ export function createPlayerWorkerHost(): PlayerWorkerHost {
       worker.onmessageerror = null;
       commandHandlers.length = 0;
       snapshotHandlers.length = 0;
+      snapshotNotifyHandlers.length = 0;
       errorHandlers.length = 0;
       worker.terminate();
     },

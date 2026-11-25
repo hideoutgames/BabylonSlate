@@ -1191,7 +1191,12 @@ function initializeEngine(
   }));
   // Each slot's latest animation state is posed before the next snapshot is applied and before each render, and an
   // unseen When Visible actor's waits until a camera can see it.
-  const animVisibility = new AnimVisibilityGate(scene, binding, (command) => applyAnimStateToScene(animHostReportingMissing, command));
+  const animVisibility = new AnimVisibilityGate(
+    scene,
+    binding,
+    (command) => applyAnimStateToScene(animHostReportingMissing, command),
+    options.onAnimVisibility,
+  );
   scene.onBeforeRenderObservable.add(() => animVisibility.flush());
   // Play world sprites batch into persistent thin-instanced quads, flushed after animVisibility and LayerImageAtlas.
   // Simulation Edit's transform tools pick and outline meshes, which a batch's sprites are not, and
@@ -2068,8 +2073,23 @@ function initializeEngine(
   // Debug readout (`lastActorPositions`): decoded on read, once per buffered snapshot, never per push or frame.
   // A snapshot that leaves nothing to sample (cleared) keeps the positions of the last one that did; the clears
   // read them first, so a read after a clear sees the snapshot buffered before it, as one after each push would.
+  const syncSharedSnapshot = (): boolean => {
+    if (!snapshots.pollShared()) return false;
+    notePlaySnapshotReceived(binding);
+    appliedSnapshotIdentity = null;
+    const tick = snapshots.latestTickIndex();
+    if (tick !== null) {
+      playDebugDraw?.noteSimTick(tick);
+      options.onSharedSnapshotTick?.(tick);
+    }
+    const frameId = snapshots.latestFrameId();
+    if (frameId !== null && frameId !== lastRenderedSnapshotFrame) scheduler.requestPausedFrame();
+    scheduler.invalidate("snapshot");
+    return true;
+  };
   let positionsRevision = -1;
   const refreshPositions = () => {
+    syncSharedSnapshot();
     if (positionsRevision === snapshots.revision) return;
     positionsRevision = snapshots.revision;
     const sampled = snapshots.sample();
@@ -2358,6 +2378,7 @@ function initializeEngine(
     }
   }
   function prepareSnapshot() {
+    syncSharedSnapshot();
     // What a snapshot places from the pose (bone attachments, the lights and cameras they carry) reads the latest one.
     animVisibility.flush();
     const sampled = snapshots.sample();
@@ -2512,7 +2533,7 @@ function initializeEngine(
     outlineHost.refreshSettings();
     if (!worldLoading) runtimeScalability?.advance();
     if (!registeredView) syncLockedViewSize();
-    const sampled = snapshotAdmitted && appliedSnapshotIdentity ? admittedSnapshot : prepareSnapshot();
+    const sampled = snapshotAdmitted && appliedSnapshotIdentity && !snapshots.hasNewShared() ? admittedSnapshot : prepareSnapshot();
     streamAdmission?.sync();
     const frameStart = performance.now();
     const loadingFrame = hasLoadingFrame();
@@ -3188,6 +3209,10 @@ function initializeEngine(
       }
       scheduler.invalidate("snapshot");
     },
+    notifySharedSnapshot: () => {
+      if (disposed) return;
+      syncSharedSnapshot();
+    },
     applyCommand: (command: CommandMessage) => {
       // A stopped view keeps its Scene until native release; queued commands
       // must not spawn or rebind visuals in it.
@@ -3203,7 +3228,7 @@ function initializeEngine(
       streamAdmission?.receive(command);
       if (command.type === "snapshotLayout") {
         refreshPositions();
-        snapshots.installLayout(command.capacity, command.generation);
+        snapshots.installLayout(command.capacity, command.generation, command.shared);
         appliedSnapshotIdentity = null;
         scheduler.invalidate("snapshot");
         return;
@@ -3669,6 +3694,42 @@ function initializeEngine(
         binding.pendingAnimState.set(command.slotId, command);
         animVisibility.offer(command);
         scheduler.invalidate("snapshot");
+      }
+      if (command.type === "animClocks") {
+        const data = command.data;
+        const pendingMap = binding.pendingAnimState;
+        if (pendingMap && data.length > 0) {
+          let any = false;
+          for (let offset = 0; offset + 3 <= data.length; ) {
+            const slotId = data[offset]!;
+            const stateNormTime = data[offset + 1]!;
+            const layerCount = data[offset + 2]!;
+            offset += 3;
+            const end = offset + layerCount * 2;
+            if (end > data.length) break;
+            const pending = pendingMap.get(slotId);
+            if (pending) {
+              pending.normalisedTime = stateNormTime;
+              pending.justFinished = false;
+              pending.justLooped = false;
+              const layers = pending.layers;
+              if (layers && layers.length === layerCount) {
+                for (let i = 0; i < layerCount; i++) {
+                  const layer = layers[i]!;
+                  layer.normalisedTime = data[offset + i * 2]!;
+                  layer.weight = data[offset + i * 2 + 1]!;
+                }
+              }
+              animVisibility.offer(pending);
+              any = true;
+            }
+            offset = end;
+          }
+          if (any) {
+            appliedSnapshotIdentity = null;
+            scheduler.invalidate("snapshot");
+          }
+        }
       }
       streamAdmission?.sync();
     },

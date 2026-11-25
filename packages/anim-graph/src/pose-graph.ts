@@ -121,14 +121,24 @@ export function layeredBlendInputCount(value: unknown): number {
   return Number.isFinite(count) ? Math.max(1, Math.min(16, Math.round(count))) : 1;
 }
 
+const layeredBlendFilterCache = new WeakMap<
+  SerializedGraphNode,
+  { count: number; layers: unknown; filters: AnimBranchFilter[][] }
+>();
+
 /** Each blend input's branch filters, as stored on a Layered Blend Per Bone (`layers[i].branches`). */
 export function layeredBlendFilters(node: SerializedGraphNode): AnimBranchFilter[][] {
   const count = layeredBlendInputCount(node.data.count);
-  const layers = Array.isArray(node.data.layers) ? node.data.layers : [];
-  return Array.from({ length: count }, (_, index) => {
+  const layersRaw = node.data.layers;
+  const cached = layeredBlendFilterCache.get(node);
+  if (cached && cached.count === count && cached.layers === layersRaw) return cached.filters;
+  const layers = Array.isArray(layersRaw) ? layersRaw : [];
+  const filters = Array.from({ length: count }, (_, index) => {
     const layer = layers[index] as { branches?: unknown } | undefined;
     return normalizeAnimBranchFilters(layer?.branches);
   });
+  layeredBlendFilterCache.set(node, { count, layers: layersRaw, filters });
+  return filters;
 }
 
 /** Skeletal controls: nodes that change bones of the pose they take, each naming the bone it changes. */

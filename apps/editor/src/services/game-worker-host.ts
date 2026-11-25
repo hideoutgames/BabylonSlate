@@ -15,6 +15,8 @@ export interface GameWorkerHost {
   pushInput: (events: readonly RawInputEvent[]) => void;
   onCommand: (handler: (command: CommandMessage) => void) => void;
   onSnapshot: (handler: (buffer: Float32Array) => void) => void;
+  /** Wake-up notification when a shared-memory snapshot is published while paused or before held markers. */
+  onSnapshotNotify?: (handler: () => void) => void;
   /** The worker cannot run: it failed to load or evaluate, never started, or cannot read a message. Reported once. */
   onFailure: (handler: (message: string) => void) => void;
   terminate: () => void;
@@ -87,6 +89,7 @@ function spawnGameWorkerHost(): GameWorkerHost {
 
   const commandHandlers: Array<(command: CommandMessage) => void> = [];
   const snapshotHandlers: Array<(buffer: Float32Array) => void> = [];
+  const snapshotNotifyHandlers: Array<() => void> = [];
   const failureHandlers: Array<(message: string) => void> = [];
   let installedGeneration = 0;
   let terminated = false;
@@ -155,6 +158,11 @@ function spawnGameWorkerHost(): GameWorkerHost {
       dispatchCommandBatch(msg.payload, dispatchCommand, stopped);
       return;
     }
+    if (msg.channel === "snapshotNotify") {
+      if (msg.generation !== installedGeneration) return;
+      for (const handler of snapshotNotifyHandlers) handler();
+      return;
+    }
     if (msg.channel === "snapshot") {
       const ab = msg.payload;
       if (msg.generation !== installedGeneration) {
@@ -186,6 +194,9 @@ function spawnGameWorkerHost(): GameWorkerHost {
     },
     onSnapshot: (handler) => {
       snapshotHandlers.push(handler);
+    },
+    onSnapshotNotify: (handler) => {
+      snapshotNotifyHandlers.push(handler);
     },
     onFailure: (handler) => {
       failureHandlers.push(handler);

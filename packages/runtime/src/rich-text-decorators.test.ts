@@ -154,7 +154,7 @@ describe("Rich Text Decorators", () => {
     ], { text: "a[spin]bc[/spin]" });
     try {
       runtime.tick();
-      expect(commands.filter((command) => command.type === "setText2DLetterPoses").at(-1)?.poses).toEqual([
+      expect(Array.from(commands.filter((command) => command.type === "setText2DLetterPoses").at(-1)?.poses ?? [])).toEqual([
         0, 0, 1, 1, 0, 1, 1, 1, 1,
         0, 0, 1, 1, 5, 1, 1, 1, 1,
         0, 0, 1, 1, 5, 1, 1, 1, 1,

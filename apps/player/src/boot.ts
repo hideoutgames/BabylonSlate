@@ -446,6 +446,14 @@ function initializePlayer(
       if (worker) worker.postControl(result);
       else runtime?.applyRagdollPoseCaptured(result);
     },
+    onAnimVisibility: (visible, maxSlotId) => {
+      if (worker) worker.postControl({ type: "animVisibility", visible, maxSlotId });
+      else runtime?.setAnimVisibility(visible, maxSlotId);
+    },
+    onSharedSnapshotTick: (tickIndex) => {
+      lastWorkerTickIndex = tickIndex;
+      ticks = tickIndex;
+    },
     onRuntimeOutputChanged: (settings) => { runtimeOutput = settings; outputChanged(settings); options.onRenderOutputChanged?.(settings); },
   });
   own(() => { try { handle.dispose(); } finally { onViewReleased(handle.whenReleased()); } });
@@ -1098,6 +1106,10 @@ function initializePlayer(
       );
       ticks = lastWorkerTickIndex;
       handle.pushSnapshot(buffer);
+    });
+    worker.onSnapshotNotify?.(() => {
+      if (halted) return;
+      handle.notifySharedSnapshot?.();
     });
     worker.postControl(loadControl);
     publishAssetStates();

@@ -397,6 +397,13 @@ export function startPlaySession(options: PlaySessionOptions): PlaySession {
       if (worker) worker.postControl(result);
       else runtime?.applyRagdollPoseCaptured(result);
     },
+    onAnimVisibility: (visible, maxSlotId) => {
+      if (worker) worker.postControl({ type: "animVisibility", visible, maxSlotId });
+      else runtime?.setAnimVisibility(visible, maxSlotId);
+    },
+    onSharedSnapshotTick: (tickIndex) => {
+      lastWorkerTickIndex = tickIndex;
+    },
     onRuntimeOutputChanged: (settings) => {
       if (options.onRenderOutputChanged) options.onRenderOutputChanged(settings);
       else options.onSetRenderResolution?.(settings.width, settings.height);
@@ -718,6 +725,10 @@ export function startPlaySession(options: PlaySessionOptions): PlaySession {
       if (stopped) return;
       lastWorkerTickIndex = applySnapshotTick(lastWorkerTickIndex, buffer);
       handle.pushSnapshot(buffer);
+    });
+    worker.onSnapshotNotify?.(() => {
+      if (stopped) return;
+      handle.notifySharedSnapshot?.();
     });
   } else {
     const err = workerUnavailable;

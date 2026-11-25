@@ -6,5 +6,6 @@ import type { ControlMessage } from "./channels";
  */
 export function controlTransferables(message: ControlMessage): ArrayBuffer[] | undefined {
   if (message.type === "loadNavMesh" && message.bytes) return [message.bytes];
+  if (message.type === "animVisibility") return [message.visible.buffer as ArrayBuffer];
   return undefined;
 }

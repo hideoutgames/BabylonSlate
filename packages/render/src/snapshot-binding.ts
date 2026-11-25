@@ -80,6 +80,8 @@ export interface SnapshotSceneBinding extends MeshAssetContext {
   overlaySlotPasses?: Map<number, number>;
   /** Reused structural-pass results, indexed by the current snapshot actor. */
   snapshotMeshes: Array<Mesh | null>;
+  /** `meshes.revision` at the last full `reconcileSnapshotVisuals`; mismatch forces full reconcile. */
+  reconciledMeshesRevision?: number;
   /** Slot ids observed in an applied snapshot; gates absence-retire so
    * command-built visuals survive a stale buffer that predates them. */
   seenSlots: Set<number>;

@@ -101,6 +101,8 @@ export interface EngineHandle {
   loadSceneAsync: (sceneData: SerializedScene, options: EditorSceneLoadOptions) => Promise<void>;
   /** Push a worker snapshot and invalidate the viewport. */
   pushSnapshot: (buffer: Float32Array) => void;
+  /** Poll an attached shared-memory snapshot pair immediately (e.g. on paused Step / realized barrier). */
+  notifySharedSnapshot?: () => void;
   /** Apply a structural command (spawn/assignMesh) from the game worker. */
   applyCommand: (command: CommandMessage) => void;
   prepareRuntimeMaterialEdit: (request: RuntimeMaterialPreparationRequest) => Promise<void>;
@@ -408,6 +410,10 @@ export interface CreateEngineOptions {
   renderSettings?: Partial<RenderProjectSettings>;
   onScalabilityApplied?: (acknowledgement: ScalabilityAcknowledgement) => void;
   onRagdollPoseCaptured?: (result: RagdollCaptureResult) => void;
+  /** Reports changes to the visibility bitset of `whenVisible` animated actors so the worker can skip off-screen evaluation. */
+  onAnimVisibility?: (visible: Uint32Array, maxSlotId: number) => void;
+  /** Reports the tick index polled from an attached shared-memory snapshot pair (for worker input stamping). */
+  onSharedSnapshotTick?: (tickIndex: number) => void;
   onRuntimeOutputChanged?: (settings: RenderProjectSettings) => void;
   /** Sprite asset payloads keyed by guid so Play can bake clip UVs from animState. */
   spritePayloads?: ReadonlyMap<string, SpritePayload>;

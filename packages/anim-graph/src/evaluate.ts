@@ -217,6 +217,44 @@ function sweepEvents(
   for (const entry of crossed) pending.push(entry.event);
 }
 
+const EMPTY_FIRED: AnimFiredEvent[] = [];
+const EMPTY_OPEN = new Map<string, AnimOpenWindow>();
+
+interface AnimEvalScratch {
+  cachedPoses: Map<string, PoseVisit | null>;
+  blendSpaces: Map<string, BlendSpaceTick>;
+  syncGroups: Map<string, { phase: number; leaderWeight: number; leaderCycleMs: number }>;
+  playing: Map<string, number>;
+  open: Map<string, AnimOpenWindow>;
+  totals: Map<string, number>;
+  placed: Set<string>;
+}
+
+const evalScratchPool: AnimEvalScratch[] = [];
+
+function acquireEvalScratch(): AnimEvalScratch {
+  return evalScratchPool.pop() ?? {
+    cachedPoses: new Map(),
+    blendSpaces: new Map(),
+    syncGroups: new Map(),
+    playing: new Map(),
+    open: new Map(),
+    totals: new Map(),
+    placed: new Set(),
+  };
+}
+
+function releaseEvalScratch(scratch: AnimEvalScratch): void {
+  scratch.cachedPoses.clear();
+  scratch.blendSpaces.clear();
+  scratch.syncGroups.clear();
+  scratch.playing.clear();
+  scratch.open.clear();
+  scratch.totals.clear();
+  scratch.placed.clear();
+  if (evalScratchPool.length < 4) evalScratchPool.push(scratch);
+}
+
 /**
  * Fires a tick's events in order: a single event or a window's begin at or above its Trigger Weight, a window's end
  * once it began; then the end of every open window whose source no longer plays.
@@ -225,8 +263,16 @@ function fireEvents(
   pending: readonly Pending[],
   sources: ReadonlyMap<string, number>,
   previousOpen: Readonly<Record<string, AnimOpenWindow>> | undefined,
+  openScratch: Map<string, AnimOpenWindow>,
 ): { fired: AnimFiredEvent[]; open: Map<string, AnimOpenWindow> } {
-  const open = new Map(Object.entries(previousOpen ?? {}));
+  if (pending.length === 0 && !previousOpen) {
+    return { fired: EMPTY_FIRED, open: EMPTY_OPEN };
+  }
+  const open = openScratch;
+  open.clear();
+  if (previousOpen) {
+    for (const key in previousOpen) open.set(key, previousOpen[key]!);
+  }
   const fired: AnimFiredEvent[] = [];
   const end = (key: string, window: AnimOpenWindow) => {
     open.delete(key);
@@ -237,8 +283,10 @@ function fireEvents(
     if ("cached" in item) continue;
     if ("restart" in item) {
       // A Blend Space's samples play under its key.
-      for (const [key, window] of [...open]) {
-        if (window.source === item.restart || window.source.startsWith(`${item.restart}@`)) end(key, window);
+      if (open.size > 0) {
+        for (const [key, window] of [...open]) {
+          if (window.source === item.restart || window.source.startsWith(`${item.restart}@`)) end(key, window);
+        }
       }
       continue;
     }
@@ -255,8 +303,10 @@ function fireEvents(
       if (window) end(item.window, window);
     }
   }
-  for (const [key, window] of [...open]) {
-    if (!((sources.get(window.source) ?? 0) > 0)) end(key, window);
+  if (open.size > 0) {
+    for (const [key, window] of [...open]) {
+      if (!((sources.get(window.source) ?? 0) > 0)) end(key, window);
+    }
   }
   return { fired, open };
 }
@@ -1336,9 +1386,14 @@ function evaluateMachine(
  * The tick's events with each cached pose's own events in place of its uses: once, where it was first used, at its
  * uses' summed weight (at most 1), a cached pose used inside another counting that one's weight.
  */
-function resolveCachedPoseEvents(ctx: EvalContext, pending: readonly Pending[]): readonly Pending[] {
+function resolveCachedPoseEvents(
+  ctx: EvalContext,
+  pending: readonly Pending[],
+  totals: Map<string, number>,
+  placed: Set<string>,
+): readonly Pending[] {
   if (ctx.cachedPoses.size === 0) return pending;
-  const totals = new Map<string, number>();
+  totals.clear();
   const total = (items: readonly Pending[], scale: number, depth: number) => {
     for (const item of items) {
       if (!("cached" in item)) continue;
@@ -1350,7 +1405,7 @@ function resolveCachedPoseEvents(ctx: EvalContext, pending: readonly Pending[]):
   };
   total(pending, 1, 0);
   const resolved: Pending[] = [];
-  const placed = new Set<string>();
+  placed.clear();
   const place = (items: readonly Pending[], scale: number) => {
     for (const item of items) {
       if (!("cached" in item)) {
@@ -1410,62 +1465,76 @@ export function evaluateAnimGraph(
   const dtMs = Math.max(0, Number.isFinite(dtSeconds) ? dtSeconds : 0) * 1000;
   // Slots run for the whole graph, before the State Machine, whichever state shows them.
   const slotTick = advanceAnimSlots(previous?.slots, inputs.slotRequests, dtMs);
-  const ctx: EvalContext = {
-    inputs,
-    slots: slotTick.slots,
-    machine: doc.stateMachine,
-    dtSeconds,
-    layerBlends: [],
-    cachedPoses: new Map(),
-    previousPlayers: previous?.players ?? {},
-    players: {},
-    previousSelectors: previous?.selectors ?? {},
-    selectors: {},
-    blendSpaces: new Map(),
-    dtMs: Math.max(0, Number.isFinite(dtSeconds) ? dtSeconds : 0) * 1000,
-    previousLookAtTargets: previous?.lookAtTargets ?? {},
-    lookAtTargets: {},
-    previousSyncGroups: previous?.syncGroups ?? {},
-    syncGroups: new Map(),
-  };
-  const { state, layers, pending, sources, modifiers, motion } = evaluateMachine(ctx, doc.stateMachine, previous, dtSeconds);
-  // A slot animation's clip events fire at its weight, under the state playing.
-  for (const sweep of slotTick.sweeps) {
-    const { playback } = sweep;
-    const source = `slot:${sweep.slot}#${playback.id}`;
-    if (sweep.fresh) pending.push({ restart: source });
-    sources.push({ key: source, weight: playback.weight });
-    const clipSweep = animClipSweep(sweep.previous, sweep.next, playback.loopCount !== 1, sweep.fresh);
-    sweepEvents(
-      pending,
-      playback.clip.events ?? [],
-      clipSweep,
-      playback.clip.durationMs,
-      { clipAssetGuid: playback.clip.assetGuid, stateId: state.stateId, weight: playback.weight, source },
+  const scratch = acquireEvalScratch();
+  try {
+    const ctx: EvalContext = {
+      inputs,
+      slots: slotTick.slots,
+      machine: doc.stateMachine,
+      dtSeconds,
+      layerBlends: [],
+      cachedPoses: scratch.cachedPoses,
+      previousPlayers: previous?.players ?? {},
+      players: {},
+      previousSelectors: previous?.selectors ?? {},
+      selectors: {},
+      blendSpaces: scratch.blendSpaces,
+      dtMs,
+      previousLookAtTargets: previous?.lookAtTargets ?? {},
+      lookAtTargets: {},
+      previousSyncGroups: previous?.syncGroups ?? {},
+      syncGroups: scratch.syncGroups,
+    };
+    const { state, layers, pending, sources, modifiers, motion } = evaluateMachine(ctx, doc.stateMachine, previous, dtSeconds);
+    // A slot animation's clip events fire at its weight, under the state playing.
+    for (const sweep of slotTick.sweeps) {
+      const { playback } = sweep;
+      const source = `slot:${sweep.slot}#${playback.id}`;
+      if (sweep.fresh) pending.push({ restart: source });
+      sources.push({ key: source, weight: playback.weight });
+      const clipSweep = animClipSweep(sweep.previous, sweep.next, playback.loopCount !== 1, sweep.fresh);
+      sweepEvents(
+        pending,
+        playback.clip.events ?? [],
+        clipSweep,
+        playback.clip.durationMs,
+        { clipAssetGuid: playback.clip.assetGuid, stateId: state.stateId, weight: playback.weight, source },
+      );
+      // A slot's root motion moves the actor at its weight, as the pose under it gives way.
+      addRootMotion(motion, playback.clip.rootMotion, clipSweep, playback.weight, undefined, false);
+    }
+    const result: AnimEvalState = { ...state, players: ctx.players, selectors: ctx.selectors, layers };
+    if (Object.keys(slotTick.slots).length > 0) result.slots = slotTick.slots;
+    // A non-empty list is the tick's own; only the shared empty one is frozen.
+    if (slotTick.events.length > 0) result.slotEvents = slotTick.events as AnimSlotEvent[];
+    if (ctx.layerBlends.length > 0) result.layerBlends = ctx.layerBlends;
+    if (modifiers.length > 0) result.boneModifiers = modifiers;
+    if (Object.keys(ctx.lookAtTargets).length > 0) result.lookAtTargets = ctx.lookAtTargets;
+    const rootMotion = sumAnimRootMotion(motion);
+    if (rootMotion) result.rootMotion = rootMotion;
+    const playing = scratch.playing;
+    if (pending.length > 0 || previous?.openWindows) {
+      for (const source of sources) playing.set(source.key, Math.max(playing.get(source.key) ?? 0, source.weight));
+    }
+    const { fired, open } = fireEvents(
+      resolveCachedPoseEvents(ctx, pending, scratch.totals, scratch.placed),
+      playing,
+      previous?.openWindows,
+      scratch.open,
     );
-    // A slot's root motion moves the actor at its weight, as the pose under it gives way.
-    addRootMotion(motion, playback.clip.rootMotion, clipSweep, playback.weight, undefined, false);
+    if (fired.length > 0) result.events = fired;
+    if (open.size > 0) result.openWindows = Object.fromEntries(open);
+    if (ctx.syncGroups.size > 0) {
+      const syncGroups: Record<string, AnimSyncGroupClock> = {};
+      for (const [group, entry] of ctx.syncGroups) {
+        syncGroups[group] = { phase: entry.phase, cycleMs: entry.leaderCycleMs };
+      }
+      result.syncGroups = syncGroups;
+    }
+    return result;
+  } finally {
+    releaseEvalScratch(scratch);
   }
-  const result: AnimEvalState = { ...state, players: ctx.players, selectors: ctx.selectors, layers };
-  if (Object.keys(slotTick.slots).length > 0) result.slots = slotTick.slots;
-  // A non-empty list is the tick's own; only the shared empty one is frozen.
-  if (slotTick.events.length > 0) result.slotEvents = slotTick.events as AnimSlotEvent[];
-  if (ctx.layerBlends.length > 0) result.layerBlends = ctx.layerBlends;
-  if (modifiers.length > 0) result.boneModifiers = modifiers;
-  if (Object.keys(ctx.lookAtTargets).length > 0) result.lookAtTargets = ctx.lookAtTargets;
-  const rootMotion = sumAnimRootMotion(motion);
-  if (rootMotion) result.rootMotion = rootMotion;
-  const playing = new Map<string, number>();
-  for (const source of sources) playing.set(source.key, Math.max(playing.get(source.key) ?? 0, source.weight));
-  const { fired, open } = fireEvents(resolveCachedPoseEvents(ctx, pending), playing, previous?.openWindows);
-  if (fired.length > 0) result.events = fired;
-  if (open.size > 0) result.openWindows = Object.fromEntries(open);
-  if (ctx.syncGroups.size > 0) {
-    result.syncGroups = Object.fromEntries(
-      [...ctx.syncGroups].map(([group, entry]) => [group, { phase: entry.phase, cycleMs: entry.leaderCycleMs }]),
-    );
-  }
-  return result;
 }
 
 /** An evaluation that starts the State Machine over in `stateId`. */

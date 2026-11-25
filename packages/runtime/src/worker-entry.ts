@@ -50,7 +50,7 @@ const boot = createPlayBootCoordinator();
 let bootGeneration = 0;
 let consoleQueue = Promise.resolve();
 const sceneSnapshots = createSceneSnapshotDelivery({
-  publishSnapshot: () => publishSnapshot(),
+  publishSnapshot: () => publishSnapshot(true),
   send: queueCommand,
 });
 // Recycled via the host's `recycleSnapshot` message so the per-frame
@@ -84,9 +84,22 @@ function releaseAfterPose(): void {
 }
 let installedGeneration = 0;
 let pendingGeneration: number | null = null;
+/** True when `crossOriginIsolated` enables direct main-thread SAB seq-lock snapshot reads. */
+let sharedSnapshotsActive = false;
+const snapshotNotifyMessage: Extract<BridgeWorkerMessage, { channel: "snapshotNotify" }> = {
+  channel: "snapshotNotify",
+  generation: 0,
+};
 // A layout whose transfer buffers could not be allocated yet; poses wait for it.
 let unpostedLayout: Extract<CommandMessage, { type: "snapshotLayout" }> | null = null;
 let stopConsoleCapture: (() => void) | null = null;
+
+function canUseSharedSnapshots(): boolean {
+  return (
+    (globalThis as { crossOriginIsolated?: boolean }).crossOriginIsolated === true &&
+    typeof SharedArrayBuffer !== "undefined"
+  );
+}
 
 // Plain commands leave as one `commands` message instead of one clone each. The
 // queue is flushed where the emitting handler or tick ends and before every
@@ -185,6 +198,14 @@ function onCommand(command: CommandMessage): void {
     postCommand(command, [command.data.buffer as ArrayBuffer]);
     return;
   }
+  if (command.type === "animClocks") {
+    postCommand(command, [command.data.buffer as ArrayBuffer]);
+    return;
+  }
+  if (command.type === "setText2DLetterPoses" && command.poses instanceof Float32Array) {
+    postCommand(command, [command.poses.buffer as ArrayBuffer]);
+    return;
+  }
   if (command.type === "snapshotLayout") {
     installSnapshotLayout(command);
     return;
@@ -198,6 +219,15 @@ function onCommand(command: CommandMessage): void {
  * retries the newest layout, so poses resume once memory allows.
  */
 function installSnapshotLayout(command: Extract<CommandMessage, { type: "snapshotLayout" }>): boolean {
+  const shared = canUseSharedSnapshots() ? runtime?.sharedSnapshotBuffers() ?? null : null;
+  if (shared) {
+    sharedSnapshotsActive = true;
+    unpostedLayout = null;
+    pendingGeneration = command.generation;
+    post({ channel: "command", payload: { ...command, shared } });
+    return true;
+  }
+  sharedSnapshotsActive = false;
   try {
     snapshotPing = snapshotPing.grow(command.capacity);
   } catch (error) {
@@ -297,7 +327,7 @@ function handleControl(msg: ControlMessage): void {
       void rt.requestRuntimeInspector(msg).then(result => {
         const command: CommandMessage = { type: "runtimeInspectorResult", ...result };
         // A paused host redraws on this result, so it must follow the edited pose.
-        if (runtime === rt && result.success && result.payload?.kind === "mutation" && !publishSnapshot() && snapshotSkipped) {
+        if (runtime === rt && result.success && result.payload?.kind === "mutation" && !publishSnapshot(true) && snapshotSkipped) {
           afterPose.push(command);
           return;
         }
@@ -315,6 +345,7 @@ function handleControl(msg: ControlMessage): void {
       }
       void rt.requestSessionBoundary(msg).then(result => {
         if (runtime === rt && result.success && !result.paused && msg.action.kind === "pause") scheduler.resetClock();
+        if (runtime === rt && result.success && msg.action.kind === "step" && sharedSnapshotsActive) publishSnapshot(true);
         onCommand({ type: "sessionBoundaryResult", ...result });
       });
       return;
@@ -348,12 +379,24 @@ function handleControl(msg: ControlMessage): void {
       }
       // The replaced runtime's layout never applies to the next one.
       unpostedLayout = null;
+      sharedSnapshotsActive = false;
       saveStorage.dispose();
       sceneSources.dispose();
       sceneSources = createSceneSourceClient(onCommand);
       saveStorage = createSaveStorageClient((request) => onCommand({ type: "saveStorageRequest", request }));
       runtime = createRuntimeFromLoad(msg, onCommand, saveStorage.storage,
         msg.sceneCatalog ? { acquireScene: sceneSources.acquireScene } : undefined);
+      if (canUseSharedSnapshots()) {
+        const shared = runtime.sharedSnapshotBuffers();
+        if (shared) {
+          installSnapshotLayout({
+            type: "snapshotLayout",
+            capacity: runtime.snapshotCapacity,
+            generation: runtime.snapshotGeneration,
+            shared,
+          });
+        }
+      }
       return;
     }
     case "loadScripts": {
@@ -589,14 +632,29 @@ function handleControl(msg: ControlMessage): void {
     case "sceneLayerReady":
       runtime?.notifySceneLayerReady(msg.layerId, msg.layerLoadId);
       return;
+    case "animVisibility":
+      runtime?.setAnimVisibility(msg.visible, msg.maxSlotId);
+      return;
   }
 }
 
-function publishSnapshot(): boolean {
+function publishSnapshot(forceNotify = false): boolean {
   const rt = runtime;
   if (!rt) return false;
   if (unpostedLayout) installSnapshotLayout(unpostedLayout);
   if (unpostedLayout || pendingGeneration !== null) return false;
+  if (sharedSnapshotsActive) {
+    const serial = rt.snapshotSerial;
+    if (serial === 0) return false;
+    postedRuntime = rt;
+    postedSerial = serial;
+    if (forceNotify || afterPose.length > 0) {
+      snapshotNotifyMessage.generation = installedGeneration;
+      post(snapshotNotifyMessage);
+      releaseAfterPose();
+    }
+    return true;
+  }
   if (inFlightSnapshots >= MAX_IN_FLIGHT_SNAPSHOTS) {
     snapshotSkipped = true;
     return false;

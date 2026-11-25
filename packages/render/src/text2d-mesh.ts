@@ -66,7 +66,7 @@ export type Text2DAssetContext = MeshAssetContext & {
 
 const textMaterialVisuals = new WeakMap<Mesh, { guid: string | null; glyphs: Array<{ mesh: Mesh; restore: () => void }> }>();
 const appearVisuals = new WeakMap<Mesh, (progress: number) => void>();
-const letterPoseVisuals = new WeakMap<Mesh, (poses: readonly number[]) => void>();
+const letterPoseVisuals = new WeakMap<Mesh, (poses: ArrayLike<number>) => void>();
 const textLayouts = new WeakMap<Mesh, Text2DLayout>();
 
 /** One batch mesh of a text: the glyphs that share `key` (`glyphBatchKey`), as the quads it last drew. */
@@ -108,7 +108,7 @@ export function updateText2DAppear(mesh: Mesh, progress: number): void {
 }
 
 /** Apply the simulation's scripted letter poses (`TEXT2D_LETTER_POSE_STRIDE` numbers per character) without rebuilding. */
-export function updateText2DLetterPoses(mesh: Mesh, poses: readonly number[]): void {
+export function updateText2DLetterPoses(mesh: Mesh, poses: ArrayLike<number>): void {
   if (!mesh.isDisposed()) letterPoseVisuals.get(mesh)?.(poses);
 }
 
@@ -431,7 +431,7 @@ function attachEffects(
     tintB: 1,
   }));
   const effectEntries = entries.filter((entry) => hasBuiltInEffects(entry.item));
-  let poses: readonly number[] = parseText2DLetterPoses(properties.letterPoses);
+  let poses: ArrayLike<number> = parseText2DLetterPoses(properties.letterPoses);
   const applyPose = (entry: (typeof entries)[number]) => {
     const { mesh, item, restRotation, restScale, sample, slideOffset } = entry;
     const pose = text2DLetterPoseAt(poses, item.index);

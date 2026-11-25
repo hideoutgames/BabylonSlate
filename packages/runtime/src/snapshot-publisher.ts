@@ -1,13 +1,18 @@
 import {
   SNAPSHOT_ACTOR_STRIDE,
+  SNAPSHOT_DIRTY_FLAG_FULL,
+  SNAPSHOT_DIRTY_FLAG_TRACKED,
   SNAPSHOT_FLAG_OVERLAY,
   SNAPSHOT_FLAG_VISIBLE,
   SNAPSHOT_HEADER_FLOATS,
   SeqLockSnapshotPair,
+  markSnapshotDirtyRow,
   writeActorSlot,
+  writeSnapshotDirtyMeta,
   writeSnapshotHeader,
   type ActorSlot,
   type CommandMessage,
+  type SharedSnapshotBuffers,
 } from "@haptic/bridge";
 import { isSceneLayerAnchorActor, type Transform } from "@haptic/core";
 import type { Actor, World, WorldChangeObserver } from "@haptic/object-model";
@@ -249,6 +254,11 @@ export class SnapshotPublisher {
   get generation(): number { return this._generation; }
   get lastPublishMs(): number { return this._lastPublishMs; }
 
+  /** Underlying SharedArrayBuffers for cross-thread seq-lock reads, or null when SAB is unavailable. */
+  sharedBuffers(): SharedSnapshotBuffers | null {
+    return this.snapshots.sharedBuffers();
+  }
+
   /**
    * The mean publish milliseconds since the previous call (the stats command's `publishMs`), then a fresh window; the
    * last publish's when none happened since. A mean shows the fractions a clock in whole milliseconds hides.
@@ -270,8 +280,8 @@ export class SnapshotPublisher {
     let capacity = Math.max(1, this.snapshots.maxActors);
     while (capacity < required) capacity *= 2;
     try {
-      this.snapshots = SeqLockSnapshotPair.grow(this.snapshots, capacity);
       this._generation += 1;
+      this.snapshots = SeqLockSnapshotPair.grow(this.snapshots, capacity, this._generation);
       this.fullRewriteRemaining = 2;
       this.host.emit({ type: "snapshotLayout", capacity, generation: this._generation });
     } catch (error) {
@@ -488,6 +498,8 @@ export class SnapshotPublisher {
     }
 
     const rows = this.rowActors;
+    const dirtyView = this.snapshots.writerDirtyView();
+    const nextSerial = (this._writes + 1) >>> 0;
     let layoutChanged: boolean;
     if (this.fullRewriteRemaining > 0) {
       // Any pending candidate may have changed the layout since the frame the other buffer holds.
@@ -511,19 +523,41 @@ export class SnapshotPublisher {
           else this.dirtySlotFrames.set(actor, remaining - 1);
         }
       }
+      if (dirtyView) {
+        writeSnapshotDirtyMeta(
+          dirtyView,
+          nextSerial,
+          SNAPSHOT_DIRTY_FLAG_TRACKED | SNAPSHOT_DIRTY_FLAG_FULL,
+          rows.length,
+          false,
+        );
+      }
     } else {
       layoutChanged = this.collectRowChanges(worldTransforms);
+      const fullDirty = layoutChanged || this.backStale;
       // The buffer being written holds the frame before last. When either frame moved rows, carry the last
       // frame's rows forward instead of rewriting every row, then move rows in place.
-      if (layoutChanged || this.backStale) this.carryRowsForward(buf);
+      if (fullDirty) this.carryRowsForward(buf);
       if (layoutChanged) this.moveRows(buf);
+      if (dirtyView) {
+        writeSnapshotDirtyMeta(
+          dirtyView,
+          nextSerial,
+          fullDirty ? (SNAPSHOT_DIRTY_FLAG_TRACKED | SNAPSHOT_DIRTY_FLAG_FULL) : SNAPSHOT_DIRTY_FLAG_TRACKED,
+          rows.length,
+          !fullDirty,
+        );
+      }
       if (this.dirtySlotFrames.size > 0) {
         for (const [actor, remaining] of this.dirtySlotFrames) {
           const row = this.findRow(actor);
           if (row >= 0) {
             const slotId = this.slots.recordedSlot(actor);
             const pose = worldTransforms.get(actor.guid);
-            if (slotId !== undefined && pose) this.writeRow(buf, row, actor, slotId, pose);
+            if (slotId !== undefined && pose) {
+              this.writeRow(buf, row, actor, slotId, pose);
+              if (dirtyView && !fullDirty) markSnapshotDirtyRow(dirtyView, row);
+            }
           }
           if (remaining <= 1) this.dirtySlotFrames.delete(actor);
           else this.dirtySlotFrames.set(actor, remaining - 1);

@@ -48,7 +48,7 @@ interface AnimGraphRuntimeHost {
   hasRenderSlot(actor: Actor): boolean;
   /** A Behaviour Tree Play Animation task owns this slot's animation state. */
   playAnimationOwns(slotId: number): boolean;
-  scripts(): Pick<ScriptHost, "invokeAnimEvent" | "invokeAnimRule" | "invokeAnimPose">;
+  scripts(): Pick<ScriptHost, "invokeAnimEvent" | "invokeAnimRule" | "invokeAnimPose"> & Partial<Pick<ScriptHost, "hasAnimEvent">>;
   setSpriteClip(actor: Actor, clip: SpriteClip | null): void;
   /** The session's node breakpoints, the State Machine's included. */
   breakpoints(): ScriptBreakpoints;
@@ -78,6 +78,59 @@ interface SlotPlay {
   waits: Array<{ phase: "blendOut" | "completed"; resolve: (value: boolean) => void }>;
 }
 
+/** Cached per document: true only when the graph has no state/clip events or root motion tracks that depend on ticking off-screen. */
+const graphCullableCache = new WeakMap<AnimGraphDocument, boolean>();
+
+function graphCanCullOffscreen(document: AnimGraphDocument): boolean {
+  const cached = graphCullableCache.get(document);
+  if (cached !== undefined) return cached;
+  let cullable = true;
+  for (const state of document.stateMachine.states) {
+    if (state.events?.enter || state.events?.exit || state.events?.fullyBlended) {
+      cullable = false;
+      break;
+    }
+    for (const node of state.stateGraph.nodes) {
+      const data = node.data as Record<string, unknown> | undefined;
+      if (!data) continue;
+      if (data.rootMotion) {
+        cullable = false;
+        break;
+      }
+      if (Array.isArray(data.events) && data.events.length > 0) {
+        cullable = false;
+        break;
+      }
+      if (Array.isArray(data.samples)) {
+        for (const sample of data.samples as Array<Record<string, unknown>>) {
+          if (sample?.rootMotion || (Array.isArray(sample?.events) && sample.events.length > 0)) {
+            cullable = false;
+            break;
+          }
+        }
+        if (!cullable) break;
+      }
+    }
+    if (!cullable) break;
+  }
+  graphCullableCache.set(document, cullable);
+  return cullable;
+}
+
+function structuralSignature(
+  slotId: number,
+  stateId: string,
+  whenVisible: boolean,
+  layers: AnimEvalState["layers"],
+): string {
+  let sig = `${slotId}\0${stateId}\0${whenVisible ? 1 : 0}\0${layers.length}`;
+  for (let i = 0; i < layers.length; i++) {
+    const layer = layers[i]!;
+    sig += `\0${layer.stateId}\x01${layer.clipAssetGuid}\x01${layer.clipName}\x01${layer.clipKind}\x01${layer.flipX ? 1 : 0}${layer.flipY ? 1 : 0}${layer.additive ? 1 : 0}\x01${layer.rootMotionBone ?? ""}`;
+  }
+  return sig;
+}
+
 /** AnimationGraph documents and per-component evaluation state for Play. */
 export class AnimGraphRuntime implements RuntimeSubsystem {
   private readonly documents = new Map<string, AnimGraphDocument>();
@@ -87,6 +140,15 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
   /** The graph guid of each component the current tick visited. */
   private readonly liveGraphByComponent = new Map<string, string>();
   private readonly pendingJumpByComponent = new Map<string, string>();
+  /** Accumulated dt for `whenVisible` components skipped while off-screen, flushed on re-entry. */
+  private readonly deferredDtByComponent = new Map<string, number>();
+  /** Last emitted structural `animState` signature per component so steady-state ticks emit binary `animClocks`. */
+  private readonly lastStructuralByComponent = new Map<string, string>();
+  /** Reusable per-tick buffer collecting steady-state `[slotId, stateNormTime, layerCount, t0, w0, ...]`. */
+  private readonly pendingClocks: number[] = [];
+  /** Main-thread visibility bitset for `whenVisible` actors (bit `slotId` = 1 when visible). */
+  private visibilityMask: Uint32Array | null = null;
+  private visibilityMaxSlotId = -1;
   /** Play and Stop Slot Animation requests since a component's last evaluation, in order. */
   private readonly slotRequestsByComponent = new Map<string, AnimSlotRequest[]>();
   /** Each Play Slot Animation's handle: its component, whether it began blending out, how it ended, and its waits. */
@@ -217,6 +279,20 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
     this.loadingSlotPlays.clear();
   }
 
+  /** Update the main-thread visibility bitset for `whenVisible` Animation Graph actors. */
+  setVisibility(visible: Uint32Array, maxSlotId: number): void {
+    this.visibilityMask = visible;
+    this.visibilityMaxSlotId = maxSlotId;
+  }
+
+  private isSlotVisible(slotId: number): boolean {
+    const mask = this.visibilityMask;
+    if (!mask || slotId < 0 || slotId > this.visibilityMaxSlotId) return true;
+    const word = slotId >>> 5;
+    if (word >= mask.length) return true;
+    return ((mask[word]! >>> (slotId & 31)) & 1) !== 0;
+  }
+
   /** Stop, phase 2: forget every graph, clip, component state and debug follower the session held. */
   dispose(): void {
     this.cancelPending();
@@ -226,6 +302,11 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
     this.initializedGraphByComponent.clear();
     this.liveGraphByComponent.clear();
     this.pendingJumpByComponent.clear();
+    this.deferredDtByComponent.clear();
+    this.lastStructuralByComponent.clear();
+    this.pendingClocks.length = 0;
+    this.visibilityMask = null;
+    this.visibilityMaxSlotId = -1;
     this.graphByComponent.clear();
     this.debugComponent = null;
     this.debugSink = null;
@@ -237,6 +318,8 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
       this.dropSlotPlays(component.guid);
       this.evalByComponent.delete(component.guid);
       this.pendingJumpByComponent.delete(component.guid);
+      this.deferredDtByComponent.delete(component.guid);
+      this.lastStructuralByComponent.delete(component.guid);
       this.graphByComponent.delete(component.guid);
       this.initializedGraphByComponent.delete(component.guid);
     }
@@ -456,9 +539,14 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
     if (this.documents.size === 0) return;
     const live = this.liveGraphByComponent;
     live.clear();
+    this.pendingClocks.length = 0;
     // Only an actor that owns an AnimationGraphComponent has a graph to run.
     const completed = walkComponentOwners(this.host.world(), "AnimationGraphComponent", () => this.host.stopped(),
       (actor) => this.tickActor(actor, dtSeconds));
+    if (this.pendingClocks.length > 0 && !this.host.stopped()) {
+      this.host.emit({ type: "animClocks", data: new Float32Array(this.pendingClocks) });
+    }
+    this.pendingClocks.length = 0;
     if (!completed) return;
     // Deleting the visited entry keeps Map iteration valid, so prune in place.
     // A component the walk missed, or reached with another graph, initializes again when it next runs.
@@ -474,7 +562,7 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
         this.slotPlays.delete(handle);
       }
     }
-    for (const byComponent of [this.graphByComponent, this.evalByComponent, this.pendingJumpByComponent]) {
+    for (const byComponent of [this.graphByComponent, this.evalByComponent, this.pendingJumpByComponent, this.deferredDtByComponent, this.lastStructuralByComponent]) {
       for (const evalKey of byComponent.keys()) {
         if (!live.has(evalKey)) byComponent.delete(evalKey);
       }
@@ -571,12 +659,40 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
       const evalKey = component.guid;
       this.liveGraphByComponent.set(evalKey, guid);
       this.bindGraph(evalKey, guid);
-      if (!runs || slotId === undefined || !this.host.canTick(actor)) continue;
+      if (!runs || slotId === undefined || !this.host.canTick(actor)) {
+        // When Behaviour Tree Play Animation takes over the slot, the next AnimGraph tick must send a full descriptor.
+        if (slotId !== undefined && this.host.playAnimationOwns(slotId)) {
+          this.lastStructuralByComponent.delete(evalKey);
+        }
+        continue;
+      }
       const tickMode = parseAnimationTickMode(component.getVariable(ANIMATION_TICK_MODE_PROPERTY));
       // Never: the graph keeps its state and its actor its pose, and nothing fires, until it runs again.
       if (tickMode === "never") continue;
-      this.seedVariables(component, document);
+      const objectClassId = animGraphScriptClassId(guid);
       const hit = this.stateMachineBreakpoints(guid, component, actor);
+      const previous = this.evalByComponent.get(evalKey) ?? null;
+      if (
+        tickMode === "whenVisible" &&
+        !this.isSlotVisible(slotId) &&
+        previous !== null &&
+        this.initializedGraphByComponent.get(evalKey) === guid &&
+        !this.pendingJumpByComponent.has(evalKey) &&
+        !this.slotRequestsByComponent.has(evalKey) &&
+        !previous.slots &&
+        !hit &&
+        component !== this.debugComponent &&
+        !this.host.frameTrace(component) &&
+        !(this.host.scripts().hasAnimEvent?.(objectClassId, "onUpdateAnimation") ?? false) &&
+        graphCanCullOffscreen(document)
+      ) {
+        this.deferredDtByComponent.set(evalKey, (this.deferredDtByComponent.get(evalKey) ?? 0) + dtSeconds);
+        continue;
+      }
+      const deferredDt = this.deferredDtByComponent.get(evalKey) ?? 0;
+      if (deferredDt > 0) this.deferredDtByComponent.delete(evalKey);
+      const effectiveDt = dtSeconds + deferredDt;
+      this.seedVariables(component, document);
       const jumpTo = this.pendingJumpByComponent.get(evalKey);
       if (jumpTo) {
         this.pendingJumpByComponent.delete(evalKey);
@@ -590,7 +706,6 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
         variableStore: component,
         animFacts: this.evalByComponent.get(evalKey)?.facts,
       };
-      const objectClassId = animGraphScriptClassId(guid);
       if (this.initializedGraphByComponent.get(evalKey) !== guid) {
         this.host.scripts().invokeAnimEvent(
           objectClassId,
@@ -605,18 +720,18 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
         objectClassId,
         "onUpdateAnimation",
         actor,
-        dtSeconds,
+        effectiveDt,
         extras,
       );
-      const previous = this.evalByComponent.get(evalKey) ?? null;
+      const evalPrevious = this.evalByComponent.get(evalKey) ?? null;
       const slotRequests = this.slotRequestsByComponent.get(evalKey);
       this.slotRequestsByComponent.delete(evalKey);
       let taken: AnimTransition | null = null;
       const callbacks = this.evaluationCallbacks(component, actor, guid);
       const next = evaluateAnimGraph(
         document,
-        previous,
-        dtSeconds,
+        evalPrevious,
+        effectiveDt,
         {
           decideTransition: callbacks.decideTransition,
           transitionTaken: hit ? (transition) => { taken = transition; } : undefined,
@@ -625,14 +740,14 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
         },
       );
       this.evalByComponent.set(evalKey, next);
-      if (next.rootMotion) this.host.applyRootMotion(actor, next.rootMotion, dtSeconds);
+      if (next.rootMotion) this.host.applyRootMotion(actor, next.rootMotion, effectiveDt);
       // A play's waits resume their scripts here, in the tick it blended out or ended.
       for (const event of next.slotEvents ?? []) this.settleSlotEvent(event);
-      if (next.events) this.fireEvents(next.events, objectClassId, actor, dtSeconds, { variableStore: component, animFacts: next.facts });
-      if (hit) this.reportStateBreakpoints(hit, previous, next, taken);
+      if (next.events) this.fireEvents(next.events, objectClassId, actor, effectiveDt, { variableStore: component, animFacts: next.facts });
+      if (hit) this.reportStateBreakpoints(hit, evalPrevious, next, taken);
       // The followed component reports to the debugger; another, while breakpoints are set, for the frame a stop shows.
       const sink = component === this.debugComponent ? this.debugSink : this.host.frameTrace(component);
-      if (sink) this.reportStateMachine(sink.graph(guid, ANIM_STATE_MACHINE_DEBUG_GRAPH_ID), document, previous, next);
+      if (sink) this.reportStateMachine(sink.graph(guid, ANIM_STATE_MACHINE_DEBUG_GRAPH_ID), document, evalPrevious, next);
       // The frame a 2D graph shows most: its heaviest Sprite Animation layer.
       let sprite: (typeof next.layers)[number] | undefined;
       for (const layer of next.layers) {
@@ -650,6 +765,25 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
       } else {
         this.host.setSpriteClip(actor, null);
       }
+      const whenVisible = tickMode === "whenVisible";
+      const canCompact =
+        !next.facts.justFinished &&
+        !next.facts.justLooped &&
+        !next.layerBlends?.length &&
+        !next.boneModifiers?.length &&
+        next.layers.every((layer) => !layer.masks?.length && !layer.additiveBase);
+      const sig = canCompact ? structuralSignature(slotId, next.stateId, whenVisible, next.layers) : "";
+      if (canCompact && this.lastStructuralByComponent.get(evalKey) === sig) {
+        const clocks = this.pendingClocks;
+        clocks.push(slotId, next.normalisedTime, next.layers.length);
+        for (let i = 0; i < next.layers.length; i++) {
+          const layer = next.layers[i]!;
+          clocks.push(layer.normalisedTime, layer.weight);
+        }
+        continue;
+      }
+      if (canCompact) this.lastStructuralByComponent.set(evalKey, sig);
+      else this.lastStructuralByComponent.delete(evalKey);
       const currentLayer =
         next.layers.find((layer) => layer.stateId === next.stateId) ??
         next.layers[next.layers.length - 1];
@@ -668,7 +802,7 @@ export class AnimGraphRuntime implements RuntimeSubsystem {
         ...(next.layerBlends ? { layerBlends: next.layerBlends } : {}),
         ...(next.boneModifiers ? { boneModifiers: next.boneModifiers } : {}),
         // The graph ran all the same; render poses the actor only while it can be seen.
-        ...(tickMode === "whenVisible" ? { whenVisible: true } : {}),
+        ...(whenVisible ? { whenVisible: true } : {}),
       });
     }
   }

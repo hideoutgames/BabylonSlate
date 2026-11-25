@@ -794,7 +794,7 @@ function text3dAssignPayload(
 }
 
 /** A 2D Rich Text's reveal position, letter poses and the text it draws (`Text2DAppearRuntime.displayText`). */
-type RichTextDraw = { progress: number; poses: number[] | undefined; text: unknown };
+type RichTextDraw = { progress: number; poses: Float32Array | number[] | undefined; text: unknown };
 
 /** A 2D Text's or 2D Rich Text's assignment; a 2D Text, without `richText`, draws its text fully revealed. */
 function text2dAssignPayload(

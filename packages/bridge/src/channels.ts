@@ -482,7 +482,13 @@ export type ControlMessage =
   | { type: "sceneStreamProgress"; actorGuid: string; streamLoadId: number; progress: number }
   | { type: "sceneStreamFailed"; actorGuid: string; streamLoadId: number; message: string }
   | { type: "sceneSourceResponse"; requestId: number; scene?: SerializedScene; error?: string }
-  | { type: "scalabilityStatus"; acknowledgement: ScalabilityAcknowledgement };
+  | { type: "scalabilityStatus"; acknowledgement: ScalabilityAcknowledgement }
+  /**
+   * Main → worker visibility bitset for `whenVisible` Animation Graph actors:
+   * bit `slotId` is 1 when a camera or shadow reach can see that slot, 0 when off-screen.
+   * Sent only when any tracked `whenVisible` slot's bit changes.
+   */
+  | { type: "animVisibility"; visible: Uint32Array; maxSlotId: number };
 
 export type DebugColliderPrimitive = {
   id: string;
@@ -683,7 +689,13 @@ export type CommandMessage =
   | { type: "setLights2D"; slotId: number; lights: import("@haptic/core").Light2DBinding[] }
   /** A 2D body's collider outlines in its body's frame, which cast 2D light shadows; empty clears them. */
   | { type: "setOccluders2D"; slotId: number; shapes: Array<{ closed: boolean; points: number[] }> }
-  | { type: "snapshotLayout"; capacity: number; generation: number }
+  | {
+      type: "snapshotLayout";
+      capacity: number;
+      generation: number;
+      /** SharedArrayBuffer snapshot pair attached when `crossOriginIsolated` enables lock-free main-thread reads. */
+      shared?: import("./seq-lock").SharedSnapshotBuffers;
+    }
   | {
       type: "spawn";
       runtimeIdentity?: import("./runtime-inspector").RuntimeObjectIdentity;
@@ -804,7 +816,7 @@ export type CommandMessage =
           appearDuration?: number;
           appearStart?: import("@haptic/core").Text2DProperties["appearStart"];
           appearProgress?: number;
-          letterPoses?: number[];
+          letterPoses?: Float32Array | number[];
           text: string;
           materialGuid?: string | null;
           materialUv?: "text" | "glyph";
@@ -854,7 +866,7 @@ export type CommandMessage =
         appearDuration?: number;
         appearStart?: import("@haptic/core").Text2DProperties["appearStart"];
         appearProgress?: number;
-        letterPoses?: number[];
+        letterPoses?: Float32Array | number[];
         text: string;
         materialGuid?: string | null;
         materialUv?: "text" | "glyph";
@@ -1078,7 +1090,7 @@ export type CommandMessage =
       type: "setText2DLetterPoses";
       slotId: number;
       componentId: string;
-      poses: number[];
+      poses: Float32Array | number[];
     }
   | {
       type: "setOverlayVisualStyle";
@@ -1126,6 +1138,15 @@ export type CommandMessage =
       boneModifiers?: import("@haptic/core").AnimBoneModifier[];
       /** Animation Tick Mode When Visible: render poses the actor only while a camera (or a shadow) can see it. */
       whenVisible?: boolean;
+    }
+  /**
+   * Compact steady-state animation clock/weight updates for slots whose structural `animState`
+   * (state, clips, topology, modifiers) did not change this tick. Packed per slot as:
+   * `[slotId, stateNormalisedTime, layerCount, normTime0, weight0, ...]`.
+   */
+  | {
+      type: "animClocks";
+      data: Float32Array;
     }
   /**
    * The followed Behaviour Tree's live state: sent when it changes, and once as the follow starts.
@@ -1382,5 +1403,7 @@ export type BridgeWorkerMessage =
   /** Plain commands emitted since the worker's last post, in emission order; hosts dispatch each as a lone `command`. */
   | { channel: "commands"; payload: CommandMessage[] }
   | { channel: "snapshot"; payload: ArrayBuffer; generation: number }
+  /** Zero-payload wake-up when a shared-memory snapshot is published while paused or before held markers. */
+  | { channel: "snapshotNotify"; generation: number }
   /** Posted once when the worker's module has evaluated: a host that never receives it reports the worker as not started. */
   | { channel: "ready" };
