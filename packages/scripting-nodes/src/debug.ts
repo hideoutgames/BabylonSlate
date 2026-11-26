@@ -287,7 +287,12 @@ export const debugNodes: NodeDefinition[] = [
       let needsCowShare = false;
       const inputArgs = inputs.map((i) => {
         const expr = ctx.input(`in_${i.name}`);
-        if (i.type.kind === "array" || i.type.kind === "map" || i.type.kind === "wildcard" || i.type.kind === "object") {
+        if (
+          i.type.kind === "array" ||
+          i.type.kind === "map" ||
+          i.type.kind === "resolvingWildcard" ||
+          i.type.kind === "boxedWildcard"
+        ) {
           needsCowShare = true;
           return `__cowShare(${expr})`;
         }
