@@ -158,6 +158,7 @@ export interface PayloadLoaderSnapshot {
  * diagnostics, and retained bytes belong to the session loading service.
  */
 const MAX_VERIFIED_INLINE_CHUNKS = 4096;
+const MAX_VERIFIED_BLOBS = 4096;
 
 export class AccountedPayloadLoader {
   private readonly blobs: BlobStore;
@@ -169,6 +170,11 @@ export class AccountedPayloadLoader {
   private readonly recentRequests: PayloadChunkRequest[] = [];
   /** Session-verified inline chunks keyed by `(path, storageRevision, chunkId, sha256)`. */
   private readonly verifiedInlineChunks = new Set<string>();
+  /**
+   * Session-verified externalized blobs per BlobStore, keyed by `(blobId, blobRevision, byteLength, sha256)`.
+   * Bound to the blob file's strong storage revision so an in-place overwrite always re-verifies SHA-256.
+   */
+  private readonly verifiedBlobs = new WeakMap<BlobStore, Set<string>>();
 
   constructor(storage: ProjectStorage, options: AccountedPayloadLoaderOptions = {}) {
     this.storage = storage;
@@ -184,6 +190,17 @@ export class AccountedPayloadLoader {
       if (oldest !== undefined) this.verifiedInlineChunks.delete(oldest);
     }
     this.verifiedInlineChunks.add(key);
+  }
+
+  private markBlobVerified(blobs: BlobStore, key: string): void {
+    let table = this.verifiedBlobs.get(blobs);
+    if (!table) this.verifiedBlobs.set(blobs, table = new Set());
+    if (table.has(key)) return;
+    if (table.size >= MAX_VERIFIED_BLOBS) {
+      const oldest = table.values().next().value;
+      if (oldest !== undefined) table.delete(oldest);
+    }
+    table.add(key);
   }
 
   async loadChunk(
@@ -228,6 +245,7 @@ export class AccountedPayloadLoader {
     options.signal?.throwIfAborted();
     validateChunkBounds(asset, entry);
     let data: Uint8Array;
+    let blobCacheKey: string | null = null;
     if ("inline" in entry.locator) {
       const { offset, length } = entry.locator.inline;
       const result = await storage.readBinaryRange(asset.path, asset.payloadOffset + offset, length, asset.storageRevision, options);
@@ -237,7 +255,13 @@ export class AccountedPayloadLoader {
       if (result.bytes.byteLength !== length) throw new Error(`Length mismatch for chunk ${entry.id} in ${asset.path}`);
       data = result.bytes;
     } else {
-      if (blobs.blobByteLength &&
+      if (blobs.blobRevision && storage.hasStrongSourceRevisions === true) {
+        const meta = await blobs.blobRevision(entry.locator.blob, options);
+        if (meta.byteLength !== entry.byteLength) {
+          throw new Error(`Length mismatch for chunk ${entry.id} in ${asset.path}`);
+        }
+        blobCacheKey = `${entry.locator.blob}\0${meta.revision}\0${entry.byteLength}\0${entry.sha256}`;
+      } else if (blobs.blobByteLength &&
         await blobs.blobByteLength(entry.locator.blob, options) !== entry.byteLength) {
         throw new Error(`Length mismatch for chunk ${entry.id} in ${asset.path}`);
       }
@@ -251,14 +275,18 @@ export class AccountedPayloadLoader {
     }
     const isInline = "inline" in entry.locator;
     const strongInline = isInline && storage.hasStrongSourceRevisions === true;
-    const cacheKey = strongInline ? `${asset.path}\0${asset.storageRevision}\0${entry.id}\0${entry.sha256}` : null;
-    if (!cacheKey || !this.verifiedInlineChunks.has(cacheKey)) {
+    const inlineCacheKey = strongInline ? `${asset.path}\0${asset.storageRevision}\0${entry.id}\0${entry.sha256}` : null;
+    const alreadyVerified = inlineCacheKey
+      ? this.verifiedInlineChunks.has(inlineCacheKey)
+      : blobCacheKey !== null && (this.verifiedBlobs.get(blobs)?.has(blobCacheKey) ?? false);
+    if (!alreadyVerified) {
       const hash = await sha256Hex(data);
       options.signal?.throwIfAborted();
       if (hash !== entry.sha256) {
         throw new Error(`Hash mismatch for chunk ${entry.id} in ${asset.path}`);
       }
-      if (cacheKey) this.markInlineChunkVerified(asset.path, asset.storageRevision, entry.id, entry.sha256);
+      if (inlineCacheKey) this.markInlineChunkVerified(asset.path, asset.storageRevision, entry.id, entry.sha256);
+      else if (blobCacheKey) this.markBlobVerified(blobs, blobCacheKey);
     }
     // For inline chunks on strong-revision storage, readBinaryRange already asserted
     // result.revision === asset.storageRevision && result.totalSize === asset.totalSize atomically.

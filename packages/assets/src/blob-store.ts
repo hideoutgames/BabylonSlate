@@ -36,6 +36,11 @@ export interface BlobStore {
   hasBlob(sha256: string): Promise<boolean>;
   /** Metadata-only size lookup: a blob whose size differs from its chunk's recorded byteLength is rejected before it is read. */
   blobByteLength?(sha256: string, options?: StorageReadOptions): Promise<number>;
+  /**
+   * Metadata-only size + strong storage revision lookup for immutable blobs on strong-revision storage.
+   * When present, lets `AccountedPayloadLoader` skip re-hashing a blob already verified at the same revision.
+   */
+  blobRevision?(sha256: string, options?: StorageReadOptions): Promise<{ byteLength: number; revision: string }>;
 }
 
 /**
@@ -84,5 +89,15 @@ export function createVfsBlobStore(
       if (stat.isDir || stat.size === null) throw new Error(`Blob size is unavailable: ${sha256}`);
       return stat.size;
     },
+    ...(storage.hasStrongSourceRevisions
+      ? {
+          async blobRevision(sha256: string, options?: StorageReadOptions) {
+            options?.signal?.throwIfAborted();
+            const probe = await storage.readBinaryRange(pathFor(sha256), 0, 0, undefined, options);
+            options?.signal?.throwIfAborted();
+            return { byteLength: probe.totalSize, revision: probe.revision };
+          },
+        }
+      : {}),
   };
 }

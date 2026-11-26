@@ -1740,14 +1740,43 @@ function initializeEngine(
       refreshDecalMaterials(scene);
       return { ...assets, modelSources: binding.modelSources, textureBytes: binding.textureBytes, fontMsdfPng: binding.fontMsdfPng };
   };
+  const materialDocumentSignatures = new WeakMap<object, string>();
+  const documentJsonSignature = (doc: object): string => {
+    let cached = materialDocumentSignatures.get(doc);
+    if (cached === undefined) {
+      cached = JSON.stringify(doc);
+      materialDocumentSignatures.set(doc, cached);
+    }
+    return cached;
+  };
+  const sameDocumentMap = <T extends object>(
+    current: ReadonlyMap<string, T>,
+    next: ReadonlyMap<string, T>,
+  ): boolean => {
+    if (current.size !== next.size) return false;
+    for (const [guid, doc] of next) {
+      if (current.get(guid) !== doc) return false;
+    }
+    return true;
+  };
+  const mapSignature = <T extends object>(map: ReadonlyMap<string, T>): string =>
+    [...map.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([guid, doc]) => `${guid}\0${documentJsonSignature(doc)}`)
+      .join("\u0001");
   const installMaterialDocuments = (
     documents: ReadonlyMap<string, MaterialDocument>,
     functions?: ReadonlyMap<string, MaterialFunctionDocument>,
   ) => {
-      const key = JSON.stringify([
-        [...documents].sort(([a], [b]) => a.localeCompare(b)),
-        [...(functions ?? materialFunctions)].sort(([a], [b]) => a.localeCompare(b)),
-      ]);
+      const nextFunctions = functions ?? materialFunctions;
+      if (
+        materialDocumentsKey !== "" &&
+        sameDocumentMap(materialDocuments, documents) &&
+        sameDocumentMap(materialFunctions, nextFunctions)
+      ) {
+        return false;
+      }
+      const key = `${mapSignature(documents)}\u0002${mapSignature(nextFunctions)}`;
       if (key === materialDocumentsKey) return false;
       materialDocumentsKey = key;
       materialRevision += 1;
@@ -1765,6 +1794,9 @@ function initializeEngine(
       refreshDecalMaterials(scene);
       return true;
   };
+  let batchingEditorApply = false;
+  let deferredEditorApply = false;
+  let deferredEditorReselect = false;
 
   const sourceOwners = new Map<number, SceneSourceAssets>([[0, mergeSceneSourceAssets([{
     assets: captureMeshSourceAssets(binding), materialDocuments: new Map(materialDocuments),
@@ -1901,9 +1933,15 @@ function initializeEngine(
     postProcessStack = nextPostProcessStack;
     lastSceneAssetGuid = loadOptions?.sceneAssetGuid;
     if (editorSync) {
+      deferredEditorApply = false;
       editorSync.apply(sceneData);
       freezeLibraryMaterials();
       rebuildPostProcessStack();
+      const reselect = selectedActorIds();
+      if (deferredEditorReselect && reselect.length > 0) {
+        deferredEditorReselect = false;
+        editor?.setSelectedActors(reselect);
+      }
       return;
     }
     if (options.playMode) {
@@ -3886,7 +3924,15 @@ function initializeEngine(
     setMeshAssets: (assets: MeshAssetContext) => {
       const installed = installMeshAssets(assets);
       const rebuilt =
-        editorSync?.setMeshAssets(installed) === true;
+        editorSync?.setMeshAssets(installed, {
+          deferApply: batchingEditorApply,
+          onReapplyDeferred: () => { deferredEditorApply = true; },
+        }) === true;
+      if (batchingEditorApply) {
+        if (rebuilt) deferredEditorReselect = true;
+        debugOverlay?.refreshRenderTargets();
+        return;
+      }
       const reselect = selectedActorIds();
       if (rebuilt && reselect.length > 0) {
         editor?.setSelectedActors(reselect);
@@ -4077,10 +4123,42 @@ function initializeEngine(
       if (!installMaterialDocuments(documents, functions)) return;
       for (const root of binding.meshes.values()) { refreshText2DMaterials(root, binding); refreshJoystick2DMaterials(root, binding); refreshUIControl2DMaterials(root, binding); }
       rebuildPostProcessStack();
+      if (batchingEditorApply) {
+        deferredEditorApply = true;
+        return;
+      }
       const serialized = editorSync?.serializedScene();
       if (editorSync && serialized) editorSync.apply(serialized);
       freezeLibraryMaterials();
       scheduler.invalidate("asset");
+    },
+    batchEditorApply: (run) => {
+      if (batchingEditorApply) {
+        run();
+        return;
+      }
+      batchingEditorApply = true;
+      deferredEditorApply = false;
+      deferredEditorReselect = false;
+      try {
+        run();
+        if (deferredEditorApply && editorSync) {
+          const serialized = editorSync.serializedScene();
+          if (serialized) {
+            editorSync.apply(serialized);
+            freezeLibraryMaterials();
+            const reselect = selectedActorIds();
+            if (deferredEditorReselect && reselect.length > 0) {
+              editor?.setSelectedActors(reselect);
+            }
+            scheduler.invalidate("asset");
+          }
+        }
+      } finally {
+        batchingEditorApply = false;
+        deferredEditorApply = false;
+        deferredEditorReselect = false;
+      }
     },
     setEditingMaterialGuids: (guids) => {
       editingMaterialGuids.clear();

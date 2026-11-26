@@ -366,6 +366,18 @@ function compiledScriptsDisposer(value: { bundles: unknown[]; diagnostics: unkno
   return () => { value.bundles.length = 0; value.diagnostics.length = 0; };
 }
 
+/** Fast O(N) byte estimate for compiled script bundles without `JSON.stringify` over full source text. */
+function compiledScriptsByteEstimate(value: CompiledScripts): number {
+  let chars = 64;
+  for (const bundle of value.bundles) {
+    chars += bundle.source.length + bundle.assetGuid.length + bundle.classId.length + bundle.entryPoints.length * 64 + bundle.anchors.length * 48 + 128;
+  }
+  for (const diagnostic of value.diagnostics) {
+    chars += diagnostic.message.length + (diagnostic.assetGuid?.length ?? 0) + 96;
+  }
+  return chars * 2;
+}
+
 /** As `compiledScriptsDisposer`, for the packed content entry. */
 function packedContentDisposer(value: Parameters<typeof releasePackedContent>[0]): () => void {
   return () => releasePackedContent(value);
@@ -639,7 +651,7 @@ async function acquirePlayAssetSourcesAttempt(
             });
             const value = { bundles, diagnostics: [...result.diagnostics] };
             return {
-              value, sourceBytes: 0, decodedBytes: JSON.stringify(value).length * 2,
+              value, sourceBytes: 0, decodedBytes: compiledScriptsByteEstimate(value),
               dispose: compiledScriptsDisposer(value),
             };
           },

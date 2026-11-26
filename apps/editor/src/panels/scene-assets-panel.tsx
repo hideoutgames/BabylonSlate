@@ -317,10 +317,27 @@ export function SceneAssetsPanel({ api }: IDockviewPanelProps) {
   }, [orderedIds, selection.ids]);
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
 
-  const thumbnailGuids = useMemo(
-    () => allEntries.filter(hasThumbnail).map((entry) => entry.guid!).sort(),
-    [allEntries],
+  const cardsShown = Boolean(scene) && view === "cards" && visible.length > 0;
+  const shouldWindowCards = cardsShown && visible.length >= SCENE_ASSET_VIRTUALIZE_THRESHOLD;
+
+  const cardWindow = useMemo(
+    () =>
+      shouldWindowCards
+        ? computeSceneAssetGridWindow(visible.length, gridMetrics.width, gridMetrics.height, gridMetrics.scrollTop)
+        : null,
+    [gridMetrics.height, gridMetrics.scrollTop, gridMetrics.width, shouldWindowCards, visible.length],
   );
+
+  // Only decode thumbnails for cards in or adjacent to the visible window (or visible filtered set when unwindowed).
+  const thumbnailGuids = useMemo(() => {
+    const slice = cardWindow
+      ? visible.slice(
+          Math.max(0, (cardWindow.firstRow - 1) * cardWindow.columns),
+          Math.min(visible.length, (cardWindow.lastRow + 1) * cardWindow.columns),
+        )
+      : visible;
+    return slice.filter(hasThumbnail).map((entry) => entry.guid!).sort();
+  }, [cardWindow, visible]);
   const thumbnails = useThumbnailUrls(
     thumbnailGuids,
     loadAssetThumbnail,
@@ -549,9 +566,6 @@ export function SceneAssetsPanel({ api }: IDockviewPanelProps) {
     ? `${allEntries.length} ${allEntries.length === 1 ? "Asset" : "Assets"}`
     : `${visible.length} of ${allEntries.length} Assets`;
 
-  const cardsShown = Boolean(scene) && view === "cards" && visible.length > 0;
-  const shouldWindowCards = cardsShown && visible.length >= SCENE_ASSET_VIRTUALIZE_THRESHOLD;
-
   useLayoutEffect(() => {
     if (!shouldWindowCards) return;
     const container = scrollRef.current;
@@ -571,14 +585,6 @@ export function SceneAssetsPanel({ api }: IDockviewPanelProps) {
     observer?.observe(container);
     return () => observer?.disconnect();
   }, [shouldWindowCards]);
-
-  const cardWindow = useMemo(
-    () =>
-      shouldWindowCards
-        ? computeSceneAssetGridWindow(visible.length, gridMetrics.width, gridMetrics.height, gridMetrics.scrollTop)
-        : null,
-    [gridMetrics.height, gridMetrics.scrollTop, gridMetrics.width, shouldWindowCards, visible.length],
-  );
 
   let body;
   if (!scene) {
