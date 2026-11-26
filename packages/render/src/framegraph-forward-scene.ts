@@ -1001,7 +1001,7 @@ export class ForwardSceneFrameGraph {
     this.readinessRevision += 1;
     // Owners outside the graph follow the Scene's count (`sceneReadinessRevision`): what the Scene's own view hears, of
     // changes a mesh draws with. An auxiliary view hears the same Scene and marks for its own preparations besides.
-    if (!this.auxiliary && (!scope || scope.length > 0)) noteSceneReadinessChange(this.scene);
+    if (!this.auxiliary && (!scope || scope.length > 0)) noteSceneReadinessChange(this.scene, scope);
     // A changed input can change the variants of meshes already probed ahead: their passes probe them ahead again.
     for (const task of this.graph?.tasks ?? [])
       if (task instanceof ManagedShadowObjectRendererTask || task instanceof LogicalGeometryTask) task.forgetCompilesAhead();

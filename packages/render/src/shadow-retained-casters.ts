@@ -28,6 +28,7 @@ import { hasMeshLatticeDeformer } from "./lattice-deformer-binding";
 import { isAutoLodMaster } from "./model-lod";
 import { retireOwnedEffect } from "./owned-effect-retirement";
 import { isSmoothNormalShadowCaster } from "./shadow-bias";
+import type { CasterChanges } from "./shadow-caster-list";
 
 /**
  * Shadow casters a map draws without Babylon's per-caster work.
@@ -157,6 +158,8 @@ type Caster = {
   /** The walked frame that last asked the entry (`RetainedShadowCasters.beginFrame`), and whether its layers list it. */
   seen: number;
   listed: boolean;
+  /** Whether `resolve` has populated this entry's draws, cull state and world row for the current `stamp`. */
+  resolved: boolean;
   /** The scheduler's revision and the source's count of levels of detail this entry describes; -1 before the first. */
   revision: number;
   levels: number;
@@ -215,7 +218,7 @@ const GROUPS = 8;
 const NORMAL_STUB_MESH = { isVerticesDataPresent: () => true };
 const NORMAL_STUB = { getMesh: () => NORMAL_STUB_MESH };
 
-/** A layer's draws sort by part, then slot: `part * SLOT_SPAN + slot`, exact in a double. */
+/** Maximum retained draw slots a Scene may hold at once. */
 const SLOT_SPAN = 2 ** 22;
 /** The shared indices a retained part may reach: a part's key (`partFor`) is exact below it. */
 const PART_INDICES = 2 ** 26;
@@ -259,8 +262,10 @@ export class RetainedShadowCasters {
   private readonly parts = new Map<number, number>();
   private slotCount = 0;
   private readonly freeSlots: number[] = [];
-  /** A cull state's draws in a layer, sorted by part (`SLOT_SPAN`); and one list's slots (the uniform array). */
-  private order = new Float64Array(0);
+  /** O(N + P) per-part bucket arrays for grouping a cull state's draws by part without O(N log N) sorting. */
+  private partCounts = new Int32Array(0);
+  private partOffsets = new Int32Array(0);
+  private groupedSlots = new Int32Array(0);
   private readonly callSlots = new Int32Array(RETAINED_CALL_DRAWS);
   private rows = new Float32Array(0);
   /** The texture rows written since the last upload; none while `dirtyTo` is below `dirtyFrom`. */
@@ -288,8 +293,17 @@ export class RetainedShadowCasters {
   private frame = 0;
   private frames = 0;
   private sceneFrame = -1;
-  /** The walked frame whose casters `prepareFrame` resolved and uploaded. */
+  /** The walked frame whose casters `prepareFrame` resolved and uploaded, and its incremental change state. */
   private prepared = 0;
+  private preparedStamp = -1;
+  private preparedKept = false;
+  private preparedCursor = 0;
+  private changes: CasterChanges | null = null;
+  private readonly sourceLodCounts = new Map<Mesh, number>();
+  private readonly resolveChanged = (mesh: AbstractMesh): void => {
+    if (!this.casters.has(mesh)) return;
+    this.resolve(mesh, this.prepared);
+  };
   private readonly frameEnd: Nullable<Observer<Scene>>;
   private refused = false;
   private disposed = false;
@@ -341,25 +355,51 @@ export class RetainedShadowCasters {
    * it and not again by the frame's other layers. A pass outside such a frame (a readiness probe, a warm-up draw) asks
    * every caster itself.
    */
-  beginFrame(): void {
+  beginFrame(changes?: CasterChanges): void {
     this.frame = ++this.frames;
     this.sceneFrame = this.scene.getFrameId();
+    this.changes = changes ?? null;
   }
 
   /**
    * Before the walked frame's first map binds its target (the maps' `onBeforeBindObservable`; later calls in the frame
    * do nothing): describes every caster as its first layer would, writes the rows that changed, and uploads them, so
-   * the frame's layers list without writing a row and no upload lands in a render pass. A caster first met inside the
-   * stage, or rows a layer writes again (a floating origin that moved between maps), are uploaded by that layer's draw
-   * as before (`lateUploads`).
+   * the frame's layers list without writing a row and no upload lands in a render pass. When the scheduler's
+   * `CasterChanges` log is available and the floating origin/handedness stamp did not change, only casters changed
+   * since the last frame are re-resolved (with a full scan on periodic `stageCheck()` frames or source LOD changes).
+   * A caster first met inside the stage, or rows a layer writes again (a floating origin that moved between maps), are
+   * uploaded by that layer's draw as before (`lateUploads`).
    */
   prepareFrame(): void {
     const frame = this.walkedFrame();
     if (!frame || frame === this.prepared || this.disposed || this.refused || disabledScenes.has(this.scene)) return;
     this.prepared = frame;
     this.followOrigin();
-    for (const [mesh, caster] of this.casters)
-      if (caster.seen !== frame || (caster.listed && caster.stamp !== this.stamp)) this.resolve(mesh, frame);
+    const changes = this.changes;
+    let incremental = this.preparedKept && !!changes && this.preparedStamp === this.stamp && !changes.stageCheck();
+    if (incremental) {
+      for (const [source, count] of this.sourceLodCounts) {
+        if (source.isDisposed()) {
+          this.sourceLodCounts.delete(source);
+          continue;
+        }
+        if (source.getLODLevels().length !== count) {
+          incremental = false;
+          break;
+        }
+      }
+    }
+    if (incremental) {
+      incremental = changes!.forEachChangeSince(this.preparedCursor, this.resolveChanged);
+    }
+    if (!incremental) {
+      this.sourceLodCounts.clear();
+      for (const [mesh, caster] of this.casters)
+        if (caster.seen !== frame || (caster.listed && caster.stamp !== this.stamp)) this.resolve(mesh, frame);
+    }
+    this.preparedStamp = this.stamp;
+    this.preparedKept = !!changes;
+    if (changes) this.preparedCursor = changes.changeCursor();
     this.upload();
   }
 
@@ -396,6 +436,7 @@ export class RetainedShadowCasters {
     if (entry) {
       entry.seen = frame;
       entry.listed = listed;
+      entry.resolved = true;
     }
     return listed ? caster : null;
   }
@@ -424,7 +465,11 @@ export class RetainedShadowCasters {
     // A frame's layers ask the same casters: what the first found of one (or `prepareFrame`) holds for the others.
     const frame = this.walkedFrame();
     let caster = frame ? this.casters.get(mesh) ?? null : null;
-    if (!caster || caster.seen !== frame || (caster.listed && caster.stamp !== this.stamp)) {
+    if (
+      !caster ||
+      !(caster.seen === frame || (this.prepared === frame && this.preparedStamp === this.stamp && caster.resolved)) ||
+      (caster.listed && caster.stamp !== this.stamp)
+    ) {
       caster = this.resolve(mesh, frame);
       if (!caster) return false;
     } else if (!caster.listed) return false;
@@ -486,13 +531,31 @@ export class RetainedShadowCasters {
       if (generator.forceBackFacesOnly) engine.setState(true, 0, false, true, cullBackFaces);
       else engine.setState((group & 1) !== 0, 0, false, (group & 2) !== 0, cullBackFaces);
       engine.applyStates();
-      // The draws of one part side by side: one instanced draw each run.
-      const order = this.order = grown(this.order, count);
-      for (let index = 0; index < count; index += 1) order[index] = partOf[slots[index]!]! * SLOT_SPAN + slots[index]!;
-      order.subarray(0, count).sort();
+      // Group draws of the same part contiguously in O(N + P) without O(N log N) sorting.
+      const partCount = this.parts.size;
+      const partCounts = this.partCounts = grown(this.partCounts, partCount);
+      const partOffsets = this.partOffsets = grown(this.partOffsets, partCount);
+      const groupedSlots = this.groupedSlots = grown(this.groupedSlots, count);
+      for (let part = 0; part < partCount; part += 1) partCounts[part] = 0;
+      for (let index = 0; index < count; index += 1) {
+        const part = partOf[slots[index]!]!;
+        partCounts[part] = partCounts[part]! + 1;
+      }
+      let offset = 0;
+      for (let part = 0; part < partCount; part += 1) {
+        partOffsets[part] = offset;
+        offset += partCounts[part]!;
+      }
+      for (let index = 0; index < count; index += 1) {
+        const slot = slots[index]!;
+        const part = partOf[slot]!;
+        const at = partOffsets[part]!;
+        groupedSlots[at] = slot;
+        partOffsets[part] = at + 1;
+      }
       for (let from = 0; from < count; from += RETAINED_CALL_DRAWS) {
         const listed = Math.min(RETAINED_CALL_DRAWS, count - from);
-        for (let index = 0; index < listed; index += 1) callSlots[index] = order[from + index]! % SLOT_SPAN;
+        for (let index = 0; index < listed; index += 1) callSlots[index] = groupedSlots[from + index]!;
         effect.setIntArray4(SLOTS_UNIFORM, callSlots);
         for (let first = 0; first < listed;) {
           const slot = callSlots[first]!, part = partOf[slot]!;
@@ -549,6 +612,9 @@ export class RetainedShadowCasters {
     this.engine.onContextRestoredObservable.remove(this.restored);
     this.scene.onAfterRenderObservable.remove(this.frameEnd);
     this.casters.clear();
+    this.sourceLodCounts.clear();
+    this.changes = null;
+    this.preparedKept = false;
     this.geometries.clear();
     this.unindexed.clear();
     this.live.clear();
@@ -569,11 +635,12 @@ export class RetainedShadowCasters {
     const source = mesh instanceof InstancedMesh ? mesh.sourceMesh : mesh;
     // Levels of detail can arrive without the scheduler's revision moving (an automatic level mirrors its master).
     const levels = source instanceof Mesh ? source.getLODLevels().length : 0;
+    if (source instanceof Mesh) this.sourceLodCounts.set(source, levels);
     let caster = this.casters.get(mesh);
     if (caster && caster.revision === state.revision && caster.levels === levels) return caster.draws.length ? caster : null;
     if (!caster) {
       caster = {
-        seen: 0, listed: false, revision: -1, levels: 0, source: null, range: null, draws: [], world: null, worldFlag: -1, stamp: -1, inOrder: false, culling: 0, side: 0,
+        seen: 0, listed: false, resolved: false, revision: -1, levels: 0, source: null, range: null, draws: [], world: null, worldFlag: -1, stamp: -1, inOrder: false, culling: 0, side: 0,
         group: 0, uneven: false,
       };
       this.casters.set(mesh, caster);
@@ -923,11 +990,14 @@ export class RetainedShadowCasters {
     }
     if (this.disposed) return;
     this.frame = 0;
+    this.preparedKept = false;
+    this.sourceLodCounts.clear();
     // Every caster describes itself again, into buffers and a texture built for the context there is now.
     for (const caster of this.casters.values()) {
       caster.draws.length = 0;
       caster.range = null;
       caster.revision = -1;
+      caster.resolved = false;
     }
     this.geometries.clear();
     this.unindexed.clear();

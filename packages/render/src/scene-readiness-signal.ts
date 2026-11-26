@@ -93,17 +93,20 @@ export type SceneReadinessScope = readonly AbstractMesh[];
 
 type ReadinessDirtyListener = (reason: SceneReadinessDirtyReason, scope?: SceneReadinessScope) => void;
 const readinessDirtyListeners = new WeakMap<Scene, Set<ReadinessDirtyListener>>();
+type ReadinessScopeListener = (scope: SceneReadinessScope) => void;
+const readinessScopeListeners = new WeakMap<Scene, Set<ReadinessScopeListener>>();
 
 /**
  * Project-owned rendering-definition changes that Babylon observables do not
  * cover mark the scene's cached strict readiness result stale.
  */
 export function markSceneReadinessDirty(scene: Scene, reason: SceneReadinessDirtyReason = "other", scope?: SceneReadinessScope): void {
-  if (!scope || scope.length > 0) noteSceneReadinessChange(scene);
+  if (!scope || scope.length > 0) noteSceneReadinessChange(scene, scope);
   for (const listener of readinessDirtyListeners.get(scene) ?? []) listener(reason, scope);
 }
 
 const readinessRevisions = new WeakMap<Scene, number>();
+const unscopedReadinessRevisions = new WeakMap<Scene, number>();
 
 /**
  * Counts what staled the readiness of `scene`'s meshes: the marks above and what its own view's graph hears from
@@ -115,8 +118,38 @@ export function sceneReadinessRevision(scene: Scene): number {
   return readinessRevisions.get(scene) ?? 0;
 }
 
-export function noteSceneReadinessChange(scene: Scene): void {
+/**
+ * Counts only unscoped readiness invalidations (unscoped `noteSceneReadinessChange` and `markSceneReadinessDirty`
+ * calls). Listeners that also subscribe to `onSceneReadinessScope` can process scoped marks incrementally without
+ * invalidating every mesh in the Scene.
+ */
+export function sceneUnscopedReadinessRevision(scene: Scene): number {
+  return unscopedReadinessRevisions.get(scene) ?? 0;
+}
+
+export function noteSceneReadinessChange(scene: Scene, scope?: SceneReadinessScope): void {
+  if (!scope) {
+    readinessRevisions.set(scene, (readinessRevisions.get(scene) ?? 0) + 1);
+    unscopedReadinessRevisions.set(scene, (unscopedReadinessRevisions.get(scene) ?? 0) + 1);
+    return;
+  }
+  if (scope.length === 0) return;
   readinessRevisions.set(scene, (readinessRevisions.get(scene) ?? 0) + 1);
+  for (const listener of readinessScopeListeners.get(scene) ?? []) listener(scope);
+}
+
+/** Subscribe to scoped readiness invalidations (both project marks and view-graph Babylon observables). */
+export function onSceneReadinessScope(scene: Scene, listener: ReadinessScopeListener): () => void {
+  let listeners = readinessScopeListeners.get(scene);
+  if (!listeners) {
+    listeners = new Set();
+    readinessScopeListeners.set(scene, listeners);
+  }
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+    if (!listeners.size) readinessScopeListeners.delete(scene);
+  };
 }
 
 /** Subscribe to strict-readiness invalidations; returns an unsubscribe. */

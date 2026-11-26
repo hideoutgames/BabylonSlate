@@ -13,7 +13,10 @@ import { PointLight } from "@babylonjs/core/Lights/pointLight";
 import { SpotLight } from "@babylonjs/core/Lights/spotLight";
 import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
 import { Material } from "@babylonjs/core/Materials/material";
+import { MultiMaterial } from "@babylonjs/core/Materials/multiMaterial";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
+import { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { Scene } from "@babylonjs/core/scene";
 import "@babylonjs/core/Lights/Shadows/shadowGeneratorSceneComponent";
 import { setMeshShadowFlags } from "./instance-pool";
@@ -490,7 +493,7 @@ export class SceneShadowController {
     flushSceneLatticeDeformers(this.scene);
     this.classifyCasters();
     this.refresh.syncCasters(this.scene, this.drawing);
-    this.maps.retained?.beginFrame();
+    this.maps.retained?.beginFrame(this.refresh);
     // From the walk to the end of this Scene render no caster moves, shows or hides: the layers' lists read them once.
     this.spatial.prepare(this.casterWalked, this.refresh);
     // A sync("admission") skips the walk, so frozen cascade caster bounds follow it here.
@@ -522,21 +525,48 @@ export class SceneShadowController {
    * detail added, or its parts coming to blend or to stop blending moves it in or out of `drawing` in the frame it
    * happens. It reads every caster, so it keeps nothing that can go stale.
    */
+  private readonly instanceNoShadowCache = new Map<Mesh, boolean>();
   private classifyCasters(): void {
     let blended = false;
     this.forEachGenerator((generator) => {
       if (generator.transparencyShadow) blended = true;
     });
     this.blendedDraws = blended;
-    for (const mesh of this.meshes) this.classifyCaster(mesh);
+    const cache = this.instanceNoShadowCache;
+    cache.clear();
+    for (const mesh of this.meshes) this.classifyCaster(mesh, cache);
+    cache.clear();
   }
   /**
    * Whether some map draws blended parts (`transparencyShadow`, which no Haptic map sets): then a caster whose every
    * part blends may draw. Read by `classifyCasters`, and by the maps' full list check (`ShadowMapContext.blendedDraws`).
    */
   private blendedDraws = false;
-  private classifyCaster(mesh: AbstractMesh): void {
-    const draws = !castsNoShadowDepth(mesh, this.blendedDraws);
+  private classifyCaster(mesh: AbstractMesh, instanceCache?: Map<Mesh, boolean>): void {
+    let noDepth: boolean;
+    if (
+      instanceCache &&
+      !this.blendedDraws &&
+      mesh instanceof InstancedMesh &&
+      mesh.visibility >= 1 &&
+      !mesh.hasVertexAlpha &&
+      mesh.subMeshes === mesh.sourceMesh.subMeshes &&
+      mesh.sourceMesh.material &&
+      !(mesh.sourceMesh.material instanceof MultiMaterial) &&
+      mesh.sourceMesh.material.needAlphaBlendingForMesh === Material.prototype.needAlphaBlendingForMesh
+    ) {
+      const source = mesh.sourceMesh;
+      const cached = instanceCache.get(source);
+      if (cached !== undefined) {
+        noDepth = cached;
+      } else {
+        noDepth = castsNoShadowDepth(mesh, false);
+        instanceCache.set(source, noDepth);
+      }
+    } else {
+      noDepth = castsNoShadowDepth(mesh, this.blendedDraws);
+    }
+    const draws = !noDepth;
     if (draws === this.drawing.has(mesh)) return;
     if (draws) this.drawing.add(mesh);
     else this.drawing.delete(mesh);

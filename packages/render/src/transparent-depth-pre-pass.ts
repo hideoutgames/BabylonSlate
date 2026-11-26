@@ -1,6 +1,7 @@
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { SubMesh } from "@babylonjs/core/Meshes/subMesh";
 import type { Scene } from "@babylonjs/core/scene";
+import { Camera } from "@babylonjs/core/Cameras/camera";
 import { Constants } from "@babylonjs/core/Engines/constants";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { SmartArray } from "@babylonjs/core/Misc/smartArray";
@@ -136,8 +137,7 @@ export class TransparentDepthPrePass {
     sorted.length = count;
     for (let index = 0; index < count; index += 1) {
       const subMesh = data[index]!;
-      subMesh._alphaIndex = subMesh.getMesh().alphaIndex;
-      subMesh._distanceToCamera = Vector3.Distance(subMesh.getBoundingInfo().boundingSphere.centerWorld, eye);
+      setTransparentBlendKeys(subMesh, camera, eye);
       sorted[index] = subMesh;
     }
     const sortedGroup = group as SortedGroup | undefined;
@@ -160,6 +160,23 @@ export class TransparentDepthPrePass {
       for (let index = 0; index < count; index += 1) sorted[index] = null;
     }
   }
+}
+
+/**
+ * Populates a transparent submesh's sort keys (`_alphaIndex`, `_distanceToCamera`).
+ * Perspective views sort back-to-front by radial distance from `eye`; orthographic views sort by signed view-space
+ * depth along the camera's forward axis so translating 2D/HUD elements in X/Y never disturbs draw order.
+ */
+export function setTransparentBlendKeys(subMesh: SubMesh, camera: Camera | null | undefined, eye: Vector3): void {
+  subMesh._alphaIndex = subMesh.getMesh().alphaIndex;
+  const center = subMesh.getBoundingInfo().boundingSphere.centerWorld;
+  if (camera && camera.mode === Camera.ORTHOGRAPHIC_CAMERA) {
+    const view = camera.getViewMatrix().m;
+    const sign = camera.getScene().useRightHandedSystem ? -1 : 1;
+    subMesh._distanceToCamera = sign * (view[2]! * center.x + view[6]! * center.y + view[10]! * center.z + view[14]!);
+    return;
+  }
+  subMesh._distanceToCamera = Vector3.Distance(center, eye);
 }
 
 /** Gives an object renderer's transparent depth pre-passes their own render pass id; dispose the result with it. */

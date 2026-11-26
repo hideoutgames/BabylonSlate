@@ -22,7 +22,7 @@ import { LayerImageAtlas, type LayerImageCell } from "./layer-image-atlas";
 import { disableOverlayClipScissor, enableOverlayClipScissor, overlayDrawClip } from "./overlay-layout-render";
 import { overlayVisualStyle, shareOverlayVisualStyle } from "./overlay-visual-style";
 import { journalFollows, openRenderChangeReader, RenderChange, type RenderChangeReader } from "./render-change-journal";
-import { sceneReadinessRevision } from "./scene-readiness-signal";
+import { onSceneReadinessScope, sceneUnscopedReadinessRevision } from "./scene-readiness-signal";
 import { hasStockOrPlannedVertexStage } from "./shadow-material-policy";
 import { bindTextMaterialGlyph, textMaterialGlyphBinding, type TextMaterialBinding } from "./text-material-block";
 import { isUnlitMaterial } from "./unlit-material";
@@ -726,6 +726,7 @@ function pollValues(stamp: Stamp, object: object, texture: boolean): boolean {
  */
 class OverlayDrawBatcher implements SceneDrawBatcher {
   private readonly scene: Scene;
+  private readonly stopReadiness: () => void;
   /** Each pass of an Engine frame's kept work, by the pass's place among the frame's passes. */
   private readonly records: PassRecord[] = [];
   /** The Engine frame whose passes took the first `passCount` records. */
@@ -777,6 +778,12 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
     this.scene = scene;
     this.atlas = new LayerImageAtlas(scene);
     this.reader = openRenderChangeReader(scene);
+    this.stopReadiness = onSceneReadinessScope(scene, (scope) => {
+      for (const mesh of scope) {
+        const entries = this.entriesByNode.get(mesh);
+        if (entries) for (const entry of entries) entry.readyKnown = false;
+      }
+    });
   }
 
   /** Whether batches sample the Scene's shared page of small images (they do unless turned off, as a proof does). */
@@ -875,6 +882,7 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.stopReadiness();
     for (const slot of this.slots) {
       slot.mesh.dispose(false, false);
       slot.worldBuffer?.dispose();
@@ -1128,7 +1136,7 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
     record.atlas = this.atlas;
     record.atlasRevision = this.atlas?.revision ?? -1;
     record.latticeRevision = latticeMarksRevision();
-    record.readinessRevision = sceneReadinessRevision(this.scene);
+    record.readinessRevision = sceneUnscopedReadinessRevision(this.scene);
     record.renderPassId = this.scene.getEngine().currentRenderPassId;
   }
 
@@ -1146,7 +1154,7 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
     const all = eye.x !== record.eyeX || eye.y !== record.eyeY || eye.z !== record.eyeZ || this.atlas !== record.atlas ||
       (this.atlas?.revision ?? -1) !== record.atlasRevision || latticeMarksRevision() !== record.latticeRevision;
     // A readiness answer, and the Effect it leaves on the submesh, is the render pass's own.
-    if (sceneReadinessRevision(this.scene) !== record.readinessRevision || this.scene.getEngine().currentRenderPassId !== record.renderPassId)
+    if (sceneUnscopedReadinessRevision(this.scene) !== record.readinessRevision || this.scene.getEngine().currentRenderPassId !== record.renderPassId)
       for (const entry of entries) entry.readyKnown = false;
     for (const entry of record.polled) markDirty(entry);
     const reread = all ? entries : record.dirty;

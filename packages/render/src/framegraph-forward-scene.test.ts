@@ -2071,20 +2071,20 @@ it("keeps drawing a running fog march in the frame in which shadow admission dro
   graph.dispose();
 });
 
-it("writes the light block once per readiness while shadow admission changes nothing, and again after it drops a map", async () => {
+it("skips light block uploads on steady readiness frames and writes once after shadow admission drops a map", async () => {
   const { scene, camera, graph, sun, controller } = await shadowedFogHost();
   expect(graph.readiness(camera)).not.toMatchObject({ preparationRequired: true });
   const writes = vi.spyOn(hapticLightBuffer(scene), "update");
-  // A steady frame's readiness: the lighting sync before admission is the only write.
+  // A steady frame's readiness: unchanged light and shadow state skips redundant UBO uploads.
   for (let frame = 0; frame < 3; frame += 1) graph.readiness(camera);
-  expect(writes).toHaveBeenCalledTimes(3);
+  expect(writes).toHaveBeenCalledTimes(0);
   expect(hapticShadowedSun(scene)).toBe(sun);
-  // Admission drops the sun's map inside the readiness: the block is written again, without its sun shadow.
+  // Admission drops the sun's map inside the readiness: the block is uploaded once, without its sun shadow.
   writes.mockClear();
   controller.register(sun, false);
   graph.readiness(camera);
   expect(controller.generator(sun)).toBeNull();
-  expect(writes).toHaveBeenCalledTimes(2);
+  expect(writes).toHaveBeenCalledTimes(1);
   expect(hapticShadowedSun(scene)).toBeNull();
   graph.dispose();
 });

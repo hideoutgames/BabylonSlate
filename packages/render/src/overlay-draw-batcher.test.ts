@@ -312,12 +312,13 @@ describe("Scene Layer draw batching", () => {
     const corners = [-0.5, -0.5, 0, 0.5, -0.5, 0, 0.5, 0.5, 0, -0.5, 0.5, 0];
     expect(Array.from(batch.getVerticesData("position")!.slice(0, 36))).toEqual([...corners, ...corners, ...corners]);
     // With each vertex, its member's world matrix in rows, each ending in the translation. The camera's position is the
-    // eye, which the floating origin subtracts from every translation. Back to front: the turned quad, the second, the first.
+    // eye, which the floating origin subtracts from every translation. Orthographic signed view-Z back to front:
+    // the turned quad (z = 5), then first and second (both z = 0, keeping dispatch order).
     const rows = (kind: string, member: number) => Array.from(batch.getVerticesData(kind)!.slice(member * 16, member * 16 + 16));
     const perVertex = (row: number[]) => [...row, ...row, ...row, ...row];
     const worldOf = (member: number) => ["batchWorld0", "batchWorld1", "batchWorld2"].map((kind) => rows(kind, member));
-    expect(worldOf(1)).toEqual([[2, 0, 0, 4], [0, 2, 0, 2], [0, 0, 2, 10]].map(perVertex));
-    expect(worldOf(2)).toEqual([[1, 0, 0, 0.75], [0, 1, 0, -0.75], [0, 0, 1, 10]].map(perVertex));
+    expect(worldOf(1)).toEqual([[1, 0, 0, 0.75], [0, 1, 0, -0.75], [0, 0, 1, 10]].map(perVertex));
+    expect(worldOf(2)).toEqual([[2, 0, 0, 4], [0, 2, 0, 2], [0, 0, 2, 10]].map(perVertex));
     // A quarter turn about z takes x to y and y to -x, as rounded to 32 bits as the member's own upload is.
     const uploaded = Array.from(new Float32Array(turned.getWorldMatrix().asArray()));
     const turnedWorld = worldOf(0);
@@ -592,16 +593,16 @@ describe("Scene Layer draw batching", () => {
       document.nodes.push({ id: "reflection", type: "input.mirrorReflection", position: { x: 0, y: 0 }, properties: {} });
       document.edges = [{ id: "reflection-output", sourceNodeId: "reflection", sourcePinId: "color", targetNodeId: "output", targetPinId: "baseColor" }];
     });
-    // Off to the side, and 10.49 from the layer camera at (0, 0, -10): between a (10.9) and c (10.17) in the order.
-    mirror.position.set(4, 0, -0.3);
+    // Off to the side, at z = 0.5: between a (z = 0.9) and c (z = 0.1) in orthographic view-Z order.
+    mirror.position.set(4, 0, 0.5);
     quad(scene, "c", 1.2, 0, { z: 0.1 });
     // The panel overlaps neither: c joins a across it.
     expect(await drawsBothWays(context)).toEqual({ batched: 2, unbatched: 3 });
-    // Over c (10.61 from the camera), the panel must draw before it: c cannot join a, which draws before the panel.
+    // Over c (at z = 0.5), the panel must draw before it: c cannot join a, which draws before the panel.
     mirror.position.set(1.5, 0, 0.5);
     expect(await drawsBothWays(context)).toEqual({ batched: 3, unbatched: 3 });
     // A Material that moves vertices in its vertex stage may draw anywhere: every draw after it stays after it.
-    mirror.position.set(4, 0, -0.3);
+    mirror.position.set(4, 0, 0.5);
     mirror.material = await authoredOverlay(scene, (document) => {
       document.nodes.find((node) => node.type === "output.surface")!.properties = { "default:worldPositionOffset": [0, 1, 0] };
     });
@@ -691,7 +692,7 @@ describe("Scene Layer draw batching", () => {
     const unbatched = layerDraws(engine, compositor);
     // The unevenly scaled cards' and the turned widgets' unlit visuals batch with the rest, as do texts of different
     // colours: each visual carries its own pose, colour and tint.
-    expect({ batched, unbatched }).toEqual({ batched: 57, unbatched: 195 });
+    expect({ batched, unbatched }).toEqual({ batched: 54, unbatched: 195 });
     // Batch meshes join no Scene list: nothing culls, picks, probes or counts them.
     expect(scene.meshes).toHaveLength(meshes);
     await compositor.dispose();
@@ -1231,7 +1232,7 @@ describe("Scene Layer draw batching", () => {
     setSceneImagePages(scene, false);
     const own = layerDraws(engine, compositor);
     // The row of turned widgets draws its seven icons in one draw in place of seven, as far as draw order allows.
-    expect({ shared, own }).toEqual({ shared: 26, own: 32 });
+    expect({ shared, own }).toEqual({ shared: 23, own: 30 });
     await compositor.dispose();
   });
 });
