@@ -3,6 +3,7 @@ import { newGuid, normalizeDataDefinitionAsset, normalizeDataTreeAsset } from "@
 import { normalizeImportedProject, readProjectArchive, PROJECT_IMPORT_LIMIT } from "./project-import";
 import { getHostPlatform, isAppOwnedFolder, pickImportFiles } from "@haptic/vfs";
 import { staticAudioGeometryFingerprint } from "../lib/audio-reverb-bake";
+import { clearDownsampledTextureCache } from "../lib/texture-downsample-client";
 import { convertGlslToMaterial, normalizeMaterialDocument, normalizeMaterialFunctionDocument, validateMaterialParameterNames } from "@haptic/shader-graph";
 import { EditorExtensionService } from "./editor-extension-service";
 import { admitOwnerWrites, guardProjectStorage, ProjectWriteAdmission, withExclusiveWriter, withProjectWriter, type ProjectSceneWriter, type ProjectWriteLease, type ProjectWriteLockOptions } from "./project-write-admission";
@@ -958,6 +959,7 @@ export class ProjectService {
     this.projectSearchIndex = null;
     this.projectPlugins.reset();
     resetAreaEmissionPreparations();
+    clearDownsampledTextureCache();
   }
 
   /** Persist browser identity without changing the project folder or its assets. */

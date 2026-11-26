@@ -39,7 +39,7 @@ export interface SceneDetailsSettingsRowsInput {
   projectDocument: ProjectDocument | null;
   classEntries: readonly ClassPickerEntry[];
   pickerAssets: readonly AssetPickerEntry[];
-  mutate: (next: SerializedScene) => void;
+  changeScene: (update: (current: SerializedScene) => SerializedScene) => void;
   setEnvTexturePickOpen: (open: boolean) => void;
   setCameraPickerOpen: (open: boolean) => void;
 }
@@ -53,7 +53,7 @@ export function sceneDetailsSettingsRows(input: SceneDetailsSettingsRowsInput): 
   settingsRows: PropertyRow[];
   overlaySettingsRows: PropertyRow[];
 } {
-  const { scene, projectDocument, classEntries, pickerAssets, mutate, setEnvTexturePickOpen, setCameraPickerOpen } = input;
+  const { scene, projectDocument, classEntries, pickerAssets, changeScene, setEnvTexturePickOpen, setCameraPickerOpen } = input;
   const defaults = createDefaultSceneSettings();
   const settingsRows: PropertyRow[] = [
     {
@@ -61,7 +61,7 @@ export function sceneDetailsSettingsRows(input: SceneDetailsSettingsRowsInput): 
       id: "scene-name",
       label: "Name",
       value: scene.name,
-      onChange: (name) => mutate({ ...scene, name }),
+      onChange: (name) => changeScene((current) => ({ ...current, name })),
     },
     {
       kind: "asset",
@@ -89,7 +89,7 @@ export function sceneDetailsSettingsRows(input: SceneDetailsSettingsRowsInput): 
         { value: "2d", label: "2D" },
       ],
       onChange: (mode) =>
-        mutate({ ...scene, viewportMode: mode === "2d" ? "2d" : "3d" }),
+        changeScene((current) => ({ ...current, viewportMode: mode === "2d" ? "2d" : "3d" })),
     },
     {
       kind: "enum",
@@ -101,13 +101,13 @@ export function sceneDetailsSettingsRows(input: SceneDetailsSettingsRowsInput): 
         { value: "2d", label: "2D (Rapier)" },
       ],
       onChange: (world) =>
-        mutate({
-          ...scene,
+        changeScene((current) => ({
+          ...current,
           settings: {
-            ...scene.settings,
+            ...current.settings,
             physicsWorld: world === "2d" ? "2d" : "3d",
           },
-        }),
+        })),
     },
     {
       kind: "color",
@@ -116,10 +116,10 @@ export function sceneDetailsSettingsRows(input: SceneDetailsSettingsRowsInput): 
       value: scene.settings.environmentColor,
       defaultValue: defaults.environmentColor,
       onChange: (environmentColor) =>
-        mutate({
-          ...scene,
-          settings: { ...scene.settings, environmentColor },
-        }),
+        changeScene((current) => ({
+          ...current,
+          settings: { ...current.settings, environmentColor },
+        })),
     },
     {
       kind: "boolean",
@@ -129,7 +129,7 @@ export function sceneDetailsSettingsRows(input: SceneDetailsSettingsRowsInput): 
       value: scene.settings.fogEnabled,
       defaultValue: defaults.fogEnabled,
       onChange: (fogEnabled) =>
-        mutate({ ...scene, settings: { ...scene.settings, fogEnabled } }),
+        changeScene((current) => ({ ...current, settings: { ...current.settings, fogEnabled } })),
     },
     ...(scene.settings.fogEnabled
       ? [
@@ -146,13 +146,13 @@ export function sceneDetailsSettingsRows(input: SceneDetailsSettingsRowsInput): 
               { value: "exponentialSquared", label: "Exponential Squared" },
             ],
             onChange: (fogMode: string) =>
-              mutate({
-                ...scene,
+              changeScene((current) => ({
+                ...current,
                 settings: {
-                  ...scene.settings,
-                  ...normalizeSceneFogSettings({ ...scene.settings, fogMode }),
+                  ...current.settings,
+                  ...normalizeSceneFogSettings({ ...current.settings, fogMode }),
                 },
-              }),
+              })),
           },
           {
             kind: "color" as const,
@@ -161,10 +161,10 @@ export function sceneDetailsSettingsRows(input: SceneDetailsSettingsRowsInput): 
             value: scene.settings.fogColor,
             defaultValue: defaults.fogColor,
             onChange: (fogColor: typeof scene.settings.fogColor) =>
-              mutate({
-                ...scene,
-                settings: { ...scene.settings, fogColor },
-              }),
+              changeScene((current) => ({
+                ...current,
+                settings: { ...current.settings, fogColor },
+              })),
           },
           ...(scene.settings.fogMode === "linear"
             ? [
@@ -178,13 +178,13 @@ export function sceneDetailsSettingsRows(input: SceneDetailsSettingsRowsInput): 
                   defaultValue: defaults.fogStart,
                   min: 0,
                   onChange: (fogStart: number) =>
-                    mutate({
-                      ...scene,
+                    changeScene((current) => ({
+                      ...current,
                       settings: {
-                        ...scene.settings,
-                        ...normalizeSceneFogSettings({ ...scene.settings, fogStart }),
+                        ...current.settings,
+                        ...normalizeSceneFogSettings({ ...current.settings, fogStart }),
                       },
-                    }),
+                    })),
                 },
                 {
                   kind: "number" as const,
@@ -196,17 +196,17 @@ export function sceneDetailsSettingsRows(input: SceneDetailsSettingsRowsInput): 
                   defaultValue: defaults.fogEnd,
                   min: 0.01,
                   onChange: (fogEnd: number) =>
-                    mutate({
-                      ...scene,
+                    changeScene((current) => ({
+                      ...current,
                       settings: {
-                        ...scene.settings,
+                        ...current.settings,
                         ...normalizeSceneFogSettings({
-                          ...scene.settings,
-                          fogStart: Math.min(scene.settings.fogStart, fogEnd - 0.01),
+                          ...current.settings,
+                          fogStart: Math.min(current.settings.fogStart, fogEnd - 0.01),
                           fogEnd,
                         }),
                       },
-                    }),
+                    })),
                 },
               ]
             : [
@@ -221,10 +221,10 @@ export function sceneDetailsSettingsRows(input: SceneDetailsSettingsRowsInput): 
                   precision: 6,
                   sensitivity: 0.0001,
                   onChange: (fogDensity: number) =>
-                    mutate({
-                      ...scene,
-                      settings: { ...scene.settings, fogDensity },
-                    }),
+                    changeScene((current) => ({
+                      ...current,
+                      settings: { ...current.settings, fogDensity },
+                    })),
                 },
               ]),
         ]
@@ -241,15 +241,15 @@ export function sceneDetailsSettingsRows(input: SceneDetailsSettingsRowsInput): 
         { value: "texture", label: "Texture" },
       ],
       onChange: (source) =>
-        mutate({
-          ...scene,
+        changeScene((current) => ({
+          ...current,
           settings: {
-            ...scene.settings,
+            ...current.settings,
             environmentSource: ENVIRONMENT_SOURCES.includes(source as EnvironmentSource)
               ? (source as EnvironmentSource)
               : "none",
           },
-        }),
+        })),
     },
     ...(scene.settings.environmentSource === "texture"
       ? [
@@ -261,10 +261,10 @@ export function sceneDetailsSettingsRows(input: SceneDetailsSettingsRowsInput): 
             placeholder: "None",
             onPick: () => setEnvTexturePickOpen(true),
             onChange: (environmentTextureGuid: string | null) =>
-              mutate({
-                ...scene,
-                settings: { ...scene.settings, environmentTextureGuid },
-              }),
+              changeScene((current) => ({
+                ...current,
+                settings: { ...current.settings, environmentTextureGuid },
+              })),
             ...assetRowIdentity(
               pickerAssets.find(
                 (asset) => asset.guid === scene.settings.environmentTextureGuid,
@@ -273,8 +273,8 @@ export function sceneDetailsSettingsRows(input: SceneDetailsSettingsRowsInput): 
           },
         ]
       : []),
-    defaultCameraRow(scene, mutate, setCameraPickerOpen),
-    ...layerCameraRows(scene, mutate, projectDocument),
+    defaultCameraRow(scene, changeScene, setCameraPickerOpen),
+    ...layerCameraRows(scene, changeScene, projectDocument),
     {
       kind: "boolean",
       id: "scene-editor-joystick",
@@ -282,10 +282,10 @@ export function sceneDetailsSettingsRows(input: SceneDetailsSettingsRowsInput): 
       value: scene.settings.editorJoystickEnabled,
       defaultValue: defaults.editorJoystickEnabled,
       onChange: (editorJoystickEnabled) =>
-        mutate({
-          ...scene,
-          settings: { ...scene.settings, editorJoystickEnabled },
-        }),
+        changeScene((current) => ({
+          ...current,
+          settings: { ...current.settings, editorJoystickEnabled },
+        })),
     },
     {
       kind: "vector3",
@@ -294,13 +294,13 @@ export function sceneDetailsSettingsRows(input: SceneDetailsSettingsRowsInput): 
       value: scene.settings.gravity,
       defaultValue: defaults.gravity,
       onChange: (gravity) =>
-        mutate({
-          ...scene,
+        changeScene((current) => ({
+          ...current,
           settings: {
-            ...scene.settings,
+            ...current.settings,
             gravity: [gravity[0], gravity[1], gravity[2]],
           },
-        }),
+        })),
     },
     {
       kind: "number",
@@ -309,13 +309,13 @@ export function sceneDetailsSettingsRows(input: SceneDetailsSettingsRowsInput): 
       value: scene.settings.grid.snapTranslate,
       defaultValue: defaults.grid.snapTranslate,
       onChange: (snapTranslate) =>
-        mutate({
-          ...scene,
+        changeScene((current) => ({
+          ...current,
           settings: {
-            ...scene.settings,
-            grid: { ...scene.settings.grid, snapTranslate },
+            ...current.settings,
+            grid: { ...current.settings.grid, snapTranslate },
           },
-        }),
+        })),
     },
     {
       kind: "number",
@@ -324,13 +324,13 @@ export function sceneDetailsSettingsRows(input: SceneDetailsSettingsRowsInput): 
       value: scene.settings.grid.tileSize,
       defaultValue: defaults.grid.tileSize,
       onChange: (tileSize) =>
-        mutate({
-          ...scene,
+        changeScene((current) => ({
+          ...current,
           settings: {
-            ...scene.settings,
-            grid: { ...scene.settings.grid, tileSize },
+            ...current.settings,
+            grid: { ...current.settings.grid, tileSize },
           },
-        }),
+        })),
     },
     {
       kind: "number",
@@ -339,16 +339,16 @@ export function sceneDetailsSettingsRows(input: SceneDetailsSettingsRowsInput): 
       value: scene.settings.grid.tileSubdivisions,
       defaultValue: defaults.grid.tileSubdivisions,
       onChange: (tileSubdivisions) =>
-        mutate({
-          ...scene,
+        changeScene((current) => ({
+          ...current,
           settings: {
-            ...scene.settings,
+            ...current.settings,
             grid: {
-              ...scene.settings.grid,
+              ...current.settings.grid,
               tileSubdivisions: Math.max(1, Math.round(tileSubdivisions)),
             },
           },
-        }),
+        })),
     },
   ];
 
@@ -360,10 +360,10 @@ export function sceneDetailsSettingsRows(input: SceneDetailsSettingsRowsInput): 
     value: scene.settings.layerPhysicsEnabled === true,
     defaultValue: false,
     onChange: (layerPhysicsEnabled) =>
-      mutate({
-        ...scene,
-        settings: { ...scene.settings, layerPhysicsEnabled },
-      }),
+      changeScene((current) => ({
+        ...current,
+        settings: { ...current.settings, layerPhysicsEnabled },
+      })),
   };
   const layerTickOnPauseRow: PropertyRow = {
     kind: "boolean",
@@ -373,20 +373,20 @@ export function sceneDetailsSettingsRows(input: SceneDetailsSettingsRowsInput): 
     value: scene.settings.layerTickOnPause === true,
     defaultValue: false,
     onChange: (layerTickOnPause) =>
-      mutate({
-        ...scene,
-        settings: { ...scene.settings, layerTickOnPause },
-      }),
+      changeScene((current) => ({
+        ...current,
+        settings: { ...current.settings, layerTickOnPause },
+      })),
   };
   const row = (id: string) => settingsRows.find((entry) => entry.id === id)!;
-  const [layerLocation] = layerCameraRows(scene, mutate);
+  const [layerLocation] = layerCameraRows(scene, changeScene);
   // A Scene Layer's canvas: its size, its Root and how Play scales it, and where its Layer Camera starts.
   const overlaySettingsRows: PropertyRow[] = [
     row("scene-name"),
     layerPhysicsRow,
     layerTickOnPauseRow,
     row("scene-gravity"),
-    ...layerCanvasRows(scene, mutate),
+    ...layerCanvasRows(scene, changeScene),
     { ...layerLocation!, label: "Camera Location" },
   ];
 
@@ -396,12 +396,18 @@ export function sceneDetailsSettingsRows(input: SceneDetailsSettingsRowsInput): 
 /** A Scene Layer's canvas: Canvas Size (with its pixel size for Custom), Root Pivot and Canvas Scaling. */
 function layerCanvasRows(
   scene: SerializedScene,
-  mutate: (next: SerializedScene) => void,
+  changeScene: (update: (current: SerializedScene) => SerializedScene) => void,
 ): PropertyRow[] {
   const canvas = normalizeSceneLayerCanvasDesign(scene.settings.layerCanvas);
   const defaults = createDefaultSceneLayerCanvasDesign();
   const set = (next: Partial<SceneLayerCanvasDesign>) =>
-    mutate({ ...scene, settings: { ...scene.settings, layerCanvas: { ...canvas, ...next } } });
+    changeScene((current) => ({
+      ...current,
+      settings: {
+        ...current.settings,
+        layerCanvas: { ...normalizeSceneLayerCanvasDesign(current.settings.layerCanvas), ...next },
+      },
+    }));
   const rows: PropertyRow[] = [
     {
       kind: "enum",
@@ -465,7 +471,7 @@ function layerCanvasRows(
  */
 function defaultCameraRow(
   scene: SerializedScene,
-  mutate: (next: SerializedScene) => void,
+  changeScene: (update: (current: SerializedScene) => SerializedScene) => void,
   setCameraPickerOpen: (open: boolean) => void,
 ): PropertyRow {
   const actorId = scene.settings.defaultCameraActorId;
@@ -485,17 +491,17 @@ function defaultCameraRow(
         : {}),
     onPick: () => setCameraPickerOpen(true),
     onChange: () =>
-      mutate({
-        ...scene,
-        settings: { ...scene.settings, defaultCameraActorId: null },
-      }),
+      changeScene((current) => ({
+        ...current,
+        settings: { ...current.settings, defaultCameraActorId: null },
+      })),
   };
 }
 
 /** The Layer Camera's start: where it looks (the orange outline's centre) and the view it frames at zoom 1. */
 function layerCameraRows(
   scene: SerializedScene,
-  mutate: (next: SerializedScene) => void,
+  changeScene: (update: (current: SerializedScene) => SerializedScene) => void,
   projectDocument?: ProjectDocument | null,
 ): PropertyRow[] {
   const defaults = createDefaultSceneSettings();
@@ -515,10 +521,10 @@ function layerCameraRows(
       defaultValue: [defaults.cameraLocation2D[0], defaults.cameraLocation2D[1], 0],
       axes: ["X", "Y"],
       onChange: ([x, y]) =>
-        mutate({
-          ...scene,
-          settings: { ...scene.settings, cameraLocation2D: [x, y] },
-        }),
+        changeScene((current) => ({
+          ...current,
+          settings: { ...current.settings, cameraLocation2D: [x, y] },
+        })),
     },
     {
       kind: "number",
@@ -527,10 +533,10 @@ function layerCameraRows(
       value: bounds.width,
       defaultValue: defaults.cameraBounds2D.width,
       onChange: (width) =>
-        mutate({
-          ...scene,
-          settings: { ...scene.settings, cameraBounds2D: { ...bounds, width } },
-        }),
+        changeScene((current) => ({
+          ...current,
+          settings: { ...current.settings, cameraBounds2D: { ...current.settings.cameraBounds2D, width } },
+        })),
     },
     {
       kind: "number",
@@ -540,10 +546,10 @@ function layerCameraRows(
       defaultValue: defaults.cameraBounds2D.height,
       ...pixelStatus,
       onChange: (height) =>
-        mutate({
-          ...scene,
-          settings: { ...scene.settings, cameraBounds2D: { ...bounds, height } },
-        }),
+        changeScene((current) => ({
+          ...current,
+          settings: { ...current.settings, cameraBounds2D: { ...current.settings.cameraBounds2D, height } },
+        })),
     },
   ];
 }

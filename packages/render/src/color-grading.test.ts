@@ -1,5 +1,9 @@
-import { expect, it } from "vitest";
-import { lutStripToVolume } from "./color-grading";
+import { packRawRgbaTexture } from "@haptic/assets";
+import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
+import { InternalTexture, InternalTextureSource } from "@babylonjs/core/Materials/Textures/internalTexture";
+import { Scene } from "@babylonjs/core/scene";
+import { expect, it, vi } from "vitest";
+import { ColorGradingSource, lutStripToVolume } from "./color-grading";
 
 it("reorders a LUT strip into red, green, blue volume order", () => {
   // A 4x2 strip: two 2x2 slices. Each texel stores its own (r, g, b) index.
@@ -21,4 +25,40 @@ it("rejects images that are not square-slice strips", () => {
   expect(lutStripToVolume(new Uint8Array(16 * 16 * 4), 16, 16)).toBeNull();
   expect(lutStripToVolume(new Uint8Array(4), 1, 1)).toBeNull();
   expect(lutStripToVolume(new Uint8Array(8), 4, 2)).toBeNull();
+});
+
+it("decodes HRGB raw-RGBA LUT strip bytes without relying on createImageBitmap", async () => {
+  const engine = new NullEngine();
+  const scene = new Scene(engine);
+  const create3dSpy = vi.spyOn(engine, "createRawTexture3D").mockImplementation(() =>
+    new InternalTexture(engine, InternalTextureSource.Raw3D),
+  );
+  try {
+    const strip = new Uint8Array(4 * 2 * 4);
+    for (let g = 0; g < 2; g++)
+      for (let b = 0; b < 2; b++)
+        for (let r = 0; r < 2; r++) strip.set([r * 100, g * 100, b * 100, 255], (g * 4 + b * 2 + r) * 4);
+    const hrgb = packRawRgbaTexture(4, 2, strip);
+    let published: unknown = null;
+    const ready = new Promise<void>((resolve) => {
+      const source = new ColorGradingSource(scene, (texture) => {
+        if (texture) {
+          published = texture;
+          resolve();
+        }
+      });
+      source.setAssets({ textureBytes: new Map([["lut-1", hrgb]]) });
+      source.sync("lut-1");
+    });
+    await ready;
+    expect(published).not.toBeNull();
+    expect(create3dSpy).toHaveBeenCalledTimes(1);
+    const [data, width, height, depth] = create3dSpy.mock.calls[0]!;
+    expect([width, height, depth]).toEqual([2, 2, 2]);
+    expect((data as Uint8Array).byteLength).toBe(2 * 2 * 2 * 4);
+  } finally {
+    create3dSpy.mockRestore();
+    scene.dispose();
+    engine.dispose();
+  }
 });

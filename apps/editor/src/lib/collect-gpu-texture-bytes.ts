@@ -36,6 +36,8 @@ export async function collectGpuTextureBytes(options: {
   ) => Promise<Uint8Array>;
   /** Concurrency limit for source downsampling (default 1 on main thread; higher with Worker pool). */
   downsampleConcurrency?: number;
+  /** Texture guids (such as color-grading LUTs) that must never be downsampled by Editor Texture LOD. */
+  preserveSourceGuids?: ReadonlySet<string>;
   onMissingKtx2?: (guid: string) => void;
 }): Promise<Map<string, Uint8Array>> {
   const { assets } = options;
@@ -56,14 +58,16 @@ export async function collectGpuTextureBytes(options: {
   // Reads overlap; source downsampling runs under the caller's concurrency limit (1 main-thread, >1 with workers).
   const downsample = createLimiter(Math.max(1, options.downsampleConcurrency ?? 1));
   const resolved = await mapBounded(textures, COLLECTOR_READS, async ({ guid, asset }) => {
+    const preserveSource = options.preserveSourceGuids?.has(guid) === true;
     const texture = await resolveGpuTexture({
       header: asset.header,
       readChunk: (chunkId) => options.readChunk(asset.path, chunkId),
-      editorLod: options.editorLod,
+      editorLod: preserveSource ? null : options.editorLod,
     });
     if (!texture) return null;
     if (texture.missingPreferred) options.onMissingKtx2?.(guid);
     if (
+      !preserveSource &&
       texture.kind !== "ktx2" &&
       texture.targetEdge < texture.sourceEdge &&
       (options.downsampleSourceCached || options.downsampleSource)

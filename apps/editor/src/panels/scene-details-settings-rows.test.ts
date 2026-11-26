@@ -4,7 +4,8 @@ import { sceneDetailsSettingsRows } from "./scene-details-settings-rows";
 
 function layerRows(scene: SerializedScene, mutate: (next: SerializedScene) => void) {
   return sceneDetailsSettingsRows({
-    scene, projectDocument: null, classEntries: [], pickerAssets: [], mutate,
+    scene, projectDocument: null, classEntries: [], pickerAssets: [],
+    changeScene: (update) => mutate(update(scene)),
     setEnvTexturePickOpen: () => {}, setCameraPickerOpen: () => {},
   }).overlaySettingsRows;
 }

@@ -47,6 +47,7 @@ interface CapturedNode {
   rotationQuaternion: [number, number, number, number] | null;
   scaling: [number, number, number];
   isVisible: boolean;
+  enabled: boolean;
   sideOrientation: number;
   materialIndex: number | null | undefined;
   geometryIndex: number;
@@ -191,6 +192,7 @@ export function captureGlbBlueprint(container: AssetContainer): GlbGeometryBluep
           : null,
         scaling: [node.scaling.x, node.scaling.y, node.scaling.z],
         isVisible: node.isVisible,
+        enabled: node.isEnabled(false),
         sideOrientation: node.sideOrientation,
         materialIndex: modelMaterialIndexOf(node),
         geometryIndex,
@@ -209,6 +211,7 @@ export function captureGlbBlueprint(container: AssetContainer): GlbGeometryBluep
           : null,
         scaling: [node.scaling.x, node.scaling.y, node.scaling.z],
         isVisible: true,
+        enabled: node.isEnabled(false),
         sideOrientation: Mesh.FRONTSIDE,
         materialIndex: undefined,
         geometryIndex: -1,
@@ -299,7 +302,7 @@ export function materializeEngineGlbBlueprint(scene: Scene, key: string): AssetC
       const mesh = new Mesh(spec.name, scene, null, null, true, false);
       scene.removeMesh(mesh, false);
       mesh.isVisible = spec.isVisible;
-      mesh.overrideMaterialSideOrientation = spec.sideOrientation;
+      mesh.sideOrientation = spec.sideOrientation;
       if (spec.geometryIndex >= 0) {
         builtGeometries[spec.geometryIndex]!.applyToMesh(mesh);
         if (spec.subMeshes.length > 0) {
@@ -328,6 +331,9 @@ export function materializeEngineGlbBlueprint(scene: Scene, key: string): AssetC
     node.scaling = new Vector3(spec.scaling[0], spec.scaling[1], spec.scaling[2]);
     if (spec.parentIndex >= 0) {
       node.parent = builtNodes[spec.parentIndex] ?? null;
+    }
+    if (!spec.enabled) {
+      node.setEnabled(false);
     }
     if (spec.isRootNode) {
       container.rootNodes.push(node);

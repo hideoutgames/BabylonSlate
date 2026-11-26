@@ -122,3 +122,28 @@ describe("viewport Texture encodings", () => {
     expect(changedTextureEncodings(applied, sceneViewportTextureEncodings([committed, other, unusedCommit]))).toEqual(["tex"]);
   });
 });
+
+describe("viewportOpenDocumentKey", () => {
+  it("invalidates when unsaved Material, Model, Sprite or Font tabs edit their content", async () => {
+    const { viewportOpenDocumentKey } = await import("./scene-viewport-assets");
+    const matV1 = { nodes: [] };
+    const matV2 = { nodes: [{ id: "n1" }] };
+    const modelV1 = { materialSlots: [] };
+    const base = viewportOpenDocumentKey([
+      { ref: { kind: "material", path: "assets/Mat.material.hasset" }, content: matV1 },
+      { ref: { kind: "model", path: "assets/Box.model.hasset" }, content: modelV1 },
+    ]);
+    // Identical references in different order produce the same key.
+    const reordered = viewportOpenDocumentKey([
+      { ref: { kind: "model", path: "assets/Box.model.hasset" }, content: modelV1 },
+      { ref: { kind: "material", path: "assets/Mat.material.hasset" }, content: matV1 },
+    ]);
+    expect(reordered).toBe(base);
+    // Replacing an open Material tab's content invalidates the key.
+    const edited = viewportOpenDocumentKey([
+      { ref: { kind: "material", path: "assets/Mat.material.hasset" }, content: matV2 },
+      { ref: { kind: "model", path: "assets/Box.model.hasset" }, content: modelV1 },
+    ]);
+    expect(edited).not.toBe(base);
+  });
+});

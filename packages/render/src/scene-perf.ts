@@ -141,6 +141,7 @@ export async function prewarmSceneMaterials(
  * instead of serially re-warming dozens of identical static meshes.
  */
 function meshShaderVariantKey(mesh: Mesh, material: Material, useInstances: boolean): string {
+  const scene = mesh.getScene();
   const kinds = mesh.getVerticesDataKinds();
   kinds.sort();
   const colorSize = mesh.getVertexBuffer("color")?.getSize() ?? 0;
@@ -151,6 +152,13 @@ function meshShaderVariantKey(mesh: Mesh, material: Material, useInstances: bool
     ? `${mesh.morphTargetManager.numInfluencers}:${mesh.morphTargetManager.supportsNormals ? 1 : 0}:${mesh.morphTargetManager.supportsTangents ? 1 : 0}:${mesh.morphTargetManager.supportsUVs ? 1 : 0}:${mesh.morphTargetManager.isUsingTextureForTargets ? 1 : 0}`
     : "0";
   const meta = mesh.metadata as Record<string, unknown> | null | undefined;
+  const clipPlanes =
+    (scene.clipPlane ? 1 : 0) |
+    (scene.clipPlane2 ? 2 : 0) |
+    (scene.clipPlane3 ? 4 : 0) |
+    (scene.clipPlane4 ? 8 : 0) |
+    (scene.clipPlane5 ? 16 : 0) |
+    (scene.clipPlane6 ? 32 : 0);
   const flags =
     (useInstances ? 1 : 0) |
     (mesh.hasThinInstances ? 2 : 0) |
@@ -162,11 +170,12 @@ function meshShaderVariantKey(mesh: Mesh, material: Material, useInstances: bool
     (meta?.text2dGlyph ? 128 : 0) |
     (meta?.latticeDeformer ? 256 : 0) |
     (meta?.drawBatch ? 512 : 0) |
-    (meta?.overlayStyle ? 1024 : 0);
+    (meta?.overlayStyle ? 1024 : 0) |
+    (mesh.visibility < 1 ? 2048 : 0);
   const lights = material instanceof NodeMaterial ? "" : mesh.lightSources.map((light) => light.uniqueId).join(",");
   // Text2D glyph atlases bind per-mesh in TextMaterialBlock.isReady; keep those meshes distinct.
   const perMeshId = meta?.text2d || meta?.text2dGlyph ? `:${mesh.uniqueId}` : "";
-  return `${flags}|${colorSize}|${mesh.overrideMaterialSideOrientation ?? -1}|${kinds.join(",")}|${skeleton}|${morphs}|${lights}${perMeshId}`;
+  return `${flags}|${clipPlanes}|${colorSize}|${mesh.overrideMaterialSideOrientation ?? -1}|${kinds.join(",")}|${skeleton}|${morphs}|${lights}${perMeshId}`;
 }
 
 /** True when every live submesh of `mesh` drawing `material` already holds a ready, clean Effect. */
@@ -181,7 +190,13 @@ function isMaterialVariantAlreadyReady(mesh: Mesh, material: Material, useInstan
       ? part._drawWrapperOverride ?? part._getDrawWrapper()
       : material._getDrawWrapper();
     if (!wrapper?.effect?.isReady()) return false;
-    if (part.materialDefines?.isDirty) return false;
+    if (wrapper._wasPreviouslyUsingInstances !== useInstances) return false;
+    if (material._storeEffectOnSubMeshes) {
+      const defines = part.materialDefines;
+      if (!defines || defines.isDirty || defines._renderId === -1) return false;
+    } else if (part.materialDefines?.isDirty) {
+      return false;
+    }
   }
   return matched;
 }

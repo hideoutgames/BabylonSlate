@@ -137,13 +137,26 @@ describe("registry source loading", () => {
     const scope = loader.createScope("scene");
     try {
       const secondBlob = `assets/.blobs/${await sha256Hex(chunks[1]!)}`;
+      let savedMidLoad = false;
+      const saveOnce = async (path: string) => {
+        if (!savedMidLoad && path === secondBlob) {
+          savedMidLoad = true;
+          await save(2);
+        }
+      };
       const read = storage.readBinary.bind(storage);
       const reads = vi.spyOn(storage, "readBinary").mockImplementation(async (path, options) => {
-        if (path === secondBlob) await save(2);
+        await saveOnce(path);
         return read(path, options);
+      });
+      const readRange = storage.readBinaryRange.bind(storage);
+      const rangeReads = vi.spyOn(storage, "readBinaryRange").mockImplementation(async (path, offset, length, revision, options) => {
+        await saveOnce(path);
+        return readRange(path, offset, length, revision, options);
       });
       expect(isAssetSourceRevisionChanged(await scope.acquire("model").catch((error: unknown) => error))).toBe(true);
       reads.mockRestore();
+      rangeReads.mockRestore();
       const retry = await scope.acquire<RegistryLoadedAsset>("model");
       expect(retry.revision).not.toBe(original);
       expect([...retry.chunks.values()]).toEqual(chunks);

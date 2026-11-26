@@ -35,6 +35,7 @@ import {
   sceneViewportRequiredAssets,
   sceneViewportTextureEncodings,
   stableViewportPayloadRevisions,
+  viewportOpenDocumentKey,
   viewportPayloadRevisions,
 } from "../lib/scene-viewport-assets";
 import { savedAreaEmissionKey } from "../lib/collect-area-emissions";
@@ -310,7 +311,9 @@ export function useViewportSceneLoad({
         const encodings = textureEncodingsRef.current;
         const catalog = assetRegistry?.list() ?? [];
         // Read before collecting, and again after: a payload whose revision moved meanwhile has none.
-        const payloadRevisionsBefore = viewportPayloadRevisions(catalog, getOpenDocuments());
+        const openDocsBefore = getOpenDocuments();
+        const payloadRevisionsBefore = viewportPayloadRevisions(catalog, openDocsBefore);
+        const openDocumentKeyBefore = viewportOpenDocumentKey(openDocsBefore);
         const collectionCacheKey = JSON.stringify([
           viewportAssetsKey,
           materialLibraryKey,
@@ -319,6 +322,7 @@ export function useViewportSceneLoad({
           effectsAssetGuidsKey,
           projectDocument?.settings.fonts.defaultFontGuid ?? null,
           projectDocument?.settings.fonts.globalFallback ?? null,
+          openDocumentKeyBefore,
           [...payloadRevisionsBefore.entries()].sort(([a], [b]) => a.localeCompare(b)),
         ]);
         const cachedCollection = getCachedViewportCollection(assetRegistry, collectionCacheKey, encodings);
@@ -354,8 +358,10 @@ export function useViewportSceneLoad({
         } else {
           const fontSources = catalog.map((asset) => ({ guid: asset.header.guid, path: asset.path, type: asset.header.type, payload: asset.header.payload }));
           const bitmapFonts = new Set(fontGuidsForSceneRepresentation([scene], fontSources, "source", projectDocument?.settings.fonts.defaultFontGuid));
+          const effectsAssetGuids = JSON.parse(effectsAssetGuidsKey) as string[];
+          const preserveSourceGuids = effectsAssetGuids.length > 0 ? new Set(effectsAssetGuids) : undefined;
           const required = sceneViewportRequiredAssets(scene, catalog, [
-            ...(JSON.parse(effectsAssetGuidsKey) as string[]),
+            ...effectsAssetGuids,
             ...bitmapFonts,
             ...fontGuidsForSceneRepresentation([scene], fontSources, "msdf", projectDocument?.settings.fonts.defaultFontGuid),
           ]);
@@ -400,7 +406,7 @@ export function useViewportSceneLoad({
                 )),
           );
           const prefetchedTexturesWork = prefetchedTextureGuids.length > 0
-            ? started(collectPlayTextureBytes(new Map(), new Map(), prefetchedTextureGuids, undefined, false, editorLod))
+            ? started(collectPlayTextureBytes(new Map(), new Map(), prefetchedTextureGuids, undefined, false, editorLod, preserveSourceGuids))
             : null;
           const texturesWork = started(Promise.all([spritesWork, tileContentWork, materialsWork]).then(async ([spritePayloads, tiles, materialLibrary]) => {
             const extraTextureGuids = [
@@ -410,7 +416,7 @@ export function useViewportSceneLoad({
               ...materialLibrary.textureGuids,
               ...skyboxFaceGuidsFromScene(scene),
               ...overlayTextureGuidsFromScene(scene),
-              ...(JSON.parse(effectsAssetGuidsKey) as string[]),
+              ...effectsAssetGuids,
             ];
             let bytes: Map<string, Uint8Array>;
             if (prefetchedTexturesWork) {
@@ -420,14 +426,19 @@ export function useViewportSceneLoad({
                 ...extraTextureGuids,
               ]);
               const missing = [...wantedFromPayloads].filter((guid) => guid && !prefetchedTextureSet.has(guid));
+              const filtered = new Map<string, Uint8Array>();
+              for (const [guid, data] of prefetched) {
+                if (wantedFromPayloads.has(guid)) filtered.set(guid, data);
+              }
               if (missing.length === 0) {
-                bytes = prefetched;
+                bytes = filtered;
               } else {
-                const extra = await collectPlayTextureBytes(new Map(), new Map(), missing, undefined, false, editorLod);
-                bytes = new Map([...prefetched, ...extra]);
+                const extra = await collectPlayTextureBytes(new Map(), new Map(), missing, undefined, false, editorLod, preserveSourceGuids);
+                for (const [guid, data] of extra) filtered.set(guid, data);
+                bytes = filtered;
               }
             } else {
-              bytes = await collectPlayTextureBytes(spritePayloads, tiles.tilesets, extraTextureGuids, undefined, false, editorLod);
+              bytes = await collectPlayTextureBytes(spritePayloads, tiles.tilesets, extraTextureGuids, undefined, false, editorLod, preserveSourceGuids);
             }
             return {
               bytes,
@@ -458,11 +469,12 @@ export function useViewportSceneLoad({
           msdf = fontMsdfMapsFromPairs(await msdfWork);
           controller.signal.throwIfAborted();
           fontFaceEntries = await fontFaceEntriesWork;
+          const openDocsAfter = getOpenDocuments();
           resolvedPayloadRevisions = stableViewportPayloadRevisions(
             payloadRevisionsBefore,
-            viewportPayloadRevisions(assetRegistry?.list() ?? [], getOpenDocuments()),
+            viewportPayloadRevisions(assetRegistry?.list() ?? [], openDocsAfter),
           );
-          if (isCurrent()) {
+          if (isCurrent() && viewportOpenDocumentKey(openDocsAfter) === openDocumentKeyBefore) {
             putCachedViewportCollection(assetRegistry, collectionCacheKey, {
               sprites,
               tileContent,

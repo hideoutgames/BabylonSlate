@@ -232,4 +232,36 @@ describe("collectGpuTextureBytes", () => {
     expect(sizes.get("tex-1")).toEqual({ width: 1024, height: 512 });
     expect(sizes.has("missing")).toBe(false);
   });
+
+  it("never downsamples guids listed in preserveSourceGuids even when editor LOD is active", async () => {
+    const lutBytes = new Uint8Array([10, 20, 30, 40]);
+    const downsampleSourceCached = vi.fn(async () => new Uint8Array([99]));
+    const bytes = await collectGpuTextureBytes({
+      assets: [
+        {
+          path: "assets/Lut.texture.hasset",
+          header: textureHeader(
+            [
+              {
+                id: "pixels",
+                kind: "pixels",
+                mime: "image/png",
+                sha256: "lut-sha",
+                byteLength: 4,
+                locator: { inline: { offset: 0, length: 4 } },
+              },
+            ],
+            { usage: "albedo", width: 1024, height: 32 },
+          ),
+        },
+      ],
+      guids: ["tex-1"],
+      readChunk: async () => lutBytes,
+      editorLod: { enabled: true, quality: 0.25 },
+      downsampleSourceCached,
+      preserveSourceGuids: new Set(["tex-1"]),
+    });
+    expect(bytes.get("tex-1")).toEqual(lutBytes);
+    expect(downsampleSourceCached).not.toHaveBeenCalled();
+  });
 });

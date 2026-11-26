@@ -5,6 +5,7 @@ import type { TextureDownsampleRequest, TextureDownsampleResponse } from "./text
 const MAX_CACHE_BYTES = 64 * 1024 * 1024;
 const IDLE_TERMINATE_MS = 30_000;
 const MAX_WORKERS = 4;
+const MAX_CONSECUTIVE_WORKER_FAILURES = 3;
 
 type CacheEntry = {
   bytes: Uint8Array;
@@ -60,6 +61,7 @@ const queue: Array<{
   reject: (error: Error) => void;
 }> = [];
 let nextRequestId = 1;
+let consecutiveWorkerFailures = 0;
 let workersDisabled = false;
 
 export function supportsWorkerTextureDownsample(): boolean {
@@ -99,6 +101,7 @@ function spawnSlot(): WorkerSlot | null {
       const waiter = slot.pending.get(msg.id);
       slot.pending.delete(msg.id);
       slot.busy = false;
+      consecutiveWorkerFailures = 0;
       if (waiter) {
         if (msg.ok) waiter.resolve(msg.bytes);
         else waiter.reject(new Error(msg.error));
@@ -114,17 +117,25 @@ function spawnSlot(): WorkerSlot | null {
       const idx = pool.indexOf(slot);
       if (idx >= 0) pool.splice(idx, 1);
       worker.terminate();
-      workersDisabled = true;
-      // Drain remaining queued work via fallback.
-      while (queue.length > 0) {
-        const next = queue.shift()!;
-        void downsampleMainThread(next.bytes, next.targetEdge).then(next.resolve, next.reject);
+      consecutiveWorkerFailures += 1;
+      if (consecutiveWorkerFailures >= MAX_CONSECUTIVE_WORKER_FAILURES) {
+        workersDisabled = true;
+        // Drain remaining queued work via fallback once worker retries are exhausted.
+        while (queue.length > 0) {
+          const next = queue.shift()!;
+          void downsampleMainThread(next.bytes, next.targetEdge).then(next.resolve, next.reject);
+        }
+      } else {
+        pumpQueue();
       }
     };
     pool.push(slot);
     return slot;
   } catch {
-    workersDisabled = true;
+    consecutiveWorkerFailures += 1;
+    if (consecutiveWorkerFailures >= MAX_CONSECUTIVE_WORKER_FAILURES) {
+      workersDisabled = true;
+    }
     return null;
   }
 }

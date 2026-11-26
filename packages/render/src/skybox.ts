@@ -14,8 +14,10 @@ import {
   skyboxFaceGuids,
   type SkyboxFaces,
 } from "@haptic/core";
+import { RAW_RGBA_TEXTURE_HEADER_BYTES, readRawRgbaTextureHeader } from "@haptic/assets";
 import { engineDefaultSkyboxFaceUrl } from "./default-skybox/faces";
 import type { MeshAssetContext } from "./mesh-assets";
+import { encodeRgbaPng } from "./png-encode";
 import {
   resourceCacheForEngine,
   type TextureResources,
@@ -23,7 +25,7 @@ import {
 } from "./resource-cache";
 import { RENDERING_GROUP } from "./sorting";
 
-export { encodeRgbaPng as encodePngRgba } from "./png-encode";
+export { encodeRgbaPng as encodePngRgba };
 
 export const ENGINE_DEFAULT_SKYBOX_GUID = "engine-default-skybox";
 const preparations = new WeakMap<AbstractMesh, Promise<void>>();
@@ -59,7 +61,12 @@ export function resolveSkyboxCubeTexture(scene: Scene, faces: SkyboxFaces = empt
       const guid = parsed[key];
       const bytes = guid ? assets?.textureBytes?.get(guid) : undefined;
       if (!guid || !bytes) return engineDefaultSkyboxFaceUrl(key);
-      const lease = cache.acquireBlobUrl(guid, bytes);
+      // CubeTexture.CreateFromImages decodes through the browser image pipeline; convert HRGB raw-RGBA bytes to PNG.
+      const rawHeader = bytes instanceof Uint8Array ? readRawRgbaTextureHeader(bytes) : null;
+      const decodable = rawHeader && bytes instanceof Uint8Array
+        ? encodeRgbaPng(rawHeader.width, rawHeader.height, bytes.subarray(RAW_RGBA_TEXTURE_HEADER_BYTES))
+        : bytes;
+      const lease = cache.acquireBlobUrl(guid, decodable);
       sources.push(lease);
       // Native cube upload may outlive a handle's outstanding-lease safety net.
       pendingSources.push(cache.acquireExisting(lease.resource));

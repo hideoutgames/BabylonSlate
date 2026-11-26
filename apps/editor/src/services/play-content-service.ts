@@ -1,6 +1,5 @@
 import {
   documentId,
-  fnv1a,
   isInputAssetType,
   normalizeInputAssetPayload,
   normalizeRenderTargetPayload,
@@ -34,6 +33,7 @@ import { animPoseGraphs, parseAnimGraphDocument } from "@haptic/anim-graph";
 import type { ScriptBundleEntry } from "@haptic/bridge";
 import { sceneAssetClassId } from "@haptic/object-model";
 import { embeddedScriptHost } from "../lib/embedded-script";
+import { extensionNodesFingerprint } from "./extension-nodes";
 import {
   ownedActorsOfScene,
   ownedGetDiagnostics,
@@ -110,6 +110,18 @@ import {
   GraphScriptCompileCache,
   type GraphCompileDocument,
 } from "./script-compiler";
+
+/** 64-bit FNV-1a hex digest for collision-resistant validation catalog keys. */
+function fnv1a64(value: string): string {
+  let hash = 0xcbf29ce484222325n;
+  const prime = 0x100000001b3n;
+  const mask = 0xffffffffffffffffn;
+  for (let i = 0; i < value.length; i += 1) {
+    hash ^= BigInt(value.charCodeAt(i));
+    hash = (hash * prime) & mask;
+  }
+  return hash.toString(16).padStart(16, "0");
+}
 
 /** Class graphs, Animation Graphs and the typed asset catalogs their compilation reads. */
 export const GRAPH_SIGNATURE_KINDS = ["graph", "anim-graph-3d", "anim-graph-2d", "input-action", "input-axis", "data-definition", "data-tree", "structure", "enum"] as const;
@@ -536,7 +548,7 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
       ...ownedClips.map((clip) => clip.classId),
       ...timelineScriptClassIds(timelineAssets),
     ]);
-    const validationCatalogKey = fnv1a(JSON.stringify({
+    const validationCatalogKey = fnv1a64(JSON.stringify({
       members: memberSymbols,
       knownClassIds: [...knownClassIds].sort(),
       inputAssets,
@@ -546,6 +558,7 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
       dataDefinitions: typeSchemas.dataDefinitions,
       materialDomains: Object.entries(materialDomains).sort(([a], [b]) => a.localeCompare(b)),
       subsystemClasses: [...subsystemClasses].sort(),
+      extensionNodes: extensionNodesFingerprint(),
       classGraphIds: Object.entries(classGraphs)
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([id, graph]) => [id, parentOf(id) ?? null, objectIdentity(graph)]),
@@ -792,12 +805,17 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
     spriteAnimations?: ReadonlyMap<string, SpriteAnimationPayload>,
     includeMaterialParameterTextures = false,
     editorLodOverride?: EditorTextureLod | null,
+    preserveSourceGuids?: ReadonlySet<string>,
   ): Promise<Map<string, Uint8Array>> => {
     const assets = projectService.registry?.list() ?? [];
     const editorLod: EditorTextureLod = editorLodOverride ?? await createAppSettingsStore().load().then((settings) => ({
       enabled: settings.editorTextureLodEnabled,
       quality: settings.editorTextureLodQuality,
     }));
+    const projectLut = options.projectDocument()?.settings.render?.effects?.colorGrading?.lutTextureGuid;
+    const preserved = projectLut
+      ? new Set([...(preserveSourceGuids ?? []), projectLut])
+      : preserveSourceGuids;
     const guids = [
       ...textureGuidsFromPlayPayloads(sprites, tilesets, spriteAnimations),
       ...extraGuids,
@@ -816,6 +834,7 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
       downsampleConcurrency: supportsWorkerTextureDownsample() ? 4 : 1,
       downsampleSourceCached: (bytes, targetEdge, cacheKey) =>
         downsampleTextureToRawRgba(bytes, targetEdge, cacheKey),
+      preserveSourceGuids: preserved,
       onMissingKtx2: (guid) => {
         void projectService.retryTextureEncoding(guid).catch((error: unknown) =>
           console.warn(`[play] Texture ${guid} could not be queued for KTX2 encoding`, error));

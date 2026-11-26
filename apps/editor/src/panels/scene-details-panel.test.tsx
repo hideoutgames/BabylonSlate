@@ -1779,3 +1779,51 @@ it("skips rebuilding component property rows on actor transform drags and unrela
   }
 });
 
+it("preserves actor edits when editing Scene Settings after a memoized actor-only scene update", () => {
+  const actorA = createActor("actor-a", "Hero", {
+    transform: { position: [1, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
+  });
+  harness.scene = { ...createDefaultScene("3d"), actors: [actorA] };
+  harness.selectedActorIds = [];
+  const stableProjectDocument = {
+    settings: {
+      sceneLayerPostProcessStack: [],
+      twoD: { sortingLayers: ["Background", "Default", "UI"] },
+      fonts: { defaultFontGuid: null, globalFallback: "sans-serif" },
+      gameInstanceClass: "MyGame",
+      render: harness.render,
+    },
+  };
+  const stableAssetRegistry = { list: () => [], getByGuid: () => undefined };
+  harness.stableProviderContext = {
+    projectDocument: stableProjectDocument,
+    assetRegistry: stableAssetRegistry,
+    documentRevisions: { scene: 1 },
+  };
+  try {
+    const view = render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+
+    // Actor-only edit keeps scene.settings referentially equal so SceneDetailsSettings memo skips re-render.
+    const movedActor = {
+      ...actorA,
+      transform: { ...actorA.transform, position: [42, 7, -9] as [number, number, number] },
+    };
+    harness.scene = { ...harness.scene, actors: [movedActor] };
+    harness.stableProviderContext = {
+      projectDocument: stableProjectDocument,
+      assetRegistry: stableAssetRegistry,
+      documentRevisions: { scene: 2 },
+    };
+    view.rerender(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+
+    // Edit a Scene Setting while SceneDetailsSettings stayed memoized: must not revert movedActor!
+    fireEvent.click(screen.getByTestId("property-scene-fog"));
+    expect(harness.applySceneChange).toHaveBeenCalled();
+    const emitted = harness.applySceneChange.mock.calls.at(-1)![1] as SerializedScene;
+    expect(emitted.settings.fogEnabled).toBe(!harness.scene.settings.fogEnabled);
+    expect(emitted.actors[0]!.transform.position).toEqual([42, 7, -9]);
+  } finally {
+    harness.stableProviderContext = null;
+  }
+});
+
