@@ -7,6 +7,7 @@ import {
   pinTypeForVariable,
 } from "@haptic/scripting";
 import { declaredValueUnit } from "@haptic/core";
+import { hoistCowHelpers } from "./cow-helpers";
 import { localVariableIdent } from "./member-pins";
 import { subject } from "./self-pin";
 
@@ -111,6 +112,10 @@ export const variableNodes: NodeDefinition[] = [
         ctx.node.properties.scope === "local"
           ? localVariableIdent(name)
           : memberGetExpr(ctx, name);
+      if (ctx.mustShareContainer) {
+        hoistCowHelpers(ctx);
+        return { value: `__cowShare(${expr})` };
+      }
       return { value: expr };
     },
   },

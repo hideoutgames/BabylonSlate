@@ -8,27 +8,45 @@ import {
   arrayOf,
   defaultValueLiteral,
 } from "@haptic/scripting";
+import { hoistCowHelpers } from "./cow-helpers";
+import { hoistedCall } from "./hoisted-helper";
 import { hasValueTypePin, MAKE_CONTAINER_MAX_COUNT, valueIndexOf } from "./map";
 
 const T = RESOLVING_WILDCARD;
+const ARR_MISS_SENTINEL = "var __ARR_MISS={};";
+
+type Ctx = Parameters<NodeDefinition["codegen"]>[0];
 
 /**
  * Index of `item` in `array`. Vector, rotator, color, transform and struct
  * reads are new objects each time, so those items match by value.
  */
-function itemIndexExpr(
-  ctx: Parameters<NodeDefinition["codegen"]>[0],
-  array: string,
-  item: string,
-): string {
+function itemIndexExpr(ctx: Ctx, array: string, item: string): string {
   return hasValueTypePin(ctx, "item")
     ? `${valueIndexOf(ctx)}(${array},${item})`
-    : `${array}.indexOf(${item})`;
+    : hoistedCall(ctx, "__arr_find", "a, v", "(a != null ? a.indexOf(v) : -1)", [array, item]);
 }
 
-function outFallback(ctx: Parameters<NodeDefinition["codegen"]>[0], pinId = "out") {
+function outFallback(ctx: Ctx, pinId = "out"): string {
   const outPin = ctx.node.pins.find((entry) => entry.id === pinId);
   return defaultValueLiteral(outPin?.type ?? RESOLVING_WILDCARD);
+}
+
+function lazyOrFallback(ctx: Ctx, lookupExpr: string, fallback: string): string {
+  ctx.hoist(ARR_MISS_SENTINEL);
+  if (ctx.allocTemp) {
+    const t = ctx.allocTemp();
+    return `(${t} = (${lookupExpr}), ${t} !== __ARR_MISS ? ${t} : ${fallback})`;
+  }
+  return hoistedCall(ctx, "__arr_or", "v, d", "(v !== __ARR_MISS ? v : d)", [lookupExpr, fallback]);
+}
+
+function arrayCloneOrCow(ctx: Ctx, arrayExpr: string): string {
+  hoistCowHelpers(ctx);
+  if (ctx.isLinearSelfUpdate) {
+    return hoistedCall(ctx, "__arr_cow", "a", "(a != null && __cowUnique.has(a) ? a : __cowOwn(a != null ? a.slice() : []))", [arrayExpr]);
+  }
+  return hoistedCall(ctx, "__arr_clone", "a", "__cowOwn(a != null ? a.slice() : [])", [arrayExpr]);
 }
 
 /** Item inputs of a new Make Array node, and of one whose `count` is missing. */
@@ -57,12 +75,13 @@ export const arrayMapNodes: NodeDefinition[] = [
       return pins;
     },
     codegen: (ctx) => {
+      hoistCowHelpers(ctx);
       const count = makeArrayItemCount(ctx.node.properties);
       const items: string[] = [];
       for (let i = 0; i < count; i++) {
         items.push(ctx.input(`item${i}`));
       }
-      return { out: `[${items.join(", ")}]` };
+      return { out: `__cowOwn([${items.join(", ")}])` };
     },
   },
   {
@@ -80,9 +99,18 @@ export const arrayMapNodes: NodeDefinition[] = [
       const array = ctx.input("array");
       const index = ctx.input("index");
       const fallback = outFallback(ctx);
+      ctx.hoist(ARR_MISS_SENTINEL);
+      const lookup = hoistedCall(
+        ctx,
+        "__arr_at",
+        "a, i",
+        "(a != null && Number.isInteger(i) && i >= 0 && i < a.length ? a[i] : __ARR_MISS)",
+        [array, index],
+      );
+      const result = ctx.shared?.(lookup) ?? lookup;
       return {
-        success: `((a,i)=>{const l=a??[];return Number.isInteger(i)&&i>=0&&i<l.length;})(${array},${index})`,
-        out: `((a,i,d)=>{const l=a??[];return Number.isInteger(i)&&i>=0&&i<l.length?l[i]:d;})(${array},${index},${fallback})`,
+        success: `((${result}) !== __ARR_MISS)`,
+        out: lazyOrFallback(ctx, result, fallback),
       };
     },
   },
@@ -95,7 +123,7 @@ export const arrayMapNodes: NodeDefinition[] = [
       pin("array", "Array", "in", arrayOf(T)),
       pin("out", "Out", "out", INT),
     ],
-    codegen: (ctx) => ({ out: `((${ctx.input("array")})??[]).length` }),
+    codegen: (ctx) => ({ out: `((${ctx.input("array")})?.length ?? 0)` }),
   },
   {
     id: "array.isEmpty",
@@ -107,7 +135,7 @@ export const arrayMapNodes: NodeDefinition[] = [
       pin("out", "Out", "out", BOOL),
     ],
     codegen: (ctx) => ({
-      out: `(((${ctx.input("array")})??[]).length===0)`,
+      out: `(((${ctx.input("array")})?.length ?? 0) === 0)`,
     }),
   },
   {
@@ -120,7 +148,7 @@ export const arrayMapNodes: NodeDefinition[] = [
       pin("out", "Out", "out", INT),
     ],
     codegen: (ctx) => ({
-      out: `((a=>{const l=(a??[]).length;return l===0?-1:l-1;})(${ctx.input("array")}))`,
+      out: `(((${ctx.input("array")})?.length ?? 0) - 1)`,
     }),
   },
   {
@@ -134,7 +162,13 @@ export const arrayMapNodes: NodeDefinition[] = [
       pin("out", "Out", "out", BOOL),
     ],
     codegen: (ctx) => ({
-      out: `((a,i)=>{const l=a??[];return Number.isInteger(i)&&i>=0&&i<l.length;})(${ctx.input("array")},${ctx.input("index")})`,
+      out: hoistedCall(
+        ctx,
+        "__arr_valid",
+        "a, i",
+        "(a != null && Number.isInteger(i) && i >= 0 && i < a.length)",
+        [ctx.input("array"), ctx.input("index")],
+      ),
     }),
   },
   {
@@ -148,12 +182,12 @@ export const arrayMapNodes: NodeDefinition[] = [
       pin("out", "Out", "out", BOOL),
     ],
     codegen: (ctx) => {
-      const array = `((${ctx.input("array")})??[])`;
+      const array = ctx.input("array");
       const item = ctx.input("item");
       return {
         out: hasValueTypePin(ctx, "item")
-          ? `(${itemIndexExpr(ctx, array, item)}>=0)`
-          : `${array}.includes(${item})`,
+          ? `(${itemIndexExpr(ctx, array, item)} >= 0)`
+          : hoistedCall(ctx, "__arr_has", "a, v", "(a != null && a.includes(v))", [array, item]),
       };
     },
   },
@@ -168,7 +202,7 @@ export const arrayMapNodes: NodeDefinition[] = [
       pin("out", "Out", "out", INT),
     ],
     codegen: (ctx) => ({
-      out: itemIndexExpr(ctx, `((${ctx.input("array")})??[])`, ctx.input("item")),
+      out: itemIndexExpr(ctx, ctx.input("array"), ctx.input("item")),
     }),
   },
   {
@@ -181,9 +215,30 @@ export const arrayMapNodes: NodeDefinition[] = [
       pin("item", "Item", "in", T),
       pin("out", "Out", "out", arrayOf(T)),
     ],
-    codegen: (ctx) => ({
-      out: `((${ctx.input("array")})??[]).concat([${ctx.input("item")}])`,
-    }),
+    codegen: (ctx) => {
+      hoistCowHelpers(ctx);
+      const args = [ctx.input("array"), ctx.input("item")];
+      if (ctx.isLinearSelfUpdate) {
+        return {
+          out: hoistedCall(
+            ctx,
+            "__arr_append_cow",
+            "a, v",
+            "{ if (a != null && __cowUnique.has(a)) { a.push(v); return a; } const r = a != null ? a.slice() : []; r.push(v); return __cowOwn(r); }",
+            args,
+          ),
+        };
+      }
+      return {
+        out: hoistedCall(
+          ctx,
+          "__arr_append",
+          "a, v",
+          "{ const r = a != null ? a.slice() : []; r.push(v); return __cowOwn(r); }",
+          args,
+        ),
+      };
+    },
   },
   {
     id: "array.appendArray",
@@ -195,9 +250,30 @@ export const arrayMapNodes: NodeDefinition[] = [
       pin("other", "Other", "in", arrayOf(T)),
       pin("out", "Out", "out", arrayOf(T)),
     ],
-    codegen: (ctx) => ({
-      out: `((${ctx.input("array")})??[]).concat((${ctx.input("other")})??[])`,
-    }),
+    codegen: (ctx) => {
+      hoistCowHelpers(ctx);
+      const args = [ctx.input("array"), ctx.input("other")];
+      if (ctx.isLinearSelfUpdate) {
+        return {
+          out: hoistedCall(
+            ctx,
+            "__arr_concat_cow",
+            "a, b",
+            "{ const r = a != null && __cowUnique.has(a) ? a : __cowOwn(a != null ? a.slice() : []); if (b != null) { const n = b.length; for (let i = 0; i < n; i++) r.push(b[i]); } return r; }",
+            args,
+          ),
+        };
+      }
+      return {
+        out: hoistedCall(
+          ctx,
+          "__arr_concat",
+          "a, b",
+          "{ const r = a != null ? a.slice() : []; if (b != null) { const n = b.length; for (let i = 0; i < n; i++) r.push(b[i]); } return __cowOwn(r); }",
+          args,
+        ),
+      };
+    },
   },
   {
     id: "array.set",
@@ -215,10 +291,10 @@ export const arrayMapNodes: NodeDefinition[] = [
     codegen: (ctx) => {
       const out = ctx.output("out");
       const success = ctx.output("success");
-      const array = ctx.input("array");
+      const array = arrayCloneOrCow(ctx, ctx.input("array"));
       const index = ctx.input("index");
       const item = ctx.input("item");
-      ctx.emit(`${out} = ((${array})??[]).slice();`);
+      ctx.emit(`${out} = ${array};`);
       // Read the index once so the bounds check and the write use one value.
       ctx.emit(
         `{ const __i = ${index}; ${success} = Number.isInteger(__i)&&__i>=0&&__i<${out}.length; if (${success}) { ${out}[__i] = ${item}; } }`,
@@ -242,7 +318,7 @@ export const arrayMapNodes: NodeDefinition[] = [
       const out = ctx.output("out");
       const success = ctx.output("success");
       const index = ctx.input("index");
-      ctx.emit(`${out} = ((${ctx.input("array")})??[]).slice();`);
+      ctx.emit(`${out} = ${arrayCloneOrCow(ctx, ctx.input("array"))};`);
       // Read the index once. Index may be the length, which appends; anything else outside the array inserts nothing.
       ctx.emit(
         `{ const __i = ${index}; ${success} = Number.isInteger(__i)&&__i>=0&&__i<=${out}.length; if (${success}) { ${out}.splice(__i, 0, ${ctx.input("item")}); } }`,
@@ -265,7 +341,7 @@ export const arrayMapNodes: NodeDefinition[] = [
       const out = ctx.output("out");
       const success = ctx.output("success");
       const index = ctx.input("index");
-      ctx.emit(`${out} = ((${ctx.input("array")})??[]).slice();`);
+      ctx.emit(`${out} = ${arrayCloneOrCow(ctx, ctx.input("array"))};`);
       // Read the index once so the bounds check and the removal use one value.
       ctx.emit(
         `{ const __i = ${index}; ${success} = Number.isInteger(__i)&&__i>=0&&__i<${out}.length; if (${success}) { ${out}.splice(__i, 1); } }`,
@@ -288,7 +364,7 @@ export const arrayMapNodes: NodeDefinition[] = [
       const out = ctx.output("out");
       const success = ctx.output("success");
       const item = ctx.input("item");
-      ctx.emit(`${out} = ((${ctx.input("array")})??[]).slice();`);
+      ctx.emit(`${out} = ${arrayCloneOrCow(ctx, ctx.input("array"))};`);
       ctx.emit(`{ const __i = ${itemIndexExpr(ctx, out, item)}; ${success} = __i>=0; if (${success}) { ${out}.splice(__i, 1); } }`);
     },
   },
@@ -303,7 +379,8 @@ export const arrayMapNodes: NodeDefinition[] = [
       pin("out", "Out", "out", arrayOf(T)),
     ],
     codegen: (ctx) => {
-      ctx.emit(`${ctx.output("out")} = [];`);
+      hoistCowHelpers(ctx);
+      ctx.emit(`${ctx.output("out")} = __cowOwn([]);`);
     },
   },
   {
@@ -315,9 +392,12 @@ export const arrayMapNodes: NodeDefinition[] = [
       pin("array", "Array", "in", arrayOf(T)),
       pin("out", "Out", "out", arrayOf(T)),
     ],
-    codegen: (ctx) => ({
-      out: `((${ctx.input("array")})??[]).slice().reverse()`,
-    }),
+    codegen: (ctx) => {
+      hoistCowHelpers(ctx);
+      return {
+        out: hoistedCall(ctx, "__arr_reverse", "a", "__cowOwn(a != null ? a.slice().reverse() : [])", [ctx.input("array")]),
+      };
+    },
   },
   {
     id: "array.slice",
@@ -330,9 +410,12 @@ export const arrayMapNodes: NodeDefinition[] = [
       pin("end", "End", "in", INT),
       pin("out", "Out", "out", arrayOf(T)),
     ],
-    codegen: (ctx) => ({
-      out: `((${ctx.input("array")})??[]).slice(${ctx.input("start")}, ${ctx.input("end")})`,
-    }),
+    codegen: (ctx) => {
+      hoistCowHelpers(ctx);
+      return {
+        out: hoistedCall(ctx, "__arr_slice", "a, s, e", "__cowOwn(a != null ? a.slice(s, e) : [])", [ctx.input("array"), ctx.input("start"), ctx.input("end")]),
+      };
+    },
   },
   {
     id: "array.first",
@@ -345,9 +428,9 @@ export const arrayMapNodes: NodeDefinition[] = [
     ],
     codegen: (ctx) => {
       const fallback = outFallback(ctx);
-      return {
-        out: `((a,d)=>{const l=a??[];return l.length>0?l[0]:d;})(${ctx.input("array")},${fallback})`,
-      };
+      ctx.hoist(ARR_MISS_SENTINEL);
+      const lookup = hoistedCall(ctx, "__arr_first", "a", "(a != null && a.length > 0 ? a[0] : __ARR_MISS)", [ctx.input("array")]);
+      return { out: lazyOrFallback(ctx, lookup, fallback) };
     },
   },
   {
@@ -361,9 +444,9 @@ export const arrayMapNodes: NodeDefinition[] = [
     ],
     codegen: (ctx) => {
       const fallback = outFallback(ctx);
-      return {
-        out: `((a,d)=>{const l=a??[];return l.length>0?l[l.length-1]:d;})(${ctx.input("array")},${fallback})`,
-      };
+      ctx.hoist(ARR_MISS_SENTINEL);
+      const lookup = hoistedCall(ctx, "__arr_last", "a", "(a != null && a.length > 0 ? a[a.length - 1] : __ARR_MISS)", [ctx.input("array")]);
+      return { out: lazyOrFallback(ctx, lookup, fallback) };
     },
   },
 ];

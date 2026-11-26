@@ -10,11 +10,28 @@ export type HoistBodyAnchor = {
   bodyLine: number;
 };
 
+/**
+ * Unboxed scalar representation of a vector/quat/color wire. When a pure node
+ * emits `codegenUnboxed`, consumers read individual scalar expressions (`x`, `y`,
+ * `z`, `w`) directly after running `setup` once, avoiding intermediate object
+ * allocations across math chains.
+ */
+export type UnboxedVector =
+  | { kind: "vec2"; x: string; y: string; setup?: string }
+  | { kind: "vec3"; x: string; y: string; z: string; setup?: string }
+  | { kind: "vec4" | "quat" | "color"; x: string; y: string; z: string; w: string; setup?: string };
+
 export type CodegenContext = {
   graph: LogicGraph;
   node: GraphNode;
   /** Resolved expression text for an input data pin (or default). */
   input(pinName: string): string;
+  /**
+   * Unboxed scalar expressions for a vector/quat/color input pin when available
+   * (either wired from an unboxed producer or a disconnected constant default).
+   * Returns undefined when the input must be read as a boxed object.
+   */
+  inputUnboxed?(pinName: string): UnboxedVector | undefined;
   /** Resolve a writable variable input without evaluating its current value. */
   reference?(pinName: string): string;
   /** Run this node's outgoing execution chain only when this expression is true. */
@@ -37,6 +54,29 @@ export type CodegenContext = {
    * source (a stripped or dangling source still counts as wired).
    */
   isWired(pinId: string): boolean;
+  /**
+   * True when any outgoing edge reads the output pin with this id, or when
+   * execution tracing / breakpoints observe all node outputs.
+   */
+  isOutputWired?(pinId: string): boolean;
+  /**
+   * Deduplicate and hoist an immutable module-scope constant (`Object.freeze(...)`),
+   * returning its identifier so hot loops allocate nothing for constant fallbacks.
+   */
+  poolConstant?(literal: string): string;
+  /** Allocate a function-local scalar temporary name (`__u0`, …), declared only when used. */
+  allocTemp?(): string;
+  /**
+   * True when this container mutator is statically proven to be a linear
+   * self-update (`Set Variable(v, Mutate(Get Variable(v), ...))`) so it may
+   * mutate uniquely owned containers in place via copy-on-write.
+   */
+  isLinearSelfUpdate?: boolean;
+  /**
+   * True when this `variables.get` reads a container (`array` or `map`) whose
+   * reference escapes to a non-observer consumer and must be marked shared.
+   */
+  mustShareContainer?: boolean;
   /** Temp var name for an output data pin. */
   output(pinName: string): string;
   /** Emit a statement with an optional anchor override. */
@@ -81,6 +121,8 @@ export type NodeDefinition = {
   pins: (properties: Record<string, unknown>) => GraphPin[];
   /** Pure expression nodes return a map of output pin name → expression. */
   codegen: (ctx: CodegenContext) => void | Record<string, string>;
+  /** Optional unboxed scalar codegen for pure vector/quat/color outputs. */
+  codegenUnboxed?: (ctx: CodegenContext) => Record<string, UnboxedVector> | undefined;
   pure?: boolean;
   /**
    * Purity set by the node's properties: a Call of a Pure function. The node

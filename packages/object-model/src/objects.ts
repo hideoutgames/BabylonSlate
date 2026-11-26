@@ -99,6 +99,8 @@ const normalizeParentGuid = (value: unknown): Guid | null =>
  */
 class VersionedVariables extends Map<string, unknown> {
   revision = 0;
+  /** Number of entries currently holding non-primitive values (objects, arrays, maps, structs). */
+  nonPrimitiveCount = 0;
 
   constructor(entries: Iterable<readonly [string, unknown]> = []) {
     super();
@@ -109,10 +111,12 @@ class VersionedVariables extends Map<string, unknown> {
   protected onChanged(name: string | null): void { void name; }
 
   override set(name: string, value: unknown): this {
-    // An object value always counts, so it skips the lookup; a primitive costs one `get`, and `has`
-    // only when the write is `undefined`, which a missing key also reads as.
-    const unchanged = isPrimitive(value) && Object.is(super.get(name), value) && (value !== undefined || super.has(name));
+    const prev = super.get(name);
+    const prevNonPrim = prev !== undefined && !isPrimitive(prev);
+    const nextNonPrim = !isPrimitive(value);
+    const unchanged = !nextNonPrim && Object.is(prev, value) && (value !== undefined || super.has(name));
     super.set(name, value);
+    if (prevNonPrim !== nextNonPrim) this.nonPrimitiveCount += nextNonPrim ? 1 : -1;
     if (!unchanged) {
       this.revision++;
       this.onChanged(name);
@@ -121,8 +125,10 @@ class VersionedVariables extends Map<string, unknown> {
   }
 
   override delete(name: string): boolean {
+    const prev = super.get(name);
     const deleted = super.delete(name);
     if (deleted) {
+      if (prev !== undefined && !isPrimitive(prev)) this.nonPrimitiveCount--;
       this.revision++;
       this.onChanged(name);
     }
@@ -130,6 +136,7 @@ class VersionedVariables extends Map<string, unknown> {
   }
 
   override clear(): void {
+    this.nonPrimitiveCount = 0;
     if (this.size > 0) {
       this.revision++;
       super.clear();
@@ -312,6 +319,12 @@ export class EngineObject {
   get variablesRevision(): number {
     const variables = this.variables;
     return variables instanceof VersionedVariables ? variables.revision : Number.NaN;
+  }
+
+  /** False when every stored variable is primitive, so `ObjectCollector` can skip scanning in O(1). */
+  get hasNonPrimitiveVariables(): boolean {
+    const variables = this.variables;
+    return !(variables instanceof VersionedVariables) || variables.nonPrimitiveCount > 0;
   }
 
   callOnCreation(): void {

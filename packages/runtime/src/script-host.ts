@@ -15,7 +15,7 @@ import { INPUT_EVENT } from "@haptic/scripting";
 import { isInfiniteLoopError } from "@haptic/debugger";
 import { loadCompiledModule } from "./module-loader";
 import type { ScriptBreakpoints } from "./script-breakpoints";
-import { createScriptContextClass, type ScriptContextConstructor, type ScriptContextHost } from "./script-context-factory";
+import { createScriptContextClass, type PooledScriptContext, type ScriptContextConstructor, type ScriptContextHost } from "./script-context-factory";
 import type {
   BtScriptExtras,
   CallerFrame,
@@ -146,6 +146,8 @@ export class ScriptHost {
   private readonly contextHost: ScriptContextHost;
   /** The class of this host's contexts; built once in the constructor. */
   private readonly Context: ScriptContextConstructor;
+  /** Reentrant stack of pooled synchronous contexts so hot event ticks allocate zero Contexts. */
+  private readonly contextPool: PooledScriptContext[] = [];
   /** Locals of latent frames that are waiting: roots for object lifetime. */
   readonly latentFrames = new LatentFrameRoots();
 
@@ -186,6 +188,9 @@ export class ScriptHost {
         this.dispatchEvent(loaded, event, self, deltaSeconds, tickIndex, commandArgs, extras, componentId),
       invokeEntry: (owner, script, exportName, fn, ctx) => this.invokeEntry(owner, script, exportName, fn, ctx),
       reportLatentError: (error, owner) => this.reportLatentError(error, owner),
+      acquireContext: (self, deltaSeconds, tickIndex, commandArgs, extras, flowNamespace) =>
+        this.acquireContext(self, deltaSeconds, tickIndex, commandArgs, extras, flowNamespace),
+      releaseContext: (ctx) => this.releaseContext(ctx),
     };
     this.Context = createScriptContextClass(this.contextHost);
   }
@@ -305,6 +310,7 @@ export class ScriptHost {
     this.invokingOwner = null;
     this.finalizingOwner = null;
     this.interfaceCaller = null;
+    this.contextPool.length = 0;
   }
 
   /** Releases the preloads of post-process Material Objects whose pass is gone (`ScriptMaterialOwnership`). */
@@ -737,8 +743,8 @@ export class ScriptHost {
     if (!loaded || loaded.length === 0) return undefined;
     const evaluate = loaded[0]?.exports.evaluate;
     if (typeof evaluate !== "function") return undefined;
-    const ctx = this.createContext(
-      self, 0, 0, {}, extras, loaded[0]!.script.assetGuid,
+    const ctx = this.acquireContext(
+      self, 0, 0, undefined, extras, loaded[0]!.script.assetGuid,
     );
     try {
       const result = this.invokeEntry(self, loaded[0]!.script, "evaluate", evaluate as (context: ScriptContext) => unknown, ctx);
@@ -752,6 +758,8 @@ export class ScriptHost {
       this.services.reportError(error);
       if (isInfiniteLoopError(error)) throw error;
       return undefined;
+    } finally {
+      this.releaseContext(ctx);
     }
   }
 
@@ -768,8 +776,8 @@ export class ScriptHost {
     if (!loaded || loaded.length === 0) return undefined;
     const evaluate = loaded[0]?.exports.evaluate;
     if (typeof evaluate !== "function") return undefined;
-    const ctx = this.createContext(
-      self, 0, 0, {}, extras, loaded[0]!.script.assetGuid,
+    const ctx = this.acquireContext(
+      self, 0, 0, undefined, extras, loaded[0]!.script.assetGuid,
     );
     try {
       const result = this.invokeEntry(self, loaded[0]!.script, "evaluate", evaluate as (context: ScriptContext) => unknown, ctx);
@@ -778,6 +786,8 @@ export class ScriptHost {
       this.services.reportError(error);
       if (isInfiniteLoopError(error)) throw error;
       return undefined;
+    } finally {
+      this.releaseContext(ctx);
     }
   }
 
@@ -794,10 +804,12 @@ export class ScriptHost {
     for (const entry of loaded) {
       const fn = entry.exports[exportName];
       if (typeof fn !== "function") continue;
-      const ctx = this.createContext(self, 0, 0, args, undefined, entry.script.assetGuid);
+      const ctx = this.acquireContext(self, 0, 0, args, undefined, entry.script.assetGuid);
+      let keepContext = false;
       try {
         const value = this.invokeEntry(self, entry.script, exportName, fn as (context: ScriptContext) => unknown, ctx);
         if (isThenable(value)) {
+          keepContext = true;
           value.then(undefined, (error) => this.reportLatentError(error, self));
           return null;
         }
@@ -805,6 +817,8 @@ export class ScriptHost {
       } catch (error) {
         this.services.reportError(error);
         return null;
+      } finally {
+        if (!keepContext) this.releaseContext(ctx);
       }
     }
     return result;
@@ -876,12 +890,14 @@ export class ScriptHost {
     if (typeof fn !== "function") return {};
     // The handler runs inside its caller's frame, so input and delta reads match the caller.
     const frame = this.interfaceCaller;
-    const ctx = this.createContext(
+    const ctx = this.acquireContext(
       object, frame?.deltaSeconds ?? 0, frame?.tickIndex ?? 0, args, undefined, entry.script.assetGuid,
     );
+    let keepContext = false;
     try {
       const result = this.invokeEntry(object, entry.script, exportName, fn as (ctx: ScriptContext) => unknown, ctx);
       if (isThenable(result)) {
+        keepContext = true;
         // Call Interface is not latent: a latent implementation's outputs are the pin defaults.
         result.then(undefined, (error) => this.reportLatentError(error, object));
         return {};
@@ -896,6 +912,8 @@ export class ScriptHost {
       if (isInfiniteLoopError(error)) throw error;
       this.services.reportError(error);
       return {};
+    } finally {
+      if (!keepContext) this.releaseContext(ctx);
     }
   }
 
@@ -921,18 +939,24 @@ export class ScriptHost {
           continue;
         }
         // Every call runs, also while an earlier run of a latent entry still waits: each waits on its own.
-        const ctx = this.createContext(
+        const ctx = this.acquireContext(
           self, deltaSeconds, tickIndex, commandArgs, extras, entry.script.assetGuid,
         );
+        let keepContext = false;
         try {
           const result = this.invokeEntry(self, entry.script, point.name, fn, ctx);
           // A latent entry returns its wait: a Promise from hand-written code, else the compiled
           // module's own thenable, which settles inside the tick its last wait ended in.
-          if (isThenable(result)) result.then(undefined, (error) => this.reportLatentError(error, self));
+          if (isThenable(result)) {
+            keepContext = true;
+            result.then(undefined, (error) => this.reportLatentError(error, self));
+          }
         } catch (error) {
           this.services.reportError(error);
           if (isInfiniteLoopError(error)) throw error;
           failure ??= { error };
+        } finally {
+          if (!keepContext) this.releaseContext(ctx);
         }
       }
     }
@@ -1023,6 +1047,27 @@ export class ScriptHost {
     flowNamespace = "",
   ): ScriptContext {
     return new this.Context(self, deltaSeconds, tickIndex, commandArgs, extras, flowNamespace);
+  }
+
+  private acquireContext(
+    self: EngineObject | null,
+    deltaSeconds: number,
+    tickIndex: number,
+    commandArgs?: Record<string, unknown>,
+    extras?: ScriptExtras,
+    flowNamespace = "",
+  ): PooledScriptContext {
+    const pooled = this.contextPool.pop();
+    if (pooled) {
+      pooled.reset(self, deltaSeconds, tickIndex, commandArgs, extras, flowNamespace);
+      return pooled;
+    }
+    return new this.Context(self, deltaSeconds, tickIndex, commandArgs, extras, flowNamespace);
+  }
+
+  private releaseContext(ctx: PooledScriptContext): void {
+    ctx.release();
+    if (this.contextPool.length < 32) this.contextPool.push(ctx);
   }
 
   /**

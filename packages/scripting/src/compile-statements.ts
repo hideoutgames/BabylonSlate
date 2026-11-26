@@ -1,9 +1,8 @@
 import type { GraphNode } from "./ir";
 import type { CodegenContext, NodeDefinition } from "./node-registry";
-import { defaultValueLiteral } from "./types";
 import { jsIdent } from "./compile-events";
-import { deadReference, reportDeadReference, subjectPinsOf } from "./compile-pin-values";
-import { accessLocation, emitBody, traceProbe, type CodegenState } from "./compile-codegen-state";
+import { deadReference, pooledDefaultValueLiteral, reportDeadReference, subjectPinsOf } from "./compile-pin-values";
+import { accessLocation, emitBody, emptyMapSentinel, poolFrozenConstant, traceProbe, type CodegenState } from "./compile-codegen-state";
 import { inputExpression, makeCtx, tracedRead } from "./compile-expressions";
 
 /** An exec node runs: the followed instance records it, and a breakpoint on it stops the session. */
@@ -43,11 +42,12 @@ export function emitStatementNode(
   for (const subject of subjects) {
     emitBody(s, `  ${reportDeadReference(subject, bound.get(subject.pin.id)!, accessLocation(s, node))}`, anchor);
   }
-  const ctx = makeCtx(s, node, flow?.continuation, flow?.branch, bound, flow?.runOutput);
+  const usedOutputs = new Set<string>();
+  const ctx = makeCtx(s, node, flow?.continuation, flow?.branch, bound, flow?.runOutput, undefined, usedOutputs);
   if (def.latent) s.isAsync = true;
-  declareDataOuts(s, node, ctx);
   if (subjects.length === 0) {
     def.codegen(ctx);
+    declareDataOuts(s, node, ctx, usedOutputs);
     emitOutputProbe(s, node, ctx);
     return { ctx };
   }
@@ -55,6 +55,7 @@ export function emitStatementNode(
   emitBody(s, `  if (${condition}) {`, anchor);
   const start = s.body.length;
   def.codegen(ctx);
+  declareDataOuts(s, node, ctx, usedOutputs);
   if (s.body.length === start) {
     // The node emitted nothing (its work is a continuation): no empty block.
     s.body.pop();
@@ -62,8 +63,8 @@ export function emitStatementNode(
     return { ctx, condition };
   }
   const resets = node.pins
-    .filter((pin) => pin.kind === "data" && pin.direction === "out")
-    .map((pin) => `    ${ctx.output(pin.id)} = ${defaultValueLiteral(pin.type)};`);
+    .filter((pin) => pin.kind === "data" && pin.direction === "out" && s.outputDecls.has(ctx.output(pin.id)))
+    .map((pin) => `    ${ctx.output(pin.id)} = ${pooledDefault(s, pin.type)};`);
   if (resets.length > 0) {
     emitBody(s, "  } else {", anchor);
     for (const reset of resets) emitBody(s, reset, anchor);
@@ -71,6 +72,15 @@ export function emitStatementNode(
   emitBody(s, "  }", anchor);
   emitOutputProbe(s, node, ctx);
   return { ctx, condition };
+}
+
+function pooledDefault(s: CodegenState, type: GraphNode["pins"][number]["type"]): string {
+  return pooledDefaultValueLiteral(
+    type,
+    (literal) => poolFrozenConstant(s, literal),
+    () => emptyMapSentinel(s),
+    !s.hasExecuteJavaScript,
+  );
 }
 
 /** Records every data output of `node` once its statements have run, and checks it against the node's breakpoint. */
@@ -84,13 +94,26 @@ export function emitOutputProbe(s: CodegenState, node: GraphNode, ctx: CodegenCo
   if (s.checkBreakpoints) emitBody(s, `  if (__bp !== null && __bp.has(${JSON.stringify(node.id)})) { ${writes("__bp")} }`);
 }
 
-export function declareDataOuts(s: CodegenState, node: GraphNode, ctx: CodegenContext) {
+export function declareDataOuts(
+  s: CodegenState,
+  node: GraphNode,
+  ctx: CodegenContext,
+  usedOutputs?: ReadonlySet<string>,
+) {
+  const observeAll = s.traceExecution || s.checkBreakpoints;
+  const wiredPins = observeAll
+    ? null
+    : new Set(s.index.outgoing(node.id).map((edge) => edge.sourcePinId));
   for (const p of node.pins) {
-    if (p.kind === "data" && p.direction === "out") {
-      const name = ctx.output(p.id);
+    if (p.kind !== "data" || p.direction !== "out") continue;
+    if (!observeAll && usedOutputs && !usedOutputs.has(p.id) && !wiredPins!.has(p.id)) {
+      continue;
+    }
+    const name = ctx.output(p.id);
+    if (!s.outputDecls.has(name)) {
       s.outputDecls.set(
         name,
-        `  let ${name} = ${defaultValueLiteral(p.type)};`,
+        `  let ${name} = ${pooledDefault(s, p.type)};`,
       );
     }
   }

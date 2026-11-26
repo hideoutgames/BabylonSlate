@@ -61,7 +61,7 @@ const capsuleShape = (ctx: Codegen) => `{ kind: "capsule", radius: ${ctx.input("
 const readOrientation = (ctx: Codegen) => `const __rot = ctx.rotatorToQuat(${ctx.input("orientation")});`;
 /** A pose at `position`, turned by `__rot` (see `readOrientation`), or unturned for a node without an Orientation pin. */
 const pose = (ctx: Codegen, position: string, oriented: boolean) =>
-  `{ position: ${ctx.input(position)}, rotation: ${oriented ? "__rot" : "{ x: 0, y: 0, z: 0, w: 1 }"} }`;
+  `{ position: ${ctx.input(position)}, rotation: ${oriented ? "__rot" : (ctx.poolConstant?.("{ x: 0, y: 0, z: 0, w: 1 }") ?? "{ x: 0, y: 0, z: 0, w: 1 }")} }`;
 
 /** Box Trace and Capsule Trace: a linear sweep of the shape at Orientation, first hit only. */
 function shapeTraceNode(id: string, title: string, shapePins: () => GraphPin[], shape: (ctx: Codegen) => string, description: string): NodeDefinition {
@@ -150,21 +150,24 @@ function velocityWrite(id: string, title: string, inName: string, angular: boole
   };
 }
 
-/** A miss reports zero Location and Normal on the struct and on the exploded pins alike. */
+/** A miss reports zero Location and Normal on the struct and on the exploded pins alike, skipping unwired allocations. */
 function emitMappedHit(
   ctx: Parameters<NonNullable<NodeDefinition["codegen"]>>[0],
   expr: string,
   setup = "",
 ): void {
-  const hitResult = ctx.output("hitResult");
-  const hit = ctx.output("hit");
-  const location = ctx.output("location");
-  const normal = ctx.output("normal");
-  const distance = ctx.output("distance");
-  const actor = ctx.output("actor");
-  ctx.emit(
-    `{ ${setup} const __hit = ${expr}; ${hitResult} = { Hit: __hit.hit === true, Location: __hit.location ?? { x: 0, y: 0, z: 0 }, Normal: __hit.normal ?? { x: 0, y: 0, z: 0 }, Actor: __hit.actor ?? null, Distance: __hit.distance ?? 0 }; ${hit} = __hit.hit === true; ${location} = __hit.location ?? { x: 0, y: 0, z: 0 }; ${normal} = __hit.normal ?? { x: 0, y: 0, z: 0 }; ${distance} = __hit.distance ?? 0; ${actor} = __hit.actor ?? null; }`,
-  );
+  const wired = (id: string) => ctx.isOutputWired?.(id) ?? true;
+  const zeroVec = ctx.poolConstant ? ctx.poolConstant("{ x: 0, y: 0, z: 0 }") : "{ x: 0, y: 0, z: 0 }";
+  const assigns: string[] = [];
+  if (wired("hitResult")) {
+    assigns.push(`${ctx.output("hitResult")} = { Hit: __hit.hit === true, Location: __hit.location ?? ${zeroVec}, Normal: __hit.normal ?? ${zeroVec}, Actor: __hit.actor ?? null, Distance: __hit.distance ?? 0 };`);
+  }
+  if (wired("hit")) assigns.push(`${ctx.output("hit")} = __hit.hit === true;`);
+  if (wired("location")) assigns.push(`${ctx.output("location")} = __hit.location ?? ${zeroVec};`);
+  if (wired("normal")) assigns.push(`${ctx.output("normal")} = __hit.normal ?? ${zeroVec};`);
+  if (wired("distance")) assigns.push(`${ctx.output("distance")} = __hit.distance ?? 0;`);
+  if (wired("actor")) assigns.push(`${ctx.output("actor")} = __hit.actor ?? null;`);
+  ctx.emit(`{ ${setup} const __hit = ${expr}; ${assigns.join(" ")} }`);
 }
 
 function radiusFromNode(node: {
@@ -336,9 +339,10 @@ export const physicsNodes: NodeDefinition[] = [
       pin("actor", "Actor", "out", objectRef("Actor")),
     ],
     codegen: (ctx) => {
+      const identityQuat = ctx.poolConstant?.("{ x: 0, y: 0, z: 0, w: 1 }") ?? "{ x: 0, y: 0, z: 0, w: 1 }";
       emitMappedHit(
         ctx,
-        `ctx.shapeSweep({ kind: "sphere", radius: ${ctx.input("radius")} }, { position: ${ctx.input("start")}, rotation: { x: 0, y: 0, z: 0, w: 1 } }, { position: ${ctx.input("end")}, rotation: { x: 0, y: 0, z: 0, w: 1 } }, ${ctx.input("channel")})`,
+        `ctx.shapeSweep({ kind: "sphere", radius: ${ctx.input("radius")} }, { position: ${ctx.input("start")}, rotation: ${identityQuat} }, { position: ${ctx.input("end")}, rotation: ${identityQuat} }, ${ctx.input("channel")})`,
       );
     },
   },
