@@ -1,5 +1,6 @@
 import {
   documentId,
+  fnv1a,
   isInputAssetType,
   normalizeInputAssetPayload,
   normalizeRenderTargetPayload,
@@ -215,6 +216,16 @@ function reportLoadFailure(label: string, path: string, error: unknown, required
 export function createPlayContentService(options: PlayContentServiceOptions) {
   const { documents: documentService, project: projectService, readAssetChunk } = options;
   const compileCache = new GraphScriptCompileCache();
+  // Memoize graph validation per SerializedGraph object & validation catalog fingerprint so
+  // repeat Play starts with unchanged graphs skip re-running validateSerializedGraph.
+  const validationCache = new WeakMap<SerializedGraph, { key: string; diagnostics: readonly Diagnostic[] }>();
+  const classGraphContentIds = new WeakMap<object, number>();
+  let nextClassGraphContentId = 0;
+  const objectIdentity = (value: object): number => {
+    let id = classGraphContentIds.get(value);
+    if (id === undefined) classGraphContentIds.set(value, id = ++nextClassGraphContentId);
+    return id;
+  };
 
   const collectGraphTypeSchemas = (
     assets = projectService.registry?.list() ?? [],
@@ -311,21 +322,20 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
     const guidByPath = new Map(assets.map((asset) => [asset.path, asset.header.guid]));
     const paths = classAssetPaths(assets);
     const open = sourceDocuments ? new Map(sourceDocuments.map(document => [document.id, document])) : documentService.getState().openDocuments;
-    const documents: Array<{ path: string; content: SerializedGraph }> = [];
-    for (const path of paths) {
+    const loaded = await mapBounded(paths, COLLECTOR_READS, async (path): Promise<{ path: string; content: SerializedGraph } | null> => {
       const openDoc = open.get(documentId({ kind: "graph", path }));
       if (openDoc?.content) {
-        documents.push({ path, content: openDoc.content as SerializedGraph });
-        continue;
+        return { path, content: openDoc.content as SerializedGraph };
       }
       try {
         const content = (await closedDocumentContent("graph", path, guidByPath.get(path), stored)) as SerializedGraph;
-        documents.push({ path, content });
+        return { path, content };
       } catch (error) {
         reportLoadFailure("Class", path, error, strict);
+        return null;
       }
-    }
-    return documents;
+    });
+    return loaded.filter((entry): entry is { path: string; content: SerializedGraph } => entry !== null);
   };
 
   const loadProjectGraphDocuments = async (requiredGuids?: ReadonlySet<string>, sourceDocuments?: readonly OpenDocument[], strict = false,
@@ -366,30 +376,29 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
       (asset.header.type === "Scene" || asset.header.type === "SceneLayer") &&
       (!requiredGuids || requiredGuids.has(asset.header.guid)));
     const open = sourceDocuments ? new Map(sourceDocuments.map(document => [document.id, document])) : documentService.getState().openDocuments;
-    const documents: EmbeddedScriptDocument[] = [];
-    for (const asset of assets) {
+    const loaded = await mapBounded(assets, COLLECTOR_READS, async (asset): Promise<EmbeddedScriptDocument | null> => {
       const kind = asset.header.type === "Scene" ? "scene" : "scene-layer";
       const host = embeddedScriptHost(kind, asset);
-      if (!host) continue;
+      if (!host) return null;
       let content = open.get(documentId({ kind, path: asset.path }))?.content as EmbeddedScriptOwner | null | undefined;
       if (!content) {
         try {
           content = await closedDocumentContent(kind, asset.path, asset.header.guid, stored) as EmbeddedScriptOwner;
         } catch (error) {
           reportLoadFailure(kind === "scene" ? "Scene" : "Scene Layer", asset.path, error, strict);
-          continue;
+          return null;
         }
       }
       const script = normalizeEmbeddedScript(content?.script);
-      if (!script) continue;
-      documents.push({
+      if (!script) return null;
+      return {
         path: asset.path, content: script, documentKind: kind,
         classId: host.classId, className: host.className, parentClassId: host.parentClass,
         ownedActors: ownedActorsOfScene({ actors: Array.isArray(content?.actors) ? content.actors : [] }),
         ownedTimelineClips: ownedTimelineClipsOfScene(host.assetGuid, { timelineClips: Array.isArray(content?.timelineClips) ? content.timelineClips : [] }),
-      });
-    }
-    return documents;
+      };
+    });
+    return loaded.filter((entry): entry is EmbeddedScriptDocument => entry !== null);
   };
 
   const loadProjectAnimGraphDocuments = async (requiredGuids?: ReadonlySet<string>, sourceDocuments?: readonly OpenDocument[], strict = false,
@@ -398,28 +407,29 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
       (asset) => isAnimGraphAssetType(asset.header.type) && (!requiredGuids || requiredGuids.has(asset.header.guid)),
     );
     const open = sourceDocuments ? new Map(sourceDocuments.map(document => [document.id, document])) : documentService.getState().openDocuments;
-    const entries: PlayAnimGraphEntry[] = [];
-    for (const asset of assets) {
+    const loaded = await mapBounded(assets, COLLECTOR_READS, async (asset): Promise<PlayAnimGraphEntry | null> => {
       const kind: AnimGraphDocumentKind = asset.header.type === "AnimationGraph2D" ? "anim-graph-2d" : "anim-graph-3d";
       const openDoc = open.get(
         documentId({ kind, path: asset.path }),
       );
       if (openDoc?.content) {
-        entries.push({ guid: asset.header.guid, document: openDoc.content });
-        continue;
+        return { guid: asset.header.guid, document: openDoc.content };
       }
       try {
-        entries.push({
+        return {
           guid: asset.header.guid,
           document: await closedDocumentContent(kind, asset.path, asset.header.guid, stored),
-        });
+        };
       } catch (error) {
         reportLoadFailure("Animation Graph", asset.path, error, strict);
+        return null;
       }
-    }
+    });
+    const entries = loaded.filter((entry): entry is PlayAnimGraphEntry => entry !== null);
+    const pathByGuid = new Map(assets.map((asset) => [asset.header.guid, asset.path]));
     return collectAnimGraphCompileDocuments(
       entries,
-      (guid) => assets.find((asset) => asset.header.guid === guid)?.path ?? null,
+      (guid) => pathByGuid.get(guid) ?? null,
     );
   };
 
@@ -523,11 +533,31 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
       ...ownedClips.map((clip) => clip.classId),
       ...timelineScriptClassIds(timelineAssets),
     ]);
-    const diagnostics = documents.flatMap((doc) =>
-      validateSerializedGraph(doc.content, {
-        assetGuid: doc.path,
-        graphId: documentId({ kind: "documentKind" in doc ? (doc as EmbeddedScriptDocument).documentKind : "graph", path: doc.path }),
-        classId: doc.classId ?? classIdForGraphPath(doc.path),
+    const validationCatalogKey = fnv1a(JSON.stringify({
+      members: memberSymbols,
+      knownClassIds: [...knownClassIds].sort(),
+      inputAssets,
+      dataAssets,
+      enums: typeSchemas.enums,
+      structs: typeSchemas.structs,
+      dataDefinitions: typeSchemas.dataDefinitions,
+      materialDomains: [...materialDomains.entries()].sort(([a], [b]) => a.localeCompare(b)),
+      subsystemClasses: [...subsystemClasses].sort(),
+      classGraphIds: Object.entries(classGraphs)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([id, graph]) => [id, parentOf(id) ?? null, objectIdentity(graph)]),
+    }));
+    const diagnostics = documents.flatMap((doc) => {
+      const assetGuid = doc.path;
+      const graphId = documentId({ kind: "documentKind" in doc ? (doc as EmbeddedScriptDocument).documentKind : "graph", path: doc.path });
+      const classId = doc.classId ?? classIdForGraphPath(doc.path);
+      const cacheKey = `${validationCatalogKey}\0${assetGuid}\0${graphId}\0${classId}`;
+      const cached = validationCache.get(doc.content);
+      if (cached && cached.key === cacheKey) return [...cached.diagnostics];
+      const computed = validateSerializedGraph(doc.content, {
+        assetGuid,
+        graphId,
+        classId,
         hierarchy,
         members: memberSymbols,
         knownClassIds,
@@ -540,8 +570,10 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
         parentOf,
         otherClassGraphs: classGraphs,
         subsystemClasses,
-      }),
-    );
+      });
+      validationCache.set(doc.content, { key: cacheKey, diagnostics: computed });
+      return [...computed];
+    });
     for (const doc of documents) {
       diagnostics.push(...timelineGraphDiagnostics(doc.content, timelineAssets, {
         assetGuid: doc.path,

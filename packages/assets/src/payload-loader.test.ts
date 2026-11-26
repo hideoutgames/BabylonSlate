@@ -425,6 +425,34 @@ describe("bounded catalog and payload loading", () => {
     digestSpy.mockRestore();
   });
 
+  it("caches verified externalized blob hashes per strong blob revision and re-hashes on overwrite", async () => {
+    const storage = await fixture();
+    const blobs = createVfsBlobStore(storage);
+    const payload = new Uint8Array([10, 20, 30, 40, 50]);
+    await storage.writeBinary("assets/blob-fast.hasset", await encodeHasset({
+      header, chunks: [chunk("source", payload)],
+      blobThreshold: 1, writeBlob: (hash, data) => blobs.writeBlob(hash, data),
+    }));
+    const { header: catalog, locator } = await readAssetCatalog(storage, "assets/blob-fast.hasset");
+    const entry = catalog.chunks[0]!;
+    const loader = new AccountedPayloadLoader(storage, { blobs });
+    const digestSpy = vi.spyOn(crypto.subtle, "digest");
+
+    // First read: verifies SHA-256 once and caches the verified blob revision.
+    expect(await loader.loadChunk(locator, entry)).toEqual(payload);
+    expect(digestSpy).toHaveBeenCalledTimes(1);
+
+    // Second read at the same strong blob revision: skips SHA-256 completely.
+    expect(await loader.loadChunk(locator, entry)).toEqual(payload);
+    expect(digestSpy).toHaveBeenCalledTimes(1);
+
+    // Same-size in-place corruption bumps the blob's strong revision, forcing re-hash and rejection.
+    await storage.writeBinary(`assets/.blobs/${entry.sha256}`, new Uint8Array([99, 99, 99, 99, 99]));
+    await expect(loader.loadChunk(locator, entry)).rejects.toThrow("Hash mismatch");
+    expect(digestSpy).toHaveBeenCalledTimes(2);
+    digestSpy.mockRestore();
+  });
+
   it("memoizes AssetRegistry.list() across calls until an asset index change occurs", async () => {
     const storage = await fixture();
     await storage.writeBinary("assets/one.hasset", await encodeHasset({ header: { ...header, guid: "one" }, chunks: [] }));

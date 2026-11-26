@@ -276,6 +276,7 @@ export function useViewportSceneLoad({
     }
     void (async () => {
       let collected: EditorSceneLoadOptions | null = null;
+      let pendingIncrementalInstall: (() => void) | null = null;
       const realize = async () => {
         if (!isCurrent()) return;
         if (appliedRenderSettingsRef.current !== renderSettingsKey) {
@@ -407,8 +408,10 @@ export function useViewportSceneLoad({
             },
           };
         } else {
-          handle.setMaterialDocuments(materials.documents, materials.functions);
-          handle.setMeshAssets(assets);
+          pendingIncrementalInstall = () => {
+            handle.setMaterialDocuments(materials.documents, materials.functions);
+            handle.setMeshAssets(assets);
+          };
         }
         if (isCurrent()) {
           appliedAssetsRef.current = {
@@ -449,8 +452,24 @@ export function useViewportSceneLoad({
             },
           });
         } else {
-          await realize();
           await applyCollectedAssets();
+          if (!isCurrent()) return;
+          const commitIncremental = () => {
+            pendingIncrementalInstall?.();
+            if (appliedRenderSettingsRef.current !== renderSettingsKey) {
+              handle.setRenderSettings(sceneViewportRenderSettings(renderSettingsKey, environmentSettingsRef.current));
+              appliedRenderSettingsRef.current = renderSettingsKey;
+            }
+            if (appliedSceneRef.current?.scene !== editorScene || appliedSceneRef.current.handle !== handle) {
+              handle.loadScene(editorScene, { sceneAssetGuid: sceneAssetGuidRef.current });
+              appliedSceneRef.current = { scene: editorScene, handle };
+            }
+          };
+          if (pendingIncrementalInstall && handle.batchEditorApply) {
+            handle.batchEditorApply(commitIncremental);
+          } else {
+            commitIncremental();
+          }
           if (isCurrent()) {
             await handle.whenEditorModelsReady();
           }

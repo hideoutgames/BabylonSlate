@@ -591,6 +591,21 @@ function graphDocumentCompileCacheKey(
   });
 }
 
+/** O(N) UTF-16 char estimate for a cached compile result without `JSON.stringify` over compiled JS. */
+function compiledValueChars(value: ScriptBundleEntry | ScriptBundleEntry[] | null): number {
+  if (value === null) return 4;
+  if (Array.isArray(value)) {
+    let total = 2;
+    for (const entry of value) total += compiledBundleChars(entry);
+    return total;
+  }
+  return compiledBundleChars(value);
+}
+
+function compiledBundleChars(entry: ScriptBundleEntry): number {
+  return entry.source.length + entry.assetGuid.length + entry.classId.length + entry.entryPoints.length * 64 + entry.anchors.length * 48 + 128;
+}
+
 /** Unowned editor compiles use bounded retention; scoped Play uses AssetLoadingService. */
 export class GraphScriptCompileCache {
   private readonly graphEntries = new Map<string, ScriptBundleEntry | null>();
@@ -642,7 +657,7 @@ export class GraphScriptCompileCache {
     const token = `${kind}:${key}`;
     this.forget(token);
     // Include both retained key strings, UTF-16 serialized result, and entry overhead.
-    const bytes = (key.length + token.length + JSON.stringify(value).length) * 2 + 128;
+    const bytes = (key.length + token.length + compiledValueChars(value)) * 2 + 128;
     if (!this.maxEntries || bytes > this.maxBytes) return false;
     while (this.recent.size >= this.maxEntries || this.bytes + bytes > this.maxBytes) {
       this.forget(this.recent.keys().next().value!);

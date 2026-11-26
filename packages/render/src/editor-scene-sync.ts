@@ -221,10 +221,13 @@ export class EditorSceneSync {
    * disposed and rebuilt. Equivalent payloads (new Maps, same guids/sizes) are
    * a no-op so a gizmo transform commit does not drop selection.
    */
-  setMeshAssets(assets: MeshAssetContext | undefined): boolean {
+  setMeshAssets(assets: MeshAssetContext | undefined, options?: { deferApply?: boolean; onReapplyDeferred?: () => void }): boolean {
     const change = this.installAssets(assets);
     if (change.rebuild) this.meshKinds.clear();
-    if (change.reapply && this.lastScene) this.apply(this.lastScene);
+    if (change.reapply && this.lastScene) {
+      if (options?.deferApply) options.onReapplyDeferred?.();
+      else this.apply(this.lastScene);
+    }
     return change.rebuild;
   }
 

@@ -3337,6 +3337,42 @@ describe("Play createEngine view", () => {
     expect(visual?.material?.name).toContain("mat-1");
   });
 
+  it("coalesces setMaterialDocuments, setMeshAssets, and loadScene into one apply inside batchEditorApply", () => {
+    const canvas = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const handle = createEngine(canvas, {
+      sharedEngine: sharedEngine(),
+      editor: true,
+    });
+    handles.push(handle);
+    const mesh = createMeshComponent("c1", "box");
+    const initialScene = {
+      ...createDefaultScene(),
+      actors: [createActor("a", "A", { components: [mesh] })],
+    };
+    handle.loadScene(initialScene);
+    const applySpy = vi.spyOn(handle.editor!.sync, "apply");
+    const matDoc = createDefaultMaterialDocument();
+    const updatedMesh = createMeshComponent("c1", "box");
+    updatedMesh.properties.materialGuid = "mat-batched";
+    const nextScene = {
+      ...createDefaultScene(),
+      actors: [createActor("a", "A", { components: [updatedMesh] })],
+    };
+
+    handle.batchEditorApply!(() => {
+      handle.setMaterialDocuments(new Map([["mat-batched", matDoc]]));
+      handle.setMeshAssets({ pixelsPerUnit: 64 });
+      handle.loadScene(nextScene);
+    });
+
+    expect(applySpy).toHaveBeenCalledTimes(1);
+    expect(handle.editor!.sync.meshForActor("a")?.material?.name).toContain("mat-batched");
+    // Re-sending the exact same MaterialDocument reference skips re-applying.
+    applySpy.mockClear();
+    handle.setMaterialDocuments(new Map([["mat-batched", matDoc]]));
+    expect(applySpy).not.toHaveBeenCalled();
+  });
+
   it("syncEditorPlayState unpauses, resizes, and invalidates when Play ends", () => {
     const engine = sharedEngine();
     const resize = vi.spyOn(engine, "resize");

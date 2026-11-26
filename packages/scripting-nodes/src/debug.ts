@@ -1,4 +1,5 @@
 import { EXECUTE_JAVASCRIPT_NODE_TYPE, executeJavaScriptBodyText, hasExecuteJavaScriptBody } from "@haptic/core";
+import { hoistCowHelpers } from "./cow-helpers";
 import {
   pin,
   type NodeDefinition,
@@ -281,7 +282,19 @@ export const debugNodes: NodeDefinition[] = [
         })),
       );
       // Row names can equal the exec pins' names, so look up the prefixed ids.
-      const args = ["ctx", ...inputs.map((i) => ctx.input(`in_${i.name}`))].join(", ");
+      // Any container or wildcard value handed to user JS may escape and be aliased,
+      // so mark it shared for COW mutators before invoking the user body.
+      let needsCowShare = false;
+      const inputArgs = inputs.map((i) => {
+        const expr = ctx.input(`in_${i.name}`);
+        if (i.type.kind === "array" || i.type.kind === "map" || i.type.kind === "wildcard" || i.type.kind === "object") {
+          needsCowShare = true;
+          return `__cowShare(${expr})`;
+        }
+        return expr;
+      });
+      if (needsCowShare) hoistCowHelpers(ctx);
+      const args = ["ctx", ...inputArgs].join(", ");
       if (isAsync) ctx.requestAsync();
       const call = isAsync ? `(yield ${fnName}(${args}))` : `${fnName}(${args})`;
       if (outputs.length === 0) {

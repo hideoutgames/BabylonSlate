@@ -289,4 +289,47 @@ describe("COW containers and O(1) value-keyed Map", () => {
     const snapZero = [...snap.entries()].find(([k]) => (k as { x: number }).x === 0)?.[1];
     expect(snapZero).toBe(0);
   });
+
+  it("marks container inputs shared when passed to debug.executeJavaScript so aliased JS references stay isolated", () => {
+    const arrProp = (name: string) => ({
+      variableName: name,
+      variableType: { kind: "array", elementType: { kind: "int" } },
+    });
+    const graph: LogicGraph = {
+      id: "execJsCow",
+      nodes: [
+        node(registry, "begin", "event.beginPlay"),
+        node(registry, "make", "array.make", { count: 1, "default:item_0": 10 }),
+        node(registry, "setA0", "variables.set", arrProp("A")),
+        node(registry, "getA1", "variables.get", arrProp("A")),
+        node(registry, "js", "debug.executeJavaScript", {
+          inputs: [{ name: "arr", type: { kind: "array", elementType: { kind: "int" } } }],
+          outputs: [],
+          body: "ctx.stashed = arr;",
+        }),
+        node(registry, "getA2", "variables.get", arrProp("A")),
+        node(registry, "append", "array.append", { "default:item": 20 }),
+        node(registry, "setA1", "variables.set", arrProp("A")),
+      ],
+      edges: [
+        edge("x1", "begin", "execOut", "setA0", "execIn"),
+        edge("d1", "make", "out", "setA0", "value"),
+        edge("x2", "setA0", "execOut", "js", "execIn"),
+        edge("d2", "getA1", "value", "js", "in_arr"),
+        edge("x3", "js", "execOut", "setA1", "execIn"),
+        edge("d3", "getA2", "value", "append", "array"),
+        edge("d4", "append", "out", "setA1", "value"),
+      ],
+    };
+    const compiled = compileGraph(graph, { assetGuid: "a", registry });
+    const vars = new Map<string, unknown>();
+    const ctxObj: Record<string, unknown> = {
+      getVariable: (k: string) => vars.get(k),
+      setVariable: (k: string, v: unknown) => vars.set(k, v),
+    };
+    loadEntry(compiled.source, "onBeginPlay")(ctxObj);
+    expect(ctxObj.stashed).toEqual([10]);
+    expect(vars.get("A")).toEqual([10, 20]);
+    expect(ctxObj.stashed).not.toBe(vars.get("A"));
+  });
 });

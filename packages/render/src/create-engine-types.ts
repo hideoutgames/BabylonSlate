@@ -293,6 +293,11 @@ export interface EngineHandle {
     documents: ReadonlyMap<string, MaterialDocument>,
     functions?: ReadonlyMap<string, MaterialFunctionDocument>,
   ) => void;
+  /**
+   * Coalesce `setMaterialDocuments`, `setMeshAssets`, and `loadScene` called inside `run`
+   * into a single `EditorSceneSync.apply` pass for incremental editor updates.
+   */
+  batchEditorApply?: (run: () => void) => void;
   /** Material asset guids whose editor tab is open — those stay unfrozen. */
   setEditingMaterialGuids: (guids: ReadonlySet<string>) => void;
   /** Compile shaders before the first editor draw (scene-load warm). */
