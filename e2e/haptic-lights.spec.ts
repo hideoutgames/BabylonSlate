@@ -206,9 +206,10 @@ test("HapticLightingBlock shades graph Materials as its model predicts, and ligh
   // The ball shows the sun's highlight (a few degrees wide: about twenty pixels here).
   expect(outliers(cel.get("glossy")!, cel.get("glossy, no highlights")!), "glossy").toBeGreaterThan(5);
   expect(cel.get("rough"), "rough").toEqual(cel.get("rough, no highlights"));
-  // One CEL program per regular Material still compiled at the end (the glossy and the rough Materials' programs are
-  // released once their poses are over): CEL ignores the cube's format and box.
-  expect(result.celEffects).toBe(3);
+  // With the Material record always on, regular Materials differing only in hoisted literals share a CEL program (the
+  // glossy and the rough Materials' programs are released once their poses are over): 2 CEL Effects remain, and CEL
+  // ignores the cube's format and box.
+  expect(result.celEffects).toBe(2);
   expect(result.celSteps).toEqual(LIGHT_STEPS);
 
   // A spot light's, the sun's and a point light's shadows, drawn through the shadow controller and the frame graph
