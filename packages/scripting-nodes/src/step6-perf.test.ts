@@ -301,7 +301,7 @@ describe("COW containers and O(1) value-keyed Map", () => {
         node(registry, "setA0", "variables.set", arrProp),
         node(registry, "getA1", "variables.get", arrProp),
         node(registry, "js", "debug.executeJavaScript", {
-          inputs: [{ name: "arr", type: { kind: "array", elementType: { kind: "int" } } }],
+          inputs: [{ name: "arr", type: { kind: "array", element: { kind: "int" } } }],
           outputs: [],
           body: "ctx.stashed = arr;",
         }),
