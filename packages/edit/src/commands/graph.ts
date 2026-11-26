@@ -37,6 +37,11 @@ export class MoveNodeCommand implements EditCommand<SerializedGraph> {
   invert(): MoveNodeCommand {
     return new MoveNodeCommand(this.nodeId, this.to, this.from);
   }
+
+  coalesce(next: EditCommand<SerializedGraph>): MoveNodeCommand | undefined {
+    if (!(next instanceof MoveNodeCommand) || next.nodeId !== this.nodeId) return undefined;
+    return new MoveNodeCommand(this.nodeId, this.from, next.to);
+  }
 }
 
 export class AddEdgeCommand implements EditCommand<SerializedGraph> {

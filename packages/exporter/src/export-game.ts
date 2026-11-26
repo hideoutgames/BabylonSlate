@@ -94,7 +94,12 @@ function shipAssets(assets: readonly ExportAssetBytes[], parse: ParseDocument): 
     if (form !== "json" || encodingFor(asset) !== "json") return [{ ...asset, ...edges }];
     const document = parse(asset);
     const stripped = stripEditorOnlyFields(asset.type, document);
-    return [{ ...asset, ...edges, bytes: stripped === document ? asset.bytes : encoder.encode(JSON.stringify(stripped)) }];
+    return [{
+      ...asset,
+      ...edges,
+      bytes: stripped === document ? asset.bytes : encoder.encode(JSON.stringify(stripped)),
+      ...(stripped === document ? {} : { sha256: undefined }),
+    }];
   });
 }
 
@@ -182,7 +187,9 @@ function inlineCssIntoIndex(files: Map<string, Uint8Array>): void {
 }
 
 /** Asset hashes in flight ahead of the asset being written. */
-const HASH_CONCURRENCY = 4;
+const HASH_CONCURRENCY = 8;
+
+const SHA256_HEX_RE = /^[0-9a-f]{64}$/;
 
 function extensionForAudioMime(mime: string): string {
   if (mime === "audio/mpeg") return "mp3";
@@ -239,7 +246,16 @@ async function writeAssetFiles(
   const hashes: Promise<string>[] = [];
   for (const [indexInExport, asset] of assets.entries()) {
     while (hashes.length < Math.min(assets.length, indexInExport + HASH_CONCURRENCY)) {
-      const hash = sha256Hex(prepared[hashes.length]!.bytes);
+      const targetIndex = hashes.length;
+      const targetAsset = assets[targetIndex]!;
+      const targetBytes = prepared[targetIndex]!.bytes;
+      const knownSha =
+        targetBytes === targetAsset.bytes &&
+        typeof targetAsset.sha256 === "string" &&
+        SHA256_HEX_RE.test(targetAsset.sha256)
+          ? targetAsset.sha256
+          : null;
+      const hash = knownSha ? Promise.resolve(knownSha) : sha256Hex(targetBytes);
       // An abandoned hash must not surface as an unhandled rejection.
       hash.catch(() => {});
       hashes.push(hash);
@@ -474,14 +490,18 @@ export async function exportGame(
 
 export { SAFE_ZIP_MTIME };
 
-export function zipExport(artifact: ExportArtifact): Uint8Array {
+export function zipFileMap(files: ReadonlyMap<string, Uint8Array>): Uint8Array {
   const record: Record<string, Uint8Array> = {};
-  for (const [path, data] of [...artifact.files.entries()].sort(([a], [b]) =>
+  for (const [path, data] of [...files.entries()].sort(([a], [b]) =>
     a.localeCompare(b),
   )) {
     record[path] = data;
   }
   return zipSync(record, { level: 6, mtime: SAFE_ZIP_MTIME });
+}
+
+export function zipExport(artifact: ExportArtifact): Uint8Array {
+  return zipFileMap(artifact.files);
 }
 
 const OUTDATED_MANIFEST = "rebuild this game with the current exporter.";

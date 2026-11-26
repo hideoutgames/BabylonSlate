@@ -106,6 +106,29 @@ export class CommandBatch<TDoc> implements EditCommand<TDoc> {
       return undefined;
     }
     const added = next.commands;
+    // When both batches target the same sequence of mergeable commands (e.g. a
+    // multi-selection scrub), fold pairwise so the batch stays O(targets) instead
+    // of growing O(frames * targets).
+    if (this.#length === added.length && this.#length > 0) {
+      const folded: EditCommand<TDoc>[] = [];
+      let allFolded = true;
+      for (let index = 0; index < this.#length; index++) {
+        const earlier = this.#parts.items[index]!;
+        const later = added[index]!;
+        const combined =
+          earlier.mergeKey !== undefined && earlier.mergeKey === later.mergeKey
+            ? earlier.coalesce?.(later)
+            : undefined;
+        if (!combined) {
+          allFolded = false;
+          break;
+        }
+        folded.push(combined);
+      }
+      if (allFolded) {
+        return new CommandBatch<TDoc>(folded, this.mergeKey);
+      }
+    }
     // Extend the shared storage in place unless another batch already
     // extended it past this one or a caller holds the array.
     const parts = this.#length === this.#parts.items.length && !this.#parts.exposed

@@ -1,12 +1,12 @@
 import {
   Handle,
   Position,
-  useStore,
   useUpdateNodeInternals,
   type Node,
   type NodeProps,
 } from "@xyflow/react";
 import {
+  memo,
   useCallback,
   useContext,
   useEffect,
@@ -33,7 +33,7 @@ import { MathExpressionFormulaField } from "./math-expression-formula";
 import { Badge } from "@haptic/ui/components/badge";
 import { cn } from "@haptic/ui/lib/utils";
 import { useGraphEditorContext } from "./graph-editor-context";
-import { GraphNodeBodyContext, useConnectedInputs, useNodeErrorCount, useNodeRename, usePendingPinId, usePinDisplayType, usePinErrors, usePreviewedNode } from "./graph-node-state";
+import { GraphNodeBodyContext, useConnectedInputs, useNodeErrorCount, useNodeRename, usePendingPinId, usePinDisplayType, usePinErrors, usePinPassesReference, usePinWired, usePreviewedNode } from "./graph-node-state";
 import { nodeCanBreak, useNodeBreakpoint } from "./graph-breakpoints";
 import { useNodeMenu } from "./use-node-menu";
 import { hasSerializedPins, isRerouteNodeData, type SerializedPin } from "./graph-types";
@@ -56,7 +56,6 @@ import { GraphInteractionSettingsContext } from "./graph-interaction-settings";
 import { pinDefaultPreview, readPinDefaultValue } from "./pin-default-preview";
 import { PinDefaultEditor } from "./pin-default-editor";
 import { NodeAddPinButton } from "./node-add-pin-button";
-import { isPinWired, passesReference } from "./pin-connections";
 
 export type CanvasNode = Node<Record<string, unknown>>;
 
@@ -213,7 +212,7 @@ function PinVisual({
   );
 }
 
-function PinHandle({
+const PinHandle = memo(function PinHandle({
   nodeId,
   pin,
   pending,
@@ -235,7 +234,7 @@ function PinHandle({
   const { onPinTap } = useGraphEditorContext();
   const isSource = pin.direction === "out";
   const displayType = usePinDisplayType(nodeId, pin.id) ?? pin.type;
-  const byReference = useStore((state) => passesReference(state.edges, state.nodeLookup, nodeId, pin));
+  const byReference = usePinPassesReference(nodeId, pin);
 
   return (
     <Handle
@@ -273,7 +272,7 @@ function PinHandle({
       <PinVisual type={displayType} pin={pin} connected={connected} byReference={byReference} circle={circle} />
     </Handle>
   );
-}
+});
 
 /**
  * The host's body under a node's pins (`GraphEditor.renderNodeBody`). It reads the body renderer on
@@ -285,10 +284,10 @@ function NodeBody({ nodeId, data }: { nodeId: string; data: Record<string, unkno
 }
 
 /** A pin that reads whether it is wired itself, so a wire elsewhere renders only the pins it changes. */
-function WiredPinHandle(props: Omit<Parameters<typeof PinHandle>[0], "connected">) {
-  const connected = useStore((state) => isPinWired(state.edges, props.nodeId, props.pin));
+const WiredPinHandle = memo(function WiredPinHandle(props: Omit<Parameters<typeof PinHandle>[0], "connected">) {
+  const connected = usePinWired(props.nodeId, props.pin.direction, props.pin.id);
   return <PinHandle {...props} connected={connected} />;
-}
+});
 
 /**
  * An Animation Graph's Pose pin (Phosphor User Focus) or Frame pin (Bootstrap Image), drawn larger than other pins and
@@ -319,7 +318,7 @@ function AnimPinGlyph({ kind, color, connected }: { kind: "pose" | "frame"; colo
  * An output drawn at the right end of the title bar, aligned with the output
  * handles of the rows below: a custom event's Output Delegate, as in Unreal.
  */
-function HeaderPin({
+const HeaderPin = memo(function HeaderPin({
   nodeId,
   pin,
   disabled,
@@ -330,7 +329,7 @@ function HeaderPin({
 }) {
   const pendingPinId = usePendingPinId(nodeId);
   const pinHasError = usePinErrors(nodeId);
-  const connected = useStore((state) => isPinWired(state.edges, nodeId, pin));
+  const connected = usePinWired(nodeId, pin.direction, pin.id);
   const label = humanizePropertyLabel(pin.name);
   return (
     <span
@@ -350,9 +349,9 @@ function HeaderPin({
       />
     </span>
   );
-}
+});
 
-function PinRow({
+const PinRow = memo(function PinRow({
   nodeId,
   data,
   incoming,
@@ -381,14 +380,10 @@ function PinRow({
     : incoming ? label(incoming) : "";
   const outgoingLabel = outgoingTag !== undefined ? tagDisplayName(tags, outgoingTag)
     : outgoing ? label(outgoing) : "";
-  const incomingConnected = useStore((state) =>
-    incoming ? isPinWired(state.edges, nodeId, incoming) : false,
-  );
+  const incomingConnected = usePinWired(nodeId, incoming?.direction ?? "in", incoming?.id);
   // An unwired pin that reads Self shows a Self field; the handle names it for assistive technology.
   const incomingHandleLabel = incoming?.selfWhenUnwired && !incomingConnected ? `${incomingName} (Self)` : incomingName;
-  const outgoingConnected = useStore((state) =>
-    outgoing ? isPinWired(state.edges, nodeId, outgoing) : false,
-  );
+  const outgoingConnected = usePinWired(nodeId, outgoing?.direction ?? "out", outgoing?.id);
   const displayedIncoming = incoming ? { ...incoming, type: incomingDisplayType ?? incoming.type } : undefined;
   const preview = displayedIncoming
     ? pinDefaultPreview(displayedIncoming, data, incomingConnected, pinTypeNames)
@@ -474,7 +469,7 @@ function PinRow({
       </div>
     </div>
   );
-}
+});
 
 /**
  * A node's error count: a destructive Badge sitting just above the node's top edge, so it never covers
@@ -733,7 +728,20 @@ export function BlueprintNodeShell({
   );
 }
 
-function PinNode({ id, data, type, selected }: NodeProps<CanvasNode>) {
+/** Node components only render from `id`, `type`, `data` and `selected`, never position or drag flags. */
+function sameNodeRenderProps(
+  prev: NodeProps<CanvasNode>,
+  next: NodeProps<CanvasNode>,
+): boolean {
+  return (
+    prev.id === next.id &&
+    prev.type === next.type &&
+    prev.data === next.data &&
+    prev.selected === next.selected
+  );
+}
+
+const PinNode = memo(function PinNode({ id, data, type, selected }: NodeProps<CanvasNode>) {
   const nodeMenu = useNodeMenu(id);
   const pins = hasSerializedPins(data) ? data.__pins : [];
   const { title, role, kind } = visualFromData(data, type);
@@ -805,9 +813,9 @@ function PinNode({ id, data, type, selected }: NodeProps<CanvasNode>) {
       {nodeMenu.overlay}
     </div>
   );
-}
+}, sameNodeRenderProps);
 
-function VariableGetNode({
+const VariableGetNode = memo(function VariableGetNode({
   id,
   data,
   selected,
@@ -873,21 +881,21 @@ function VariableGetNode({
       {nodeMenu.overlay}
     </div>
   );
-}
+}, sameNodeRenderProps);
 
 /**
  * A Reroute knot: a small pill with no title bar, its input pin at the left end and its output
  * at the right, both drawn in the type the knot carries. The space between them drags the knot.
  */
-function RerouteNode({ id, data, selected }: NodeProps<CanvasNode>) {
+const RerouteNode = memo(function RerouteNode({ id, data, selected }: NodeProps<CanvasNode>) {
   const pendingPinId = usePendingPinId(id);
   const pinHasError = usePinErrors(id);
   const nodeMenu = useNodeMenu(id);
   const pins = hasSerializedPins(data) ? data.__pins : [];
   const input = pins.find((pin) => pin.direction === "in");
   const output = pins.find((pin) => pin.direction === "out");
-  const inputWired = useStore((state) => (input ? isPinWired(state.edges, id, input) : false));
-  const outputWired = useStore((state) => (output ? isPinWired(state.edges, id, output) : false));
+  const inputWired = usePinWired(id, input?.direction ?? "in", input?.id);
+  const outputWired = usePinWired(id, output?.direction ?? "out", output?.id);
   const isPending = (pin: SerializedPin) => pendingPinId === pin.id;
   // The outline takes the colour of what the knot carries, as its pins do (the input's, should they differ).
   const carried = input ?? output;
@@ -925,14 +933,14 @@ function RerouteNode({ id, data, selected }: NodeProps<CanvasNode>) {
       {nodeMenu.overlay}
     </div>
   );
-}
+}, sameNodeRenderProps);
 
 /**
  * A Math Expression node: a normal node's outline and selection ring around a centred title, its formula in monospace
  * under the title and its variables as ordinary pin rows, inputs left and outputs right. A
  * double-click, a double-tap, or Enter while the node is selected types the formula in place.
  */
-function MathExpressionNode({ id, data, selected }: NodeProps<CanvasNode>) {
+const MathExpressionNode = memo(function MathExpressionNode({ id, data, selected }: NodeProps<CanvasNode>) {
   const { onFormulaCommit } = useGraphEditorContext();
   const errorCount = useNodeErrorCount(id);
   const nodeMenu = useNodeMenu(id);
@@ -1026,7 +1034,7 @@ function MathExpressionNode({ id, data, selected }: NodeProps<CanvasNode>) {
       {nodeMenu.overlay}
     </div>
   );
-}
+}, sameNodeRenderProps);
 
 export function resolveNodeType(
   type: string,

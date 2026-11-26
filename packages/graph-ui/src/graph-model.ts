@@ -195,6 +195,9 @@ export function reconcileCanvasGraph(options: {
   /** Signs `incoming` and `lastEmitted`: a caller that keeps signatures by graph passes its lookup. */
   signatureOf?: (graph: GraphDocument) => string;
 }): { nodes: ReconcileCanvasNode[]; edges: ReconcileCanvasEdge[] } | null {
+  if (options.lastEmitted && options.incoming === options.lastEmitted) {
+    return null;
+  }
   const signatureOf = options.signatureOf ?? canonicalGraphSignature;
   const incomingSig = signatureOf(options.incoming);
   if (

@@ -240,9 +240,10 @@ function useMaterialDocument(): {
   const { documentId } = useDocumentWorkspace();
   const { applyAssetDocumentChange } = useDocumentActions();
   const doc = useOpenDocument(documentId);
+  const { normalizedDocument } = useMaterialEditing();
   const document = useMemo(
-    () => normalizeMaterialDocument(doc?.content ?? {}),
-    [doc?.content],
+    () => normalizedDocument ?? normalizeMaterialDocument(doc?.content ?? {}),
+    [doc?.content, normalizedDocument],
   );
   const commit = useCallback(
     (next: MaterialDocument, mergeKey?: string) => {
@@ -265,9 +266,10 @@ function useMaterialFunctionDocument(): {
   const { documentId } = useDocumentWorkspace();
   const { applyAssetDocumentChange } = useDocumentActions();
   const doc = useOpenDocument(documentId);
+  const { normalizedFunctionDocument } = useMaterialEditing();
   const document = useMemo(
-    () => normalizeMaterialFunctionDocument(doc?.content ?? {}),
-    [doc?.content],
+    () => normalizedFunctionDocument ?? normalizeMaterialFunctionDocument(doc?.content ?? {}),
+    [doc?.content, normalizedFunctionDocument],
   );
   const commit = useCallback(
     (next: MaterialFunctionDocument, mergeKey?: string) => {

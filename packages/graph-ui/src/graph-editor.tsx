@@ -71,6 +71,7 @@ import {
 import type { PinTypeNames } from "./pin-default-preview";
 import { GraphEditorProvider, type GraphPreviewedNode } from "./graph-editor-context";
 import { GraphNodeBodyContext, GraphNodeStateStore, stablePinDisplayTypes } from "./graph-node-state";
+import { buildReferencePins, buildWiredPins } from "./pin-connections";
 import {
   canonicalGraphSignature,
   createEdgeId,
@@ -1164,7 +1165,7 @@ function GraphEditorCanvas({
   const [edges, setEdges] = useState<Edge[]>(() =>
     toFlowEdges(initialGraph.edges),
   );
-  const connectedInputs = useMemo(() => {
+  const { connectedInputs, wiredPins } = useMemo(() => {
     const inputs = new Map<string, string[]>();
     for (const edge of edges) {
       if (!edge.targetHandle) continue;
@@ -1172,7 +1173,7 @@ function GraphEditorCanvas({
       ids.push(edge.targetHandle);
       inputs.set(edge.target, ids);
     }
-    return inputs;
+    return { connectedInputs: inputs, wiredPins: buildWiredPins(edges) };
   }, [edges]);
   const [pendingPin, setPendingPin] = useState<{
     nodeId: string;
@@ -1264,6 +1265,10 @@ function GraphEditorCanvas({
   const pinNodes = selectPinDisplayNodes(nodes);
   const pinDisplayTypes = useMemo(
     () => displayPinTypesForGraph(pinNodes, edges),
+    [edges, pinNodes],
+  );
+  const referencePins = useMemo(
+    () => buildReferencePins(edges, pinNodes),
     [edges, pinNodes],
   );
   const pinDisplayTypesRef = useRef(pinDisplayTypes);
@@ -2894,11 +2899,14 @@ function GraphEditorCanvas({
   const selectionIsOnlyProtected =
     selectedNodes.length > 0 &&
     selectedNodes.every((node) => isProtectedNode(node));
+  const selectionKey = selectedNodes.map((node) => node.id).join("\0");
+  const edgeSelectionKey = selectedEdges.map((edge) => edge.id).join("\0");
   const hasBreakableLinks = useMemo(() => {
-    if (selectedEdges.length > 0) return true;
-    const selected = new Set(selectedNodes.map((node) => node.id));
+    if (edgeSelectionKey !== "") return true;
+    if (selectionKey === "") return false;
+    const selected = new Set(selectionKey.split("\0"));
     return edgesTouchingNodes(edges, selected).length > 0;
-  }, [edges, selectedEdges, selectedNodes]);
+  }, [edges, edgeSelectionKey, selectionKey]);
 
   const onSelectionChangeRef = useRef(onSelectionChange);
   const onEmptyCanvasClickRef = useRef(onEmptyCanvasClick);
@@ -2906,7 +2914,6 @@ function GraphEditorCanvas({
     onSelectionChangeRef.current = onSelectionChange;
     onEmptyCanvasClickRef.current = onEmptyCanvasClick;
   });
-  const selectionKey = selectedNodes.map((node) => node.id).join("\0");
   useEffect(() => {
     onSelectionChangeRef.current?.(
       selectionKey === "" ? [] : selectionKey.split("\0"),
@@ -2917,7 +2924,6 @@ function GraphEditorCanvas({
   useLayoutEffect(() => {
     onEdgeSelectionChangeRef.current = onEdgeSelectionChange;
   });
-  const edgeSelectionKey = selectedEdges.map((edge) => edge.id).join("\0");
   useEffect(() => {
     onEdgeSelectionChangeRef.current?.(
       edgeSelectionKey === "" ? [] : edgeSelectionKey.split("\0"),
@@ -4013,11 +4019,11 @@ function GraphEditorCanvas({
     if (selectedNodeId) ids.add(selectedNodeId);
     // The node being renamed keeps its field, and its focus, while it is scrolled away.
     if (renamingNodeId) ids.add(renamingNodeId);
-    for (const node of nodes) {
-      if (node.selected) ids.add(node.id);
+    if (selectionKey !== "") {
+      for (const id of selectionKey.split("\0")) ids.add(id);
     }
     return [...ids];
-  }, [focusedNodeId, nodes, renamingNodeId, selectedNodeId]);
+  }, [focusedNodeId, renamingNodeId, selectedNodeId, selectionKey]);
   // The mounted nodes and edges follow the pan/zoom transform, but the editor renders
   // again only when that set changes, not on every pan or zoom frame.
   const visibleInputs = useRef<VisibleGraphInputs | null>(null);
@@ -4112,14 +4118,22 @@ function GraphEditorCanvas({
   // Seeded with the first render's state, then kept current after each commit (below).
   const [nodeState] = useState(() => new GraphNodeStateStore({
     pendingPin, nodeErrorCounts, pinErrorKeys, renamingNodeId, renamingNodeValue, previewedNode,
-    pinDisplayTypes, connectedInputs,
+    pinDisplayTypes, connectedInputs, wiredPins, referencePins,
   }));
+  const lastRawPinDisplayTypesRef = useRef(pinDisplayTypes);
   useLayoutEffect(() => {
     const current = nodeState.get();
+    const nextPinDisplayTypes =
+      lastRawPinDisplayTypesRef.current === pinDisplayTypes
+        ? current.pinDisplayTypes
+        : stablePinDisplayTypes(current.pinDisplayTypes, pinDisplayTypes);
+    lastRawPinDisplayTypesRef.current = pinDisplayTypes;
     nodeState.set({
       pendingPin, nodeErrorCounts, pinErrorKeys, renamingNodeId, renamingNodeValue, previewedNode,
-      pinDisplayTypes: stablePinDisplayTypes(current.pinDisplayTypes, pinDisplayTypes),
+      pinDisplayTypes: nextPinDisplayTypes,
       connectedInputs,
+      wiredPins,
+      referencePins,
     });
   });
 

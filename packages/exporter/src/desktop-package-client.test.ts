@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { strToU8, unzipSync, zipSync } from "fflate";
-import { packageDesktopGameInBackground, type DesktopPackageWorkerHandle } from "./desktop-package-client";
+import { packageDesktopGameInBackground, zipExportInBackground, type DesktopPackageWorkerHandle } from "./desktop-package-client";
 import { runDesktopPackage, type DesktopPackageReply, type DesktopPackageRequest } from "./desktop-package-protocol";
 import type { DesktopGamePackageInput } from "./native-desktop";
 
@@ -81,5 +81,21 @@ describe("packageDesktopGameInBackground", () => {
   it("packages in-process where there is no Worker", async () => {
     const { fileName } = await packageDesktopGameInBackground({ kind: "linux-deb", input: input() }, null);
     expect(fileName).toMatch(/\.deb$/);
+  });
+
+  it("zips web game files on the packaging worker without transferring caller buffers, and falls back in-process", async () => {
+    const files = new Map<string, Uint8Array>([
+      ["index.html", strToU8("<html>ok</html>")],
+      ["game.json", strToU8('{"ok":true}')],
+    ]);
+    const worker = new FakeWorker();
+    const zipped = await zipExportInBackground(files, "Space_Game.zip", () => worker);
+    expect(worker.posted!.request.kind).toBe("web-zip");
+    expect(worker.posted!.transfer).toEqual([]);
+    expect(worker.terminated).toBe(true);
+    expect(Object.keys(unzipSync(zipped)).sort()).toEqual(["game.json", "index.html"]);
+
+    const inProcess = await zipExportInBackground(files, "Space_Game.zip", null);
+    expect(Object.keys(unzipSync(inProcess)).sort()).toEqual(["game.json", "index.html"]);
   });
 });

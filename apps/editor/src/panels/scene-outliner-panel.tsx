@@ -372,13 +372,11 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
     [timelineClip],
   );
 
-  const actorById = useMemo(() => {
-    const actors = new Map<string, SerializedActor>();
-    for (const actor of scene?.actors ?? []) {
-      if (!actors.has(actor.id)) actors.set(actor.id, actor);
-    }
-    return actors;
-  }, [scene]);
+  const findActorById = useCallback(
+    (id: string): SerializedActor | undefined =>
+      sceneRef.current?.actors.find((actor) => actor.id === id),
+    [],
+  );
   const selectedActorIdSet = useMemo(
     () => new Set(selectedActorIds),
     [selectedActorIds],
@@ -421,33 +419,37 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
   );
 
   const addToTimelineClip = useCallback((ids: readonly string[]) => {
-    if (!scene || !timelineClip) return;
+    const currentScene = sceneRef.current;
+    if (!currentScene || !timelineClip) return;
     const next = addTimelineObjects(timelineClip, ids, () => crypto.randomUUID());
-    if (next !== timelineClip) mutate(withTimelineClip(scene, next));
-  }, [mutate, scene, timelineClip]);
+    if (next !== timelineClip) mutate(withTimelineClip(currentScene, next));
+  }, [mutate, timelineClip]);
 
   const copyActors = useCallback((ids: readonly string[]) => {
-    if (!scene || ids.length === 0) return;
-    sessionState.copyActors(copySceneActors(scene, ids), overlay);
+    const currentScene = sceneRef.current;
+    if (!currentScene || ids.length === 0) return;
+    sessionState.copyActors(copySceneActors(currentScene, ids), overlay);
     setClipboardRevision((revision) => revision + 1);
-  }, [scene, sessionState, overlay]);
+  }, [sessionState, overlay]);
   const pasteActors = useCallback(async () => {
-    if (!scene) return;
-    const copies = pasteSceneActors(scene, sessionState.readCopiedActors(overlay));
+    const currentScene = sceneRef.current;
+    if (!currentScene) return;
+    const copies = pasteSceneActors(currentScene, sessionState.readCopiedActors(overlay));
     if (copies.length === 0) return;
     const stack = getAppSettingsSnapshot().settings.viewportStackNewActors2D;
-    const applied = await applySceneChange(documentId, addNewSceneActors(scene, copies, { copies: true, stack }));
+    const applied = await applySceneChange(documentId, addNewSceneActors(currentScene, copies, { copies: true, stack }));
     if (applied) setSelectedActorIds(copies.map((copy) => copy.id));
-  }, [scene, sessionState, overlay, applySceneChange, documentId, setSelectedActorIds]);
+  }, [sessionState, overlay, applySceneChange, documentId, setSelectedActorIds]);
   const canPaste = sessionState.hasCopiedActors(overlay);
   /** Duplicates the actors as one group (references between them point at the copies) and selects the copies. */
   const duplicateActors = useCallback((ids: readonly string[]) => {
-    if (!scene || ids.length === 0) return;
-    const copies = duplicateSceneActors(scene, ids);
+    const currentScene = sceneRef.current;
+    if (!currentScene || ids.length === 0) return;
+    const copies = duplicateSceneActors(currentScene, ids);
     if (copies.length === 0) return;
-    mutate(addNewSceneActors(scene, copies, { copies: true, stack: getAppSettingsSnapshot().settings.viewportStackNewActors2D }));
+    mutate(addNewSceneActors(currentScene, copies, { copies: true, stack: getAppSettingsSnapshot().settings.viewportStackNewActors2D }));
     setSelectedActorIds(copies.map((copy) => copy.id));
-  }, [scene, mutate, setSelectedActorIds]);
+  }, [mutate, setSelectedActorIds]);
 
   const selectedRowIds = useMemo(
     () => [
@@ -510,31 +512,33 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
 
   const removeActors = useCallback(
     (actorIds: readonly string[]) => {
-      if (!scene) return;
+      const currentScene = sceneRef.current;
+      if (!currentScene) return;
       const doomed = new Set(
         actorIds.flatMap((actorId) =>
-          actorSubtree(scene, actorId).map((actor) => actor.id),
+          actorSubtree(currentScene, actorId).map((actor) => actor.id),
         ),
       );
       mutate({
-        ...scene,
-        actors: scene.actors.filter((actor) => !doomed.has(actor.id)),
+        ...currentScene,
+        actors: currentScene.actors.filter((actor) => !doomed.has(actor.id)),
       });
       setSelectedActorIds(selectedActorIds.filter((id) => !doomed.has(id)));
       setDeleteActorChoice(null);
     },
-    [mutate, scene, selectedActorIds, setSelectedActorIds],
+    [mutate, selectedActorIds, setSelectedActorIds],
   );
 
   const toggleFlag = useCallback(
     (actorId: string, flag: "visible" | "locked") => {
-      if (!scene) return;
-      const current = scene.actors.find((actor) => actor.id === actorId);
+      const currentScene = sceneRef.current;
+      if (!currentScene) return;
+      const current = currentScene.actors.find((actor) => actor.id === actorId);
       if (!current) return;
       const nextValue = !current[flag];
       mutate({
-        ...scene,
-        actors: scene.actors.map((actor) =>
+        ...currentScene,
+        actors: currentScene.actors.map((actor) =>
           actor.id === actorId ? { ...actor, [flag]: nextValue } : actor,
         ),
       });
@@ -544,16 +548,17 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
         );
       }
     },
-    [mutate, scene, selectedActorIds, setSelectedActorIds],
+    [mutate, selectedActorIds, setSelectedActorIds],
   );
 
   const addFolder = useCallback(() => {
-    if (!scene) return;
-    const id = nextFolderId(scene);
+    const currentScene = sceneRef.current;
+    if (!currentScene) return;
+    const id = nextFolderId(currentScene);
     const selected = outlinerRowTarget(selectedRowId);
     // Creating from a selected folder nests inside it, like Content Browser.
     const parentFolderId = selected?.kind === "folder" ? selected.id : null;
-    const taken = new Set(scene.folders.map((folder) => folder.name));
+    const taken = new Set(currentScene.folders.map((folder) => folder.name));
     let name = "New Folder";
     let suffix = 2;
     while (taken.has(name)) {
@@ -561,11 +566,11 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
       suffix += 1;
     }
     mutate({
-      ...scene,
-      folders: [...scene.folders, { id, name, parentFolderId }],
+      ...currentScene,
+      folders: [...currentScene.folders, { id, name, parentFolderId }],
     });
     setSelectedRowId(folderRowId(id));
-  }, [mutate, scene, selectedRowId]);
+  }, [mutate, selectedRowId, setSelectedRowId]);
 
   const renameFolder = useCallback(
     (folderId: string, name: string) => {
@@ -606,12 +611,13 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
   /** Keep each choice in one scene mutation so undo restores the whole operation. */
   const removeFolder = useCallback(
     (folderId: string, deleteContents: boolean) => {
-      if (!scene) return;
-      const folder = scene.folders.find((entry) => entry.id === folderId);
+      const currentScene = sceneRef.current;
+      if (!currentScene) return;
+      const folder = currentScene.folders.find((entry) => entry.id === folderId);
       if (!folder) return;
       const promoteTo = folder.parentFolderId;
       const doomedFolders = new Set(
-        (deleteContents ? folderSubtree(scene, folderId) : [folder]).map(
+        (deleteContents ? folderSubtree(currentScene, folderId) : [folder]).map(
           (entry) => entry.id,
         ),
       );
@@ -619,24 +625,24 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
       if (deleteContents) {
         // Attachment children appear beneath their parent actor, even when
         // their own folderId is unset or names a different folder.
-        for (const actor of scene.actors) {
+        for (const actor of currentScene.actors) {
           if (actor.folderId === null || !doomedFolders.has(actor.folderId))
             continue;
-          for (const child of actorSubtree(scene, actor.id)) {
+          for (const child of actorSubtree(currentScene, actor.id)) {
             doomedActors.add(child.id);
           }
         }
       }
       mutate({
-        ...scene,
-        folders: scene.folders
+        ...currentScene,
+        folders: currentScene.folders
           .filter((entry) => !doomedFolders.has(entry.id))
           .map((entry) =>
             entry.parentFolderId === folderId
               ? { ...entry, parentFolderId: promoteTo }
               : entry,
           ),
-        actors: scene.actors
+        actors: currentScene.actors
           .filter((actor) => !doomedActors.has(actor.id))
           .map((actor) =>
             actor.folderId === folderId
@@ -647,7 +653,7 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
       setDeleteFolderId(null);
       setSelectedRowId(null);
     },
-    [mutate, scene],
+    [mutate, setSelectedRowId],
   );
 
   /**
@@ -739,10 +745,10 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
   const actorExtensionItems = useExtensionMenuItems("outliner.actor", useCallback(() => ({
     scene: scenePath,
     actors: extensionActorIdsRef.current.flatMap((id) => {
-      const actor = actorById.get(id);
+      const actor = findActorById(id);
       return actor ? [{ id, name: actor.name, classId: actor.classId }] : [];
     }),
-  }), [actorById, scenePath]));
+  }), [findActorById, scenePath]));
   const folderExtensionItems = useExtensionMenuItems("outliner.folder", useCallback(() => {
     const folder = sceneRef.current?.folders.find((entry) => entry.id === extensionFolderIdRef.current);
     return { scene: scenePath, folder: folder ? { id: folder.id, name: folder.name } : null };
@@ -750,7 +756,7 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
 
   const actorMenuItems = useCallback((actorId: string): NestedMenuItem[] => {
     extensionActorIdsRef.current = selectedActorIdSet.has(actorId) ? [...selectedActorIds] : [actorId];
-    const actor = actorById.get(actorId);
+    const actor = findActorById(actorId);
     const classAsset = actor ? classAssetById.get(actor.classId) : undefined;
     const items: NestedMenuItem[] = [];
     if (classAsset) {
@@ -836,7 +842,7 @@ function AuthoringSceneOutlinerPanel(_props: IDockviewPanelProps) {
     );
     return items;
   }, [
-    actorById,
+    findActorById,
     actorExtensionItems,
     addToTimelineClip,
     canPaste,

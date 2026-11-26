@@ -482,6 +482,32 @@ describe("exportGame", () => {
     }
   });
 
+  it("reuses a pre-verified chunk sha256 on unmodified binary assets and ignores it when JSON stripping rewrites bytes", async () => {
+    const texBytes = new Uint8Array([10, 20, 30, 40]);
+    const texSha = createHash("sha256").update(texBytes).digest("hex");
+    const sceneJson = new TextEncoder().encode(JSON.stringify({ id: "scene-1", actors: [], editorCamera: { position: [1, 2, 3] } }));
+    const staleSha = "f".repeat(64);
+    const result = await exportGame({
+      platform: "web",
+      bundleDebugger: false,
+      startupSceneGuid: "scene-1",
+      renderSettings: DEFAULT_RENDER_PROJECT_SETTINGS,
+      scripts: [],
+      playerFiles: stubPlayer(),
+      assets: [
+        { guid: "tex-1", type: "Texture", sceneGuid: "scene-1", bytes: texBytes, sha256: texSha },
+        { guid: "scene-1", type: "Scene", sceneGuid: "scene-1", bytes: sceneJson, sha256: staleSha },
+      ],
+    });
+    if (!result.ok) throw new Error(result.error);
+    const texEntry = result.value.manifest.assets.find((entry) => entry.guid === "tex-1")!;
+    const sceneEntry = result.value.manifest.assets.find((entry) => entry.guid === "scene-1")!;
+    expect(texEntry.revision).toBe(texSha);
+    // Stripping editorCamera changes the bytes so the stale pre-strip sha256 must not be reused.
+    const writtenSceneBytes = result.value.files.get(sceneEntry.path!)!;
+    expect(sceneEntry.revision).toBe(createHash("sha256").update(writtenSceneBytes).digest("hex"));
+  });
+
   it("resolves a Class reference to the first exported Class naming it by guid or class id", async () => {
     const json = new TextEncoder().encode("{}");
     const result = await exportGame({

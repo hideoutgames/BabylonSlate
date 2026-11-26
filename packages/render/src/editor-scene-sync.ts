@@ -52,6 +52,7 @@ import {
   visualMeshesOfActorRoot,
 } from "./scene-loader";
 import { syncAuthoredIlluminationSteps } from "./scene-illumination";
+import { findSceneReflectionProbes } from "./reflection-probes";
 import { runSceneWork, type SceneWorkOptions } from "./scene-work";
 import { applyEditorBillboardFromActor } from "./editor-billboard";
 import { isColliderVisualMesh, isColliderVisualTree } from "./collider-visual";
@@ -84,6 +85,28 @@ function mergeMaterialScopes(current: MaterialScope | undefined, next: MaterialS
   if (current === undefined) return next;
   if (current === null || next === null) return null;
   return new Set([...current, ...next]);
+}
+
+/** Component classes whose authored pose is synced by `syncAuthoredIlluminationSteps`. */
+const ILLUMINATION_POSE_COMPONENTS = new Set([
+  "LightComponent",
+  "HemisphericFillLightComponent",
+  "AreaRectLightComponent",
+  "Light2DComponent",
+  "CameraComponent",
+  "ReflectionProbeComponent",
+  "MirrorComponent",
+  "RenderTargetCaptureComponent",
+  "SpriteComponent",
+  "ColliderComponent",
+  "TilemapComponent",
+]);
+
+function actorAffectsIlluminationOnMove(actor: SerializedActor): boolean {
+  for (const component of actor.components) {
+    if (ILLUMINATION_POSE_COMPONENTS.has(component.classId)) return true;
+  }
+  return false;
 }
 
 /**
@@ -443,38 +466,70 @@ export class EditorSceneSync {
     }
     this.applyingScene = sceneData;
     try {
+      if (moved.length === 0) {
+        this.lastScene = sceneData;
+        this.lastSceneActors = null;
+        this.onAfterApply?.();
+        return true;
+      }
       for (const { actor, mesh } of moved) {
         this.beginEditorModelLoad(actor, mesh);
         this.trackFoliagePreparation(actor, mesh);
         this.prepareActorVisual(actor, mesh);
       }
       // Actor roots under a moved actor keep frozen world matrices of its old pose.
-      const movedRoots = new Set<Node>(moved.map(({ mesh }) => mesh));
-      const affected: Array<{ mesh: Mesh; depth: number }> = [];
-      for (const mesh of this.meshes.values()) {
-        let depth = 0;
-        let under = false;
-        for (let node: Node | null = mesh; node; node = node.parent) {
-          under ||= movedRoots.has(node);
-          depth++;
+      // Traverse only the moved roots' subtrees in parent-before-child order using
+      // Babylon's direct child lists and `this.rootEntries` (O(subtree) instead of O(scene)).
+      const affected: Mesh[] = [];
+      const visited = new Set<Node>();
+      let needsIlluminationSync = findSceneReflectionProbes(this.scene) !== null;
+      const visitSubtree = (node: Node) => {
+        if (visited.has(node)) return;
+        visited.add(node);
+        if (node instanceof Mesh) {
+          const entry = this.rootEntries.get(node);
+          if (entry) {
+            if (node.isWorldMatrixFrozen) node.unfreezeWorldMatrix();
+            affected.push(node);
+            if (!needsIlluminationSync) {
+              const actor = actorIndex.find(entry.actorId);
+              if (actor && actorAffectsIlluminationOnMove(actor)) needsIlluminationSync = true;
+            }
+          }
         }
-        if (!under) continue;
-        if (mesh.isWorldMatrixFrozen) mesh.unfreezeWorldMatrix();
-        affected.push({ mesh, depth });
+        for (const child of node.getChildren(undefined, true)) {
+          visitSubtree(child);
+        }
+      };
+      // Start from moved roots that are not themselves nested under another moved root
+      // so parents are always visited before their children.
+      const movedRootSet = new Set<Node>(moved.map(({ mesh }) => mesh));
+      const topMoved: Mesh[] = [];
+      for (const { mesh } of moved) {
+        let nested = false;
+        for (let ancestor = mesh.parent; ancestor; ancestor = ancestor.parent) {
+          if (movedRootSet.has(ancestor)) {
+            nested = true;
+            break;
+          }
+        }
+        if (!nested) topMoved.push(mesh);
       }
+      for (const mesh of topMoved) visitSubtree(mesh);
       syncEditorCablePreviews(this.scene, sceneData.actors, {
         rootForActor: (actorId) => this.meshes.get(actorId) ?? null,
         gravity: sceneData.settings.gravity,
         simulate: true,
       });
-      for (const progress of syncAuthoredIlluminationSteps(this.scene, sceneData, {
-        stealActiveCamera: this.stealActiveCamera,
-        restoreCamera: this.restoreCamera,
-        assets: this.assets,
-      })) void progress;
-      // Parents first, so each root freezes under its parent's new world matrix.
-      affected.sort((a, b) => a.depth - b.depth);
-      for (const { mesh } of affected) freezeStaticActorWorldMatrix(mesh);
+      if (needsIlluminationSync) {
+        for (const progress of syncAuthoredIlluminationSteps(this.scene, sceneData, {
+          stealActiveCamera: this.stealActiveCamera,
+          restoreCamera: this.restoreCamera,
+          assets: this.assets,
+        })) void progress;
+      }
+      // `affected` is already parents-first, so each root freezes under its parent's new world matrix.
+      for (const mesh of affected) freezeStaticActorWorldMatrix(mesh);
       // A Material published during the pass is owed to this edit, as in `apply`.
       while (this.materialRefreshGeneration === this.applyGeneration) {
         this.materialRefreshGeneration = null;

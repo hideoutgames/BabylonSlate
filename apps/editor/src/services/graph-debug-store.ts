@@ -61,6 +61,8 @@ type StepTick = {
   steps: readonly DebugStep[];
   truncated: boolean;
   chars: number;
+  /** Pin values accumulated before this tick started, so `moveTo` replays only this tick. */
+  startValues: ReadonlyMap<string, string>;
 };
 
 const EMPTY: GraphDebugSnapshot = { target: null, instances: null, selectedId: null };
@@ -403,32 +405,56 @@ export class GraphDebugStore {
       chars += nodeId.length + (via?.length ?? 0);
       for (const [valueNode, pinId, , text] of values) chars += valueNode.length + pinId.length + text.length;
     }
-    this.stepTicks.push({ tickIndex, graphs: graphs.map(({ assetGuid, graphId }) => ({ assetGuid, graphId })), steps, truncated, chars });
+    const previous = this.stepTicks[this.stepTicks.length - 1];
+    const startValues = new Map<string, string>(previous?.startValues);
+    if (previous) {
+      for (const [graphIndex, , , stepValues] of previous.steps) {
+        const graph = previous.graphs[graphIndex]!;
+        for (const [nodeId, pinId, direction, text] of stepValues) {
+          startValues.set(valueKey(graph.assetGuid, graph.graphId, nodeId, pinId, direction), text);
+        }
+      }
+    }
+    this.stepTicks.push({ tickIndex, graphs: graphs.map(({ assetGuid, graphId }) => ({ assetGuid, graphId })), steps, truncated, chars, startValues });
     let total = this.stepTicks.reduce((sum, tick) => sum + tick.chars, 0);
     while (this.stepTicks.length > 1 && (this.stepTicks.length > STEP_HISTORY_TICKS || total > STEP_HISTORY_CHARS)) {
       total -= this.stepTicks.shift()!.chars;
+    }
+    // Keep the oldest kept tick's starting baseline empty so evicted ticks do not leak old pin texts.
+    if (this.stepTicks.length > 0 && this.stepTicks[0]!.startValues.size > 0) {
+      const oldest = this.stepTicks[0]!;
+      if (oldest.startValues.size > 0) {
+        // Rebase only when the oldest tick was evicted.
+        const rebased = new Map<string, string>();
+        for (let index = 0; index < this.stepTicks.length; index++) {
+          const entry = this.stepTicks[index]!;
+          entry.startValues = new Map(rebased);
+          for (const [graphIndex, , , stepValues] of entry.steps) {
+            const graph = entry.graphs[graphIndex]!;
+            for (const [nodeId, pinId, direction, text] of stepValues) {
+              rebased.set(valueKey(graph.assetGuid, graph.graphId, nodeId, pinId, direction), text);
+            }
+          }
+        }
+      }
     }
   }
 
   /** Reviews one recorded visit: pin texts as of it, and the tick's path up to it for the canvases. */
   private moveTo(position: { tick: number; step: number }): void {
     this.review = position;
-    const values = new Map<string, string>();
-    for (let index = 0; index <= position.tick; index++) {
-      const { graphs, steps } = this.stepTicks[index]!;
-      const last = index === position.tick ? position.step : steps.length - 1;
-      for (let step = 0; step <= last; step++) {
-        const [graphIndex, , , stepValues] = steps[step]!;
-        const graph = graphs[graphIndex]!;
-        for (const [nodeId, pinId, direction, text] of stepValues) {
-          values.set(valueKey(graph.assetGuid, graph.graphId, nodeId, pinId, direction), text);
-        }
+    const tick = this.stepTicks[position.tick]!;
+    const values = new Map<string, string>(tick.startValues);
+    for (let step = 0; step <= position.step; step++) {
+      const [graphIndex, , , stepValues] = tick.steps[step]!;
+      const graph = tick.graphs[graphIndex]!;
+      for (const [nodeId, pinId, direction, text] of stepValues) {
+        values.set(valueKey(graph.assetGuid, graph.graphId, nodeId, pinId, direction), text);
       }
     }
     this.reviewValues = values;
     // The canvases let the path they hold go, then hold the one up to this visit.
     if (this.held) for (const listener of [...this.holdListeners]) { listener(false); listener(true); }
-    const tick = this.stepTicks[position.tick]!;
     const paths = new Map<number, { nodes: Set<string>; edges: Set<string> }>();
     for (const [graphIndex, nodeId, via] of tick.steps.slice(0, position.step + 1)) {
       let path = paths.get(graphIndex);

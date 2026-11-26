@@ -4,7 +4,7 @@ import {
   resolveWildcardPinTypes,
   type PinType,
 } from "@haptic/scripting";
-import { hasSerializedPins } from "./graph-types";
+import { hasSerializedPins, isRerouteNodeData } from "./graph-types";
 
 export type PinDisplayLookup = Map<string, PinType>;
 
@@ -110,8 +110,9 @@ export function createPinDisplayNodesSelector() {
           ? signatures[index]
           : JSON.stringify([
               node.id,
+              isRerouteNodeData(node.data),
               hasSerializedPins(node.data)
-                ? node.data.__pins.map((pin) => [pin.id, pin.type])
+                ? node.data.__pins.map((pin) => [pin.id, pin.type, pin.reference])
                 : [],
             ]);
       if (signature !== signatures[index]) changed = true;
@@ -122,7 +123,10 @@ export function createPinDisplayNodesSelector() {
     if (changed) {
       pinNodes = nodes.map((node) => ({
         id: node.id,
-        data: { __pins: hasSerializedPins(node.data) ? node.data.__pins : [] },
+        data: {
+          __pins: hasSerializedPins(node.data) ? node.data.__pins : [],
+          ...(isRerouteNodeData(node.data) ? { __reroute: true } : {}),
+        },
       }));
     }
     return pinNodes;

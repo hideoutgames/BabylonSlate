@@ -3,6 +3,8 @@ import { useGraphEditorContext } from "./graph-editor-context";
 import type { PinTypeRef } from "./node-theme";
 import { pinTypeKey } from "./wildcard-display";
 import type { GraphPreviewedNode } from "./graph-editor-context";
+import { EMPTY_WIRED_PINS, type WiredPins } from "./pin-connections";
+import type { SerializedPin } from "./graph-types";
 
 /**
  * Canvas state that changes while the graph is edited and that each node reads
@@ -29,23 +31,31 @@ export type GraphNodeState = {
   pinDisplayTypes: ReadonlyMap<string, PinTypeRef>;
   /** The ids of each node's wired inputs. */
   connectedInputs: ReadonlyMap<string, readonly string[]>;
+  /** Wired pin ids by direction and node id, rebuilt only when edges change. */
+  wiredPins: WiredPins;
+  /** Writable variable output pins that currently flow into a reference input, by node id. */
+  referencePins: ReadonlyMap<string, ReadonlySet<string>>;
 };
 
 /**
  * `next` with every type that equals the one `previous` holds for the same pin replaced by that
- * object, so a recomputed map hands unchanged pins the very type they had.
+ * object, so a recomputed map hands unchanged pins the very type they had. Returns `previous`
+ * unchanged when the map has the exact same keys and equivalent values.
  */
 export function stablePinDisplayTypes(
   previous: ReadonlyMap<string, PinTypeRef>,
   next: ReadonlyMap<string, PinTypeRef>,
 ): ReadonlyMap<string, PinTypeRef> {
   if (previous === next) return next;
+  let same = previous.size === next.size;
   const stable = new Map<string, PinTypeRef>();
   for (const [key, type] of next) {
     const before = previous.get(key);
-    stable.set(key, before !== undefined && JSON.stringify(before) === JSON.stringify(type) ? before : type);
+    const keep = before !== undefined && (before === type || JSON.stringify(before) === JSON.stringify(type));
+    if (!keep) same = false;
+    stable.set(key, keep ? before : type);
   }
-  return stable;
+  return same ? previous : stable;
 }
 
 export const EMPTY_GRAPH_NODE_STATE: GraphNodeState = {
@@ -57,6 +67,8 @@ export const EMPTY_GRAPH_NODE_STATE: GraphNodeState = {
   previewedNode: null,
   pinDisplayTypes: new Map(),
   connectedInputs: new Map(),
+  wiredPins: EMPTY_WIRED_PINS,
+  referencePins: new Map(),
 };
 
 export class GraphNodeStateStore {
@@ -164,5 +176,30 @@ export function usePreviewedNode(nodeId: string): GraphPreviewedNode | null {
   return useGraphNodeState(useCallback(
     (state: GraphNodeState) => (state.previewedNode?.nodeId === nodeId ? state.previewedNode : null),
     [nodeId],
+  ));
+}
+
+/** Whether a specific pin on `nodeId` is currently wired, without subscribing to pan/zoom/drag frames. */
+export function usePinWired(
+  nodeId: string,
+  direction: SerializedPin["direction"],
+  pinId: string | undefined,
+): boolean {
+  return useGraphNodeState(useCallback(
+    (state: GraphNodeState) =>
+      pinId !== undefined ? (state.wiredPins[direction].get(nodeId)?.has(pinId) ?? false) : false,
+    [direction, nodeId, pinId],
+  ));
+}
+
+/** Whether a writable output pin passes its variable by reference to any connected reference input. */
+export function usePinPassesReference(
+  nodeId: string,
+  pin: Pick<SerializedPin, "id" | "direction" | "reference">,
+): boolean {
+  const eligible = pin.direction === "out" && pin.reference === "writable";
+  return useGraphNodeState(useCallback(
+    (state: GraphNodeState) => (eligible ? (state.referencePins.get(nodeId)?.has(pin.id) ?? false) : false),
+    [eligible, nodeId, pin.id],
   ));
 }

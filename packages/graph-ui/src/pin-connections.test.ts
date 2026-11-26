@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isPinWired, passesReference } from "./pin-connections";
+import { buildReferencePins, buildWiredPins, isPinWired, passesReference } from "./pin-connections";
 
 describe("wired-pin index", () => {
   it("bounds edge reads across repeated queries from many mounted pins", () => {
@@ -151,5 +151,21 @@ describe("passesReference", () => {
     // A new wire list: the knot now leads to a value input.
     expect(passesReference([wire("get", "value", "knot", "in"), wire("knot", "out", "print", "text")], lookup, "get", variable)).toBe(false);
     expect(passesReference(edges, lookup, "get", variable)).toBe(true);
+  });
+
+  it("precomputes wired pins and reference-passing outputs in one pass for GraphNodeState", () => {
+    const edges = [wire("get", "value", "knot", "in"), wire("knot", "out", "seeded", "seed")];
+    const wired = buildWiredPins(edges);
+    expect(wired.out.get("get")?.has("value")).toBe(true);
+    expect(wired.in.get("seeded")?.has("seed")).toBe(true);
+    expect(wired.in.get("print")).toBeUndefined();
+
+    const nodes = [...lookup.entries()].map(([id, entry]) => ({ id, data: entry.data }));
+    const refs = buildReferencePins(edges, nodes);
+    expect(refs.get("get")?.has("value")).toBe(true);
+    expect(refs.get("knot")).toBeUndefined();
+
+    const valueOnlyEdges = [wire("get", "value", "knot", "in"), wire("knot", "out", "print", "text")];
+    expect(buildReferencePins(valueOnlyEdges, nodes).size).toBe(0);
   });
 });
