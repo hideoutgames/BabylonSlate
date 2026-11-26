@@ -4,6 +4,7 @@ import type { DebugInspectSnapshot } from "@haptic/object-model";
 import {
   describeEngineTexture,
   internalTexturesHeldByScene,
+  parkedFilteredEnvironmentTextures,
   parkedShadowAtlasTextures,
   texturesHeldForHandover,
   type EngineHandle,
@@ -194,7 +195,11 @@ export function texturesRetainedAfterPlay(
   const placeholders = new Set([native._emptyTexture, native._emptyCubeTexture, native._emptyTexture3D, native._emptyTexture2DArray]);
   const created = engine.getLoadedTexturesCache().filter((texture) => !before.has(texture) && !placeholders.has(texture));
   if (created.length === 0) return created;
-  const heldByOthers = new Set<unknown>([...texturesHeldForHandover(engine), ...parkedShadowAtlasTextures(engine)]);
+  const heldByOthers = new Set<unknown>([
+    ...texturesHeldForHandover(engine),
+    ...parkedShadowAtlasTextures(engine),
+    ...parkedFilteredEnvironmentTextures(engine),
+  ]);
   for (const scene of engine.scenes) {
     if (playScenes.has(scene)) continue;
     for (const texture of internalTexturesHeldByScene(scene)) heldByOthers.add(texture);

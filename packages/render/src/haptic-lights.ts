@@ -19,6 +19,7 @@ import { CLUSTER_BLOCK_WORDS, CLUSTER_COUNT, CLUSTER_HEADER_FLOATS, buildLightCl
 import { isReflectionCamera } from "./reflection-camera";
 import { AtlasCascadedShadowGenerator, AtlasShadowGenerator, shadowAtlasTexture, watchShadowDraws } from "./shadow-atlas";
 import { shadowViewTexelRatios } from "./shadow-filter";
+import { sceneRenderingSettings } from "./render-settings";
 
 /**
  * Lighting plan: lit graph Materials (`HapticLightingBlock`) read every light from one per-Scene uniform block
@@ -104,6 +105,8 @@ type SceneLights = {
   clusterLastCamera: Camera | null;
   /** Builds, and while verifying (`verifyLightClusterSlots`) slots kept for another camera's turn that were checked and disagreed. */
   clusterBuilds: number; clusterChecks: number; clusterMismatches: number;
+  /** Whether any active shadowed light last observed had `useContactHardeningShadow` enabled. */
+  anyContactHardening: boolean;
 };
 const scenes = new WeakMap<Scene, SceneLights>();
 /** The view inputs a build reads: the view and projection matrices, the depth range, the floating origin and whether it culls. */
@@ -136,7 +139,7 @@ function sceneLights(scene: Scene): SceneLights {
       buffer, rects: [], layers: [], limits: [], shadowed: [], sun: null, sunWritten: null,
       shadowViews: new Float32Array(HAPTIC_SHADOW_VIEWS * HAPTIC_SHADOW_VIEW_VEC4S * 4), sunShadow: new Float32Array(16),
       clusterLights: [], clusterRevision: 0, clusterSlots: new Map(), clusterLastCamera: null,
-      clusterBuilds: 0, clusterChecks: 0, clusterMismatches: 0,
+      clusterBuilds: 0, clusterChecks: 0, clusterMismatches: 0, anyContactHardening: false,
     };
     scenes.set(scene, lights);
     // A map draws after the block's write, with the views it is then sampled by.
@@ -478,9 +481,14 @@ function writeShadowViews(scene: Scene, state: SceneLights): void {
   // The atlas's pages are its texture's layers.
   const edge = shadowAtlasTexture(scene).getRenderSize();
   state.sunShadow.fill(0);
-  for (const { shadow, first } of state.shadowed) writeViews(scene, state, shadow, first, edge);
+  let anyContactHardening = false;
+  for (const { shadow, first } of state.shadowed) {
+    if (shadow.useContactHardeningShadow) anyContactHardening = true;
+    writeViews(scene, state, shadow, first, edge);
+  }
   const shadow = state.sunWritten = state.sun && sunShadowMap(scene, state.sun);
   if (shadow) {
+    if (shadow.useContactHardeningShadow) anyContactHardening = true;
     writeViews(scene, state, shadow, 0, edge);
     const plane = shadow.cascadeDepth;
     // The camera's view depth of a block position, which is relative to the floating origin.
@@ -502,6 +510,11 @@ function writeShadowViews(scene: Scene, state: SceneLights): void {
   }
   state.buffer.updateFloatArray("hapticShadowViews", state.shadowViews);
   state.buffer.updateFloatArray("hapticSunShadow", state.sunShadow);
+  if (anyContactHardening !== state.anyContactHardening) {
+    state.anyContactHardening = anyContactHardening;
+    const settings = sceneRenderingSettings(scene);
+    for (const listener of settings.listeners) listener(settings.mode);
+  }
 }
 
 /**
