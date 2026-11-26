@@ -146,6 +146,11 @@ export class SetActorTransformCommand implements EditCommand<SerializedScene> {
   invert(): SetActorTransformCommand {
     return new SetActorTransformCommand(this.actorId, this.to, this.from);
   }
+
+  coalesce(next: EditCommand<SerializedScene>): SetActorTransformCommand | undefined {
+    if (!(next instanceof SetActorTransformCommand) || next.actorId !== this.actorId) return undefined;
+    return new SetActorTransformCommand(this.actorId, this.from, next.to);
+  }
 }
 
 export interface ActorTransformEntry {
@@ -212,6 +217,27 @@ export class SetActorsTransformsCommand implements EditCommand<SerializedScene> 
       })),
     );
   }
+
+  coalesce(next: EditCommand<SerializedScene>): SetActorsTransformsCommand | undefined {
+    if (
+      !(next instanceof SetActorsTransformsCommand) ||
+      next.mergeKey !== this.mergeKey ||
+      next.entries.length !== this.entries.length
+    ) {
+      return undefined;
+    }
+    const fromByActor = new Map<string, SerializedTransform>();
+    for (const entry of this.entries) {
+      if (!fromByActor.has(entry.actorId)) fromByActor.set(entry.actorId, entry.from);
+    }
+    const merged: ActorTransformEntry[] = [];
+    for (const entry of next.entries) {
+      const from = fromByActor.get(entry.actorId);
+      if (!from) return undefined;
+      merged.push({ actorId: entry.actorId, from, to: entry.to });
+    }
+    return new SetActorsTransformsCommand(merged);
+  }
 }
 
 export class RenameActorCommand implements EditCommand<SerializedScene> {
@@ -242,6 +268,11 @@ export class RenameActorCommand implements EditCommand<SerializedScene> {
 
   invert(): RenameActorCommand {
     return new RenameActorCommand(this.actorId, this.to, this.from);
+  }
+
+  coalesce(next: EditCommand<SerializedScene>): RenameActorCommand | undefined {
+    if (!(next instanceof RenameActorCommand) || next.actorId !== this.actorId) return undefined;
+    return new RenameActorCommand(this.actorId, this.from, next.to);
   }
 }
 
@@ -514,6 +545,14 @@ export class ReparentComponentCommand implements EditCommand<SerializedScene> {
 export type ComponentLinkage = Pick<SerializedComponent, "sourceId" | "overrideKeys">;
 export type ComponentLinkageChange = { from: ComponentLinkage; to: ComponentLinkage };
 
+function mergeComponentLinkage(
+  earlier: ComponentLinkageChange | undefined,
+  later: ComponentLinkageChange | undefined,
+): ComponentLinkageChange | undefined {
+  if (earlier && later) return { from: earlier.from, to: later.to };
+  return earlier ?? later;
+}
+
 function withComponentLinkage(component: SerializedComponent, linkage?: ComponentLinkage): SerializedComponent {
   if (!linkage) return component;
   const next = { ...component };
@@ -618,6 +657,25 @@ export class SetComponentPropertyCommand
     inverse.#byteSize = this.#byteSize;
     return inverse;
   }
+
+  coalesce(next: EditCommand<SerializedScene>): SetComponentPropertyCommand | undefined {
+    if (
+      !(next instanceof SetComponentPropertyCommand) ||
+      next.actorId !== this.actorId ||
+      next.componentId !== this.componentId ||
+      next.property !== this.property
+    ) {
+      return undefined;
+    }
+    return new SetComponentPropertyCommand(
+      this.actorId,
+      this.componentId,
+      this.property,
+      this.from,
+      next.to,
+      mergeComponentLinkage(this.linkage, next.linkage),
+    );
+  }
 }
 
 export class SetComponentTransformCommand
@@ -672,6 +730,23 @@ export class SetComponentTransformCommand
       this.linkage ? { from: this.linkage.to, to: this.linkage.from } : undefined,
     );
   }
+
+  coalesce(next: EditCommand<SerializedScene>): SetComponentTransformCommand | undefined {
+    if (
+      !(next instanceof SetComponentTransformCommand) ||
+      next.actorId !== this.actorId ||
+      next.componentId !== this.componentId
+    ) {
+      return undefined;
+    }
+    return new SetComponentTransformCommand(
+      this.actorId,
+      this.componentId,
+      this.from,
+      next.to,
+      mergeComponentLinkage(this.linkage, next.linkage),
+    );
+  }
 }
 
 export class SetSceneSettingCommand implements EditCommand<SerializedScene> {
@@ -714,6 +789,11 @@ export class SetSceneSettingCommand implements EditCommand<SerializedScene> {
     // Swapping `from` and `to` keeps the measured size.
     inverse.#byteSize = this.#byteSize;
     return inverse;
+  }
+
+  coalesce(next: EditCommand<SerializedScene>): SetSceneSettingCommand | undefined {
+    if (!(next instanceof SetSceneSettingCommand) || next.key !== this.key) return undefined;
+    return new SetSceneSettingCommand(this.key, this.from, next.to);
   }
 }
 

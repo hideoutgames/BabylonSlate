@@ -31,7 +31,9 @@ export class SetAssetDocumentCommand implements EditCommand<Record<string, unkno
 
   apply(doc: Record<string, unknown>): Record<string, unknown> {
     void doc;
-    return structuredClone(this.to);
+    // Asset documents are treated as immutable values across edits; returning
+    // `this.to` directly avoids a full structuredClone on every scrub sample.
+    return this.to;
   }
 
   invert(): SetAssetDocumentCommand {

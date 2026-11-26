@@ -414,12 +414,27 @@ export function stampUserComponentOverrides(
     Record<string, readonly SerializedComponent[]>
   >,
 ): SerializedScene {
+  if (previous === next || previous.actors === next.actors) return next;
+  // Fast exit when no changed actor had its components array modified (e.g., actor
+  // transform scrubs, renames, visibility/lock toggles).
+  if (previous.actors.length === next.actors.length) {
+    let anyComponentListChanged = false;
+    for (let index = 0; index < next.actors.length; index++) {
+      const beforeActor = previous.actors[index]!;
+      const actor = next.actors[index]!;
+      if (actor === beforeActor) continue;
+      if (actor.id !== beforeActor.id || actor.components !== beforeActor.components) {
+        anyComponentListChanged = true;
+        break;
+      }
+    }
+    if (!anyComponentListChanged) return next;
+  }
   const beforeActors = new Map(previous.actors.map((actor) => [actor.id, actor]));
-  return {
-    ...next,
-    actors: next.actors.map((actor) => {
+  let anyActorChanged = false;
+  const actors = next.actors.map((actor) => {
       const beforeActor = beforeActors.get(actor.id);
-      if (!beforeActor || actor === beforeActor) return actor;
+      if (!beforeActor || actor === beforeActor || actor.components === beforeActor.components) return actor;
       const beforeComponents = new Map(
         beforeActor.components.map((component) => [component.id, component]),
       );
@@ -469,11 +484,14 @@ export function stampUserComponentOverrides(
           ? component
           : next;
       });
-      return jsonEqual(actor.suppressedComponentSourceIds ?? [], suppressed) && nextComponents.every(
-        (component, index) => component === actor.components[index],
-      )
-        ? actor
-        : { ...actor, components: nextComponents, ...(suppressed.length ? { suppressedComponentSourceIds: suppressed } : {}) };
-    }),
-  };
+      if (
+        jsonEqual(actor.suppressedComponentSourceIds ?? [], suppressed) &&
+        nextComponents.every((component, index) => component === actor.components[index])
+      ) {
+        return actor;
+      }
+      anyActorChanged = true;
+      return { ...actor, components: nextComponents, ...(suppressed.length ? { suppressedComponentSourceIds: suppressed } : {}) };
+    });
+  return anyActorChanged ? { ...next, actors } : next;
 }

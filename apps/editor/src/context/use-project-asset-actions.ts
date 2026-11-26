@@ -181,8 +181,8 @@ export function useProjectAssetActions({
   );
 
   const zipExportedGame = useCallback(async (artifact: ExportArtifact) => {
-    const { zipGameArtifact } = await import("../services/export-game");
-    return zipGameArtifact(artifact);
+    const { zipExportInBackground } = await import("@haptic/exporter/desktop-package-client");
+    return zipExportInBackground(artifact.files);
   }, []);
 
   const textureUsageBlockedReason = useCallback(

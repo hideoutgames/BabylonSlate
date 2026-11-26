@@ -98,6 +98,10 @@ export interface MaterialInstanceEditing {
 export interface MaterialEditingValue {
   /** Material Function documents in the project, keyed by asset guid. */
   functions: Record<string, MaterialFunctionDocument>;
+  /** Normalized Material document when editing a Material tab (shared by graph, preview and details panels). */
+  normalizedDocument: MaterialDocument | null;
+  /** Normalized Material Function document when editing a Material Function tab. */
+  normalizedFunctionDocument: MaterialFunctionDocument | null;
   /** Domain of the previewed graph (a Material Instance previews its root's). */
   previewDomain: MaterialDomain | null;
   /**
@@ -281,7 +285,11 @@ export function MaterialEditingProvider({
     functionDocumentsRef.current = next;
     return next;
   }, [openFunctionDocuments]);
-  const functionRoot = isFunctionDocument && content != null ? normalizeMaterialFunctionDocument(content) : sourceDocument;
+  const normalizedFunctionDocument = useMemo<MaterialFunctionDocument | null>(
+    () => (isFunctionDocument && content != null ? normalizeMaterialFunctionDocument(content) : null),
+    [content, isFunctionDocument],
+  );
+  const functionRoot = normalizedFunctionDocument ?? sourceDocument;
   const functionRootsKey = JSON.stringify(functionRoot ? materialDependencies(functionRoot).functions : []);
   const [savedFunctions, setSavedFunctions] = useState<Record<string, MaterialFunctionDocument>>({});
   const [loadedFunctions, setLoadedFunctions] = useState<{ assets: typeof functionAssets; roots: string } | null>(null);
@@ -775,6 +783,8 @@ export function MaterialEditingProvider({
   const value = useMemo<MaterialEditingValue>(
     () => ({
       functions,
+      normalizedDocument: !isInstanceDocument ? sourceDocument : null,
+      normalizedFunctionDocument,
       previewDomain: document?.domain ?? null,
       lowering: materialLowering,
       instance,
@@ -804,7 +814,9 @@ export function MaterialEditingProvider({
       frameBudgetMs,
       functions,
       instance,
+      isInstanceDocument,
       materialLowering,
+      normalizedFunctionDocument,
       previewNode,
       previewState,
       previewZoomDrive,
@@ -814,6 +826,7 @@ export function MaterialEditingProvider({
       selectedNodeIds,
       setSelectedNodeId,
       setSelectedNodeIds,
+      sourceDocument,
     ],
   );
 

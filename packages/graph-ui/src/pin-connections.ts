@@ -7,7 +7,9 @@ type ConnectionEdges = ReadonlyArray<
 >;
 
 /** Wired pin ids by node id, for each pin direction. */
-type WiredPins = Record<SerializedPin["direction"], Map<string, Set<string>>>;
+export type WiredPins = Record<SerializedPin["direction"], Map<string, Set<string>>>;
+
+export const EMPTY_WIRED_PINS: WiredPins = { in: new Map(), out: new Map() };
 
 // React Flow edge snapshots are immutable. Share the index across pins and
 // store updates retaining the same array, without retaining old snapshots.
@@ -19,11 +21,8 @@ function addWired(pins: Map<string, Set<string>>, nodeId: string, pinId: string)
   ids.add(pinId);
 }
 
-export function isPinWired(
-  edges: ConnectionEdges,
-  nodeId: string,
-  pin: Pick<SerializedPin, "id" | "direction">,
-): boolean {
+/** Builds a direction-indexed lookup of wired pins once per edges snapshot. */
+export function buildWiredPins(edges: ConnectionEdges): WiredPins {
   let wiredPins = wiredPinsByEdges.get(edges);
   if (!wiredPins) {
     const index: WiredPins = { in: new Map(), out: new Map() };
@@ -34,6 +33,15 @@ export function isPinWired(
     wiredPinsByEdges.set(edges, index);
     wiredPins = index;
   }
+  return wiredPins;
+}
+
+export function isPinWired(
+  edges: ConnectionEdges,
+  nodeId: string,
+  pin: Pick<SerializedPin, "id" | "direction">,
+): boolean {
+  const wiredPins = buildWiredPins(edges);
   // Nested lookups, so the per-frame query allocates nothing and no id can collide with another.
   return wiredPins[pin.direction].get(nodeId)?.has(pin.id) ?? false;
 }
@@ -95,4 +103,38 @@ function walkPassesReference(edges: ConnectionEdges, nodeLookup: NodeLookup, nod
     if (target.__pins.some((input) => input.id === end.pinId && input.reference === "required")) return { passes: true, read };
   }
   return { passes: false, read };
+}
+
+/**
+ * Computes all writable output pins that pass a variable by reference once per
+ * `(edges, pinNodes)` change, replacing per-pin React Flow store subscriptions.
+ */
+export function buildReferencePins(
+  edges: ConnectionEdges,
+  nodes: ReadonlyArray<{ id: string; data?: Record<string, unknown> }>,
+): Map<string, Set<string>> {
+  const result = new Map<string, Set<string>>();
+  if (edges.length === 0) return result;
+  const wired = buildWiredPins(edges);
+  if (wired.out.size === 0) return result;
+  let lookup: Map<string, { data: Record<string, unknown> }> | null = null;
+  for (const node of nodes) {
+    const wiredOut = wired.out.get(node.id);
+    if (!wiredOut || !hasSerializedPins(node.data)) continue;
+    for (const pin of node.data.__pins) {
+      if (pin.direction !== "out" || pin.reference !== "writable" || !wiredOut.has(pin.id)) continue;
+      if (!lookup) {
+        lookup = new Map();
+        for (const entry of nodes) {
+          if (entry.data) lookup.set(entry.id, { data: entry.data });
+        }
+      }
+      if (walkPassesReference(edges, lookup, node.id, pin.id).passes) {
+        let ids = result.get(node.id);
+        if (!ids) result.set(node.id, (ids = new Set()));
+        ids.add(pin.id);
+      }
+    }
+  }
+  return result;
 }

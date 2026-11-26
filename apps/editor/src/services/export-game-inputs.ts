@@ -86,6 +86,48 @@ const JSON_TYPES = new Set<string>([
 const encoder = new TextEncoder();
 const assetFormats = createDefaultMigrationRegistry();
 
+/** Maximum number of asset reads in flight simultaneously during export. */
+export const EXPORT_LOAD_CONCURRENCY = 12;
+
+/** Data catalog types whose payloads `collectAndExportGame` reads across the project for schemas. */
+export const EXPORT_DATA_CATALOG_TYPES = new Set<string>([
+  "DataDefinition",
+  "DataTree",
+  "Structure",
+  "Enum",
+]);
+
+/** Asset types whose JSON document is loaded directly without heavy binary chunks. */
+export function isLightweightExportJsonType(type: string): boolean {
+  return JSON_TYPES.has(type) || type === "Class";
+}
+
+/** Runs `work` across `items` with at most `concurrency` promises in flight. */
+export async function mapWithConcurrency<T>(
+  items: readonly T[],
+  concurrency: number,
+  work: (item: T) => Promise<void>,
+): Promise<void> {
+  if (items.length === 0) return;
+  const limit = Math.max(1, Math.min(concurrency, items.length));
+  let cursor = 0;
+  const workers = Array.from({ length: limit }, async () => {
+    while (cursor < items.length) {
+      const index = cursor++;
+      await work(items[index]!);
+    }
+  });
+  await Promise.all(workers);
+}
+
+const SHA256_HEX_RE = /^[0-9a-f]{64}$/;
+
+function chunkSha256(header: HassetHeader | undefined, chunkId: string | undefined): string | undefined {
+  if (!header || !chunkId) return undefined;
+  const sha = header.chunks.find((chunk) => chunk.id === chunkId)?.sha256;
+  return typeof sha === "string" && SHA256_HEX_RE.test(sha) ? sha : undefined;
+}
+
 /** Scene chunks packed with the Scene JSON, so all three must come from one saved version. */
 const SCENE_EXPORT_CHUNK_IDS = [NAVMESH_CHUNK_ID, AUDIO_REVERB_CHUNK_ID] as const;
 
@@ -104,6 +146,18 @@ export type ExportDocumentSnapshot = {
 
 export type ExportDocumentLoaders = {
   assets: readonly IndexedAsset[];
+  /**
+   * Full project asset list for auxiliary lookups (such as a reachable Model's
+   * Skeleton) when `assets` is already filtered to reachable entries.
+   */
+  allAssets?: readonly IndexedAsset[];
+  /**
+   * Non-chunked JSON documents already read during reachability discovery, keyed
+   * by asset guid, so Phase 2 skips redundant storage reads.
+   */
+  preloadedDocuments?: ReadonlyMap<string, unknown>;
+  /** Bound on concurrent asset reads (defaults to `EXPORT_LOAD_CONCURRENCY`). */
+  concurrency?: number;
   loadDocument: (kind: string, path: string) => Promise<unknown>;
   /**
    * A document, its header and the selected chunks its file holds, all from
@@ -134,6 +188,8 @@ export type LoadedExportDocuments = {
   payloadByGuid: (guid: string) => unknown | null;
   /** Throws the read error of an asset whose format is unsupported or whose document or packed bytes failed to load. */
   bytesByGuid: (guid: string) => Uint8Array | null;
+  /** Verified SHA-256 hex digest from `.hasset` chunk headers when `bytesByGuid(guid)` is an unmodified chunk. */
+  sha256ByGuid: (guid: string) => string | undefined;
   fontFacetypeBytesByGuid: (guid: string) => Uint8Array | null;
   areaEmissionBytesByGuid: (guid: string) => Uint8Array | null;
   fontMsdfJsonByGuid: (guid: string) => Uint8Array | null;
@@ -142,7 +198,7 @@ export type LoadedExportDocuments = {
   /** Throws for a Scene the reverb bake could not read or save, so its chunk may be stale. */
   audioReverbByGuid: (guid: string) => Uint8Array | null;
   /** Raw binary Landscape (`HPLD`) and Foliage (`HPFG`) chunks owned by a Scene. */
-  componentChunksByGuid: (guid: string) => ReadonlyArray<{ chunkId: string; bytes: Uint8Array }>;
+  componentChunksByGuid: (guid: string) => ReadonlyArray<{ chunkId: string; bytes: Uint8Array; sha256?: string }>;
 };
 
 /** Audio clip chunks: the clip importer allocates only `source` and `source:N`. */
@@ -192,12 +248,12 @@ function textureChunkIds(header: HassetHeader, transcoderAvailable: boolean, wit
   return ids;
 }
 
-/** The Texture bytes to pack, or undefined when a stale KTX2 needs `pixels` this snapshot did not read. */
+/** The Texture bytes and source chunk SHA-256 to pack, or undefined when a stale KTX2 needs `pixels` this snapshot did not read. */
 function packedTextureBytes(
   { header, chunks }: ExportDocumentSnapshot,
   transcoderAvailable: boolean,
   withPixels: boolean,
-): Uint8Array | null | undefined {
+): { bytes: Uint8Array | null; sha256?: string } | undefined {
   const selected = selectTextureChunk(header, { transcoderAvailable });
   const bytes = chunks.get(selected.chunk.id) ?? null;
   const usage = textureUsage(header);
@@ -207,15 +263,18 @@ function packedTextureBytes(
     !bytes ||
     (shouldCompressTexture(usage) && (!blockAlign || isKtx2BlockAligned(bytes, blockAlign)))
   ) {
-    return bytes;
+    return { bytes, sha256: chunkSha256(header, selected.chunk.id) };
   }
   // A KTX2 retained from an earlier Usage: uncompressed Usages keep exact
   // pixels, and Particle encodes block-aligned, so a misaligned Particle
   // KTX2 is stale (its re-encode pending or failed). Ship the source pixels.
   const pixels = texturePixelsChunk(header);
-  if (!pixels) return bytes;
+  if (!pixels) return { bytes, sha256: chunkSha256(header, selected.chunk.id) };
   if (!withPixels && shouldCompressTexture(usage)) return undefined;
-  return chunks.get(pixels.id) ?? bytes;
+  const pixelBytes = chunks.get(pixels.id);
+  return pixelBytes
+    ? { bytes: pixelBytes, sha256: chunkSha256(header, pixels.id) }
+    : { bytes, sha256: chunkSha256(header, selected.chunk.id) };
 }
 
 /**
@@ -228,14 +287,15 @@ async function readTextureSnapshot(
   kind: string,
   path: string,
   transcoderAvailable: boolean,
-): Promise<{ snapshot: ExportDocumentSnapshot; bytes: Uint8Array | null }> {
+): Promise<{ snapshot: ExportDocumentSnapshot; bytes: Uint8Array | null; sha256?: string }> {
   const read = (withPixels: boolean) => loaders.loadDocumentWithChunks(kind, path,
     (header) => textureChunkIds(header, transcoderAvailable, withPixels));
   const snapshot = await read(false);
-  const bytes = packedTextureBytes(snapshot, transcoderAvailable, false);
-  if (bytes !== undefined) return { snapshot, bytes };
+  const packed = packedTextureBytes(snapshot, transcoderAvailable, false);
+  if (packed !== undefined) return { snapshot, ...packed };
   const withPixels = await read(true);
-  return { snapshot: withPixels, bytes: packedTextureBytes(withPixels, transcoderAvailable, true) ?? null };
+  const fallback = packedTextureBytes(withPixels, transcoderAvailable, true);
+  return { snapshot: withPixels, bytes: fallback?.bytes ?? null, sha256: fallback?.sha256 };
 }
 
 async function bytesForAsset(
@@ -245,17 +305,17 @@ async function bytesForAsset(
   readAssetChunk: ExportDocumentLoaders["readAssetChunk"],
   /** A Model's Skeleton's sockets, which the packed Model carries for the renderer. */
   skeletonSockets: (skeletonGuid: string | null) => Promise<SkeletonSocket[] | undefined>,
-): Promise<Uint8Array | null> {
+): Promise<{ bytes: Uint8Array | null; sha256?: string }> {
   // A Timeline Clip asset ships its keys, events and proxies; its Editor Preview never leaves the editor.
   if (isTimelineClipAssetType(asset.header.type) && document) {
-    return encoder.encode(JSON.stringify(stripTimelineClipAssetEditorData(normalizeTimelineClipAsset(document))));
+    return { bytes: encoder.encode(JSON.stringify(stripTimelineClipAssetEditorData(normalizeTimelineClipAsset(document)))) };
   }
   // A Tilemap ships its chunks run-length encoded, as its .hasset stores them.
   if (asset.header.type === "Tilemap" && document) {
-    return encoder.encode(JSON.stringify(compactTilemapPayload(normalizeTilemapPayload(document))));
+    return { bytes: encoder.encode(JSON.stringify(compactTilemapPayload(normalizeTilemapPayload(document)))) };
   }
   if (JSON_TYPES.has(asset.header.type) && document) {
-    return encoder.encode(JSON.stringify(document));
+    return { bytes: encoder.encode(JSON.stringify(document)) };
   }
   if (asset.header.type === "Audio" && snapshot) {
     const payload = normalizeAudioPayload(document ?? snapshot.header.payload);
@@ -263,21 +323,26 @@ async function bytesForAsset(
       payload,
       readChunk: async (chunkId) => snapshot.chunks.get(chunkId) ?? null,
     });
-    if (!blobs) return null;
-    return encodePackedAudioAsset(
-      payload,
-      blobs.length === 1 ? blobs[0]! : blobs,
-    );
+    if (!blobs) return { bytes: null };
+    return {
+      bytes: encodePackedAudioAsset(
+        payload,
+        blobs.length === 1 ? blobs[0]! : blobs,
+      ),
+    };
   }
   if (asset.header.type === "Model" && snapshot) {
     const source = snapshot.chunks.get("source");
-    if (!source || source.byteLength === 0) return null;
+    if (!source || source.byteLength === 0) return { bytes: null };
     const model = normalizeModelPayload(document ?? snapshot.header.payload);
-    return encodePackedModelAsset(withSkeletonSockets(model, await skeletonSockets(model.skeletonGuid)), source);
+    return { bytes: encodePackedModelAsset(withSkeletonSockets(model, await skeletonSockets(model.skeletonGuid)), source) };
   }
   if (asset.header.type === "Font" && snapshot) {
     const source = fontSourceChunkId(snapshot.header);
-    return source ? snapshot.chunks.get(source) ?? null : null;
+    return {
+      bytes: source ? snapshot.chunks.get(source) ?? null : null,
+      sha256: chunkSha256(snapshot.header, source),
+    };
   }
   for (const chunk of asset.header.chunks) {
     if (chunk.id === "document" || chunk.id === FONT_FACETYPE_CHUNK_ID) continue;
@@ -285,9 +350,9 @@ async function bytesForAsset(
       continue;
     }
     const bytes = await readAssetChunk(asset.path, chunk.id);
-    if (bytes) return bytes;
+    if (bytes) return { bytes, sha256: chunkSha256(asset.header, chunk.id) };
   }
-  return null;
+  return { bytes: null };
 }
 
 /** A Font sidecar packs only when its snapshot holds non-empty bytes. */
@@ -303,6 +368,7 @@ export async function loadExportDocuments(
   const graphs = new Map<string, SerializedGraph>();
   const payloads = new Map<string, unknown>();
   const bytes = new Map<string, Uint8Array>();
+  const sha256s = new Map<string, string>();
   const fontFacetypes = new Map<string, Uint8Array>();
   const byteErrors = new Map<string, unknown>();
   const areaEmissions = new Map<string, Uint8Array>();
@@ -312,30 +378,39 @@ export async function loadExportDocuments(
   const navmeshes = new Map<string, Uint8Array>();
   const audioReverbs = new Map<string, Uint8Array>();
   const audioReverbErrors = new Map<string, unknown>();
-  const landscapes = new Map<string, Array<{ chunkId: string; bytes: Uint8Array }>>();
+  const landscapes = new Map<string, Array<{ chunkId: string; bytes: Uint8Array; sha256?: string }>>();
+  const skeletonPool = loaders.allAssets ?? loaders.assets;
+  const skeletonsByGuid = new Map<string, IndexedAsset>();
+  for (const entry of skeletonPool) {
+    if (entry.header.type === "Skeleton") skeletonsByGuid.set(entry.header.guid, entry);
+  }
   // Each Skeleton read once, for the Models on it.
   const socketsBySkeleton = new Map<string, Promise<SkeletonSocket[] | undefined>>();
   const skeletonSockets = (skeletonGuid: string | null) => {
     if (!skeletonGuid) return Promise.resolve(undefined);
     let sockets = socketsBySkeleton.get(skeletonGuid);
     if (!sockets) {
-      const skeleton = loaders.assets.find((entry) => entry.header.guid === skeletonGuid && entry.header.type === "Skeleton");
+      const skeleton = skeletonsByGuid.get(skeletonGuid);
       const kind = skeleton ? documentKindForAssetType("Skeleton") : null;
-      sockets = skeleton && kind
-        ? loaders.loadDocument(kind, skeleton.path).then((payload) => normalizeSkeletonPayload(payload).sockets)
-        : Promise.resolve(undefined);
+      const preloaded = loaders.preloadedDocuments?.get(skeletonGuid);
+      sockets = preloaded !== undefined
+        ? Promise.resolve(normalizeSkeletonPayload(preloaded).sockets)
+        : skeleton && kind
+          ? loaders.loadDocument(kind, skeleton.path).then((payload) => normalizeSkeletonPayload(payload).sockets)
+          : Promise.resolve(undefined);
       socketsBySkeleton.set(skeletonGuid, sockets);
     }
     return sockets;
   };
-  for (const asset of loaders.assets) {
+  const concurrency = loaders.concurrency ?? EXPORT_LOAD_CONCURRENCY;
+  await mapWithConcurrency(loaders.assets, concurrency, async (asset) => {
     // Payloads are packed without migration. An unsupported format fails the
     // export once the game reaches the asset; an unreached one does not.
     try {
       assetFormats.requireCurrent(asset.header.type, asset.header.version);
     } catch (error) {
       byteErrors.set(asset.header.guid, error);
-      continue;
+      return;
     }
     const kind = documentKindForAssetType(asset.header.type);
     const transcoderAvailable = loaders.transcoderAvailable !== false;
@@ -343,6 +418,7 @@ export async function loadExportDocuments(
     // The document (or Texture header) with the chunks packed beside it, from one saved version.
     let snapshot: ExportDocumentSnapshot | null = null;
     let textureBytes: Uint8Array | null = null;
+    let textureSha256: string | undefined;
     const selection = exportChunkSelection(asset.header.type);
     if (
       kind &&
@@ -353,10 +429,12 @@ export async function loadExportDocuments(
     ) {
       try {
         if (asset.header.type === "Texture") {
-          ({ snapshot, bytes: textureBytes } = await readTextureSnapshot(loaders, kind, asset.path, transcoderAvailable));
+          ({ snapshot, bytes: textureBytes, sha256: textureSha256 } = await readTextureSnapshot(loaders, kind, asset.path, transcoderAvailable));
         } else if (selection) {
           snapshot = await loaders.loadDocumentWithChunks(kind, asset.path, selection);
           document = snapshot.document;
+        } else if (loaders.preloadedDocuments?.has(asset.header.guid)) {
+          document = loaders.preloadedDocuments.get(asset.header.guid);
         } else {
           document = await loaders.loadDocument(kind, asset.path);
         }
@@ -373,7 +451,14 @@ export async function loadExportDocuments(
       document = foliage.payload;
       const collected = [...landscape.chunks, ...foliage.chunks];
       if (collected.length > 0) {
-        landscapes.set(asset.header.guid, collected.map(([chunkId, chunkBytes]) => ({ chunkId, bytes: chunkBytes })));
+        landscapes.set(
+          asset.header.guid,
+          collected.map(([chunkId, chunkBytes]) => ({
+            chunkId,
+            bytes: chunkBytes,
+            sha256: chunkSha256(snapshot?.header, chunkId),
+          })),
+        );
       }
       scenes.set(asset.header.guid, foliage.payload);
     }
@@ -388,10 +473,13 @@ export async function loadExportDocuments(
     }
     if (!byteErrors.has(asset.header.guid)) {
       try {
-        const payload = asset.header.type === "Texture"
-          ? textureBytes
+        const packed = asset.header.type === "Texture"
+          ? { bytes: textureBytes, sha256: textureSha256 }
           : await bytesForAsset(asset, document, snapshot, loaders.readAssetChunk, skeletonSockets);
-        if (payload) bytes.set(asset.header.guid, payload);
+        if (packed.bytes) {
+          bytes.set(asset.header.guid, packed.bytes);
+          if (packed.sha256) sha256s.set(asset.header.guid, packed.sha256);
+        }
       } catch (error) {
         byteErrors.set(asset.header.guid, error);
       }
@@ -429,14 +517,14 @@ export async function loadExportDocuments(
         const failure = loaders.audioReverbBakeFailures.get(asset.path);
         if (!(failure instanceof AudioReverbBakeUnsavedError && failure.matches(field))) {
           audioReverbErrors.set(asset.header.guid, failure);
-          continue;
+          return;
         }
       }
       if (field && field.byteLength > 0) {
         audioReverbs.set(asset.header.guid, field);
       }
     }
-  }
+  });
   return {
     sceneByGuid: (guid) => scenes.get(guid) ?? null,
     graphByGuid: (guid) => graphs.get(guid) ?? null,
@@ -445,6 +533,7 @@ export async function loadExportDocuments(
       if (byteErrors.has(guid)) throw byteErrors.get(guid);
       return bytes.get(guid) ?? null;
     },
+    sha256ByGuid: (guid) => sha256s.get(guid),
     fontFacetypeBytesByGuid: (guid) => fontFacetypes.get(guid) ?? null,
     areaEmissionBytesByGuid: (guid) => {
       if (areaEmissionErrors.has(guid)) throw areaEmissionErrors.get(guid);

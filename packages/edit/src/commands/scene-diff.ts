@@ -88,6 +88,17 @@ interface ListPlan<T> {
  * reversed inverses reproduce `before`.
  */
 function planList<T extends { id: string }>(before: readonly T[], after: readonly T[]): ListPlan<T> {
+  if (before === after) return { removed: [], moves: [], added: [] };
+  if (before.length === after.length) {
+    let sameOrder = true;
+    for (let index = 0; index < before.length; index++) {
+      if (before[index]!.id !== after[index]!.id) {
+        sameOrder = false;
+        break;
+      }
+    }
+    if (sameOrder) return { removed: [], moves: [], added: [] };
+  }
   const afterIds = new Set(after.map((item) => item.id));
   const beforeIds = new Set(before.map((item) => item.id));
   const removed = before
@@ -119,6 +130,7 @@ function diffComponents(
   after: SerializedActor,
   commands: SceneEditCommand[],
 ): void {
+  if (before.components === after.components) return;
   const beforeComponents = new Map(
     before.components.map((component) => [component.id, component]),
   );
@@ -216,6 +228,7 @@ function diffFolders(
   after: SerializedScene,
   commands: SceneEditCommand[],
 ): void {
+  if (before.folders === after.folders) return;
   const beforeFolders = new Map(
     before.folders.map((folder) => [folder.id, folder]),
   );
@@ -381,21 +394,23 @@ export function diffSceneCommands(
   diffFolders(before, after, commands);
   diffTimelineClips(before, after, commands);
 
-  const beforeActors = new Map(before.actors.map((actor) => [actor.id, actor]));
-  for (const actor of after.actors) {
-    const previous = beforeActors.get(actor.id);
-    if (previous && previous !== actor) diffActor(previous, actor, commands);
-  }
+  if (before.actors !== after.actors) {
+    const beforeActors = new Map(before.actors.map((actor) => [actor.id, actor]));
+    for (const actor of after.actors) {
+      const previous = beforeActors.get(actor.id);
+      if (previous && previous !== actor) diffActor(previous, actor, commands);
+    }
 
-  const plan = planList(before.actors, after.actors);
-  for (const { item, index } of plan.removed) {
-    commands.push(new RemoveActorCommand(item, index));
-  }
-  for (const { id, from, to } of plan.moves) {
-    commands.push(new ReorderActorCommand(id, from, to));
-  }
-  for (const { item, index } of plan.added) {
-    commands.push(new AddActorCommand(item, index));
+    const plan = planList(before.actors, after.actors);
+    for (const { item, index } of plan.removed) {
+      commands.push(new RemoveActorCommand(item, index));
+    }
+    for (const { id, from, to } of plan.moves) {
+      commands.push(new ReorderActorCommand(id, from, to));
+    }
+    for (const { item, index } of plan.added) {
+      commands.push(new AddActorCommand(item, index));
+    }
   }
 
   return batchActorTransformCommands(commands);
@@ -455,26 +470,35 @@ function isJsonValue(value: unknown): boolean {
  * Outliner anchor actor's transform and a 2D anchor component's transform.
  */
 function withGuardedAnchorPoses(after: SerializedScene, applied: SerializedScene): SerializedScene {
-  const appliedActors = new Map(applied.actors.map((actor) => [actor.id, actor]));
+  if (after.actors === applied.actors) return after;
+  let appliedActors: Map<string, SerializedActor> | null = null;
   let changed = false;
-  const actors = after.actors.map((actor) => {
-    const current = appliedActors.get(actor.id);
+  const actors = after.actors.map((actor, index) => {
+    const indexed = applied.actors[index];
+    const current = indexed?.id === actor.id
+      ? indexed
+      : (appliedActors ??= new Map(applied.actors.map((entry) => [entry.id, entry]))).get(actor.id);
     if (!current || current === actor) return actor;
+    const isAnchorActor = isSceneLayerAnchorActor(actor);
+    const hasAnchorComponent = actor.components.some((component) => component.classId === "2DAnchorComponent");
+    if (!isAnchorActor && !hasAnchorComponent) return actor;
     let next = actor;
-    if (isSceneLayerAnchorActor(actor) && !jsonEquivalent(actor.transform, current.transform)) {
+    if (isAnchorActor && !jsonEquivalent(actor.transform, current.transform)) {
       next = { ...next, transform: current.transform };
     }
-    const components = actor.components.map((component) => {
-      if (component.classId !== "2DAnchorComponent") return component;
-      const kept = current.components.find((entry) => entry.id === component.id);
-      if (!kept || jsonEquivalent(component.transform, kept.transform)) return component;
-      const guarded = { ...component };
-      if (kept.transform === undefined) delete guarded.transform;
-      else guarded.transform = kept.transform;
-      return guarded;
-    });
-    if (components.some((component, index) => component !== actor.components[index])) {
-      next = { ...next, components };
+    if (hasAnchorComponent) {
+      const components = actor.components.map((component) => {
+        if (component.classId !== "2DAnchorComponent") return component;
+        const kept = current.components.find((entry) => entry.id === component.id);
+        if (!kept || jsonEquivalent(component.transform, kept.transform)) return component;
+        const guarded = { ...component };
+        if (kept.transform === undefined) delete guarded.transform;
+        else guarded.transform = kept.transform;
+        return guarded;
+      });
+      if (components.some((component, componentIndex) => component !== actor.components[componentIndex])) {
+        next = { ...next, components };
+      }
     }
     if (next !== actor) changed = true;
     return next;
@@ -497,6 +521,7 @@ export function planSceneChange(
   before: SerializedScene,
   after: SerializedScene,
 ): SceneEditCommand[] {
+  if (before === after) return [];
   const commands = diffSceneCommands(before, after);
   const applied = commands.reduce<SerializedScene>((doc, command) => command.apply(doc), before);
   const target = withGuardedAnchorPoses(after, applied);

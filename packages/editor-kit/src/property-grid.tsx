@@ -331,12 +331,48 @@ function hasDefault(row: PropertyRow): boolean {
   return "defaultValue" in row && row.defaultValue !== undefined;
 }
 
+function propertyValuesEqual(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true;
+  if (typeof left === "number" && typeof right === "number") {
+    // Match JSON.stringify equality: -0 === 0 and non-finite numbers serialize as null.
+    return left === right || (!Number.isFinite(left) && !Number.isFinite(right));
+  }
+  if (left === null || right === null || typeof left !== "object" || typeof right !== "object") {
+    return false;
+  }
+  if (Array.isArray(left)) {
+    if (!Array.isArray(right) || left.length !== right.length) return false;
+    for (let index = 0; index < left.length; index++) {
+      if (!propertyValuesEqual(left[index], right[index])) return false;
+    }
+    return true;
+  }
+  if (Array.isArray(right)) return false;
+  const a = left as Record<string, unknown>;
+  const b = right as Record<string, unknown>;
+  const aKeys = Object.keys(a);
+  const bKeys = Object.keys(b);
+  let aCount = 0;
+  for (let index = 0; index < aKeys.length; index++) {
+    const key = aKeys[index]!;
+    const aVal = a[key];
+    if (aVal === undefined) continue;
+    aCount += 1;
+    const bVal = b[key];
+    if (bVal === undefined || !propertyValuesEqual(aVal, bVal)) return false;
+  }
+  let bCount = 0;
+  for (let index = 0; index < bKeys.length; index++) {
+    if (b[bKeys[index]!] !== undefined) bCount += 1;
+  }
+  return aCount === bCount;
+}
+
 function isAtDefault(row: PropertyRow): boolean {
   if (row.mixed) return false;
   if (!hasDefault(row)) return true;
   const defaultValue = (row as { defaultValue: unknown }).defaultValue;
-  if (Object.is(row.value, defaultValue)) return true;
-  return JSON.stringify(row.value) === JSON.stringify(defaultValue);
+  return propertyValuesEqual(row.value, defaultValue);
 }
 
 /** A numeric row's short unit, which its fields show after the value instead of the label. */

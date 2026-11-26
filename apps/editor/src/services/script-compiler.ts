@@ -424,6 +424,14 @@ function compileEdgeFingerprint(
   return [...edges].sort((a, b) => a.id.localeCompare(b.id));
 }
 
+const functionSliceFingerprints = new WeakMap<
+  NonNullable<SerializedGraph["functionGraphs"]>[string],
+  {
+    nodes: Array<{ id: string; type: string; data: Record<string, unknown> }>;
+    edges: SerializedGraph["edges"];
+  }
+>();
+
 function compileFunctionGraphFingerprint(
   functionGraphs: SerializedGraph["functionGraphs"],
 ): Record<
@@ -433,13 +441,17 @@ function compileFunctionGraphFingerprint(
     edges: SerializedGraph["edges"];
   }
 > {
-  const entries = Object.entries(functionGraphs ?? {}).map(([id, slice]) => [
-    id,
-    {
-      nodes: compileNodeFingerprint(slice.nodes),
-      edges: compileEdgeFingerprint(slice.edges),
-    },
-  ]);
+  const entries = Object.entries(functionGraphs ?? {}).map(([id, slice]) => {
+    let cached = functionSliceFingerprints.get(slice);
+    if (!cached) {
+      cached = {
+        nodes: compileNodeFingerprint(slice.nodes),
+        edges: compileEdgeFingerprint(slice.edges),
+      };
+      functionSliceFingerprints.set(slice, cached);
+    }
+    return [id, cached] as const;
+  });
   entries.sort(([a], [b]) => String(a).localeCompare(String(b)));
   return Object.fromEntries(entries);
 }

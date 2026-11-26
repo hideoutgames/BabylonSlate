@@ -174,11 +174,14 @@ export function commandToJournalPayload(
   command: EditCommand<unknown>,
 ): { type: string; [key: string]: unknown } {
   switch (command.type) {
-    case "edit.batch":
+    case "edit.batch": {
+      const batch = command as CommandBatch<unknown>;
       return {
         type: command.type,
-        commands: (command as CommandBatch<unknown>).commands.map(commandToJournalPayload),
+        commands: batch.commands.map(commandToJournalPayload),
+        ...(batch.mergeKey ? { mergeKey: batch.mergeKey } : {}),
       };
+    }
     case "graph.moveNode": {
       const move = command as MoveNodeCommand;
       return {
@@ -331,6 +334,9 @@ export function coalesceJournalLines(
   ) {
     return null;
   }
+  if (later.type === "edit.batch") {
+    return coalesceBatchLines(previous, next);
+  }
   if (later.type === "scene.setActorsTransforms") {
     return coalesceActorsTransformsLines(previous, next);
   }
@@ -342,6 +348,42 @@ export function coalesceJournalLines(
   void _laterTo;
   if (JSON.stringify(earlierTarget) !== JSON.stringify(laterTarget)) return null;
   return { ...next, command: { ...later, from } };
+}
+
+/**
+ * Pairwise folds consecutive `edit.batch` records that share a `mergeKey` and
+ * target the same sequence of coalescable commands (e.g. multi-actor scrubs).
+ */
+function coalesceBatchLines(
+  previous: JournalLine,
+  next: JournalLine,
+): JournalLine | null {
+  const earlierCommands = previous.command.commands;
+  const laterCommands = next.command.commands;
+  if (
+    previous.command.mergeKey !== next.command.mergeKey ||
+    !Array.isArray(earlierCommands) ||
+    !Array.isArray(laterCommands) ||
+    earlierCommands.length === 0 ||
+    earlierCommands.length !== laterCommands.length
+  ) {
+    return null;
+  }
+  const merged: Array<{ type: string; [key: string]: unknown }> = [];
+  for (let index = 0; index < earlierCommands.length; index++) {
+    const earlierCmd = earlierCommands[index] as { type: string; [key: string]: unknown } | null;
+    const laterCmd = laterCommands[index] as { type: string; [key: string]: unknown } | null;
+    if (!earlierCmd || typeof earlierCmd !== "object" || !laterCmd || typeof laterCmd !== "object") {
+      return null;
+    }
+    const folded = coalesceJournalLines(
+      { ...previous, command: earlierCmd },
+      { ...next, command: laterCmd },
+    );
+    if (!folded) return null;
+    merged.push(folded.command);
+  }
+  return { ...next, command: { ...next.command, commands: merged } };
 }
 
 /**

@@ -100,6 +100,36 @@ export interface ViewportSceneLoadDeps {
  * Texture-encoding swaps. React runs its effects in call order, so the panel
  * calls it where these effects have always run.
  */
+/**
+ * True when two Scene snapshots keep the exact same settings, actor classes,
+ * component arrays and actor properties, so only transforms, names, folders or
+ * visibility/lock flags changed and asset/emission scans produce the same result.
+ */
+function sameSceneAssetReferences(
+  previous: SerializedScene | null,
+  next: SerializedScene | null,
+): boolean {
+  if (previous === next) return true;
+  if (!previous || !next) return false;
+  if (previous.settings !== next.settings || previous.actors.length !== next.actors.length) {
+    return false;
+  }
+  for (let index = 0; index < next.actors.length; index++) {
+    const a = previous.actors[index]!;
+    const b = next.actors[index]!;
+    if (a === b) continue;
+    if (
+      a.id !== b.id ||
+      a.classId !== b.classId ||
+      a.components !== b.components ||
+      a.properties !== b.properties
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
 export function useViewportSceneLoad({
   scene,
   editorScene,
@@ -175,10 +205,19 @@ export function useViewportSceneLoad({
     void registryEpoch;
     return savedMaterialLibraryKey(assetRegistry?.list() ?? []);
   }, [assetRegistry, registryEpoch]);
+  // Retain the last scene whose asset-bearing fields (settings, actor classes,
+  // components, actor properties) changed so transform scrubs skip full-scene
+  // asset key and area-emission scans.
+  const assetScanSceneRef = useRef<SerializedScene | null>(scene);
+  if (!sameSceneAssetReferences(assetScanSceneRef.current, scene)) {
+    assetScanSceneRef.current = scene;
+  }
+  const assetScanScene = assetScanSceneRef.current;
+
   const viewportAssetsKey = useMemo(() => {
     void registryEpoch;
     return JSON.stringify([
-      sceneViewportAssetKey(scene, assetRegistry?.list() ?? []),
+      sceneViewportAssetKey(assetScanScene, assetRegistry?.list() ?? []),
       textureLodKey,
       effectsAssetGuidsKey,
       projectDocument?.settings.twoD,
@@ -187,15 +226,15 @@ export function useViewportSceneLoad({
     ]);
   }, [
     assetRegistry,
+    assetScanScene,
     discardedTilemaps,
     registryEpoch,
-    scene,
     textureLodKey,
     effectsAssetGuidsKey,
     projectDocument?.settings.twoD,
     projectDocument?.settings.fonts,
   ]);
-  const areaTextureGuids = useMemo(() => areaEmissionTextureGuids(scene), [scene]);
+  const areaTextureGuids = useMemo(() => areaEmissionTextureGuids(assetScanScene), [assetScanScene]);
   const areaEmissionKey = savedAreaEmissionKey(areaTextureGuids, (guid) => assetRegistry?.getByGuid(guid));
   // An assigned emission Texture without prepared data would leave its light off.
   useEffect(() => {
@@ -216,8 +255,6 @@ export function useViewportSceneLoad({
     // Scene overrides arrive before the coalesced settings transaction. Do not
     // apply them through incremental loadScene while its blocking UI is pending.
     if (requestedRenderSettingsKey !== renderSettingsKey) return;
-    setDropReady(null);
-    setSceneReady(false);
     const controller = new AbortController();
     assetLoadRef.current = controller;
     const transitionId = ++loadTransitionRef.current;
@@ -231,6 +268,8 @@ export function useViewportSceneLoad({
     const rendering = !remount && completedRenderSettingsRef.current !== renderSettingsKey;
     const blocking = remount || rendering;
     if (blocking) {
+      setDropReady(null);
+      setSceneReady(false);
       blockingLoadRef.current = controller;
       handle.setPaused(true);
       setSceneLoad({ open: false, progress: 0, phase: "Preparing Scene", rendering });

@@ -1,5 +1,5 @@
-import { Handle, Position, useStore, type NodeProps } from "@xyflow/react";
-import { useCallback, useRef, type MouseEvent } from "react";
+import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { memo, useCallback, useRef, type MouseEvent } from "react";
 import {
   ContextMenuOverlay,
   doubleTapWindowMs,
@@ -12,10 +12,9 @@ import { BlueprintNodeShell, type CanvasNode } from "./graph-nodes";
 import { useGraphEditorContext } from "./graph-editor-context";
 import { nodeKind, nodeRoleClass, type NodeVisualRole } from "./node-theme";
 import { NodeKindIcon } from "./node-icons";
-import { isPinWired } from "./pin-connections";
 import { useRunNodeStatus } from "./use-run-node-status";
 import { NodeRenameField, useNodeTitleGestures, useRenameValue } from "./node-title";
-import { useNodeRename, usePendingPinId } from "./graph-node-state";
+import { useNodeRename, usePendingPinId, usePinWired } from "./graph-node-state";
 
 
 type AttachedRow = { id: string; classId: string; title?: string };
@@ -51,7 +50,7 @@ function treeState(status: string | undefined): "running" | "success" | "failure
   return status === "running" || status === "success" || status === "failure" ? status : "idle";
 }
 
-function TreePinHandle({
+const TreePinHandle = memo(function TreePinHandle({
   nodeId,
   pinId,
   direction,
@@ -66,10 +65,7 @@ function TreePinHandle({
 }) {
   const { onPinTap } = useGraphEditorContext();
   const pending = usePendingPinId(nodeId) === pinId;
-  // Indexed once per edges array, so a drag or pan frame does not scan every edge per pin.
-  const connected = useStore((state) =>
-    isPinWired(state.edges, nodeId, { id: pinId, direction }),
-  );
+  const connected = usePinWired(nodeId, direction, pinId);
 
   return (
     <Handle
@@ -96,9 +92,9 @@ function TreePinHandle({
       />
     </Handle>
   );
-}
+});
 
-export function TreeNode({ id, data, selected }: NodeProps<CanvasNode>) {
+export const TreeNode = memo(function TreeNode({ id, data, selected }: NodeProps<CanvasNode>) {
   const {
     onNavigateRequest,
     selectedAttachmentId,
@@ -295,7 +291,7 @@ export function TreeNode({ id, data, selected }: NodeProps<CanvasNode>) {
       <ContextMenuOverlay menu={nodeMenu.menu} onClose={nodeMenu.closeMenu} />
     </BlueprintNodeShell>
   );
-}
+}, (prev, next) => prev.id === next.id && prev.data === next.data && prev.selected === next.selected);
 
 function AttachmentRow({
   prefix,

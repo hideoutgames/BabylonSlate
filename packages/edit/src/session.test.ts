@@ -1,14 +1,24 @@
 import { describe, expect, it } from "vitest";
 import type { EditCommand } from "./command";
-import { EditSession } from "./session";
+import { CommandBatch, EditSession } from "./session";
 import {
   createActor,
   createDefaultScene,
   type SerializedGraph,
+  type SerializedScene,
 } from "@haptic/core";
 import { diffGraphCommands } from "./commands/graph-diff";
 import { diffSceneCommands } from "./commands/scene-diff";
 import { SetAssetDocumentCommand } from "./commands/asset-document";
+import {
+  SetActorTransformCommand,
+  SetActorsTransformsCommand,
+  SetComponentPropertyCommand,
+  SetComponentTransformCommand,
+  SetSceneSettingCommand,
+} from "./commands/scene";
+import { MoveNodeCommand } from "./commands/graph";
+import { coalesceJournalLines, commandToJournalPayload, type JournalLine } from "./journal";
 
 interface TestDoc {
   value: number;
@@ -357,5 +367,86 @@ describe("EditSession", () => {
     expect(session.undo("tilemap", doc)?.doc).toEqual(asset(0));
     expect(session.canUndo("tilemap")).toBe(false);
     expect(session.redo("tilemap", asset(0))?.doc).toEqual(asset(20));
+  });
+
+  it("folds pairwise CommandBatch scrubs in O(targets) and coalesces journal edit.batch lines", () => {
+    const t = (x: number) => ({
+      position: [x, 0, 0] as [number, number, number],
+      rotation: [0, 0, 0, 1] as [number, number, number, number],
+      scale: [1, 1, 1] as [number, number, number],
+    });
+    const makeScene = (x1: number, x2: number): SerializedScene => {
+      const base = createDefaultScene("3d");
+      return {
+        ...base,
+        actors: [
+          { ...createActor("A1", "Actor"), id: "a1", transform: t(x1), components: [{ id: "c1", classId: "LightComponent", name: "Light", properties: { intensity: x1 } }] },
+          { ...createActor("A2", "Actor"), id: "a2", transform: t(x2), components: [{ id: "c2", classId: "LightComponent", name: "Light", properties: { intensity: x2 } }] },
+        ],
+      };
+    };
+
+    let batch = new CommandBatch<SerializedScene>([
+      new SetComponentPropertyCommand("a1", "c1", "intensity", 0, 1, { from: { sourceId: "s1", overrideKeys: [] }, to: { sourceId: "s1", overrideKeys: ["intensity"] } }),
+      new SetComponentPropertyCommand("a2", "c2", "intensity", 0, 1),
+    ], "multi:intensity");
+    for (let step = 2; step <= 50; step++) {
+      const nextBatch = new CommandBatch<SerializedScene>([
+        new SetComponentPropertyCommand("a1", "c1", "intensity", step - 1, step),
+        new SetComponentPropertyCommand("a2", "c2", "intensity", step - 1, step),
+      ], "multi:intensity");
+      batch = batch.coalesce(nextBatch) as CommandBatch<SerializedScene>;
+    }
+    // Pairwise folding keeps constant 2 commands instead of growing to 100.
+    expect(batch.commands).toHaveLength(2);
+    const firstCmd = batch.commands[0] as SetComponentPropertyCommand;
+    expect(firstCmd.from).toBe(0);
+    expect(firstCmd.to).toBe(50);
+    expect(firstCmd.linkage).toEqual({ from: { sourceId: "s1", overrideKeys: [] }, to: { sourceId: "s1", overrideKeys: ["intensity"] } });
+
+    const initial = makeScene(0, 0);
+    const applied = batch.apply(initial);
+    expect(applied.actors[0]!.components[0]!.properties.intensity).toBe(50);
+    expect(batch.invert().apply(applied).actors[0]!.components[0]!.properties.intensity).toBe(0);
+
+    // Individual scene/graph commands coalesce cleanly too.
+    const moved = new SetActorTransformCommand("a1", t(0), t(5)).coalesce(new SetActorTransformCommand("a1", t(5), t(12)));
+    expect(moved?.from.position).toEqual([0, 0, 0]);
+    expect(moved?.to.position).toEqual([12, 0, 0]);
+
+    const multiMoved = new SetActorsTransformsCommand([{ actorId: "a1", from: t(0), to: t(1) }, { actorId: "a2", from: t(0), to: t(2) }])
+      .coalesce(new SetActorsTransformsCommand([{ actorId: "a1", from: t(1), to: t(10) }, { actorId: "a2", from: t(2), to: t(20) }]));
+    expect(multiMoved?.entries.map((entry) => [entry.actorId, entry.from.position[0], entry.to.position[0]])).toEqual([["a1", 0, 10], ["a2", 0, 20]]);
+
+    const compTransform = new SetComponentTransformCommand("a1", "c1", t(0), t(3)).coalesce(new SetComponentTransformCommand("a1", "c1", t(3), t(9)));
+    expect(compTransform?.from.position[0]).toBe(0);
+    expect(compTransform?.to.position[0]).toBe(9);
+
+    const setting = new SetSceneSettingCommand("environmentColor", [0, 0, 0], [0.5, 0, 0]).coalesce(new SetSceneSettingCommand("environmentColor", [0.5, 0, 0], [1, 0, 0]));
+    expect(setting?.from).toEqual([0, 0, 0]);
+    expect(setting?.to).toEqual([1, 0, 0]);
+
+    const nodeMove = new MoveNodeCommand("n1", { x: 0, y: 0 }, { x: 10, y: 5 }).coalesce(new MoveNodeCommand("n1", { x: 10, y: 5 }, { x: 40, y: 20 }));
+    expect(nodeMove?.from).toEqual({ x: 0, y: 0 });
+    expect(nodeMove?.to).toEqual({ x: 40, y: 20 });
+
+    // Journal coalescing folds consecutive edit.batch lines with matching mergeKey.
+    const line1: JournalLine = {
+      v: 1,
+      docId: "scene:main",
+      at: "2026-01-01T00:00:00Z",
+      command: commandToJournalPayload(new CommandBatch([new SetComponentPropertyCommand("a1", "c1", "intensity", 0, 1)], "multi:intensity")),
+    };
+    const line2: JournalLine = {
+      v: 1,
+      docId: "scene:main",
+      at: "2026-01-01T00:00:01Z",
+      command: commandToJournalPayload(new CommandBatch([new SetComponentPropertyCommand("a1", "c1", "intensity", 1, 9)], "multi:intensity")),
+    };
+    const folded = coalesceJournalLines(line1, line2);
+    expect(folded).not.toBeNull();
+    const foldedCommands = folded!.command.commands as Array<{ from: unknown; to: unknown }>;
+    expect(foldedCommands).toHaveLength(1);
+    expect(foldedCommands[0]).toMatchObject({ from: 0, to: 9 });
   });
 });

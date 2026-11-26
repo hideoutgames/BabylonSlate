@@ -132,6 +132,8 @@ export type CollectExportGameParams = {
   graphByGuid: (guid: string) => SerializedGraph | null;
   /** Throws for an asset whose bytes failed to load; the export then fails. */
   bytesByGuid: (guid: string) => Uint8Array | null;
+  /** Pre-verified chunk SHA-256 hex digest for `bytesByGuid(guid)` when unmodified. */
+  sha256ByGuid?: (guid: string) => string | undefined;
   payloadByGuid?: (guid: string) => unknown | null;
   navmeshByGuid?: (guid: string) => Uint8Array | null;
   fontFacetypeBytesByGuid?: (guid: string) => Uint8Array | null;
@@ -141,7 +143,7 @@ export type CollectExportGameParams = {
   /** Throws for a Scene whose reverb could not be baked or saved; a reached one fails the export. */
   audioReverbByGuid?: (guid: string) => Uint8Array | null;
   /** Raw binary Landscape (`HPLD`) and Foliage (`HPFG`) chunks owned by a Scene. */
-  componentChunksByGuid?: (guid: string) => ReadonlyArray<{ chunkId: string; bytes: Uint8Array }>;
+  componentChunksByGuid?: (guid: string) => ReadonlyArray<{ chunkId: string; bytes: Uint8Array; sha256?: string }>;
   renderSettings: RenderProjectSettings;
   defaultFontGuid?: string | null;
   /** Project Global Fallback, written to game.json for the player's font stacks. */
@@ -464,6 +466,7 @@ export async function collectAndExportGame(
       const payload = params.payloadByGuid?.(guid);
       const textureSize = texturePixelSizeFromPayload(payload);
       const font = asset.type === "Font" ? normalizeFontPayload(payload, asset.name) : null;
+      const sha256 = params.sha256ByGuid?.(guid);
       exportAssets.push({
         guid,
         assetPath: asset.path,
@@ -482,6 +485,7 @@ export async function collectAndExportGame(
           closure.value.bySceneGuid,
         ),
         bytes,
+        ...(sha256 ? { sha256 } : {}),
         name: font ? font.family : asset.name,
         ...(asset.type === "Texture" && textureSize ? textureSize : {}),
         ...(font && font.pixelSize > 0 ? { pixelSize: font.pixelSize } : {}),
@@ -530,7 +534,7 @@ export async function collectAndExportGame(
   for (const guid of closure.value.guids) {
     const asset = params.assets.find((entry) => entry.guid === guid);
     if (!asset || asset.type !== "Scene") continue;
-    for (const { chunkId, bytes } of params.componentChunksByGuid?.(guid) ?? []) {
+    for (const { chunkId, bytes, sha256 } of params.componentChunksByGuid?.(guid) ?? []) {
       if (!bytes || bytes.byteLength === 0) continue;
       const foliage = isFoliageChunkId(chunkId);
       exportAssets.push({
@@ -539,6 +543,7 @@ export async function collectAndExportGame(
         type: foliage ? FOLIAGE_EXPORT_TYPE : LANDSCAPE_EXPORT_TYPE,
         sceneGuid: guid,
         bytes,
+        ...(sha256 ? { sha256 } : {}),
         encoding: "bytes",
         name: `${asset.name} ${chunkId}`,
       });

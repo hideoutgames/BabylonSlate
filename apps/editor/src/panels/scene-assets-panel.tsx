@@ -3,6 +3,7 @@ import type { SurfacePlacement } from "@haptic/render";
 import {
   memo,
   useCallback,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -35,8 +36,10 @@ import {
   SearchInput,
   TreeView,
   TypeVisualIcon,
+  WINDOWED_SLICE_OVERSCAN,
   doubleTapWindowMs,
   useContextMenu,
+  windowedSlice,
   type NestedMenuItem,
   type TreeSelectOptions,
   type TreeViewNode,
@@ -100,6 +103,55 @@ import { useProjectPlaceActors } from "../lib/use-project-place-actors";
 import { useRetainedValue } from "../lib/use-retained-value";
 import { useThumbnailUrls } from "../lib/use-thumbnail-urls";
 import { usePhoneTouchSizing } from "../shell/use-platform-layout";
+
+/** Matches `CatalogCardGrid size="dense"` (`minmax(4.5rem, 1fr)` + `gap-1.5` + `p-2`). */
+const SCENE_ASSET_CARD_MIN_WIDTH_PX = 72;
+const SCENE_ASSET_CARD_GAP_PX = 6;
+const SCENE_ASSET_CARD_PAD_PX = 8;
+/** Compact `CatalogCard` header height below the square preview well. */
+const SCENE_ASSET_CARD_FOOTER_PX = 28;
+/** Mount every card below this threshold without virtualization overhead. */
+const SCENE_ASSET_VIRTUALIZE_THRESHOLD = 48;
+
+type CardGridWindow = {
+  firstRow: number;
+  lastRow: number;
+  columns: number;
+  rowStride: number;
+  viewportWidth: number;
+  viewportHeight: number;
+};
+
+function computeSceneAssetGridWindow(
+  itemCount: number,
+  viewportWidth: number,
+  viewportHeight: number,
+  scrollTop: number,
+): CardGridWindow | null {
+  if (itemCount < SCENE_ASSET_VIRTUALIZE_THRESHOLD || viewportWidth <= 0 || viewportHeight <= 0) {
+    return null;
+  }
+  const innerWidth = Math.max(0, viewportWidth - SCENE_ASSET_CARD_PAD_PX * 2);
+  const columns = Math.max(
+    1,
+    Math.floor((innerWidth + SCENE_ASSET_CARD_GAP_PX) / (SCENE_ASSET_CARD_MIN_WIDTH_PX + SCENE_ASSET_CARD_GAP_PX)),
+  );
+  const cardWidth = Math.max(
+    SCENE_ASSET_CARD_MIN_WIDTH_PX,
+    (innerWidth - (columns - 1) * SCENE_ASSET_CARD_GAP_PX) / columns,
+  );
+  const rowHeight = Math.ceil(cardWidth + SCENE_ASSET_CARD_FOOTER_PX);
+  const rowStride = rowHeight + SCENE_ASSET_CARD_GAP_PX;
+  const rowCount = Math.ceil(itemCount / columns);
+  const { firstIndex: firstRow, lastIndex: lastRow } = windowedSlice({
+    itemCount: rowCount,
+    rowHeight: rowStride,
+    scrollTop: Math.max(0, scrollTop - SCENE_ASSET_CARD_PAD_PX),
+    viewportHeight,
+    overscan: WINDOWED_SLICE_OVERSCAN,
+  });
+  return { firstRow, lastRow, columns, rowStride, viewportWidth, viewportHeight };
+}
 
 const NO_PLACE_ACTOR_ITEMS: PlaceActorItem[] = [];
 const NO_SELECTION: SceneAssetSelection = { ids: [], anchor: null };
@@ -221,6 +273,11 @@ export function SceneAssetsPanel({ api }: IDockviewPanelProps) {
   const [dropHint, setDropHint] = useState<GraphDropHintState | null>(null);
   const lastTapRef = useRef<{ id: string; at: number } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [gridMetrics, setGridMetrics] = useState<{ width: number; height: number; scrollTop: number }>({
+    width: 0,
+    height: 0,
+    scrollTop: 0,
+  });
 
   // Built only while the panel is on screen; hidden, it keeps the last list.
   const { items: shownProjectItems, graphForPath } = useProjectPlaceActors({
@@ -492,6 +549,37 @@ export function SceneAssetsPanel({ api }: IDockviewPanelProps) {
     ? `${allEntries.length} ${allEntries.length === 1 ? "Asset" : "Assets"}`
     : `${visible.length} of ${allEntries.length} Assets`;
 
+  const cardsShown = Boolean(scene) && view === "cards" && visible.length > 0;
+  const shouldWindowCards = cardsShown && visible.length >= SCENE_ASSET_VIRTUALIZE_THRESHOLD;
+
+  useLayoutEffect(() => {
+    if (!shouldWindowCards) return;
+    const container = scrollRef.current;
+    if (!container) return;
+    const measure = () => {
+      const width = container.clientWidth;
+      const height = container.clientHeight;
+      const scrollTop = container.scrollTop;
+      setGridMetrics((prev) =>
+        prev.width === width && prev.height === height && prev.scrollTop === scrollTop
+          ? prev
+          : { width, height, scrollTop },
+      );
+    };
+    measure();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    observer?.observe(container);
+    return () => observer?.disconnect();
+  }, [shouldWindowCards]);
+
+  const cardWindow = useMemo(
+    () =>
+      shouldWindowCards
+        ? computeSceneAssetGridWindow(visible.length, gridMetrics.width, gridMetrics.height, gridMetrics.scrollTop)
+        : null,
+    [gridMetrics.height, gridMetrics.scrollTop, gridMetrics.width, shouldWindowCards, visible.length],
+  );
+
   let body;
   if (!scene) {
     body = <p className="p-3 text-sm text-muted-foreground">Open A Scene</p>;
@@ -544,6 +632,12 @@ export function SceneAssetsPanel({ api }: IDockviewPanelProps) {
       />
     );
   } else {
+    const startIndex = cardWindow ? cardWindow.firstRow * cardWindow.columns : 0;
+    const endIndex = cardWindow ? Math.min(visible.length, cardWindow.lastRow * cardWindow.columns) : visible.length;
+    const totalRows = cardWindow ? Math.ceil(visible.length / cardWindow.columns) : 0;
+    const topSpacerPx = cardWindow ? cardWindow.firstRow * cardWindow.rowStride : 0;
+    const bottomSpacerPx = cardWindow ? Math.max(0, totalRows - cardWindow.lastRow) * cardWindow.rowStride : 0;
+    const renderedCards = cardWindow ? visible.slice(startIndex, endIndex) : visible;
     body = (
         <CatalogCardGrid
           label="Assets"
@@ -551,8 +645,16 @@ export function SceneAssetsPanel({ api }: IDockviewPanelProps) {
           role="listbox"
           aria-multiselectable
           data-testid="scene-assets-grid"
+          style={
+            cardWindow
+              ? {
+                  paddingTop: topSpacerPx,
+                  paddingBottom: bottomSpacerPx,
+                }
+              : undefined
+          }
         >
-          {visible.map((entry) => (
+          {renderedCards.map((entry) => (
             <AssetCard
               key={entry.id}
               entry={entry}
@@ -566,7 +668,6 @@ export function SceneAssetsPanel({ api }: IDockviewPanelProps) {
         </CatalogCardGrid>
     );
   }
-  const cardsShown = Boolean(scene) && view === "cards" && visible.length > 0;
 
   return (
     <PanelFrame data-testid="scene-assets-panel">
@@ -726,7 +827,25 @@ export function SceneAssetsPanel({ api }: IDockviewPanelProps) {
         <div
           ref={scrollRef}
           className={cardsShown ? "min-h-0 flex-1 overflow-y-auto overscroll-y-contain p-2 touch-pan-y" : "min-h-0 flex-1"}
-          onScroll={gestures.cancelPending}
+          onScroll={(event) => {
+            gestures.cancelPending();
+            if (!shouldWindowCards) return;
+            const nextScrollTop = event.currentTarget.scrollTop;
+            setGridMetrics((prev) => {
+              const prevWindow = computeSceneAssetGridWindow(visible.length, prev.width, prev.height, prev.scrollTop);
+              const nextWindow = computeSceneAssetGridWindow(visible.length, prev.width, prev.height, nextScrollTop);
+              if (
+                prevWindow &&
+                nextWindow &&
+                prevWindow.firstRow === nextWindow.firstRow &&
+                prevWindow.lastRow === nextWindow.lastRow &&
+                prevWindow.columns === nextWindow.columns
+              ) {
+                return prev;
+              }
+              return { ...prev, scrollTop: nextScrollTop };
+            });
+          }}
           onClick={(event) => {
             // Empty space between and around the cards clears the selection.
             if (cardsShown && !(event.target as Element).closest('[role="option"]')) setSelection(NO_SELECTION);

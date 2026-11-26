@@ -78,6 +78,8 @@ export type ExportAssetBytes = {
   /** Scene guid this asset was reached through; boot assets use the startup scene. */
   sceneGuid: string;
   bytes: Uint8Array;
+  /** Verified lowercase SHA-256 hex digest of `bytes` when already known (e.g. from `.hasset` chunk header). */
+  sha256?: string;
   encoding?: "json" | "bytes";
   /** Asset display name; FontFace family falls back to this. */
   name?: string;

@@ -58,6 +58,26 @@ export function packageDesktopGameInBackground(
       fail(new Error(event.message ? `Packaging failed: ${event.message}` : "Packaging failed: the packaging worker stopped."));
     };
     worker.onmessageerror = () => fail(new Error("Packaging failed: the package could not be read back from the packaging worker."));
-    worker.postMessage(request, movableBuffer(request.input.runtime));
+    worker.postMessage(
+      request,
+      request.kind === "web-zip" ? [] : movableBuffer(request.input.runtime),
+    );
   });
+}
+
+/**
+ * Zips a web game export on the packaging worker so compressing large artifacts
+ * never blocks the editor's main thread. Falls back to in-process zipping when
+ * `Worker` is unavailable (Node tests).
+ */
+export async function zipExportInBackground(
+  files: ReadonlyMap<string, Uint8Array>,
+  fileName = "game.zip",
+  createWorker?: (() => DesktopPackageWorkerHandle) | null,
+): Promise<Uint8Array> {
+  const result = await packageDesktopGameInBackground(
+    { kind: "web-zip", input: { files, fileName } },
+    createWorker,
+  );
+  return result.bytes;
 }
