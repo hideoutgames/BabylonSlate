@@ -29,6 +29,26 @@ const bigBytes = (seed: number) => new Uint8Array(DEFAULT_BLOB_THRESHOLD + 11).m
 const blobPath = async (bytes: Uint8Array) => `${BLOBS_DIR}/${await sha256Hex(bytes)}`;
 const asRecord = (scene: unknown) => scene as Record<string, unknown>;
 
+/** Observes both full and ranged binary reads so blob reads on strong or weak storage are captured. */
+function spyStorageReads(storage: MemoryStorageAdapter) {
+  const full = vi.spyOn(storage, "readBinary");
+  const range = vi.spyOn(storage, "readBinaryRange");
+  return {
+    paths: () => [
+      ...full.mock.calls.map(([readPath]) => readPath),
+      ...range.mock.calls.map(([readPath]) => readPath),
+    ],
+    clear: () => {
+      full.mockClear();
+      range.mockClear();
+    },
+    restore: () => {
+      full.mockRestore();
+      range.mockRestore();
+    },
+  };
+}
+
 const TEXTURE_PATH = "assets/hero.hasset";
 const PIXELS = bigBytes(1);
 const ENCODE = new Uint8Array([2, 3, 4]);
@@ -92,16 +112,16 @@ describe("a document save reuses what it stores", () => {
     await writeTexture(storage);
     const opened = (await service.loadDocument("texture", TEXTURE_PATH)) as Record<string, unknown>;
     const pixelsBlob = await blobPath(PIXELS);
-    const reads = vi.spyOn(storage, "readBinary");
+    const reads = spyStorageReads(storage);
     // Control: reading the chunk is seen through this spy.
     await service.readAssetChunk(TEXTURE_PATH, "pixels");
-    expect(reads.mock.calls.map(([readPath]) => readPath)).toContain(pixelsBlob);
-    reads.mockClear();
+    expect(reads.paths()).toContain(pixelsBlob);
+    reads.clear();
 
     await service.saveDocument("texture", TEXTURE_PATH, { ...opened, usage: "pixelArt" });
 
-    expect(reads.mock.calls.map(([readPath]) => readPath)).not.toContain(pixelsBlob);
-    reads.mockRestore();
+    expect(reads.paths()).not.toContain(pixelsBlob);
+    reads.restore();
     const saved = await decodeHasset(await storage.readBinary(TEXTURE_PATH), (sha256) => createVfsBlobStore(storage).readBlob(sha256));
     expect(saved.header.payload).toMatchObject({ usage: "pixelArt", ktx2ChunkId: "ktx2:abc", ktx2Sha256: await sha256Hex(ENCODE) });
     expect(saved.header.chunks.map((entry) => entry.id)).toEqual(["pixels", "ktx2:abc"]);
@@ -263,11 +283,11 @@ describe("a Scene's reverb bake", () => {
     const scene = await savedScene(service);
     const stale = bigBytes(3);
     await service.writeSceneAudioReverbChunk(MAIN_SCENE_FILE, stale, asRecord(scene));
-    const reads = vi.spyOn(storage, "readBinary");
+    const reads = spyStorageReads(storage);
     // Control: the stored chunk is there, and reading it is seen through this spy.
     expect(await service.readAssetChunk(MAIN_SCENE_FILE, AUDIO_REVERB_CHUNK_ID)).toEqual(stale);
-    expect(reads.mock.calls.map(([readPath]) => readPath)).toContain(await blobPath(stale));
-    reads.mockClear();
+    expect(reads.paths()).toContain(await blobPath(stale));
+    reads.clear();
     const edited = structuredClone(scene);
     edited.actors[0]!.transform.position[0] = 50;
     const fresh = new Uint8Array([1, 2, 3]);
@@ -276,8 +296,8 @@ describe("a Scene's reverb bake", () => {
 
     await service.saveDocument("scene", MAIN_SCENE_FILE, edited);
 
-    expect(reads.mock.calls.map(([readPath]) => readPath)).not.toContain(await blobPath(stale));
-    reads.mockRestore();
+    expect(reads.paths()).not.toContain(await blobPath(stale));
+    reads.restore();
     expect(await service.readAssetChunk(MAIN_SCENE_FILE, AUDIO_REVERB_CHUNK_ID)).toEqual(fresh);
   });
 
@@ -289,16 +309,16 @@ describe("a Scene's reverb bake", () => {
     // A later session has no bake in memory, so the stored chunk is what a Save keeps.
     const reopened = new ProjectService(storage);
     await reopened.loadCurrentProject();
-    const reads = vi.spyOn(storage, "readBinary");
+    const reads = spyStorageReads(storage);
     // Control: reading the stored chunk is seen through this spy.
     expect(await reopened.readAssetChunk(MAIN_SCENE_FILE, AUDIO_REVERB_CHUNK_ID)).toEqual(reverb);
-    expect(reads.mock.calls.map(([readPath]) => readPath)).toContain(await blobPath(reverb));
-    reads.mockClear();
+    expect(reads.paths()).toContain(await blobPath(reverb));
+    reads.clear();
 
     await reopened.saveDocument("scene", MAIN_SCENE_FILE, { ...scene, name: "Renamed" });
 
-    expect(reads.mock.calls.map(([readPath]) => readPath)).not.toContain(await blobPath(reverb));
-    reads.mockRestore();
+    expect(reads.paths()).not.toContain(await blobPath(reverb));
+    reads.restore();
     expect(await reopened.readAssetChunk(MAIN_SCENE_FILE, AUDIO_REVERB_CHUNK_ID)).toEqual(reverb);
     expect(await reopened.loadDocument("scene", MAIN_SCENE_FILE)).toMatchObject({ name: "Renamed" });
   });
@@ -309,16 +329,16 @@ describe("a Scene's reverb bake", () => {
     const navmesh = bigBytes(5);
     await service.writeSceneNavmeshChunk(MAIN_SCENE_FILE, navmesh, asRecord(scene));
     const reverb = new Uint8Array([4, 5, 6]);
-    const reads = vi.spyOn(storage, "readBinary");
+    const reads = spyStorageReads(storage);
     // Control: reading the navmesh is seen through this spy.
     expect(await service.readAssetChunk(MAIN_SCENE_FILE, NAVMESH_CHUNK_ID)).toEqual(navmesh);
-    expect(reads.mock.calls.map(([readPath]) => readPath)).toContain(await blobPath(navmesh));
-    reads.mockClear();
+    expect(reads.paths()).toContain(await blobPath(navmesh));
+    reads.clear();
 
     await service.writeSceneAudioReverbChunk(MAIN_SCENE_FILE, reverb, asRecord(scene));
 
-    expect(reads.mock.calls.map(([readPath]) => readPath)).not.toContain(await blobPath(navmesh));
-    reads.mockRestore();
+    expect(reads.paths()).not.toContain(await blobPath(navmesh));
+    reads.restore();
     expect(await service.readAssetChunk(MAIN_SCENE_FILE, NAVMESH_CHUNK_ID)).toEqual(navmesh);
     expect(await service.readAssetChunk(MAIN_SCENE_FILE, AUDIO_REVERB_CHUNK_ID)).toEqual(reverb);
     expect(await service.loadDocument("scene", MAIN_SCENE_FILE)).toEqual(scene);
@@ -407,18 +427,18 @@ describe("a Scene's navmesh bake", () => {
 
   it("is written without reading the chunks it keeps or the navmesh it replaces", async () => {
     const { service, storage, payload } = await opened();
-    const reads = vi.spyOn(storage, "readBinary");
+    const reads = spyStorageReads(storage);
     // Control: reading a chunk's blob is seen through this spy.
     expect(await service.readAssetChunk(MAIN_SCENE_FILE, "sidecar")).toEqual(SIDECAR);
-    expect(reads.mock.calls.map(([readPath]) => readPath)).toContain(await blobPath(SIDECAR));
-    reads.mockClear();
+    expect(reads.paths()).toContain(await blobPath(SIDECAR));
+    reads.clear();
 
     await service.writeSceneNavmeshChunk(MAIN_SCENE_FILE, FRESH, payload);
 
-    const read = reads.mock.calls.map(([readPath]) => readPath);
+    const read = reads.paths();
     expect(read).not.toContain(await blobPath(SIDECAR));
     expect(read).not.toContain(await blobPath(OLD_NAVMESH));
-    reads.mockRestore();
+    reads.restore();
     // The replaced navmesh moves to the end, as a full re-encode puts it.
     expect(await chunkIds(storage, MAIN_SCENE_FILE)).toEqual(["document", "sidecar", "note", "navmesh"]);
     expect(await service.readAssetChunk(MAIN_SCENE_FILE, "navmesh")).toEqual(FRESH);
@@ -445,12 +465,12 @@ describe("a Scene's navmesh bake", () => {
     // A later session has no bake in memory, so the stored chunk is what a bake keeps.
     const reopened = new ProjectService(storage);
     await reopened.loadCurrentProject();
-    const reads = vi.spyOn(storage, "readBinary");
+    const reads = spyStorageReads(storage);
 
     await reopened.writeSceneNavmeshChunk(MAIN_SCENE_FILE, FRESH, asRecord(scene));
 
-    expect(reads.mock.calls.map(([readPath]) => readPath)).not.toContain(await blobPath(reverb));
-    reads.mockRestore();
+    expect(reads.paths()).not.toContain(await blobPath(reverb));
+    reads.restore();
     expect(await reopened.readAssetChunk(MAIN_SCENE_FILE, AUDIO_REVERB_CHUNK_ID)).toEqual(reverb);
     expect(await reopened.readAssetChunk(MAIN_SCENE_FILE, NAVMESH_CHUNK_ID)).toEqual(FRESH);
 
@@ -575,18 +595,18 @@ describe("an Audio asset's clip writes", () => {
 
   it("replaces a clip without reading the others, and puts it after them", async () => {
     const { service, storage } = await opened();
-    const reads = vi.spyOn(storage, "readBinary");
+    const reads = spyStorageReads(storage);
     // Control: reading a clip is seen through this spy.
     expect(await service.readAssetChunk(PATH, "source")).toEqual(CLIP_1);
-    expect(reads.mock.calls.map(([readPath]) => readPath)).toContain(await blobPath(CLIP_1));
-    reads.mockClear();
+    expect(reads.paths()).toContain(await blobPath(CLIP_1));
+    reads.clear();
 
     await replaceClip(service);
 
-    const read = reads.mock.calls.map(([readPath]) => readPath);
+    const read = reads.paths();
     expect(read).not.toContain(await blobPath(CLIP_1));
     expect(read).not.toContain(await blobPath(CLIP_2));
-    reads.mockRestore();
+    reads.restore();
     const header = readAssetDocumentHeader(await storage.readBinary(PATH));
     expect(header.chunks.map(({ id, kind, mime }) => ({ id, kind, mime }))).toEqual([
       { id: "source", kind: "audio", mime: "audio/wav" },
@@ -601,14 +621,14 @@ describe("an Audio asset's clip writes", () => {
 
   it("removes a clip without reading the others, and never removes the default source", async () => {
     const { service, storage } = await opened();
-    const reads = vi.spyOn(storage, "readBinary");
+    const reads = spyStorageReads(storage);
 
     await removeClip(service);
 
-    const read = reads.mock.calls.map(([readPath]) => readPath);
+    const read = reads.paths();
     expect(read).not.toContain(await blobPath(CLIP_1));
     expect(read).not.toContain(await blobPath(CLIP_2));
-    reads.mockRestore();
+    reads.restore();
     expect(await chunkIds(storage, PATH)).toEqual(["source", "source:3"]);
     expect(await service.readAssetChunk(PATH, "source")).toEqual(CLIP_1);
 
