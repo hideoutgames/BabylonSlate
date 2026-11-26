@@ -26,6 +26,57 @@ import type { PlaySessionOptions } from "./play-session-types";
 const FIXTURE_ASSET = "preview-fixture";
 const FIXTURE_NODE = "throw-node";
 
+const parsedAnimGraphCache = new WeakMap<object, ReturnType<typeof parseAnimGraphDocument>>();
+
+function parseAnimGraphCached(document: unknown): ReturnType<typeof parseAnimGraphDocument> {
+  if (!document || typeof document !== "object") return parseAnimGraphDocument(document);
+  if (parsedAnimGraphCache.has(document)) return parsedAnimGraphCache.get(document) ?? null;
+  const parsed = parseAnimGraphDocument(document);
+  parsedAnimGraphCache.set(document, parsed);
+  return parsed;
+}
+
+type MaterialCatalogMemo = {
+  documents: ReadonlyMap<string, unknown>;
+  functions: ReadonlyMap<string, unknown> | undefined;
+  docEntries: Array<[string, unknown]>;
+  fnEntries: Array<[string, unknown]>;
+  catalog: ReturnType<typeof buildMaterialParameterCatalog>;
+};
+let materialCatalogMemo: MaterialCatalogMemo | null = null;
+
+function sameMapSnapshot(entries: ReadonlyArray<[string, unknown]>, map: ReadonlyMap<string, unknown> | undefined): boolean {
+  const size = map?.size ?? 0;
+  if (entries.length !== size) return false;
+  if (size === 0) return true;
+  for (const [key, value] of entries) {
+    if (map!.get(key) !== value) return false;
+  }
+  return true;
+}
+
+function buildMaterialParameterCatalogCached(
+  documents: Parameters<typeof buildMaterialParameterCatalog>[0],
+  functions: Parameters<typeof buildMaterialParameterCatalog>[1],
+): ReturnType<typeof buildMaterialParameterCatalog> {
+  if (
+    materialCatalogMemo &&
+    sameMapSnapshot(materialCatalogMemo.docEntries, documents) &&
+    sameMapSnapshot(materialCatalogMemo.fnEntries, functions)
+  ) {
+    return materialCatalogMemo.catalog;
+  }
+  const catalog = buildMaterialParameterCatalog(documents, functions);
+  materialCatalogMemo = {
+    documents,
+    functions,
+    docEntries: [...documents.entries()],
+    fnEntries: [...(functions?.entries() ?? [])],
+    catalog,
+  };
+  return catalog;
+}
+
 export function playSessionBootControls(options: {
   load: Extract<ControlMessage, { type: "load" }>;
   scripts?: readonly ScriptBundleEntry[];
@@ -113,7 +164,7 @@ export function playSessionLoad(options: PlaySessionOptions, sceneSourcesAvailab
   };
   const animClipCatalog = options.animClipCatalog && [...options.animClipCatalog];
   const animGraphs = options.animGraphs?.map((entry) => {
-    const document = parseAnimGraphDocument(entry.document);
+    const document = parseAnimGraphCached(entry.document);
     return document && animClipCatalog
       ? { ...entry, document: resolveAnimGraphClips(document, animClipCatalog) }
       : entry;
@@ -159,7 +210,7 @@ export function playSessionLoad(options: PlaySessionOptions, sceneSourcesAvailab
     collisionPresets: options.collisionPresets,
     texturePixelSizes: Object.fromEntries(options.texturePixelSizes ?? []),
     audioAssetGuids: options.audioAssetGuids ?? [...(options.audioLibrary?.audio.keys() ?? [])],
-    materialParameterCatalog: buildMaterialParameterCatalog(options.materialDocuments ?? new Map(), options.materialFunctions),
+    materialParameterCatalog: buildMaterialParameterCatalogCached(options.materialDocuments ?? new Map(), options.materialFunctions),
     particleParameterCatalog: options.particleLibrary ? buildParticleParameterCatalog(options.particleLibrary) : {},
     materialTextureAssetGuids: materialParameterTextureAssetGuids(options.textureBytes, options.renderTargetTextures),
     animClipCatalog,

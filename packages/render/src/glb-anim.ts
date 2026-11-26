@@ -10,6 +10,7 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { loadModelContainer, parentContainerRoots } from "./model-container";
+import { materializeEngineGlbBlueprint, rememberEngineGlbBlueprint } from "./glb-geometry-handover";
 import { Scene } from "@babylonjs/core/scene";
 import { installedAssetIdentity, normalizeModelImportScale } from "@haptic/assets";
 import { applyAnimStateToScene, sceneAnimHostFromBinding } from "./anim-apply";
@@ -322,13 +323,20 @@ export function acquireGlbContainer(
       label: `Model ${guid}`, temporaryBytes: Math.max(1024, source.size * 4), signal: created.controller.signal,
       priority,
     }, async () => {
-      const bytes = new Uint8Array(await source.arrayBuffer());
-      if (!isGltfModelBytes(bytes)) throw new Error("Unsupported model content");
       if (cache.disposed || created.retired) throw new Error("Model preparation cancelled");
-      const container = await loadModelContainer(scene, bytes, `${guid}.glb`);
-      if (cache.disposed || created.retired) {
-        container.dispose();
-        throw new Error("Model preparation cancelled");
+      // Reuse a static GLB's decoded CPU blueprint on the same Engine (e.g. Editor <-> Play)
+      // to skip GLB parsing and Draco/Meshopt decoding while holding zero GPU memory between Scenes.
+      let container = materializeEngineGlbBlueprint(scene, key);
+      if (!container) {
+        const bytes = new Uint8Array(await source.arrayBuffer());
+        if (!isGltfModelBytes(bytes)) throw new Error("Unsupported model content");
+        if (cache.disposed || created.retired) throw new Error("Model preparation cancelled");
+        container = await loadModelContainer(scene, bytes, `${guid}.glb`);
+        if (cache.disposed || created.retired) {
+          container.dispose();
+          throw new Error("Model preparation cancelled");
+        }
+        rememberEngineGlbBlueprint(scene.getEngine(), key, container);
       }
       created.container = container;
       created.accounted = accountedAssetContainerGeometry(container);

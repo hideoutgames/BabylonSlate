@@ -33,6 +33,16 @@ export function modelMaterialIndexOf(mesh: AbstractMesh): number | null | undefi
 }
 
 /**
+ * Tag a materialized blueprint mesh with the glTF primitive material index its source had,
+ * stored on `_internalMetadata` so clones and instances inherit the exact same slot mapping.
+ */
+export function setModelMaterialIndex(mesh: AbstractMesh, materialIndex: number | null): void {
+  const host = mesh as PrimitiveHost;
+  host._internalMetadata ??= {};
+  primitiveMaterials.set(host._internalMetadata, materialIndex);
+}
+
+/**
  * Note each primitive's material index, and hide points and lines: Babylon keeps a primitive's draw mode on its
  * material, which the load skips, so they would draw as triangles.
  */
