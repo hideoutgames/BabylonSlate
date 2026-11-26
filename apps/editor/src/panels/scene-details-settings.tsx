@@ -1,4 +1,4 @@
-import type { Dispatch, ReactNode, SetStateAction } from "react";
+import { memo, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import { RENDERING_SETTINGS_SECTIONS, type RenderingSceneContext } from "../components/rendering-settings-sections";
 import {
   AssetPicker,
@@ -70,7 +70,7 @@ export interface SceneDetailsSettingsProps {
  * override (`RENDERING_SETTINGS_SECTIONS`) and Scene Layers, then their
  * pickers. Hook-free, so the Inspector's state survives a selection change.
  */
-export function SceneDetailsSettings(props: SceneDetailsSettingsProps) {
+export const SceneDetailsSettings = memo(function SceneDetailsSettings(props: SceneDetailsSettingsProps) {
   const {
     scene,
     overlay,
@@ -394,4 +394,51 @@ export function SceneDetailsSettings(props: SceneDetailsSettingsProps) {
       />
     </>
   );
+}, (prev, next) => {
+  // Actor transform edits replace `scene` without touching settings, viewportMode, name, or camera actor entries.
+  const sameSceneForSettings =
+    prev.scene === next.scene ||
+    (prev.scene.name === next.scene.name &&
+      prev.scene.viewportMode === next.scene.viewportMode &&
+      prev.scene.settings === next.scene.settings &&
+      !prev.cameraPickerOpen &&
+      !next.cameraPickerOpen &&
+      sameCameraActorSummaries(prev.scene, next.scene));
+  return (
+    sameSceneForSettings &&
+    prev.overlay === next.overlay &&
+    prev.projectDocument === next.projectDocument &&
+    prev.mutate === next.mutate &&
+    prev.classEntries === next.classEntries &&
+    prev.pickerAssets === next.pickerAssets &&
+    prev.environmentPickerAssets === next.environmentPickerAssets &&
+    prev.postProcessPickerAssets === next.postProcessPickerAssets &&
+    prev.postProcessEntries === next.postProcessEntries &&
+    prev.matches === next.matches &&
+    prev.filterRows === next.filterRows &&
+    prev.overrideOpen === next.overrideOpen &&
+    prev.setOverrideOpen === next.setOverrideOpen &&
+    prev.noMatchingProperties === next.noMatchingProperties &&
+    prev.envTexturePickOpen === next.envTexturePickOpen &&
+    prev.setEnvTexturePickOpen === next.setEnvTexturePickOpen &&
+    prev.effectsLutPickOpen === next.effectsLutPickOpen &&
+    prev.setEffectsLutPickOpen === next.setEffectsLutPickOpen &&
+    prev.cameraPickerOpen === next.cameraPickerOpen &&
+    prev.setCameraPickerOpen === next.setCameraPickerOpen &&
+    prev.postProcessPick === next.postProcessPick &&
+    prev.setPostProcessPick === next.setPostProcessPick &&
+    prev.sceneLayerPick === next.sceneLayerPick &&
+    prev.setSceneLayerPick === next.setSceneLayerPick &&
+    prev.updateProjectSettings === next.updateProjectSettings
+  );
+});
+
+function sameCameraActorSummaries(a: SerializedScene, b: SerializedScene): boolean {
+  const defaultCameraId = a.settings.defaultCameraActorId;
+  if (!defaultCameraId) return true;
+  const actorA = a.actors.find((entry) => entry.id === defaultCameraId);
+  const actorB = b.actors.find((entry) => entry.id === defaultCameraId);
+  if (actorA === actorB) return true;
+  if (!actorA || !actorB) return false;
+  return actorA.name === actorB.name && actorA.components === actorB.components;
 }

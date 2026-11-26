@@ -1,4 +1,4 @@
-import type { Dispatch, SetStateAction } from "react";
+import { memo, type Dispatch, type SetStateAction } from "react";
 import {
   InlineRenameInput,
   NamedListEditor,
@@ -19,7 +19,6 @@ import {
   patchComponentProperties,
   type SerializedActor,
   type SerializedComponent,
-  type SerializedScene,
 } from "@haptic/core";
 import {
   ChevronDownIcon,
@@ -87,8 +86,11 @@ export interface SceneComponentDetail {
 }
 
 export interface SceneComponentCardProps extends SceneComponentDetail {
-  actor: SerializedActor;
-  scene: SerializedScene;
+  actorId: string;
+  actorLocked: boolean;
+  actorComponents: readonly SerializedComponent[];
+  /** Scene actors for `RenderTargetCaptureComponent`'s actor picker; omitted for other classes so actor moves stay memoized. */
+  captureActors?: readonly SerializedActor[];
   parentOf: ReturnType<typeof classParentLookup>;
   /** Changes the primary actor; the reorder and class extras use it, so they show only for one actor. */
   updateActor: (update: (actor: SerializedActor) => SerializedActor) => void;
@@ -96,7 +98,8 @@ export interface SceneComponentCardProps extends SceneComponentDetail {
   editComponent: (update: (component: SerializedComponent) => SerializedComponent) => void;
   /** Removes the card's component from every selected actor, as one edit. */
   removeComponent: () => void;
-  renamingComponentKey: string | null;
+  /** True only while this specific card's inline rename input is active. */
+  renaming: boolean;
   setRenamingComponentKey: (key: string | null) => void;
   /** Updates this render's collapse set: the filter's while a filter is typed. */
   setCollapsedKeys: Dispatch<SetStateAction<Set<string>>>;
@@ -111,12 +114,12 @@ export interface SceneComponentCardProps extends SceneComponentDetail {
 /**
  * One component card in the actor Inspector: header with rename, reorder and
  * remove, the shape edit toggle, then the rows with each class's extra editor
- * in place; a multi-selection has no reorder. Holds no state (only the name's
- * double-tap hook), so collapse and rename state stay in the Inspector. A new
+ * in place; a multi-selection has no reorder. Memoized so actor transform drags
+ * and unrelated scene edits skip re-rendering component cards. A new
  * class-specific extra also needs its search words in the Inspector's
  * `extraLabels`.
  */
-export function SceneComponentCard(props: SceneComponentCardProps) {
+export const SceneComponentCard = memo(function SceneComponentCard(props: SceneComponentCardProps) {
   const {
     component,
     template,
@@ -128,13 +131,15 @@ export function SceneComponentCard(props: SceneComponentCardProps) {
     parameterRows,
     showExtras,
     expanded,
-    actor,
-    scene,
+    actorId,
+    actorLocked,
+    actorComponents,
+    captureActors,
     parentOf,
     updateActor,
     editComponent,
     removeComponent,
-    renamingComponentKey,
+    renaming,
     setRenamingComponentKey,
     setCollapsedKeys,
     shapeEditable,
@@ -149,7 +154,7 @@ export function SceneComponentCard(props: SceneComponentCardProps) {
       data-testid={`component-card-${component.id}`}
     >
       <div className="flex items-center justify-between gap-2 border-b border-border/60 bg-panel-header px-2 py-1">
-        {renamingComponentKey === `${actor.id}:${component.id}` ? (
+        {renaming ? (
           <div className="flex min-w-0 flex-1 items-center gap-1.5">
             <TypeVisualIcon
               visual={resolveTypeVisual({
@@ -184,11 +189,11 @@ export function SceneComponentCard(props: SceneComponentCardProps) {
             className="min-w-0 flex-1 justify-start px-0"
             aria-label={title}
             aria-expanded={expanded}
-            aria-controls={`component-details-${actor.id}-${component.id}`}
+            aria-controls={`component-details-${actorId}-${component.id}`}
             onClick={() => {
               setCollapsedKeys((current) => {
                 const next = new Set(current);
-                const key = `${actor.id}:${component.id}`;
+                const key = `${actorId}:${component.id}`;
                 if (expanded) next.add(key);
                 else next.delete(key);
                 return next;
@@ -210,7 +215,7 @@ export function SceneComponentCard(props: SceneComponentCardProps) {
             />
             <ComponentCardName
               title={title}
-              onRename={() => setRenamingComponentKey(`${actor.id}:${component.id}`)}
+              onRename={() => setRenamingComponentKey(`${actorId}:${component.id}`)}
             />
           </Button>
         )}
@@ -249,8 +254,8 @@ export function SceneComponentCard(props: SceneComponentCardProps) {
             className="pointer-coarse:min-h-11"
             aria-label={`Edit ${title} In Viewport`}
             aria-pressed={shapeEditing}
-            disabled={actor.locked || multiSelection}
-            onClick={() => setShapeEditTarget({ actorId: actor.id, componentId: component.id })}
+            disabled={actorLocked || multiSelection}
+            onClick={() => setShapeEditTarget({ actorId, componentId: component.id })}
             data-testid={`component-shape-edit-${component.id}`}
           >
             {shapeEditing ? "Editing In Viewport" : "Edit In Viewport"}
@@ -258,7 +263,7 @@ export function SceneComponentCard(props: SceneComponentCardProps) {
         </div>
       ) : null}
       {expanded ? (
-        <div id={`component-details-${actor.id}-${component.id}`}>
+        <div id={`component-details-${actorId}-${component.id}`}>
           {showExtras && component.classId === "2DDropdownComponent" ? <NamedListEditor title="Options" values={parseUIControl2DProperties(component.classId, component.properties).options} addLabel="Add Option" onChange={(options) => updateActor(entry => ({ ...entry, components: entry.components.map(candidate => candidate.id === component.id ? { ...candidate, properties: { ...candidate.properties, options } } : candidate) }))} /> : null}
           {showExtras && component.classId === "2DRichTextComponent" ? (
             <ProjectRichTextAppearModesField
@@ -275,13 +280,13 @@ export function SceneComponentCard(props: SceneComponentCardProps) {
           ) : null}
           {rows.length ? <PropertyGrid rows={rows} /> : null}
           {showExtras && component.classId === "RenderTargetCaptureComponent" && component.properties.captureOnlyActors === true ? (
-            <RenderTargetCaptureActorsField actors={scene.actors} actorIds={normalizeRenderTargetCaptureProperties(component.properties).actorIds}
+            <RenderTargetCaptureActorsField actors={captureActors ?? []} actorIds={normalizeRenderTargetCaptureProperties(component.properties).actorIds}
               onChange={(actorIds) => updateActor((entry) => ({ ...entry, components: entry.components.map((candidate) => candidate.id === component.id ? { ...candidate, properties: { ...candidate.properties, actorIds } } : candidate) }))} />
           ) : null}
           {showExtras && component.classId === "RagdollComponent" ? (
             <RagdollBoneNamesEditor
               boneNames={component.properties.boneNames as string[] | undefined}
-              components={actor.components}
+              components={actorComponents}
               onChange={(boneNames) => updateActor((entry) => ({
                 ...entry,
                 components: entry.components.map((candidate) => candidate.id === component.id
@@ -299,10 +304,10 @@ export function SceneComponentCard(props: SceneComponentCardProps) {
           {showExtras && component.classId === "Text3DComponent" ? (
             <div className="p-2">
               <ComponentTextField
-                key={`${actor.id}:${component.id}`}
-                fieldKey={`component:${actor.id}:${component.id}:text`}
+                key={`${actorId}:${component.id}`}
+                fieldKey={`component:${actorId}:${component.id}:text`}
                 id={`text3d-text-${component.id}`}
-                disabled={component.properties.editorOnly === true && actor.components.some((entry) => entry.id === component.parentId && entry.classId === "SceneStreamingComponent")}
+                disabled={component.properties.editorOnly === true && actorComponents.some((entry) => entry.id === component.parentId && entry.classId === "SceneStreamingComponent")}
                 value={parseText3DProperties(component.properties).text}
                 onChange={(value) => updateActor((entry) => patchActorComponentText(entry, component.id, value))}
               />
@@ -313,8 +318,8 @@ export function SceneComponentCard(props: SceneComponentCardProps) {
             component.classId === "2DRichTextComponent") ? (
             <div className="p-2">
               <ComponentTextField
-                key={`${actor.id}:${component.id}`}
-                fieldKey={`component:${actor.id}:${component.id}:text`}
+                key={`${actorId}:${component.id}`}
+                fieldKey={`component:${actorId}:${component.id}:text`}
                 id={`text2d-text-${component.id}`}
                 markup={component.classId === "2DRichTextComponent"}
                 value={parseText2DProperties(component.properties, {
@@ -358,4 +363,4 @@ export function SceneComponentCard(props: SceneComponentCardProps) {
       ) : null}
     </div>
   );
-}
+});

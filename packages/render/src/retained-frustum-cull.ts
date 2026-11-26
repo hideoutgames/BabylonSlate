@@ -219,6 +219,7 @@ export class RetainedFrustumCull {
   private states = new Uint8Array(0);
   private layerMasks = new Int32Array(0);
   private spheres = new Float64Array(0);
+  private cornerRadii = new Float64Array(0);
   private corners = new Float64Array(0);
   private boxes = new Float64Array(0);
   /** Per entry of `output`, the slot whose box copy is the mesh's this frame, or -1 (`outputBounds`). */
@@ -235,6 +236,7 @@ export class RetainedFrustumCull {
   /** The kept meshes, written by place and length (never pushed): renderers observe it once they draw it. */
   readonly output: AbstractMesh[] = [];
   private readonly planes = new Float64Array(24);
+  private readonly planeLengths = new Float64Array(6);
   private healPhase = 0;
   /** Bounds marked stale by this frame's drains; busy frames in a row; the current wait and the frames left of it. */
   private changed = 0;
@@ -334,10 +336,11 @@ export class RetainedFrustumCull {
     camera._updateFrustumPlanes();
     const frustum = camera._frustumPlanes;
     if (frustum.length !== 6) throw new Error("Babylon 9.29 camera frustum has six planes.");
-    const planes = this.planes;
+    const planes = this.planes, planeLengths = this.planeLengths;
     for (let index = 0; index < 6; index++) {
       const plane = frustum[index]!, normal = plane.normal, at = index * 4;
       planes[at] = normal.x; planes[at + 1] = normal.y; planes[at + 2] = normal.z; planes[at + 3] = plane.d;
+      planeLengths[index] = Math.hypot(normal.x, normal.y, normal.z);
     }
     const layerMask = camera.layerMask, skip = scene.skipFrustumClipping;
     const work = this.work;
@@ -446,32 +449,38 @@ export class RetainedFrustumCull {
    * and 3 the centre, then as 1.
    */
   private verdict(slot: number): number {
-    const planes = this.planes, spheres = this.spheres, at = slot * 4;
+    const planes = this.planes, planeLengths = this.planeLengths, spheres = this.spheres, at = slot * 4;
     const x = spheres[at]!, y = spheres[at + 1]!, z = spheres[at + 2]!, radius = spheres[at + 3]!;
-    let centreIn = true, sphereOut = false;
-    for (let plane = 0; plane < 24; plane += 4) {
+    const cornerRadius = this.cornerRadii[slot]!;
+    let centreIn = true, sphereOut = false, straddleMask = 0;
+    for (let plane = 0, p = 0; plane < 24; plane += 4, p++) {
       const distance = planes[plane]! * x + planes[plane + 1]! * y + planes[plane + 2]! * z + planes[plane + 3]!;
       if (distance < 0) centreIn = false;
-      if (distance <= -radius) sphereOut = true;
-    }
-    let boxIn = false;
-    if (!sphereOut) {
-      boxIn = true;
-      const corners = this.corners, base = slot * 24, end = base + 24;
-      for (let plane = 0; boxIn && plane < 24; plane += 4) {
-        const nx = planes[plane]!, ny = planes[plane + 1]!, nz = planes[plane + 2]!, d = planes[plane + 3]!;
-        let reached = false;
-        for (let corner = base; corner < end; corner += 3) {
-          if (nx * corners[corner]! + ny * corners[corner + 1]! + nz * corners[corner + 2]! + d >= 0) {
-            reached = true;
-            break;
-          }
-        }
-        boxIn = reached;
+      if (distance <= -radius) {
+        sphereOut = true;
+        // Once the sphere is outside a plane and the centre is outside at least one plane, all 4 strategies reject.
+        if (!centreIn) return ALL_OUT;
       }
+      if (!(distance > cornerRadius * planeLengths[p]!)) straddleMask |= 1 << p;
     }
-    const standard = !sphereOut && boxIn, sphere = !sphereOut;
-    return (standard ? 1 : 0) | (sphere ? 2 : 0) | (centreIn || standard ? 4 : 0) | (centreIn || sphere ? 8 : 0);
+    if (sphereOut) return centreIn ? 12 : ALL_OUT;
+    // Every plane strictly contains all 8 world corners (and therefore the centre too): skip the 48-dot corner test.
+    if (straddleMask === 0) return ALL_IN;
+    let boxIn = true;
+    const corners = this.corners, base = slot * 24, end = base + 24;
+    for (let plane = 0, p = 0; boxIn && plane < 24; plane += 4, p++) {
+      if ((straddleMask & (1 << p)) === 0) continue;
+      const nx = planes[plane]!, ny = planes[plane + 1]!, nz = planes[plane + 2]!, d = planes[plane + 3]!;
+      let reached = false;
+      for (let corner = base; corner < end; corner += 3) {
+        if (nx * corners[corner]! + ny * corners[corner + 1]! + nz * corners[corner + 2]! + d >= 0) {
+          reached = true;
+          break;
+        }
+      }
+      boxIn = reached;
+    }
+    return (boxIn ? 1 : 0) | 2 | (centreIn || boxIn ? 4 : 0) | 8;
   }
 
   /**
@@ -520,10 +529,20 @@ export class RetainedFrustumCull {
     const sphere = info.boundingSphere, centre = sphere.centerWorld, spheres = this.spheres, at = slot * 4;
     spheres[at] = centre.x; spheres[at + 1] = centre.y; spheres[at + 2] = centre.z; spheres[at + 3] = sphere.radiusWorld;
     const box = info.boundingBox, vectors = box.vectorsWorld, corners = this.corners, base = slot * 24;
+    let maxDistSq = 0;
     for (let corner = 0; corner < 8; corner++) {
       const vector = vectors[corner]!, at = base + corner * 3;
-      corners[at] = vector.x; corners[at + 1] = vector.y; corners[at + 2] = vector.z;
+      const vx = vector.x, vy = vector.y, vz = vector.z;
+      corners[at] = vx; corners[at + 1] = vy; corners[at + 2] = vz;
+      const dx = vx - centre.x, dy = vy - centre.y, dz = vz - centre.z;
+      const distSq = dx * dx + dy * dy + dz * dz;
+      if (!(distSq <= maxDistSq)) maxDistSq = distSq;
     }
+    const maxDist = Math.sqrt(maxDistSq);
+    const scale = Math.abs(centre.x) + Math.abs(centre.y) + Math.abs(centre.z) + maxDist;
+    this.cornerRadii[slot] = Number.isFinite(maxDist) && Number.isFinite(scale)
+      ? maxDist * (1 + 1e-9) + 1e-9 * (1 + scale)
+      : Infinity;
     const min = box.minimumWorld, max = box.maximumWorld, boxes = this.boxes, edge = slot * 6;
     boxes[edge] = min.x; boxes[edge + 1] = min.y; boxes[edge + 2] = min.z;
     boxes[edge + 3] = max.x; boxes[edge + 4] = max.y; boxes[edge + 5] = max.z;
@@ -688,17 +707,19 @@ export class RetainedFrustumCull {
 
   private grow(room: number): void {
     const states = new Uint8Array(room), layerMasks = new Int32Array(room), claimed = new Uint32Array(room);
-    const spheres = new Float64Array(room * 4), corners = new Float64Array(room * 24), boxes = new Float64Array(room * 6);
+    const spheres = new Float64Array(room * 4), cornerRadii = new Float64Array(room), corners = new Float64Array(room * 24), boxes = new Float64Array(room * 6);
     states.set(this.states);
     layerMasks.set(this.layerMasks);
     claimed.set(this.claimed);
     spheres.set(this.spheres);
+    cornerRadii.set(this.cornerRadii);
     corners.set(this.corners);
     boxes.set(this.boxes);
     this.states = states;
     this.layerMasks = layerMasks;
     this.claimed = claimed;
     this.spheres = spheres;
+    this.cornerRadii = cornerRadii;
     this.corners = corners;
     this.bounds.boxes = this.boxes = boxes;
   }
@@ -762,6 +783,7 @@ export class RetainedFrustumCull {
     this.states = new Uint8Array(0);
     this.layerMasks = new Int32Array(0);
     this.spheres = new Float64Array(0);
+    this.cornerRadii = new Float64Array(0);
     this.corners = new Float64Array(0);
     this.bounds.boxes = this.boxes = new Float64Array(0);
     this.bounds.slots = this.outputSlots = new Int32Array(0);

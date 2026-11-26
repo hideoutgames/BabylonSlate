@@ -119,11 +119,14 @@ import { projectCustomEasingCurves } from "../lib/custom-easing-curves";
 import type { PostProcessPassPick } from "../components/post-process-pass-list";
 
 const NO_SEARCH_ITEMS: SearchDialogItem[] = [];
+const EMPTY_FOCUS_TARGETS: Array<{ value: string; label: string }> = [];
 const PREFAB_KINDS = ["prefab"] as const;
 const MODEL_KINDS = ["model"] as const;
 
+/** Transform-independent slice of a selected actor that component cards depend on. */
+type ComponentOwner = Pick<SerializedActor, "id" | "classId" | "prefabGuid" | "components">;
 /** One selected actor's component that a component card edits. */
-type ComponentTarget = { owner: SerializedActor; component: SerializedComponent };
+type ComponentTarget = { owner: ComponentOwner; component: SerializedComponent };
 
 export function SceneDetailsPanel(props: IDockviewPanelProps) {
   const { documentId } = useDocumentWorkspace();
@@ -164,26 +167,36 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
   const needle = propertyQuery.trim().toLowerCase();
   // Both sides humanized, so a label typed as shown (`Screen-Space Shadows`) finds itself.
   const humanizedNeedle = needle ? humanizePropertyLabel(needle).toLowerCase() : "";
-  const matches = (label: string) =>
-    !needle || humanizePropertyLabel(label).toLowerCase().includes(humanizedNeedle);
-  const overrideOpen = (id: string) => needle
-    ? !filterCollapsedOverrides.has(id)
-    : expandedOverrides.has(id);
-  const setOverrideOpen = (id: string, open: boolean) => {
-    const update = needle ? setFilterCollapsedOverrides : setExpandedOverrides;
-    update((previous) => {
-      const next = new Set(previous);
-      if (needle ? !open : open) next.add(id);
-      else next.delete(id);
-      return next;
-    });
-  };
-  const filterRows = (rows: PropertyRow[], section = "") =>
-    matches(section)
-      ? rows
-      : rows.filter(
-          (row) => matches(row.label) || matches(row.description ?? ""),
-        );
+  const matches = useCallback(
+    (label: string) =>
+      !needle || humanizePropertyLabel(label).toLowerCase().includes(humanizedNeedle),
+    [humanizedNeedle, needle],
+  );
+  const overrideOpen = useCallback(
+    (id: string) => (needle ? !filterCollapsedOverrides.has(id) : expandedOverrides.has(id)),
+    [expandedOverrides, filterCollapsedOverrides, needle],
+  );
+  const setOverrideOpen = useCallback(
+    (id: string, open: boolean) => {
+      const update = needle ? setFilterCollapsedOverrides : setExpandedOverrides;
+      update((previous) => {
+        const next = new Set(previous);
+        if (needle ? !open : open) next.add(id);
+        else next.delete(id);
+        return next;
+      });
+    },
+    [needle],
+  );
+  const filterRows = useCallback(
+    (rows: PropertyRow[], section = "") =>
+      matches(section)
+        ? rows
+        : rows.filter(
+            (row) => matches(row.label) || matches(row.description ?? ""),
+          ),
+    [matches],
+  );
   const propertySearch = (
     <div className="sticky top-0 z-10 bg-sidebar px-2 py-1">
       <SearchInput
@@ -198,15 +211,18 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
       />
     </div>
   );
-  const noMatchingProperties = (
-    <Empty className="gap-2 p-4">
-      <EmptyHeader>
-        <EmptyTitle>No Matching Properties</EmptyTitle>
-        <EmptyDescription>
-          Try a property or component name, or clear the filter.
-        </EmptyDescription>
-      </EmptyHeader>
-    </Empty>
+  const noMatchingProperties = useMemo(
+    () => (
+      <Empty className="gap-2 p-4">
+        <EmptyHeader>
+          <EmptyTitle>No Matching Properties</EmptyTitle>
+          <EmptyDescription>
+            Try a property or component name, or clear the filter.
+          </EmptyDescription>
+        </EmptyHeader>
+      </Empty>
+    ),
+    [],
   );
   const [addComponentAnchor, setAddComponentAnchor] = useState<{ x: number; y: number } | null>(null);
   const [componentSearch, setComponentSearch] = useState("");
@@ -260,45 +276,66 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
   const collisionLayers =
     projectDocument?.settings.physics?.collisionLayers ??
     DEFAULT_COLLISION_LAYERS;
-  const assetLabel = (guid: string | null | undefined) => {
-    if (!guid) return undefined;
-    return (
-      assetRegistry?.getByGuid?.(guid)?.header.name ??
-      pickerAssets.find((asset) => asset.guid === guid)?.name
-    );
-  };
-  const assetType = (guid: string | null | undefined) => {
-    if (!guid) return undefined;
-    return (
-      assetRegistry?.getByGuid?.(guid)?.header.type ??
-      pickerAssets.find((asset) => asset.guid === guid)?.type
-    );
-  };
-  const fontHasFacetype = (guid: string | null | undefined) => {
-    if (!guid) return false;
-    return fontAssetHasFacetype(
-      assetRegistry?.getByGuid?.(guid)?.header.payload,
-    );
-  };
-  const fontHasMsdfJson = (guid: string | null | undefined) => {
-    if (!guid) return false;
-    return fontAssetHasMsdfJson(
-      assetRegistry?.getByGuid?.(guid)?.header.payload,
-    );
-  };
-  const fontHasMsdfPng = (guid: string | null | undefined) => {
-    if (!guid) return false;
-    return fontAssetHasMsdfPng(
-      assetRegistry?.getByGuid?.(guid)?.header.payload,
-    );
-  };
-  const fontPixelSize = (guid: string | null | undefined) =>
-    textFontPixelSize(guid, projectDocument?.settings.fonts.defaultFontGuid, (target) => assetRegistry?.getByGuid?.(target)?.header.payload);
+  const assetLabel = useCallback(
+    (guid: string | null | undefined) => {
+      if (!guid) return undefined;
+      return (
+        assetRegistry?.getByGuid?.(guid)?.header.name ??
+        pickerAssets.find((asset) => asset.guid === guid)?.name
+      );
+    },
+    [assetRegistry, pickerAssets],
+  );
+  const assetType = useCallback(
+    (guid: string | null | undefined) => {
+      if (!guid) return undefined;
+      return (
+        assetRegistry?.getByGuid?.(guid)?.header.type ??
+        pickerAssets.find((asset) => asset.guid === guid)?.type
+      );
+    },
+    [assetRegistry, pickerAssets],
+  );
+  const fontHasFacetype = useCallback(
+    (guid: string | null | undefined) => {
+      if (!guid) return false;
+      return fontAssetHasFacetype(
+        assetRegistry?.getByGuid?.(guid)?.header.payload,
+      );
+    },
+    [assetRegistry],
+  );
+  const fontHasMsdfJson = useCallback(
+    (guid: string | null | undefined) => {
+      if (!guid) return false;
+      return fontAssetHasMsdfJson(
+        assetRegistry?.getByGuid?.(guid)?.header.payload,
+      );
+    },
+    [assetRegistry],
+  );
+  const fontHasMsdfPng = useCallback(
+    (guid: string | null | undefined) => {
+      if (!guid) return false;
+      return fontAssetHasMsdfPng(
+        assetRegistry?.getByGuid?.(guid)?.header.payload,
+      );
+    },
+    [assetRegistry],
+  );
+  const defaultFontGuid = projectDocument?.settings.fonts.defaultFontGuid;
+  const fontPixelSize = useCallback(
+    (guid: string | null | undefined) =>
+      textFontPixelSize(guid, defaultFontGuid, (target) => assetRegistry?.getByGuid?.(target)?.header.payload),
+    [assetRegistry, defaultFontGuid],
+  );
 
   const doc = useOpenDocument(documentId);
   const scene = isSceneWorkspaceKind(doc?.ref.kind)
     ? (doc.content as SerializedScene)
     : null;
+  const sceneRef = useRef<SerializedScene | null>(scene);
+  sceneRef.current = scene;
   const overlay = doc?.ref.kind === "scene-layer";
   const postProcessEntries = useMemo(
     () => normalizeScenePostProcessStack(scene?.settings.postProcessStack),
@@ -313,35 +350,102 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
   }, [sceneActors]);
   const actorId = selectedActorIds[0] ?? null;
   const actor = actorId ? (actorsById.get(actorId) ?? null) : null;
-  // The primary actor first; a multi-selection shows what they all share.
-  const selectedActors = useMemo(
-    () => selectedActorIds
+  // The primary actor first; stabilized element-by-element so unrelated actor edits keep the same array.
+  const selectedActorsRef = useRef<SerializedActor[]>([]);
+  const selectedActors = useMemo(() => {
+    const next = selectedActorIds
       .map((id) => actorsById.get(id))
-      .filter((entry): entry is SerializedActor => entry !== undefined),
-    [actorsById, selectedActorIds],
-  );
+      .filter((entry): entry is SerializedActor => entry !== undefined);
+    const prev = selectedActorsRef.current;
+    if (prev.length === next.length && prev.every((entry, idx) => entry === next[idx])) {
+      return prev;
+    }
+    selectedActorsRef.current = next;
+    return next;
+  }, [actorsById, selectedActorIds]);
+  // Transform-independent slice of selected actors: stays referentially identical during transform drags.
+  const componentOwnersRef = useRef<ComponentOwner[]>([]);
+  const selectedComponentOwners = useMemo(() => {
+    const prev = componentOwnersRef.current;
+    if (
+      prev.length === selectedActors.length &&
+      prev.every((entry, idx) => {
+        const candidate = selectedActors[idx]!;
+        return (
+          entry.id === candidate.id &&
+          entry.classId === candidate.classId &&
+          entry.prefabGuid === candidate.prefabGuid &&
+          entry.components === candidate.components
+        );
+      })
+    ) {
+      return prev;
+    }
+    const next: ComponentOwner[] = selectedActors.map(({ id, classId, prefabGuid, components }) => ({
+      id,
+      classId,
+      prefabGuid,
+      components,
+    }));
+    componentOwnersRef.current = next;
+    return next;
+  }, [selectedActors]);
+  // Components of any external actor targeted by a selected CableComponent; unchanged by transform moves.
+  const cableTargetComponentsRef = useRef<Map<string, readonly SerializedComponent[]>>(new Map());
+  const cableTargetComponents = useMemo(() => {
+    const next = new Map<string, readonly SerializedComponent[]>();
+    for (const owner of selectedComponentOwners) {
+      for (const component of owner.components) {
+        if (component.classId !== "CableComponent") continue;
+        const targetId = component.properties.targetActorId;
+        if (typeof targetId === "string" && targetId && !next.has(targetId)) {
+          const target = actorsById.get(targetId);
+          if (target) next.set(targetId, target.components);
+        }
+      }
+    }
+    const prev = cableTargetComponentsRef.current;
+    if (prev.size === next.size) {
+      let same = true;
+      for (const [id, comps] of next) {
+        if (prev.get(id) !== comps) {
+          same = false;
+          break;
+        }
+      }
+      if (same) return prev;
+    }
+    cableTargetComponentsRef.current = next;
+    return next;
+  }, [actorsById, selectedComponentOwners]);
   // Kept while the actors' ids and names are unchanged (a transform edit), so what reads it stays put.
   const [selectActorDisplayNames] = useState(createActorDisplayNamesSelector);
   const actorDisplayNames = selectActorDisplayNames(scene);
   const pickingCableTarget = actor?.components.find((component) => component.id === constraintTargetPick?.componentId)?.classId === "CableComponent";
-  const particleParameters = useParticleSystemParameters(
-    particleSystemGuidsOf({ components: selectedActors.flatMap((entry) => entry.components) }),
+  const selectedParticleGuids = useMemo(
+    () => particleSystemGuidsOf({ components: selectedComponentOwners.flatMap((entry) => entry.components) }),
+    [selectedComponentOwners],
   );
+  const particleParameters = useParticleSystemParameters(selectedParticleGuids);
   const classSaveGraphs = useClassGraphs();
-  const inheritedActorTags = useInheritedActorTags(selectedActors.map((entry) => entry.classId));
+  const selectedClassIds = useMemo(
+    () => selectedComponentOwners.map((entry) => entry.classId),
+    [selectedComponentOwners],
+  );
+  const inheritedActorTags = useInheritedActorTags(selectedClassIds);
   // An actor's prefab template: its Prefab asset's when placed from one, else
   // its Class's ancestor-merged components. Cached per Prefab and Class.
   const templateOf = useMemo(() => {
     void registryEpoch; // Registry headers mutate without replacing the registry.
     const cache = new Map<string, SerializedComponent[] | undefined>();
-    const resolve = ({ classId, prefabGuid }: SerializedActor) => {
+    const resolve = ({ classId, prefabGuid }: Pick<SerializedActor, "classId" | "prefabGuid">) => {
       if (prefabGuid) {
         return prefabAssetTemplate({ asset: assetRegistry?.getByGuid(prefabGuid), openDocuments: prefabDocuments });
       }
       if (!Object.hasOwn(classSaveGraphs, classId)) return undefined;
       return mergedPrefabComponentsForClass({ classId, parentOf, graphs: classSaveGraphs }) ?? undefined;
     };
-    return (owner: SerializedActor) => {
+    return (owner: Pick<SerializedActor, "classId" | "prefabGuid">) => {
       const key = prefabTemplateKey(owner);
       if (!cache.has(key)) cache.set(key, resolve(owner));
       return cache.get(key);
@@ -356,24 +460,27 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
   );
 
   // While a multi-selection edit runs, each actor's change lands on this
-  // working copy instead of the Scene this render read.
+  // working copy instead of the Scene this render read. Reading `sceneRef`
+  // keeps edit callbacks referentially stable across transform drags so
+  // memoized component cards stay untouched.
   const workingSceneRef = useRef<SerializedScene | null>(null);
   const changeScene = useCallback(
     (update: (current: SerializedScene) => SerializedScene) => {
       const working = workingSceneRef.current;
       if (working) workingSceneRef.current = update(working);
-      else if (scene) mutate(update(scene));
+      else if (sceneRef.current) mutate(update(sceneRef.current));
     },
-    [mutate, scene],
+    [mutate],
   );
   /** Runs one edit's per-actor changes on one working copy and applies it once: one Scene change, one Undo step. */
   const batchSceneChange = useCallback(
     (apply: () => void) => {
-      if (workingSceneRef.current || !scene) {
+      const currentScene = sceneRef.current;
+      if (workingSceneRef.current || !currentScene) {
         apply();
         return;
       }
-      workingSceneRef.current = scene;
+      workingSceneRef.current = currentScene;
       let next: SerializedScene;
       try {
         apply();
@@ -381,9 +488,9 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
       } finally {
         workingSceneRef.current = null;
       }
-      if (next !== scene) mutate(next);
+      if (next !== currentScene) mutate(next);
     },
-    [mutate, scene],
+    [mutate],
   );
 
   const updateActorById = useCallback(
@@ -400,24 +507,284 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
     },
     [actorId, updateActorById],
   );
+  const editTargets = useCallback(
+    (
+      targets: readonly ComponentTarget[],
+      update: (component: SerializedComponent) => SerializedComponent | null,
+    ) =>
+      batchSceneChange(() => {
+        for (const { owner, component } of targets) {
+          updateActorById(owner.id, (entry) => ({
+            ...entry,
+            components: entry.components.flatMap((candidate) => {
+              if (candidate.id !== component.id) return [candidate];
+              const next = update(candidate);
+              return next ? [next] : [];
+            }),
+          }));
+        }
+      }),
+    [batchSceneChange, updateActorById],
+  );
 
   // Focus Target choices across the Scene, read only by the focus rows of focus-target components
-  // (`isFocusTargetClass`): built once per Scene edit while the selection has one, else not at all.
-  const selectionHasFocusRows = selectedActors.some((entry) => entry.components.some((component) => isFocusTargetClass(component.classId)));
-  const focusTargets = useMemo(
-    () =>
-      scene && selectionHasFocusRows
-        ? scene.actors.flatMap((candidate) =>
-            candidate.components
-              .filter((entry) => isFocusTargetClass(entry.classId))
-              .map((entry, index) => ({
-                value: entry.id,
-                label: `${actorDisplayNames.get(candidate.id) ?? candidate.name} / ${humanizePropertyLabel(entry.classId.replace(/Component$/, ""))} ${index + 1}`,
-              })),
-          )
-        : [],
-    [actorDisplayNames, scene, selectionHasFocusRows],
+  // (`isFocusTargetClass`): stabilized across actor transform edits so component rows stay memoized.
+  const selectionHasFocusRows = useMemo(
+    () => selectedComponentOwners.some((entry) => entry.components.some((component) => isFocusTargetClass(component.classId))),
+    [selectedComponentOwners],
   );
+  const focusTargetsCacheRef = useRef<{
+    actorDisplayNames: ReadonlyMap<string, string>;
+    actors: readonly SerializedActor[];
+    targets: Array<{ value: string; label: string }>;
+  } | null>(null);
+  const focusTargets = useMemo(() => {
+    if (!scene || !selectionHasFocusRows) return EMPTY_FOCUS_TARGETS;
+    const prev = focusTargetsCacheRef.current;
+    if (
+      prev &&
+      prev.actorDisplayNames === actorDisplayNames &&
+      prev.actors.length === scene.actors.length &&
+      prev.actors.every((entry, idx) => entry.id === scene.actors[idx]!.id && entry.components === scene.actors[idx]!.components)
+    ) {
+      return prev.targets;
+    }
+    const targets = scene.actors.flatMap((candidate) =>
+      candidate.components
+        .filter((entry) => isFocusTargetClass(entry.classId))
+        .map((entry, index) => ({
+          value: entry.id,
+          label: `${actorDisplayNames.get(candidate.id) ?? candidate.name} / ${humanizePropertyLabel(entry.classId.replace(/Component$/, ""))} ${index + 1}`,
+        })),
+    );
+    focusTargetsCacheRef.current = { actorDisplayNames, actors: scene.actors, targets };
+    return targets;
+  }, [actorDisplayNames, scene, selectionHasFocusRows]);
+
+  const pixelMatchedCamera = useMemo(
+    () => projectPixelMatchedLens(projectDocument),
+    [projectDocument],
+  );
+  const collisionPresets = projectDocument?.settings.physics?.collisionPresets;
+  const hasScene = scene !== null;
+  const sceneViewportMode = scene?.viewportMode ?? "3d";
+  const scenePhysicsWorld = scene?.settings.physicsWorld ?? "3d";
+  const activeCollapsedComponents = needle ? filterCollapsedComponents : collapsedComponents;
+  const componentDetails = useMemo(() => {
+    void registryEpoch;
+    const primaryOwner = selectedComponentOwners[0];
+    if (!hasScene || !primaryOwner) return [];
+    const isMulti = selectedComponentOwners.length > 1;
+    const ownersById = new Map(selectedComponentOwners.map((entry) => [entry.id, entry] as const));
+    const cardComponents = isMulti
+      ? primaryOwner.components.filter((component, index, all) =>
+          all.findIndex((candidate) => candidate.classId === component.classId) === index &&
+          selectedComponentOwners.every((entry) => entry.components.some((candidate) => candidate.classId === component.classId)))
+      : primaryOwner.components;
+    const componentTargets = (component: SerializedComponent): ComponentTarget[] =>
+      isMulti
+        ? selectedComponentOwners.flatMap((owner) => {
+            const match = owner.components.find((candidate) => candidate.classId === component.classId);
+            return match ? [{ owner, component: match }] : [];
+          })
+        : [{ owner: primaryOwner, component }];
+    const componentContext = (owner: ComponentOwner): ComponentPropertyContext => ({
+      sortingLayers,
+      collisionLayers,
+      collisionPresets,
+      assetLabel,
+      assetType,
+      assetPayload: (guid) => assetRegistry?.getByGuid?.(guid)?.header.payload,
+      modelMaterialSlots: (guid) => normalizeModelPayload(
+        modelDocuments.find((doc) => doc.ref.path === assetRegistry?.getByGuid?.(guid)?.path)?.content
+          ?? assetRegistry?.getByGuid?.(guid)?.header.payload ?? {},
+      ).materialSlots,
+      fontHasFacetype,
+      fontHasMsdfJson,
+      fontHasMsdfPng,
+      fontPixelSize,
+      physicsWorld: scenePhysicsWorld,
+      pixelMatchedCamera,
+      onPickAsset: setAssetPick,
+      materialDomain: (guid) => materialDomains[guid],
+      areaEmissionStatus,
+      actorLabel: (targetId) => actorDisplayNames.get(targetId),
+      actorComponents: (targetId) =>
+        ownersById.get(targetId)?.components
+          ?? cableTargetComponents.get(targetId)
+          ?? sceneRef.current?.actors.find((candidate) => candidate.id === targetId)?.components
+          ?? [],
+      actorVariableNames: () => saveGameVariableNames(owner.classId, classSaveGraphs, parentOf),
+      componentVariableNames: (classId) => saveGameVariableNames(classId, classSaveGraphs, parentOf),
+      sceneLayerClasses,
+      focusTargets,
+      customEasingCurves,
+      onPickActor: (componentId) => setConstraintTargetPick({ actorId: owner.id, componentId }),
+    });
+    const componentRowSets = ({ owner, component }: ComponentTarget) => {
+      const template = component.sourceId
+        ? templateOf(owner)?.find((entry) => entry.id === component.sourceId)
+        : undefined;
+      const updateComponent: ComponentPropertyUpdate = (property, value, alsoSet) => {
+        if (component.classId === "SceneStreamingComponent" && property === "sceneGuid") {
+          const guid = typeof value === "string" ? value : null;
+          updateActorById(owner.id, (entry) => ({ ...entry, components: setSceneStreamingTarget(entry.components, component.id, guid, assetLabel(guid) ?? "") }));
+          return;
+        }
+        updateActorById(owner.id, (entry) => ({
+          ...entry,
+          components: entry.components.map((candidate) =>
+            candidate.id === component.id
+              ? {
+                  ...candidate,
+                  properties: {
+                    ...patchInspectorComponentProperty(
+                      candidate,
+                      property,
+                      value,
+                    ),
+                    ...alsoSet,
+                  },
+                }
+              : candidate,
+          ),
+        }));
+      };
+      const rows = applyPrefabPropertyDefaults(
+        componentPropertyRows(owner.id, component, updateComponent, componentContext(owner)),
+        template,
+      );
+      const colliderRows =
+        component.classId === "ColliderComponent" || component.classId === "SceneStreamingComponent"
+          ? spatialTransformPropertyRows(
+              `${owner.id}-${component.id}`,
+              sceneViewportMode,
+              component.transform ?? identitySerializedTransform(),
+              (transform) =>
+                updateActorById(owner.id, (entry) => ({
+                  ...entry,
+                  components: entry.components.map((candidate) =>
+                    candidate.id === component.id
+                      ? { ...candidate, transform }
+                      : candidate,
+                  ),
+                })),
+              {
+                defaults: template?.transform,
+                scaleLink: linkedScale.link(scaleLinkKey.actorComponent(owner.id, component.id)),
+              },
+            )
+          : [];
+      const parameterRows = component.classId === "ParticleComponent"
+        ? particleParameterOverrideRows(owner.id, component,
+          particleParameters.get(String(component.properties.particleSystemGuid ?? "")) ?? [], updateComponent)
+        : [];
+      return { template, rows, colliderRows, parameterRows };
+    };
+    const mergeTargetRows = (targets: readonly ComponentTarget[], sets: readonly PropertyRow[][]) => {
+      const card = `${targets[0]!.owner.id}-${targets[0]!.component.id}-`;
+      return mergePropertyRows(
+        sets.map((rows, index) => {
+          const own = `${targets[index]!.owner.id}-${targets[index]!.component.id}-`;
+          return own === card ? rows : rows.map((row) => row.id.startsWith(own) ? { ...row, id: card + row.id.slice(own.length) } : row);
+        }),
+        { batch: batchSceneChange },
+      );
+    };
+    return cardComponents
+      .map((component) => {
+        const index = primaryOwner.components.indexOf(component);
+        const targets = componentTargets(component);
+        const sets = targets.map(componentRowSets);
+        const labels = targets.map((target) => prefabComponentLabelParts(target.component, assetLabel));
+        const nameParts = {
+          name: labels.every((parts) => parts.name === labels[0]!.name)
+            ? labels[0]!.name
+            : prefabComponentLabelParts({ classId: component.classId }).name,
+          ...(labels.every((parts) => parts.detail === labels[0]!.detail) && labels[0]!.detail
+            ? { detail: labels[0]!.detail }
+            : {}),
+        };
+        const title = nameParts.detail ? `${nameParts.name} ${nameParts.detail}` : nameParts.name;
+        const extraLabels = component.classId === "2DDropdownComponent" ? "Options Items Select Dropdown" :
+          component.classId === "NavMeshComponent"
+            ? "Bake NavMesh"
+            : component.classId === "2DRichTextComponent"
+              ? "Text Appear Modes Fade Scale Slide Instant Off"
+            : [
+                  "Text3DComponent",
+                  "2DTextComponent",
+                ].includes(component.classId)
+              ? "Text"
+              : component.classId === "2DPanelComponent"
+                ? "Nine Slice"
+                : component.classId === "RenderTargetCaptureComponent"
+                  ? "Capture Actors"
+                  : component.classId === "RagdollComponent"
+                    ? "Bone Names"
+                    : "";
+        return {
+          component,
+          template: sets[0]!.template,
+          index,
+          title,
+          nameParts,
+          editComponent: (update: (candidate: SerializedComponent) => SerializedComponent) => editTargets(targets, update),
+          removeComponent: () => editTargets(targets, () => null),
+          rows: filterRows(mergeTargetRows(targets, sets.map((set) => set.rows)), title),
+          colliderRows: filterRows(mergeTargetRows(targets, sets.map((set) => set.colliderRows)), `${title} Transform`),
+          parameterRows: filterRows(mergeTargetRows(targets, sets.map((set) => set.parameterRows)), `${title} Parameters`),
+          // Class extras edit one component's own data, so a multi-selection leaves them out.
+          showExtras: !isMulti &&
+            (matches(title) || Boolean(extraLabels && matches(extraLabels))),
+          expanded: !activeCollapsedComponents.has(`${primaryOwner.id}:${component.id}`),
+        };
+      })
+      .filter(
+        (entry) =>
+          matches(entry.title) ||
+          entry.rows.length ||
+          entry.colliderRows.length ||
+          entry.parameterRows.length ||
+          entry.showExtras,
+      );
+  }, [
+    selectedComponentOwners,
+    hasScene,
+    sortingLayers,
+    collisionLayers,
+    collisionPresets,
+    assetLabel,
+    assetType,
+    assetRegistry,
+    registryEpoch,
+    modelDocuments,
+    fontHasFacetype,
+    fontHasMsdfJson,
+    fontHasMsdfPng,
+    fontPixelSize,
+    scenePhysicsWorld,
+    sceneViewportMode,
+    pixelMatchedCamera,
+    materialDomains,
+    areaEmissionStatus,
+    actorDisplayNames,
+    cableTargetComponents,
+    classSaveGraphs,
+    parentOf,
+    sceneLayerClasses,
+    focusTargets,
+    customEasingCurves,
+    templateOf,
+    updateActorById,
+    linkedScale,
+    particleParameters,
+    batchSceneChange,
+    editTargets,
+    filterRows,
+    matches,
+    activeCollapsedComponents,
+  ]);
 
   // The constraint / cable target list covers every actor, so it is built only
   // while its picker is open; closed, the picker keeps the last list so it
@@ -612,202 +979,18 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
 
   const visibleTransformRows = filterRows(transformRows, "Actor Transform");
 
-  const componentContext = (owner: SerializedActor): ComponentPropertyContext => ({
-    sortingLayers,
-    collisionLayers,
-    collisionPresets: projectDocument?.settings.physics?.collisionPresets,
-    assetLabel,
-    assetType,
-    assetPayload: (guid) => assetRegistry?.getByGuid?.(guid)?.header.payload,
-    modelMaterialSlots: (guid) => normalizeModelPayload(
-      modelDocuments.find((doc) => doc.ref.path === assetRegistry?.getByGuid?.(guid)?.path)?.content
-        ?? assetRegistry?.getByGuid?.(guid)?.header.payload ?? {},
-    ).materialSlots,
-    fontHasFacetype,
-    fontHasMsdfJson,
-    fontHasMsdfPng,
-    fontPixelSize,
-    physicsWorld: scene.settings.physicsWorld,
-    pixelMatchedCamera: projectPixelMatchedLens(projectDocument),
-    onPickAsset: setAssetPick,
-    materialDomain: (guid) => materialDomains[guid],
-    areaEmissionStatus,
-    actorLabel: (targetId) => actorDisplayNames.get(targetId),
-    actorComponents: (targetId) => scene.actors.find((candidate) => candidate.id === targetId)?.components ?? [],
-    actorVariableNames: () => saveGameVariableNames(owner.classId, classSaveGraphs, parentOf),
-    componentVariableNames: (classId) => saveGameVariableNames(classId, classSaveGraphs, parentOf),
-    sceneLayerClasses,
-    focusTargets,
-    customEasingCurves,
-    onPickActor: (componentId) => setConstraintTargetPick({ actorId: owner.id, componentId }),
-  });
-  /** One actor's rows for one of its components, built as a single selection builds them. */
-  const componentRowSets = ({ owner, component }: ComponentTarget) => {
-    const template = component.sourceId
-      ? templateOf(owner)?.find((entry) => entry.id === component.sourceId)
-      : undefined;
-    const updateComponent: ComponentPropertyUpdate = (property, value, alsoSet) => {
-      if (component.classId === "SceneStreamingComponent" && property === "sceneGuid") {
-        const guid = typeof value === "string" ? value : null;
-        updateActorById(owner.id, (entry) => ({ ...entry, components: setSceneStreamingTarget(entry.components, component.id, guid, assetLabel(guid) ?? "") }));
-        return;
-      }
-      updateActorById(owner.id, (entry) => ({
-        ...entry,
-        components: entry.components.map((candidate) =>
-          candidate.id === component.id
-            ? {
-                ...candidate,
-                properties: {
-                  ...patchInspectorComponentProperty(
-                    candidate,
-                    property,
-                    value,
-                  ),
-                  ...alsoSet,
-                },
-              }
-            : candidate,
-        ),
-      }));
-    };
-    const rows = applyPrefabPropertyDefaults(
-      componentPropertyRows(owner.id, component, updateComponent, componentContext(owner)),
-      template,
-    );
-    const colliderRows =
-      component.classId === "ColliderComponent" || component.classId === "SceneStreamingComponent"
-        ? spatialTransformPropertyRows(
-            `${owner.id}-${component.id}`,
-            scene.viewportMode,
-            component.transform ?? identitySerializedTransform(),
-            (transform) =>
-              updateActorById(owner.id, (entry) => ({
-                ...entry,
-                components: entry.components.map((candidate) =>
-                  candidate.id === component.id
-                    ? { ...candidate, transform }
-                    : candidate,
-                ),
-              })),
-            {
-              defaults: template?.transform,
-              scaleLink: linkedScale.link(scaleLinkKey.actorComponent(owner.id, component.id)),
-            },
-          )
-        : [];
-    const parameterRows = component.classId === "ParticleComponent"
-      ? particleParameterOverrideRows(owner.id, component,
-        particleParameters.get(String(component.properties.particleSystemGuid ?? "")) ?? [], updateComponent)
-      : [];
-    return { template, rows, colliderRows, parameterRows };
-  };
-  // A multi-selection shows one card per component class every selected actor
-  // has; it edits the first component of that class on each actor.
-  const cardComponents = multiSelection
-    ? actor.components.filter((component, index, all) =>
-        all.findIndex((candidate) => candidate.classId === component.classId) === index &&
-        selectedActors.every((entry) => entry.components.some((candidate) => candidate.classId === component.classId)))
-    : actor.components;
   const componentTargets = (component: SerializedComponent): ComponentTarget[] =>
     multiSelection
-      ? selectedActors.flatMap((owner) => {
+      ? selectedComponentOwners.flatMap((owner) => {
           const match = owner.components.find((candidate) => candidate.classId === component.classId);
           return match ? [{ owner, component: match }] : [];
         })
-      : [{ owner: actor, component }];
+      : [{ owner: selectedComponentOwners[0] ?? actor, component }];
   /** The components an edit from the card of the primary actor's `componentId` changes. */
   const pickTargets = (componentId: string): ComponentTarget[] => {
     const component = actor.components.find((candidate) => candidate.id === componentId);
     return component ? componentTargets(component) : [];
   };
-  /** Changes or (with null) removes the card's component on every target, as one Scene change. */
-  const editTargets = (
-    targets: readonly ComponentTarget[],
-    update: (component: SerializedComponent) => SerializedComponent | null,
-  ) =>
-    batchSceneChange(() => {
-      for (const { owner, component } of targets) {
-        updateActorById(owner.id, (entry) => ({
-          ...entry,
-          components: entry.components.flatMap((candidate) => {
-            if (candidate.id !== component.id) return [candidate];
-            const next = update(candidate);
-            return next ? [next] : [];
-          }),
-        }));
-      }
-    });
-  const mergeTargetRows = (targets: readonly ComponentTarget[], sets: readonly PropertyRow[][]) => {
-    const card = `${targets[0]!.owner.id}-${targets[0]!.component.id}-`;
-    // Rows match by their id after the actor and component part, kept as the card's.
-    return mergePropertyRows(
-      sets.map((rows, index) => {
-        const own = `${targets[index]!.owner.id}-${targets[index]!.component.id}-`;
-        return own === card ? rows : rows.map((row) => row.id.startsWith(own) ? { ...row, id: card + row.id.slice(own.length) } : row);
-      }),
-      { batch: batchSceneChange },
-    );
-  };
-  const componentDetails = cardComponents
-    .map((component) => {
-      const index = actor.components.indexOf(component);
-      const targets = componentTargets(component);
-      const sets = targets.map(componentRowSets);
-      // A shared card names the class unless every component has the same name.
-      const labels = targets.map((target) => prefabComponentLabelParts(target.component, assetLabel));
-      const nameParts = {
-        name: labels.every((parts) => parts.name === labels[0]!.name)
-          ? labels[0]!.name
-          : prefabComponentLabelParts({ classId: component.classId }).name,
-        ...(labels.every((parts) => parts.detail === labels[0]!.detail) && labels[0]!.detail
-          ? { detail: labels[0]!.detail }
-          : {}),
-      };
-      const title = nameParts.detail ? `${nameParts.name} ${nameParts.detail}` : nameParts.name;
-      const extraLabels = component.classId === "2DDropdownComponent" ? "Options Items Select Dropdown" :
-        component.classId === "NavMeshComponent"
-          ? "Bake NavMesh"
-          : component.classId === "2DRichTextComponent"
-            ? "Text Appear Modes Fade Scale Slide Instant Off"
-          : [
-                "Text3DComponent",
-                "2DTextComponent",
-              ].includes(component.classId)
-            ? "Text"
-            : component.classId === "2DPanelComponent"
-              ? "Nine Slice"
-              : component.classId === "RenderTargetCaptureComponent"
-                ? "Capture Actors"
-                : component.classId === "RagdollComponent"
-                  ? "Bone Names"
-                  : "";
-      return {
-        component,
-        template: sets[0]!.template,
-        index,
-        title,
-        nameParts,
-        targets,
-        rows: filterRows(mergeTargetRows(targets, sets.map((set) => set.rows)), title),
-        colliderRows: filterRows(mergeTargetRows(targets, sets.map((set) => set.colliderRows)), `${title} Transform`),
-        parameterRows: filterRows(mergeTargetRows(targets, sets.map((set) => set.parameterRows)), `${title} Parameters`),
-        // Class extras edit one component's own data, so a multi-selection leaves them out.
-        showExtras: !multiSelection &&
-          (matches(title) || Boolean(extraLabels && matches(extraLabels))),
-        expanded: !(
-          needle ? filterCollapsedComponents : collapsedComponents
-        ).has(`${actor.id}:${component.id}`),
-      };
-    })
-    .filter(
-      (entry) =>
-        matches(entry.title) ||
-        entry.rows.length ||
-        entry.colliderRows.length ||
-        entry.parameterRows.length ||
-        entry.showExtras,
-    );
   const componentNeedle = componentSearch.trim().toLowerCase();
   const shownComponentDetails = componentNeedle
     ? componentDetails.filter(({ title }) => title.toLowerCase().includes(componentNeedle))
@@ -859,17 +1042,25 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
             No Matching Components
           </p>
         ) : null}
-        {shownComponentDetails.map(({ targets, ...detail }) => (
+        {shownComponentDetails.map(({ editComponent, removeComponent, ...detail }) => (
           <SceneComponentCard
             key={detail.component.id}
             {...detail}
-            actor={actor}
-            scene={scene}
+            actorId={actor.id}
+            actorLocked={actor.locked}
+            actorComponents={actor.components}
+            captureActors={
+              detail.showExtras &&
+              detail.component.classId === "RenderTargetCaptureComponent" &&
+              detail.component.properties.captureOnlyActors === true
+                ? scene.actors
+                : undefined
+            }
             parentOf={parentOf}
             updateActor={updateActor}
-            editComponent={(update) => editTargets(targets, update)}
-            removeComponent={() => editTargets(targets, () => null)}
-            renamingComponentKey={renamingComponentKey}
+            editComponent={editComponent}
+            removeComponent={removeComponent}
+            renaming={renamingComponentKey === `${actor.id}:${detail.component.id}`}
             setRenamingComponentKey={setRenamingComponentKey}
             setCollapsedKeys={needle ? setFilterCollapsedComponents : setCollapsedComponents}
             shapeEditable={!multiSelection && shapeComponents.includes(detail.component)}
