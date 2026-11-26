@@ -588,6 +588,10 @@ describe("Play createEngine view", () => {
         await play.assign(2);
         play.handle.applyCommand({ type: "sceneLoading", sceneAssetGuid: "second", sceneLoadId: 2 });
         await play.assign(3);
+        // Give slot 3 a distinct shader variant so warm-up compiles both slots independently.
+        for (const part of visualMeshes(play.handle.scene.getMeshByName("actor-3")!)) {
+          part.receiveShadows = !part.receiveShadows;
+        }
         // Its lights and their shadow maps are final only once the load warms up.
         expect([play.phases(2), play.phases(3)]).toEqual([[], []]);
         play.enter("warm-up");

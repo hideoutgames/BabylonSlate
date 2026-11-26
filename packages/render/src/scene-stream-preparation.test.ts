@@ -124,11 +124,14 @@ describe("streamed render resource preparation", () => {
 
   it("keeps assignment validation linear while preparing a batch of mesh consumers", async () => {
     const f = fixture();
+    f.compile.mockRestore();
+    const compile = vi.spyOn(StandardMaterial.prototype, "forceCompilationAsync").mockResolvedValue();
     const slots = Array.from({ length: 64 }, (_, index) => index + 1);
     for (const slot of slots) {
       if (slot !== 1) {
         const root = MeshBuilder.CreateBox(`streamed-${slot}`, {}, f.scene);
-        root.material = f.material;
+        // Distinct Materials so each streamed consumer compiles its own shader unit.
+        root.material = new StandardMaterial(`streamed-mat-${slot}`, f.scene);
         f.binding.meshes.set(slot, root);
         f.binding.meshSorting.set(slot, { actorGuid: `streamed-${slot}` });
       }
@@ -136,7 +139,7 @@ describe("streamed render resource preparation", () => {
     }
     const assignmentReads = vi.spyOn(f.binding.meshSorting, "get");
     await prepareSceneStream(f.scene, f.binding, slots, f.options);
-    expect(f.compile).toHaveBeenCalledTimes(slots.length);
+    expect(compile).toHaveBeenCalledTimes(slots.length);
     // Count work rather than elapsed time: rescanning all slots at every native
     // completion would exceed this generous linear budget even on a fast host.
     expect(assignmentReads.mock.calls.length).toBeLessThanOrEqual(slots.length * 16);
