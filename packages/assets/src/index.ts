@@ -17,6 +17,7 @@ export * from "./class-asset-refs";
 export * from "./data-asset-refs";
 export * from "./content-root";
 export * from "./decode-source-rgba";
+export * from "./raw-rgba-texture";
 export * from "./derived-data";
 export * from "./encode-queue";
 export * from "./encode-worker-protocol";

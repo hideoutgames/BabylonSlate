@@ -221,4 +221,24 @@ describe("runSceneViewportBlockingLoad", () => {
     expect(presentFirstFrame).not.toHaveBeenCalled();
     expect(onProgress).toHaveBeenCalledTimes(progressCount);
   });
+
+  it("skips the redundant initial paint barrier when dialogAlreadyPainted is true", async () => {
+    let now = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => now);
+    const collect = vi.fn(async () => { now += 50; });
+    const presentFirstFrame = vi.fn(async () => undefined);
+    await runSceneViewportBlockingLoad({
+      signal: new AbortController().signal,
+      dialogAlreadyPainted: true,
+      collect,
+      realize: () => undefined,
+      whenModelsReady: async () => undefined,
+      warmShaders: async () => undefined,
+      presentFirstFrame,
+      onProgress: () => {},
+    });
+    expect(collect).toHaveBeenCalledOnce();
+    expect(presentFirstFrame).toHaveBeenCalledOnce();
+    expect(frames).toEqual([]);
+  });
 });

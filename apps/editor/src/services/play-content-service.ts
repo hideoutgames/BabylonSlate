@@ -19,10 +19,10 @@ import {
   type AnimGraphDocumentKind,
 } from "@haptic/core";
 import {
-  decodeSourceToRgba,
   mapBounded,
   normalizeModelPayload,
   refreshStaleTilemaps,
+  type EditorTextureLod,
   type IndexedAsset,
   type ModelPayload,
   type SpriteAnimationPayload,
@@ -44,7 +44,10 @@ import {
 } from "../lib/owned-actor-gets";
 import { projectTimelineClips } from "../lib/timeline-asset-index";
 import { timelineGraphDiagnostics, timelineScriptAssets, timelineScriptClassIds, timelineScriptSymbols } from "../lib/timeline-script-catalog";
-import { encodeRgbaPng } from "@haptic/render/png-encode";
+import {
+  downsampleTextureToRawRgba,
+  supportsWorkerTextureDownsample,
+} from "../lib/texture-downsample-client";
 import type { Diagnostic } from "@haptic/scripting";
 import {
   materializeMaterialInstances,
@@ -788,9 +791,13 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
     extraGuids: readonly string[] = [],
     spriteAnimations?: ReadonlyMap<string, SpriteAnimationPayload>,
     includeMaterialParameterTextures = false,
+    editorLodOverride?: EditorTextureLod | null,
   ): Promise<Map<string, Uint8Array>> => {
     const assets = projectService.registry?.list() ?? [];
-    const settings = await createAppSettingsStore().load();
+    const editorLod: EditorTextureLod = editorLodOverride ?? await createAppSettingsStore().load().then((settings) => ({
+      enabled: settings.editorTextureLodEnabled,
+      quality: settings.editorTextureLodQuality,
+    }));
     const guids = [
       ...textureGuidsFromPlayPayloads(sprites, tilesets, spriteAnimations),
       ...extraGuids,
@@ -805,14 +812,10 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
         : undefined,
       readChunk: (path, chunkId) =>
         readAssetChunk(path, chunkId),
-      editorLod: {
-        enabled: settings.editorTextureLodEnabled,
-        quality: settings.editorTextureLodQuality,
-      },
-      downsampleSource: async (bytes, targetEdge) => {
-        const decoded = await decodeSourceToRgba(bytes, targetEdge);
-        return encodeRgbaPng(decoded.width, decoded.height, decoded.rgba);
-      },
+      editorLod,
+      downsampleConcurrency: supportsWorkerTextureDownsample() ? 4 : 1,
+      downsampleSourceCached: (bytes, targetEdge, cacheKey) =>
+        downsampleTextureToRawRgba(bytes, targetEdge, cacheKey),
       onMissingKtx2: (guid) => {
         void projectService.retryTextureEncoding(guid).catch((error: unknown) =>
           console.warn(`[play] Texture ${guid} could not be queued for KTX2 encoding`, error));

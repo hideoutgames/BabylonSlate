@@ -67,6 +67,8 @@ export interface EditorSceneLoadOptions {
   /** Project asset guid of the loaded Scene document. */
   sceneAssetGuid?: string;
   onProgress?: (progress: number) => void;
+  /** Cooperative slice time budget in ms for chunked realization (defaults to 8 ms). */
+  budgetMs?: number;
 }
 
 export interface EngineHandle {

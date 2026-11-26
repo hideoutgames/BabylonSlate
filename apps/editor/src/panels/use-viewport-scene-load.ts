@@ -25,6 +25,7 @@ import {
   environmentTextureGuidsFromScenes,
   postProcessTextureGuidsFromScenes,
   materialInstanceTextureGuidsFromScenes,
+  textureGuidsFromPlayPayloads,
 } from "../lib/play-content";
 import { fontMsdfMapsFromPairs, fontGuidsForSceneRepresentation } from "../lib/play-fonts";
 import { savedMaterialLibraryKey } from "../lib/material-asset-revision";
@@ -313,21 +314,49 @@ export function useViewportSceneLoad({
           ...bitmapFonts,
           ...fontGuidsForSceneRepresentation([scene], fontSources, "msdf", projectDocument?.settings.fonts.defaultFontGuid),
         ]);
-        // Independent collectors read at once; Materials wait for the Model payloads and Waters that name
-        // them, and Textures for the Sprites, Tilesets and Materials that sample them. Each is awaited in the
-        // order a serial pass ran them, so its first failure is the one reported.
+        // Independent collectors read at once. When no open Model or Water tab can introduce
+        // unindexed references, Materials and Textures start immediately at t=0 from the
+        // transitive `required` header closure instead of waiting behind a 3-deep waterfall.
         const started = <T,>(work: Promise<T>): Promise<T> => { work.catch(() => undefined); return work; };
+        const openDocs = getOpenDocuments();
+        const hasOpenModelOrWater = openDocs.some(
+          (doc) => doc.ref.kind === "model" || doc.ref.kind === "water",
+        );
+        const editorLod = {
+          enabled: editorTextureLodEnabled,
+          quality: editorTextureLodQuality,
+        };
+        const catalogByGuid = new Map(catalog.map((asset) => [asset.header.guid, asset] as const));
+        const requiredMaterialGuids: string[] = [];
+        const prefetchedTextureGuids: string[] = [];
+        for (const guid of required) {
+          const asset = catalogByGuid.get(guid);
+          if (!asset) continue;
+          if (asset.header.type === "Material" || asset.header.type === "MaterialInstance") {
+            requiredMaterialGuids.push(guid);
+          } else if (asset.header.type === "Texture") {
+            prefetchedTextureGuids.push(guid);
+          }
+        }
+        const prefetchedTextureSet = new Set(prefetchedTextureGuids);
         const spritesWork = started(collectPlaySpritePayloads(scene));
         const tileContentWork = started(collectPlayTilemapContent(scene));
         const watersWork = started(collectPlayWaterContent(required));
         const renderTargetsWork = started(collectPlayRenderTargets(required));
         const modelBytesWork = started(collectPlayModelBytes(scene, [], required));
         const modelPayloadsWork = started(collectPlayModelPayloads(scene));
-        const materialsWork = started(Promise.all([modelPayloadsWork, watersWork]).then(([payloads, waterContent]) => collectPlayMaterialLibrary(
-          scene,
-          [],
-          [...modelSlotMaterialGuidsFromPayloads(payloads), ...[...waterContent.values()].flatMap((water) => water.materialGuid ? [water.materialGuid] : [])],
-        )));
+        const materialsWork = started(
+          !hasOpenModelOrWater
+            ? collectPlayMaterialLibrary(scene, [], requiredMaterialGuids)
+            : Promise.all([modelPayloadsWork, watersWork]).then(([payloads, waterContent]) => collectPlayMaterialLibrary(
+                scene,
+                [],
+                [...modelSlotMaterialGuidsFromPayloads(payloads), ...[...waterContent.values()].flatMap((water) => water.materialGuid ? [water.materialGuid] : [])],
+              )),
+        );
+        const prefetchedTexturesWork = prefetchedTextureGuids.length > 0
+          ? started(collectPlayTextureBytes(new Map(), new Map(), prefetchedTextureGuids, undefined, false, editorLod))
+          : null;
         const texturesWork = started(Promise.all([spritesWork, tileContentWork, materialsWork]).then(async ([spritePayloads, tiles, materialLibrary]) => {
           const extraTextureGuids = [
             ...environmentTextureGuidsFromScenes([scene]),
@@ -338,8 +367,25 @@ export function useViewportSceneLoad({
             ...overlayTextureGuidsFromScene(scene),
             ...(JSON.parse(effectsAssetGuidsKey) as string[]),
           ];
+          let bytes: Map<string, Uint8Array>;
+          if (prefetchedTexturesWork) {
+            const prefetched = await prefetchedTexturesWork;
+            const wantedFromPayloads = new Set<string>([
+              ...textureGuidsFromPlayPayloads(spritePayloads, tiles.tilesets),
+              ...extraTextureGuids,
+            ]);
+            const missing = [...wantedFromPayloads].filter((guid) => guid && !prefetchedTextureSet.has(guid));
+            if (missing.length === 0) {
+              bytes = prefetched;
+            } else {
+              const extra = await collectPlayTextureBytes(new Map(), new Map(), missing, undefined, false, editorLod);
+              bytes = new Map([...prefetched, ...extra]);
+            }
+          } else {
+            bytes = await collectPlayTextureBytes(spritePayloads, tiles.tilesets, extraTextureGuids, undefined, false, editorLod);
+          }
           return {
-            bytes: await collectPlayTextureBytes(spritePayloads, tiles.tilesets, extraTextureGuids),
+            bytes,
             pixelSizes: collectPlayTexturePixelSizes(spritePayloads, tiles.tilesets, extraTextureGuids),
           };
         }));
@@ -403,6 +449,7 @@ export function useViewportSceneLoad({
             assets,
             materialDocuments: materials.documents,
             materialFunctions: materials.functions,
+            budgetMs: 24,
             onProgress: (progress) => {
               if (isCurrent()) setSceneLoad({ open: true, progress: 20 + 25 * progress, phase: "Realizing Scene", rendering });
             },
@@ -430,6 +477,7 @@ export function useViewportSceneLoad({
           setSceneLoad({ open: true, progress: 0, phase: "Preparing Scene", rendering });
           await runSceneViewportBlockingLoad({
             signal: controller.signal,
+            dialogAlreadyPainted: remount,
             realize,
             collect: applyCollectedAssets,
             whenModelsReady: async () => {
@@ -515,6 +563,8 @@ export function useViewportSceneLoad({
     materialLibraryKey,
     areaEmissionKey,
     textureLodKey,
+    editorTextureLodEnabled,
+    editorTextureLodQuality,
     effectsAssetGuidsKey,
     collectPlaySpritePayloads,
     collectPlayWaterContent,

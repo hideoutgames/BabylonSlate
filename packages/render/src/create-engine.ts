@@ -1853,7 +1853,7 @@ function initializeEngine(
     appliedPostProcessKey = undefined;
     postProcessStack = normalizePostProcessStack(sceneData.settings.postProcessStack);
     try {
-      await editorSync.applyAsync(sceneData, { signal: load.signal, assets, onProgress: load.onProgress });
+      await editorSync.applyAsync(sceneData, { signal: load.signal, assets, onProgress: load.onProgress, budgetMs: load.budgetMs });
       load.signal.throwIfAborted();
       assertCurrent(generation);
     } catch (error) {
@@ -4202,7 +4202,7 @@ function initializeEngine(
           lastProgress = now;
         }
         previous = key;
-        await new Promise((resolve) => setTimeout(resolve, 16));
+        await waitForSceneTextureProgress(scope.target);
       }
       scope.assert();
     },
@@ -4333,6 +4333,37 @@ export function syncEditorPlayState(
     handle.resize();
     handle.scheduler.invalidate("play");
   }
+}
+
+/** Wait until any unready texture settles or a short fallback tick elapses (for RGBD/BRDF post-process decodes). */
+function waitForSceneTextureProgress(scene: Scene): Promise<void> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const cleanups: Array<() => void> = [];
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      for (const cleanup of cleanups) cleanup();
+      cleanups.length = 0;
+      resolve();
+    };
+    const timer = setTimeout(finish, 32);
+    const watch = (texture: BaseTexture) => {
+      if (texture.isRenderTarget || texture.isReady()) return;
+      const withLoad = texture as BaseTexture & { onLoadObservable?: BaseTexture["onDisposeObservable"] };
+      if (withLoad.onLoadObservable) {
+        const loadObs = withLoad.onLoadObservable.addOnce(finish);
+        if (loadObs) cleanups.push(() => loadObs.remove(true));
+      }
+      const disposeObs = texture.onDisposeObservable.addOnce(finish);
+      if (disposeObs) cleanups.push(() => disposeObs.remove(true));
+    };
+    for (const texture of scene.textures) watch(texture);
+    for (const material of scene.materials) {
+      for (const texture of material.getActiveTextures()) watch(texture);
+    }
+  });
 }
 
 /** Texture work the first frame still waits on, named for loading diagnostics. */

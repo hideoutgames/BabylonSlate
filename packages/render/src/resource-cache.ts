@@ -1,9 +1,10 @@
-import { installedAssetHeader, installedEnvironmentInfo, environmentTextureContainer, readEnvironmentTextureInfo, isKtx2Bytes, sniffImageSize, sniffKtx2Size } from "@haptic/assets";
+import { installedAssetHeader, installedEnvironmentInfo, environmentTextureContainer, readEnvironmentTextureInfo, isKtx2Bytes, RAW_RGBA_TEXTURE_HEADER_BYTES, readRawRgbaTextureHeader, sniffImageSize, sniffKtx2Size } from "@haptic/assets";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
 import type { Scene } from "@babylonjs/core/scene";
 import type { MaterialTextureFilter } from "@haptic/shader-graph";
 import { CubeTexture, type ICubeTextureCreationOptions } from "@babylonjs/core/Materials/Textures/cubeTexture";
+import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { Constants } from "@babylonjs/core/Engines/constants";
 import { InternalTextureSource, type InternalTexture } from "@babylonjs/core/Materials/Textures/internalTexture";
@@ -174,6 +175,8 @@ function textureSourceSize(bytes: Uint8Array): TextureSourceSize | null {
     const header = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     return { ...ktx2, ktx2MipLevels: Math.max(1, header.getUint32(40, true)) };
   }
+  const rawRgba = readRawRgbaTextureHeader(bytes);
+  if (rawRgba) return rawRgba;
   return ktx2 ?? sniffImageSize(bytes);
 }
 
@@ -687,9 +690,10 @@ export class ResourceCache {
     const uploadKey = uploadSamplingKey(options);
     const ktx2 = ktx2LoaderHints(bytes);
     const raw = asUint8Array(bytes);
-    // Babylon decodes a 2D KTX2 from the buffer it is given and never fetches its URL; every other upload (a cube, a
-    // Blob input, an image, whose loader fetches the URL and never reads a buffer) loads from the entry's Blob.
-    const fromBuffer = !options.isCube && raw !== null && ktx2.mimeType !== undefined;
+    const rawRgba = !options.isCube && raw !== null ? readRawRgbaTextureHeader(raw) : null;
+    // Babylon decodes a 2D KTX2 from the buffer it is given and never fetches its URL; raw RGBA uploads
+    // directly through RawTexture without any Blob URL or PNG decode. Every other upload loads from Blob.
+    const fromBuffer = !options.isCube && raw !== null && (ktx2.mimeType !== undefined || rawRgba !== null);
     const blobUrl = this.uploadUrl(entry, uploadKey, fromBuffer ? null : bytes);
     // Babylon 9.29 uploads a block-compressed KTX2 without invertY (it sets
     // no UNPACK_FLIP_Y) and, unlike KTX1 and .basis,
@@ -709,6 +713,25 @@ export class ResourceCache {
           prefiltered: !!environment,
           createPolynomials: !!environment,
         }, preparation)
+      : rawRgba && raw !== null
+        ? (() => {
+            const rawTex = new RawTexture(
+              raw.subarray(RAW_RGBA_TEXTURE_HEADER_BYTES),
+              rawRgba.width,
+              rawRgba.height,
+              Constants.TEXTUREFORMAT_RGBA,
+              engine,
+              !(options.noMipmap ?? false),
+              options.invertY !== false,
+              options.samplingMode ?? Texture.TRILINEAR_SAMPLINGMODE,
+              Constants.TEXTURETYPE_UNSIGNED_BYTE,
+              undefined,
+              false,
+            );
+            rawTex.name = blobUrl;
+            rawTex.url = blobUrl;
+            return rawTex;
+          })()
       : new Texture(blobUrl, engine, {
           noMipmap: options.noMipmap ?? false,
           invertY: options.invertY !== false && !flipV,

@@ -89,6 +89,8 @@ export async function runSceneViewportBlockingLoad(options: {
   warmShaders: (onCount: (count: SceneLoadCount) => void) => Promise<void>;
   presentFirstFrame: () => Promise<void>;
   onProgress: (value: number, phase: SceneViewportLoadPhase, count?: SceneLoadCount) => void;
+  /** True when the caller already painted the loading modal (e.g. remount in useViewportEngine). */
+  dialogAlreadyPainted?: boolean;
 }): Promise<void> {
   options.signal.throwIfAborted();
   // Texture encodes compete with model parsing, texture decode and shader
@@ -106,8 +108,10 @@ export async function runSceneViewportBlockingLoad(options: {
 
 async function runBlockingLoadPhases(options: Parameters<typeof runSceneViewportBlockingLoad>[0]): Promise<void> {
   options.onProgress(0, "Preparing Scene");
-  await waitForSceneLoadingPaint(options.signal);
-  options.signal.throwIfAborted();
+  if (!options.dialogAlreadyPainted) {
+    await waitForSceneLoadingPaint(options.signal);
+    options.signal.throwIfAborted();
+  }
   const painted = performance.now();
   options.onProgress(10, "Collecting Assets");
   await options.collect();
