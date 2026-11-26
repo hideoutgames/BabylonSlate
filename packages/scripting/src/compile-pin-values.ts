@@ -1,8 +1,8 @@
 import { humanizePropertyLabel, normalizeTag, normalizeTagContainer } from "@haptic/core";
 import type { GraphNode, GraphPin } from "./ir";
-import type { NodeRegistry } from "./node-registry";
+import type { NodeRegistry, UnboxedVector } from "./node-registry";
 import { pinRejectsStoredDefault, readPinDefaultForPin } from "./pin-defaults";
-import { defaultValueLiteral } from "./types";
+import { defaultValueLiteral, type PinType } from "./types";
 
 function catalogPinDefault(
   node: GraphNode,
@@ -123,8 +123,8 @@ export function reportDeadReference(subject: SubjectPin, name: string, location:
 
 /**
  * A pure node's output expression behind its subject guard: a null or destroyed
- * subject reports and the output reads `fallback`. The inputs are bound to
- * `__s<n>` so each is evaluated once.
+ * subject reports and the output reads `fallback`. The inputs are bound once
+ * into entry-scoped temp locals (`tempNames`) so no closure is allocated per tick.
  */
 export function guardPureExpression(
   subjects: readonly SubjectPin[],
@@ -132,8 +132,10 @@ export function guardPureExpression(
   expression: string,
   fallback: string,
   location: string,
+  tempNames?: readonly string[],
 ): string {
-  const names = subjects.map((_, index) => `__s${index}`);
+  const names = tempNames ?? subjects.map((_, index) => `__s${index}`);
+  const binds = args.map((arg, index) => `${names[index]} = (${arg})`).join(", ");
   const report = subjects
     .map((subject, index) => {
       const name = names[index];
@@ -143,7 +145,74 @@ export function guardPureExpression(
     })
     .join(", ");
   const anyDead = names.map((name) => deadReference(name)).join(" || ");
-  return `((${names.join(", ")}) => ${anyDead} ? (${report}, ${fallback}) : (${expression}))(${args.join(", ")})`;
+  return `(${binds}, ${anyDead} ? (${report}, ${fallback}) : (${expression}))`;
+}
+
+const IMMUTABLE_OBJECT_PIN_KINDS = new Set<PinType["kind"]>([
+  "vec2", "vec3", "vec4", "rotator", "quat", "color", "transform", "boxedWildcard",
+]);
+
+/** Immutable deep-freeze literal text for pooling non-primitive value defaults. */
+export function frozenLiteralText(type: PinType, literal: string): string {
+  if (type.kind === "transform") {
+    try {
+      const parsed = JSON.parse(literal) as {
+        position?: unknown;
+        rotation?: unknown;
+        scale?: unknown;
+      };
+      if (parsed && typeof parsed === "object") {
+        const pos = parsed.position ?? { x: 0, y: 0, z: 0 };
+        const rot = parsed.rotation ?? { x: 0, y: 0, z: 0, w: 1 };
+        const scale = parsed.scale ?? { x: 1, y: 1, z: 1 };
+        return `{ position: Object.freeze(${JSON.stringify(pos)}), rotation: Object.freeze(${JSON.stringify(rot)}), scale: Object.freeze(${JSON.stringify(scale)}) }`;
+      }
+    } catch {
+      // Fall back to default transform literal.
+    }
+    return "{ position: Object.freeze({ x: 0, y: 0, z: 0 }), rotation: Object.freeze({ x: 0, y: 0, z: 0, w: 1 }), scale: Object.freeze({ x: 1, y: 1, z: 1 }) }";
+  }
+  if (type.kind === "structRef" && type.guid === "engine:TagContainer") {
+    try {
+      const parsed = JSON.parse(literal) as { Tags?: unknown };
+      const tags = Array.isArray(parsed?.Tags) ? parsed.Tags : [];
+      return `{ Tags: Object.freeze(${JSON.stringify(tags)}) }`;
+    } catch {
+      return "{ Tags: Object.freeze([]) }";
+    }
+  }
+  return literal;
+}
+
+function isObjectOrArrayLiteral(literal: string): boolean {
+  const first = literal.trimStart()[0];
+  return first === "{" || first === "[";
+}
+
+function shouldPoolLiteral(type: PinType, literal: string, allowMutableContainers: boolean): boolean {
+  if (!isObjectOrArrayLiteral(literal)) return false;
+  if (IMMUTABLE_OBJECT_PIN_KINDS.has(type.kind)) return true;
+  if (type.kind === "structRef" && type.guid === "engine:TagContainer") return true;
+  if (allowMutableContainers && (type.kind === "array" || type.kind === "structRef")) return true;
+  return false;
+}
+
+/**
+ * Default JS expression for `type`, using a module-top frozen constant or shared empty Map
+ * sentinel for non-primitive types so entry preambles allocate nothing per tick.
+ */
+export function pooledDefaultValueLiteral(
+  type: PinType,
+  poolConstant: (literal: string) => string,
+  emptyMap?: () => string,
+  allowMutableContainers = true,
+): string {
+  if (type.kind === "map" && allowMutableContainers && emptyMap) return emptyMap();
+  const literal = defaultValueLiteral(type);
+  if (shouldPoolLiteral(type, literal, allowMutableContainers)) {
+    return poolConstant(frozenLiteralText(type, literal));
+  }
+  return literal;
 }
 
 export function disconnectedPinLiteral(
@@ -151,17 +220,65 @@ export function disconnectedPinLiteral(
   dataPin: GraphPin,
   registry: NodeRegistry,
   fallbackLiteral?: string,
+  poolConstant?: (literal: string) => string,
+  emptyMap?: () => string,
+  allowMutableContainers = true,
 ): string {
   if (catalogFlag(node, dataPin, registry, "selfWhenUnwired")) return "ctx.self";
+  const maybePool = (literal: string): string => {
+    if (!poolConstant) return literal;
+    if (dataPin.type.kind === "map" && allowMutableContainers && emptyMap && literal === "new Map()") {
+      return emptyMap();
+    }
+    if (shouldPoolLiteral(dataPin.type, literal, allowMutableContainers)) {
+      return poolConstant(frozenLiteralText(dataPin.type, literal));
+    }
+    return literal;
+  };
   const prop = readPinDefaultForPin(node.properties, dataPin);
   if (prop !== undefined && !pinRejectsStoredDefault(dataPin.type)) {
     if (dataPin.type.kind === "tag") return JSON.stringify(normalizeTag(prop));
     if (dataPin.type.kind === "structRef" && dataPin.type.guid === "engine:TagContainer") {
-      return JSON.stringify(normalizeTagContainer(prop));
+      return maybePool(JSON.stringify(normalizeTagContainer(prop)));
     }
-    return JSON.stringify(prop);
+    return maybePool(JSON.stringify(prop));
   }
   const catalog = catalogPinDefault(node, dataPin, registry);
-  if (catalog !== undefined) return JSON.stringify(catalog);
-  return fallbackLiteral ?? defaultValueLiteral(dataPin.type);
+  if (catalog !== undefined) return maybePool(JSON.stringify(catalog));
+  if (fallbackLiteral !== undefined) return fallbackLiteral;
+  return poolConstant
+    ? pooledDefaultValueLiteral(dataPin.type, poolConstant, emptyMap, allowMutableContainers)
+    : defaultValueLiteral(dataPin.type);
+}
+
+/**
+ * Unboxed numeric component literals for a disconnected `vec2`/`vec3`/`vec4`/`quat`/`color`
+ * input pin, or undefined when the pin is not a vector-like kind.
+ */
+export function disconnectedVectorComponents(
+  node: GraphNode,
+  dataPin: GraphPin,
+  registry: NodeRegistry,
+): UnboxedVector | undefined {
+  const kind = dataPin.type.kind;
+  if (kind !== "vec2" && kind !== "vec3" && kind !== "vec4" && kind !== "quat" && kind !== "color") {
+    return undefined;
+  }
+  const prop = readPinDefaultForPin(node.properties, dataPin);
+  const raw = (prop !== undefined && !pinRejectsStoredDefault(dataPin.type) ? prop : catalogPinDefault(node, dataPin, registry)) as
+    | Record<string, unknown>
+    | undefined;
+  const num = (axis: string, fallback: number): string => {
+    const v = raw && typeof raw === "object" ? raw[axis] : undefined;
+    return typeof v === "number" && Number.isFinite(v) ? String(v) : String(fallback);
+  };
+  if (kind === "vec2") return { kind: "vec2", x: num("x", 0), y: num("y", 0) };
+  if (kind === "vec3") return { kind: "vec3", x: num("x", 0), y: num("y", 0), z: num("z", 0) };
+  return {
+    kind,
+    x: num("x", 0),
+    y: num("y", 0),
+    z: num("z", 0),
+    w: num("w", kind === "quat" ? 1 : 0),
+  };
 }

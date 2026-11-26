@@ -160,9 +160,21 @@ export interface ScriptContext {
     actor: EngineObject | null | undefined,
     location: { x: number; y: number; z: number },
   ): void;
+  setActorLocationXYZ(
+    actor: EngineObject | null | undefined,
+    x: number,
+    y: number,
+    z: number,
+  ): void;
   addActorWorldOffset(
     actor: EngineObject | null | undefined,
     offset: { x: number; y: number; z: number },
+  ): void;
+  addActorWorldOffsetXYZ(
+    actor: EngineObject | null | undefined,
+    dx: number,
+    dy: number,
+    dz: number,
   ): void;
   setActorRotation(
     actor: EngineObject | null | undefined,
@@ -171,6 +183,12 @@ export interface ScriptContext {
   setActorScale(
     actor: EngineObject | null | undefined,
     scale: { x: number; y: number; z: number },
+  ): void;
+  setActorScaleXYZ(
+    actor: EngineObject | null | undefined,
+    x: number,
+    y: number,
+    z: number,
   ): void;
   setActorTransform(
     actor: EngineObject | null | undefined,

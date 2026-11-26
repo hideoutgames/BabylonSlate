@@ -1,12 +1,22 @@
 import {
   pin,
   type NodeDefinition,
+  type UnboxedVector,
   FLOAT,
   VEC2,
   VEC3,
   VEC4,
 } from "@haptic/scripting";
 import { hoistedCall } from "./hoisted-helper";
+import {
+  bindUnboxedComponents,
+  boxUnboxedVector,
+  joinSetups,
+  readVectorAsUnboxed,
+  vecAxis,
+  withSetup,
+  type VecKind,
+} from "./unboxed-helpers";
 
 type Ctx = Parameters<NodeDefinition["codegen"]>[0];
 
@@ -14,33 +24,68 @@ const AXES2 = ["x", "y"] as const;
 const AXES3 = ["x", "y", "z"] as const;
 const AXES4 = ["x", "y", "z", "w"] as const;
 
-function lerpExpr(ctx: Ctx, a: string, b: string, t: string, axes: readonly string[]): string {
+function lerpUnboxed(ctx: Ctx, kind: VecKind, axes: readonly string[]): UnboxedVector | undefined {
+  if (!ctx.allocTemp) return undefined;
+  const a = readVectorAsUnboxed(ctx, "a", kind);
+  const b = readVectorAsUnboxed(ctx, "b", kind);
+  if (!a || !b) return undefined;
+  const t = ctx.allocTemp();
+  const tAssign = `${t} = (${ctx.input("alpha")})`;
+  const exprs = axes.map((axis) => {
+    const av = vecAxis(a, axis);
+    const bv = vecAxis(b, axis);
+    return `${av} + (${bv} - ${av}) * ${t}`;
+  });
+  return bindUnboxedComponents(ctx, kind, exprs, joinSetups([a.setup, b.setup, tAssign]));
+}
+
+function lerpExpr(ctx: Ctx, kind: VecKind, axes: readonly string[]): string {
+  if (ctx.allocTemp && ((ctx.isWired("a") && ctx.inputUnboxed?.("a")) || (ctx.isWired("b") && ctx.inputUnboxed?.("b")))) {
+    const unboxed = lerpUnboxed(ctx, kind, axes);
+    if (unboxed) return boxUnboxedVector(unboxed);
+  }
   return hoistedCall(
     ctx,
     `__vec_lerp_${axes.join("")}`,
     "a, b, t",
     `({ ${axes.map((axis) => `${axis}: a.${axis} + (b.${axis} - a.${axis}) * t`).join(", ")} })`,
-    [a, b, t],
+    [ctx.input("a"), ctx.input("b"), ctx.input("alpha")],
   );
 }
 
-function dotExpr(ctx: Ctx, a: string, b: string, axes: readonly string[]): string {
+function dotExpr(ctx: Ctx, kind: VecKind, axes: readonly string[]): string {
+  if (ctx.allocTemp && ((ctx.isWired("a") && ctx.inputUnboxed?.("a")) || (ctx.isWired("b") && ctx.inputUnboxed?.("b")))) {
+    const a = readVectorAsUnboxed(ctx, "a", kind);
+    const b = readVectorAsUnboxed(ctx, "b", kind);
+    if (a && b) {
+      const expr = axes.map((axis) => `${vecAxis(a, axis)} * ${vecAxis(b, axis)}`).join(" + ");
+      return withSetup(joinSetups([a.setup, b.setup]), expr);
+    }
+  }
   return hoistedCall(
     ctx,
     `__vec_dot_${axes.join("")}`,
     "a, b",
     axes.map((axis) => `a.${axis} * b.${axis}`).join(" + "),
-    [a, b],
+    [ctx.input("a"), ctx.input("b")],
   );
 }
 
-function distanceExpr(ctx: Ctx, a: string, b: string, axes: readonly string[]): string {
+function distanceExpr(ctx: Ctx, kind: VecKind, axes: readonly string[]): string {
+  if (ctx.allocTemp && ((ctx.isWired("a") && ctx.inputUnboxed?.("a")) || (ctx.isWired("b") && ctx.inputUnboxed?.("b")))) {
+    const a = readVectorAsUnboxed(ctx, "a", kind);
+    const b = readVectorAsUnboxed(ctx, "b", kind);
+    if (a && b) {
+      const expr = `Math.hypot(${axes.map((axis) => `${vecAxis(a, axis)} - ${vecAxis(b, axis)}`).join(", ")})`;
+      return withSetup(joinSetups([a.setup, b.setup]), expr);
+    }
+  }
   return hoistedCall(
     ctx,
     `__vec_distance_${axes.join("")}`,
     "a, b",
     `Math.hypot(${axes.map((axis) => `a.${axis} - b.${axis}`).join(", ")})`,
-    [a, b],
+    [ctx.input("a"), ctx.input("b")],
   );
 }
 
@@ -49,12 +94,32 @@ function hypotOf(v: string, axes: readonly string[]): string {
   return `Math.hypot(${axes.map((axis) => `${v}.${axis}`).join(", ")})`;
 }
 
-function lengthExpr(ctx: Ctx, v: string, axes: readonly string[]): string {
-  return hoistedCall(ctx, `__vec_length_${axes.join("")}`, "v", hypotOf("v", axes), [v]);
+function lengthExpr(ctx: Ctx, kind: VecKind, axes: readonly string[]): string {
+  if (ctx.isWired("v")) {
+    const u = ctx.inputUnboxed?.("v");
+    if (u && u.kind === kind) {
+      return withSetup(u.setup, `Math.hypot(${axes.map((axis) => vecAxis(u, axis)).join(", ")})`);
+    }
+  }
+  return hoistedCall(ctx, `__vec_length_${axes.join("")}`, "v", hypotOf("v", axes), [ctx.input("v")]);
+}
+
+function normalizeUnboxed(ctx: Ctx, kind: VecKind, axes: readonly string[]): UnboxedVector | undefined {
+  if (!ctx.allocTemp) return undefined;
+  const v = readVectorAsUnboxed(ctx, "v", kind);
+  if (!v) return undefined;
+  const len = ctx.allocTemp();
+  const lenAssign = `${len} = Math.hypot(${axes.map((axis) => vecAxis(v, axis)).join(", ")})`;
+  const exprs = axes.map((axis) => `(${len} > 1e-8 ? ${vecAxis(v, axis)} / ${len} : 0)`);
+  return bindUnboxedComponents(ctx, kind, exprs, joinSetups([v.setup, lenAssign]));
 }
 
 /** Reads the vector once, so the length and every component see one value. */
-function normalizeExpr(ctx: Ctx, v: string, axes: readonly string[]): string {
+function normalizeExpr(ctx: Ctx, kind: VecKind, axes: readonly string[]): string {
+  if (ctx.allocTemp && ctx.isWired("v") && ctx.inputUnboxed?.("v")) {
+    const unboxed = normalizeUnboxed(ctx, kind, axes);
+    if (unboxed) return boxUnboxedVector(unboxed);
+  }
   const unit = axes.map((axis) => `${axis}: v.${axis} / l`).join(", ");
   const zero = axes.map((axis) => `${axis}: 0`).join(", ");
   return hoistedCall(
@@ -62,18 +127,52 @@ function normalizeExpr(ctx: Ctx, v: string, axes: readonly string[]): string {
     `__vec_normalize_${axes.join("")}`,
     "v",
     `{ const l = ${hypotOf("v", axes)}; return l > 1e-8 ? { ${unit} } : { ${zero} }; }`,
-    [v],
+    [ctx.input("v")],
   );
 }
 
-function lengthSquaredExpr(ctx: Ctx, v: string, axes: readonly string[]): string {
+function lengthSquaredExpr(ctx: Ctx, kind: VecKind, axes: readonly string[]): string {
+  if (ctx.isWired("v")) {
+    const u = ctx.inputUnboxed?.("v");
+    if (u && u.kind === kind) {
+      return withSetup(u.setup, axes.map((axis) => `${vecAxis(u, axis)} * ${vecAxis(u, axis)}`).join(" + "));
+    }
+  }
   return hoistedCall(
     ctx,
     `__vec_lengthSquared_${axes.join("")}`,
     "v",
     axes.map((axis) => `v.${axis} * v.${axis}`).join(" + "),
-    [v],
+    [ctx.input("v")],
   );
+}
+
+function cross3Unboxed(ctx: Ctx): UnboxedVector | undefined {
+  if (!ctx.allocTemp) return undefined;
+  const a = readVectorAsUnboxed(ctx, "a", "vec3");
+  const b = readVectorAsUnboxed(ctx, "b", "vec3");
+  if (!a || !b) return undefined;
+  const ax = vecAxis(a, "x"), ay = vecAxis(a, "y"), az = vecAxis(a, "z");
+  const bx = vecAxis(b, "x"), by = vecAxis(b, "y"), bz = vecAxis(b, "z");
+  return bindUnboxedComponents(
+    ctx,
+    "vec3",
+    [`${ay} * ${bz} - ${az} * ${by}`, `${az} * ${bx} - ${ax} * ${bz}`, `${ax} * ${by} - ${ay} * ${bx}`],
+    joinSetups([a.setup, b.setup]),
+  );
+}
+
+function breakVector(ctx: Ctx, kind: VecKind, axes: readonly string[]): Record<string, string> {
+  const u = ctx.inputUnboxed?.("in");
+  if (u && u.kind === kind) {
+    const out: Record<string, string> = {};
+    for (const axis of axes) out[axis] = withSetup(u.setup, vecAxis(u, axis));
+    return out;
+  }
+  const v = ctx.input("in");
+  const out: Record<string, string> = {};
+  for (const axis of axes) out[axis] = `(${v}).${axis}`;
+  return out;
 }
 
 export const vectorNodes: NodeDefinition[] = [
@@ -91,6 +190,10 @@ export const vectorNodes: NodeDefinition[] = [
     codegen: (ctx) => ({
       out: `{ x: ${ctx.input("x")}, y: ${ctx.input("y")}, z: ${ctx.input("z")} }`,
     }),
+    codegenUnboxed: (ctx) =>
+      ctx.allocTemp
+        ? { out: bindUnboxedComponents(ctx, "vec3", [ctx.input("x"), ctx.input("y"), ctx.input("z")]) }
+        : undefined,
   },
   {
     id: "vector.break3",
@@ -103,10 +206,7 @@ export const vectorNodes: NodeDefinition[] = [
       pin("y", "y", "out", FLOAT),
       pin("z", "z", "out", FLOAT),
     ],
-    codegen: (ctx) => {
-      const v = ctx.input("in");
-      return { x: `(${v}).x`, y: `(${v}).y`, z: `(${v}).z` };
-    },
+    codegen: (ctx) => breakVector(ctx, "vec3", AXES3),
   },
   {
     id: "vector.make2",
@@ -121,6 +221,10 @@ export const vectorNodes: NodeDefinition[] = [
     codegen: (ctx) => ({
       out: `{ x: ${ctx.input("x")}, y: ${ctx.input("y")} }`,
     }),
+    codegenUnboxed: (ctx) =>
+      ctx.allocTemp
+        ? { out: bindUnboxedComponents(ctx, "vec2", [ctx.input("x"), ctx.input("y")]) }
+        : undefined,
   },
   {
     id: "vector.break2",
@@ -132,10 +236,7 @@ export const vectorNodes: NodeDefinition[] = [
       pin("x", "x", "out", FLOAT),
       pin("y", "y", "out", FLOAT),
     ],
-    codegen: (ctx) => {
-      const v = ctx.input("in");
-      return { x: `(${v}).x`, y: `(${v}).y` };
-    },
+    codegen: (ctx) => breakVector(ctx, "vec2", AXES2),
   },
   {
     id: "vector.make4",
@@ -152,6 +253,10 @@ export const vectorNodes: NodeDefinition[] = [
     codegen: (ctx) => ({
       out: `{ x: ${ctx.input("x")}, y: ${ctx.input("y")}, z: ${ctx.input("z")}, w: ${ctx.input("w")} }`,
     }),
+    codegenUnboxed: (ctx) =>
+      ctx.allocTemp
+        ? { out: bindUnboxedComponents(ctx, "vec4", [ctx.input("x"), ctx.input("y"), ctx.input("z"), ctx.input("w")]) }
+        : undefined,
   },
   {
     id: "vector.break4",
@@ -165,15 +270,7 @@ export const vectorNodes: NodeDefinition[] = [
       pin("z", "z", "out", FLOAT),
       pin("w", "w", "out", FLOAT),
     ],
-    codegen: (ctx) => {
-      const v = ctx.input("in");
-      return {
-        x: `(${v}).x`,
-        y: `(${v}).y`,
-        z: `(${v}).z`,
-        w: `(${v}).w`,
-      };
-    },
+    codegen: (ctx) => breakVector(ctx, "vec4", AXES4),
   },
   {
     id: "vector.dot3",
@@ -187,7 +284,7 @@ export const vectorNodes: NodeDefinition[] = [
       pin("out", "Out", "out", FLOAT),
     ],
     codegen: (ctx) => ({
-      out: dotExpr(ctx, ctx.input("a"), ctx.input("b"), AXES3),
+      out: dotExpr(ctx, "vec3", AXES3),
     }),
   },
   {
@@ -201,15 +298,25 @@ export const vectorNodes: NodeDefinition[] = [
       pin("b", "B", "in", VEC3),
       pin("out", "Out", "out", VEC3),
     ],
-    codegen: (ctx) => ({
-      out: hoistedCall(
-        ctx,
-        "__vec_cross_xyz",
-        "a, b",
-        "({ x: a.y * b.z - a.z * b.y, y: a.z * b.x - a.x * b.z, z: a.x * b.y - a.y * b.x })",
-        [ctx.input("a"), ctx.input("b")],
-      ),
-    }),
+    codegen: (ctx) => {
+      if (ctx.allocTemp && ((ctx.isWired("a") && ctx.inputUnboxed?.("a")) || (ctx.isWired("b") && ctx.inputUnboxed?.("b")))) {
+        const unboxed = cross3Unboxed(ctx);
+        if (unboxed) return { out: boxUnboxedVector(unboxed) };
+      }
+      return {
+        out: hoistedCall(
+          ctx,
+          "__vec_cross_xyz",
+          "a, b",
+          "({ x: a.y * b.z - a.z * b.y, y: a.z * b.x - a.x * b.z, z: a.x * b.y - a.y * b.x })",
+          [ctx.input("a"), ctx.input("b")],
+        ),
+      };
+    },
+    codegenUnboxed: (ctx) => {
+      const vec = cross3Unboxed(ctx);
+      return vec ? { out: vec } : undefined;
+    },
   },
   {
     id: "vector.length3",
@@ -221,7 +328,7 @@ export const vectorNodes: NodeDefinition[] = [
       pin("v", "V", "in", VEC3),
       pin("out", "Out", "out", FLOAT),
     ],
-    codegen: (ctx) => ({ out: lengthExpr(ctx, ctx.input("v"), AXES3) }),
+    codegen: (ctx) => ({ out: lengthExpr(ctx, "vec3", AXES3) }),
   },
   {
     id: "vector.lengthSquared3",
@@ -233,7 +340,7 @@ export const vectorNodes: NodeDefinition[] = [
       pin("v", "V", "in", VEC3),
       pin("out", "Out", "out", FLOAT),
     ],
-    codegen: (ctx) => ({ out: lengthSquaredExpr(ctx, ctx.input("v"), AXES3) }),
+    codegen: (ctx) => ({ out: lengthSquaredExpr(ctx, "vec3", AXES3) }),
   },
   {
     id: "vector.normalize3",
@@ -245,7 +352,11 @@ export const vectorNodes: NodeDefinition[] = [
       pin("v", "V", "in", VEC3),
       pin("out", "Out", "out", VEC3),
     ],
-    codegen: (ctx) => ({ out: normalizeExpr(ctx, ctx.input("v"), AXES3) }),
+    codegen: (ctx) => ({ out: normalizeExpr(ctx, "vec3", AXES3) }),
+    codegenUnboxed: (ctx) => {
+      const vec = normalizeUnboxed(ctx, "vec3", AXES3);
+      return vec ? { out: vec } : undefined;
+    },
   },
   {
     id: "vector.distance3",
@@ -259,7 +370,7 @@ export const vectorNodes: NodeDefinition[] = [
       pin("out", "Out", "out", FLOAT),
     ],
     codegen: (ctx) => ({
-      out: distanceExpr(ctx, ctx.input("a"), ctx.input("b"), AXES3),
+      out: distanceExpr(ctx, "vec3", AXES3),
     }),
   },
   {
@@ -275,8 +386,12 @@ export const vectorNodes: NodeDefinition[] = [
       pin("out", "Out", "out", VEC3),
     ],
     codegen: (ctx) => ({
-      out: lerpExpr(ctx, ctx.input("a"), ctx.input("b"), ctx.input("alpha"), AXES3),
+      out: lerpExpr(ctx, "vec3", AXES3),
     }),
+    codegenUnboxed: (ctx) => {
+      const vec = lerpUnboxed(ctx, "vec3", AXES3);
+      return vec ? { out: vec } : undefined;
+    },
   },
   {
     id: "vector.dot2",
@@ -290,7 +405,7 @@ export const vectorNodes: NodeDefinition[] = [
       pin("out", "Out", "out", FLOAT),
     ],
     codegen: (ctx) => ({
-      out: dotExpr(ctx, ctx.input("a"), ctx.input("b"), AXES2),
+      out: dotExpr(ctx, "vec2", AXES2),
     }),
   },
   {
@@ -303,7 +418,7 @@ export const vectorNodes: NodeDefinition[] = [
       pin("v", "V", "in", VEC2),
       pin("out", "Out", "out", FLOAT),
     ],
-    codegen: (ctx) => ({ out: lengthExpr(ctx, ctx.input("v"), AXES2) }),
+    codegen: (ctx) => ({ out: lengthExpr(ctx, "vec2", AXES2) }),
   },
   {
     id: "vector.lengthSquared2",
@@ -315,7 +430,7 @@ export const vectorNodes: NodeDefinition[] = [
       pin("v", "V", "in", VEC2),
       pin("out", "Out", "out", FLOAT),
     ],
-    codegen: (ctx) => ({ out: lengthSquaredExpr(ctx, ctx.input("v"), AXES2) }),
+    codegen: (ctx) => ({ out: lengthSquaredExpr(ctx, "vec2", AXES2) }),
   },
   {
     id: "vector.normalize2",
@@ -327,7 +442,11 @@ export const vectorNodes: NodeDefinition[] = [
       pin("v", "V", "in", VEC2),
       pin("out", "Out", "out", VEC2),
     ],
-    codegen: (ctx) => ({ out: normalizeExpr(ctx, ctx.input("v"), AXES2) }),
+    codegen: (ctx) => ({ out: normalizeExpr(ctx, "vec2", AXES2) }),
+    codegenUnboxed: (ctx) => {
+      const vec = normalizeUnboxed(ctx, "vec2", AXES2);
+      return vec ? { out: vec } : undefined;
+    },
   },
   {
     id: "vector.distance2",
@@ -341,7 +460,7 @@ export const vectorNodes: NodeDefinition[] = [
       pin("out", "Out", "out", FLOAT),
     ],
     codegen: (ctx) => ({
-      out: distanceExpr(ctx, ctx.input("a"), ctx.input("b"), AXES2),
+      out: distanceExpr(ctx, "vec2", AXES2),
     }),
   },
   {
@@ -357,8 +476,12 @@ export const vectorNodes: NodeDefinition[] = [
       pin("out", "Out", "out", VEC2),
     ],
     codegen: (ctx) => ({
-      out: lerpExpr(ctx, ctx.input("a"), ctx.input("b"), ctx.input("alpha"), AXES2),
+      out: lerpExpr(ctx, "vec2", AXES2),
     }),
+    codegenUnboxed: (ctx) => {
+      const vec = lerpUnboxed(ctx, "vec2", AXES2);
+      return vec ? { out: vec } : undefined;
+    },
   },
   {
     id: "vector.dot4",
@@ -372,7 +495,7 @@ export const vectorNodes: NodeDefinition[] = [
       pin("out", "Out", "out", FLOAT),
     ],
     codegen: (ctx) => ({
-      out: dotExpr(ctx, ctx.input("a"), ctx.input("b"), AXES4),
+      out: dotExpr(ctx, "vec4", AXES4),
     }),
   },
   {
@@ -385,7 +508,7 @@ export const vectorNodes: NodeDefinition[] = [
       pin("v", "V", "in", VEC4),
       pin("out", "Out", "out", FLOAT),
     ],
-    codegen: (ctx) => ({ out: lengthExpr(ctx, ctx.input("v"), AXES4) }),
+    codegen: (ctx) => ({ out: lengthExpr(ctx, "vec4", AXES4) }),
   },
   {
     id: "vector.lengthSquared4",
@@ -397,7 +520,7 @@ export const vectorNodes: NodeDefinition[] = [
       pin("v", "V", "in", VEC4),
       pin("out", "Out", "out", FLOAT),
     ],
-    codegen: (ctx) => ({ out: lengthSquaredExpr(ctx, ctx.input("v"), AXES4) }),
+    codegen: (ctx) => ({ out: lengthSquaredExpr(ctx, "vec4", AXES4) }),
   },
   {
     id: "vector.normalize4",
@@ -409,7 +532,11 @@ export const vectorNodes: NodeDefinition[] = [
       pin("v", "V", "in", VEC4),
       pin("out", "Out", "out", VEC4),
     ],
-    codegen: (ctx) => ({ out: normalizeExpr(ctx, ctx.input("v"), AXES4) }),
+    codegen: (ctx) => ({ out: normalizeExpr(ctx, "vec4", AXES4) }),
+    codegenUnboxed: (ctx) => {
+      const vec = normalizeUnboxed(ctx, "vec4", AXES4);
+      return vec ? { out: vec } : undefined;
+    },
   },
   {
     id: "vector.distance4",
@@ -423,7 +550,7 @@ export const vectorNodes: NodeDefinition[] = [
       pin("out", "Out", "out", FLOAT),
     ],
     codegen: (ctx) => ({
-      out: distanceExpr(ctx, ctx.input("a"), ctx.input("b"), AXES4),
+      out: distanceExpr(ctx, "vec4", AXES4),
     }),
   },
   {
@@ -439,7 +566,11 @@ export const vectorNodes: NodeDefinition[] = [
       pin("out", "Out", "out", VEC4),
     ],
     codegen: (ctx) => ({
-      out: lerpExpr(ctx, ctx.input("a"), ctx.input("b"), ctx.input("alpha"), AXES4),
+      out: lerpExpr(ctx, "vec4", AXES4),
     }),
+    codegenUnboxed: (ctx) => {
+      const vec = lerpUnboxed(ctx, "vec4", AXES4);
+      return vec ? { out: vec } : undefined;
+    },
   },
 ];

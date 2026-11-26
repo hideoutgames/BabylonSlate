@@ -313,7 +313,8 @@ describe("compile pinExpr defaults", () => {
       ],
     };
     const compiled = compileGraph(graph, { assetGuid: "a", registry: nodes });
-    expect(compiled.source).toContain("ctx.print(\"x\", \"\", 2, {\"x\":1,\"y\":1,\"z\":1,\"w\":1})");
+    expect(compiled.source).toContain('Object.freeze({"x":1,"y":1,"z":1,"w":1})');
+    expect(compiled.source).toMatch(/ctx\.print\("x", "", 2, __c_/);
     expect(compiled.source).not.toContain("ctx.print(\"x\", \"\", 0,");
   });
 

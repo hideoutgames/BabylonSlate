@@ -94,7 +94,8 @@ export function compileEntry(
     if (s.shouldStrip(node)) continue;
     if (isPureNode(s.options.registry.get(node.typeId), node)) ensurePure(s, node);
   }
-  s.useEpoch = s.memoDecls.length > 0;
+  // Always track epoch boundaries during exec emission; `entryDeclarations` strips them when no memo is used.
+  s.useEpoch = true;
 
   s.entryNodeId = entry?.id ?? "";
   if (entry) emitExecChain(s, entry.id);

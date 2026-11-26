@@ -1,6 +1,7 @@
 import {
   pin,
   type NodeDefinition,
+  type UnboxedVector,
   EXEC,
   VEC3,
   TRANSFORM,
@@ -21,14 +22,71 @@ const actorVector = (ctx: Ctx, field: "position" | "scale", fallback: number): s
     `{ const v = a?.transform?.${field}; return v ? { x: v.x, y: v.y, z: v.z } : { x: ${fallback}, y: ${fallback}, z: ${fallback} }; }`,
     [ctx.input("target")]);
 
+const actorVectorUnboxed = (ctx: Ctx, field: "position" | "scale", fallback: number): Record<string, UnboxedVector> | undefined => {
+  if (!ctx.allocTemp) return undefined;
+  const v = ctx.allocTemp();
+  const x = ctx.allocTemp();
+  const y = ctx.allocTemp();
+  const z = ctx.allocTemp();
+  const setup = `(${v} = (${ctx.input("target")})?.transform?.${field}, ${x} = ${v} ? ${v}.x : ${fallback}, ${y} = ${v} ? ${v}.y : ${fallback}, ${z} = ${v} ? ${v}.z : ${fallback})`;
+  return { out: { kind: "vec3", x, y, z, setup } };
+};
+
 const actorTransform = (ctx: Ctx): string =>
   hoistedCall(ctx, "__xf_transform", "a",
     "{ const t = a?.transform; return { position: { x: 0, y: 0, z: 0, ...t?.position }, rotation: { x: 0, y: 0, z: 0, w: 1, ...t?.rotation }, scale: { x: 1, y: 1, z: 1, ...t?.scale } }; }",
     [ctx.input("target")]);
 
-/** A local axis of the actor in world space, rotated by its quaternion without a detour through Euler angles. */
-const actorAxis = (ctx: Ctx, axis: string): string =>
-  `ctx.quatRotateVector(${ctx.input("target")}?.transform?.rotation, ${axis})`;
+/**
+ * Inline quaternion basis formulas matching `quatRotateVector(q, axis)` bit-for-bit,
+ * skipping `{ x, y, z }` input literal allocation and skipping `Math.sqrt` for unit quats.
+ */
+const QUAT_BASIS_HELPERS =
+  "var __xf_axis_x=0,__xf_axis_y=0,__xf_axis_z=0," +
+  "__xf_quatBasis=(a,axis)=>{const q=a?.transform?.rotation;" +
+  "if(!q){__xf_axis_x=axis===0?1:0;__xf_axis_y=axis===1?1:0;__xf_axis_z=axis===2?1:0;return;}" +
+  "let x=Number(q.x??0),y=Number(q.y??0),z=Number(q.z??0),w=Number(q.w??1);" +
+  "const ls=x*x+y*y+z*z+w*w;" +
+  "if(ls<=1e-16){x=0;y=0;z=0;w=1;}else if(Math.abs(ls-1)>1e-6){const inv=1/Math.sqrt(ls);x*=inv;y*=inv;z*=inv;w*=inv;}" +
+  "if(axis===2){__xf_axis_x=2*(w*y+z*x);__xf_axis_y=2*(y*z-w*x);__xf_axis_z=1-2*(x*x+y*y);}" +
+  "else if(axis===0){__xf_axis_x=1-2*(y*y+z*z);__xf_axis_y=2*(x*y+w*z);__xf_axis_z=2*(x*z-w*y);}" +
+  "else{__xf_axis_x=2*(x*y-w*z);__xf_axis_y=1-2*(x*x+z*z);__xf_axis_z=2*(y*z+w*x);}}," +
+  "__xf_forward=(a)=>{__xf_quatBasis(a,2);return{x:__xf_axis_x,y:__xf_axis_y,z:__xf_axis_z};}," +
+  "__xf_right=(a)=>{__xf_quatBasis(a,0);return{x:__xf_axis_x,y:__xf_axis_y,z:__xf_axis_z};}," +
+  "__xf_up=(a)=>{__xf_quatBasis(a,1);return{x:__xf_axis_x,y:__xf_axis_y,z:__xf_axis_z};};";
+
+const actorAxis = (ctx: Ctx, helper: "__xf_forward" | "__xf_right" | "__xf_up"): string => {
+  ctx.hoist(QUAT_BASIS_HELPERS);
+  return `${helper}(${ctx.input("target")})`;
+};
+
+const actorAxisUnboxed = (ctx: Ctx, axisIndex: 0 | 1 | 2): Record<string, UnboxedVector> | undefined => {
+  if (!ctx.allocTemp) return undefined;
+  ctx.hoist(QUAT_BASIS_HELPERS);
+  const x = ctx.allocTemp();
+  const y = ctx.allocTemp();
+  const z = ctx.allocTemp();
+  const setup = `(__xf_quatBasis(${ctx.input("target")}, ${axisIndex}), ${x} = __xf_axis_x, ${y} = __xf_axis_y, ${z} = __xf_axis_z)`;
+  return { out: { kind: "vec3", x, y, z, setup } };
+};
+
+function emitActorVec3Setter(
+  ctx: Ctx,
+  pinName: string,
+  boxedMethod: "setActorLocation" | "addActorWorldOffset" | "setActorScale",
+  xyzMethod: "setActorLocationXYZ" | "addActorWorldOffsetXYZ" | "setActorScaleXYZ",
+): void {
+  const target = ctx.input("target");
+  if (ctx.isWired(pinName)) {
+    const u = ctx.inputUnboxed?.(pinName);
+    if (u && u.kind === "vec3") {
+      if (u.setup) ctx.emit(`${u.setup};`);
+      ctx.emit(`ctx.${xyzMethod}(${target}, ${u.x}, ${u.y}, ${u.z});`);
+      return;
+    }
+  }
+  ctx.emit(`ctx.${boxedMethod}(${target}, ${ctx.input(pinName)});`);
+}
 
 export const transformNodes: NodeDefinition[] = [
   {
@@ -41,6 +99,7 @@ export const transformNodes: NodeDefinition[] = [
       pin("out", "Out", "out", VEC3),
     ],
     codegen: (ctx) => ({ out: actorVector(ctx, "position", 0) }),
+    codegenUnboxed: (ctx) => actorVectorUnboxed(ctx, "position", 0),
   },
   {
     id: "transform.setLocation",
@@ -53,9 +112,7 @@ export const transformNodes: NodeDefinition[] = [
       pin("location", "Location", "in", VEC3),
     ],
     codegen: (ctx) => {
-      ctx.emit(
-        `ctx.setActorLocation(${ctx.input("target")}, ${ctx.input("location")});`,
-      );
+      emitActorVec3Setter(ctx, "location", "setActorLocation", "setActorLocationXYZ");
     },
   },
   {
@@ -97,6 +154,7 @@ export const transformNodes: NodeDefinition[] = [
       pin("out", "Out", "out", VEC3),
     ],
     codegen: (ctx) => ({ out: actorVector(ctx, "scale", 1) }),
+    codegenUnboxed: (ctx) => actorVectorUnboxed(ctx, "scale", 1),
   },
   {
     id: "transform.setScale",
@@ -109,9 +167,7 @@ export const transformNodes: NodeDefinition[] = [
       pin("scale", "Scale", "in", VEC3),
     ],
     codegen: (ctx) => {
-      ctx.emit(
-        `ctx.setActorScale(${ctx.input("target")}, ${ctx.input("scale")});`,
-      );
+      emitActorVec3Setter(ctx, "scale", "setActorScale", "setActorScaleXYZ");
     },
   },
   {
@@ -151,8 +207,9 @@ export const transformNodes: NodeDefinition[] = [
       pin("out", "Out", "out", VEC3),
     ],
     codegen: (ctx) => ({
-      out: actorAxis(ctx, "{ x: 0, y: 0, z: 1 }"),
+      out: actorAxis(ctx, "__xf_forward"),
     }),
+    codegenUnboxed: (ctx) => actorAxisUnboxed(ctx, 2),
   },
   {
     id: "transform.right",
@@ -164,8 +221,9 @@ export const transformNodes: NodeDefinition[] = [
       pin("out", "Out", "out", VEC3),
     ],
     codegen: (ctx) => ({
-      out: actorAxis(ctx, "{ x: 1, y: 0, z: 0 }"),
+      out: actorAxis(ctx, "__xf_right"),
     }),
+    codegenUnboxed: (ctx) => actorAxisUnboxed(ctx, 0),
   },
   {
     id: "transform.up",
@@ -177,8 +235,9 @@ export const transformNodes: NodeDefinition[] = [
       pin("out", "Out", "out", VEC3),
     ],
     codegen: (ctx) => ({
-      out: actorAxis(ctx, "{ x: 0, y: 1, z: 0 }"),
+      out: actorAxis(ctx, "__xf_up"),
     }),
+    codegenUnboxed: (ctx) => actorAxisUnboxed(ctx, 1),
   },
   {
     id: "transform.addWorldOffset",
@@ -191,9 +250,7 @@ export const transformNodes: NodeDefinition[] = [
       pin("offset", "Offset", "in", VEC3),
     ],
     codegen: (ctx) => {
-      ctx.emit(
-        `ctx.addActorWorldOffset(${ctx.input("target")}, ${ctx.input("offset")});`,
-      );
+      emitActorVec3Setter(ctx, "offset", "addActorWorldOffset", "addActorWorldOffsetXYZ");
     },
   },
 ];

@@ -16,9 +16,18 @@ import {
   type NodeDefinition,
   type PinType,
   type TypeContext,
+  type UnboxedVector,
 } from "@haptic/scripting";
 import { ARITHMETIC_SEARCH_ALIASES } from "./arithmetic-search-aliases";
 import { hoistedCall } from "./hoisted-helper";
+import {
+  bindUnboxedComponents,
+  boxUnboxedVector,
+  joinSetups,
+  readVectorAsUnboxed,
+  vecAxis,
+  type VecKind,
+} from "./unboxed-helpers";
 
 /**
  * Add, Subtract, Multiply, Divide, Modulo and Negate: one node per operation whose operand pins
@@ -271,11 +280,68 @@ function invalidOperands(ctx: CodegenContext, a: NumericOperandType, b: NumericO
   return new Error(`${ctx.node.typeId} cannot combine ${a} with ${b}`);
 }
 
+function binaryUnboxed(ctx: CodegenContext, op: BinaryOperator): UnboxedVector | undefined {
+  if (!ctx.allocTemp) return undefined;
+  const props = ctx.node.properties;
+  const aType = numericOperandType(props, "aType");
+  const bType = numericOperandType(props, "bType");
+  if (!numericOperandsValid(ctx.node.typeId, props)) throw invalidOperands(ctx, aType, bType);
+  if (!isVector(aType) && !isVector(bType)) return undefined;
+  const vectorOp = op as VectorOperator;
+
+  if (isVector(aType) && isVector(bType)) {
+    const a = readVectorAsUnboxed(ctx, "a", aType);
+    const b = readVectorAsUnboxed(ctx, "b", bType);
+    if (!a || !b) return undefined;
+    const axes = AXES[aType];
+    const exprs = axes.map((axis) => {
+      const av = vecAxis(a, axis);
+      const bv = vecAxis(b, axis);
+      return vectorOp === "/" ? `(${bv} === 0 ? 0 : ${av} / ${bv})` : `(${av} ${vectorOp} ${bv})`;
+    });
+    return bindUnboxedComponents(ctx, aType, exprs, joinSetups([a.setup, b.setup]));
+  }
+  if (isVector(aType)) {
+    const v = readVectorAsUnboxed(ctx, "a", aType);
+    if (!v) return undefined;
+    const s = ctx.allocTemp();
+    const sAssign = `${s} = (${ctx.input("b")})`;
+    const axes = AXES[aType];
+    const exprs = axes.map((axis) => {
+      const vv = vecAxis(v, axis);
+      return vectorOp === "/" ? `(${s} === 0 ? 0 : ${vv} / ${s})` : `(${vv} ${vectorOp} ${s})`;
+    });
+    return bindUnboxedComponents(ctx, aType, exprs, joinSetups([v.setup, sAssign]));
+  }
+  const vecKind = bType as VecKind;
+  const s = ctx.allocTemp();
+  const sAssign = `${s} = (${ctx.input("a")})`;
+  const v = readVectorAsUnboxed(ctx, "b", vecKind);
+  if (!v) return undefined;
+  const axes = AXES[vecKind];
+  const exprs = axes.map((axis) => {
+    const vv = vecAxis(v, axis);
+    if (vectorOp === "*") return `(${vv} * ${s})`;
+    if (vectorOp === "+") return `(${vv} + ${s})`;
+    if (vectorOp === "-") return `(${s} - ${vv})`;
+    return `(${vv} === 0 ? 0 : ${s} / ${vv})`;
+  });
+  return bindUnboxedComponents(ctx, vecKind, exprs, joinSetups([sAssign, v.setup]));
+}
+
 function binaryExpr(ctx: CodegenContext, op: BinaryOperator): string {
   const props = ctx.node.properties;
   const aType = numericOperandType(props, "aType");
   const bType = numericOperandType(props, "bType");
   if (!numericOperandsValid(ctx.node.typeId, props)) throw invalidOperands(ctx, aType, bType);
+  if (isVector(aType) || isVector(bType)) {
+    const hasWiredUnboxedInput = (isVector(aType) && ctx.isWired("a") && ctx.inputUnboxed?.("a") !== undefined) ||
+      (isVector(bType) && ctx.isWired("b") && ctx.inputUnboxed?.("b") !== undefined);
+    if (hasWiredUnboxedInput) {
+      const unboxed = binaryUnboxed(ctx, op);
+      if (unboxed) return boxUnboxedVector(unboxed);
+    }
+  }
   const a = ctx.input("a");
   const b = ctx.input("b");
   if (!isVector(aType) && !isVector(bType)) {
@@ -328,6 +394,10 @@ function binaryOperatorNode(id: string, title: string): NodeDefinition {
       ];
     },
     codegen: (ctx) => ({ out: binaryExpr(ctx, op) }),
+    codegenUnboxed: (ctx) => {
+      const vec = binaryUnboxed(ctx, op);
+      return vec ? { out: vec } : undefined;
+    },
   };
 }
 
@@ -354,12 +424,26 @@ export const numericOperatorNodes: NodeDefinition[] = [
     },
     codegen: (ctx) => {
       const type = numericOperandType(ctx.node.properties, "inType");
+      if (!isVector(type)) return { out: `(-(${ctx.input("in")}))` };
+      if (ctx.allocTemp && ctx.isWired("in") && ctx.inputUnboxed?.("in")) {
+        const v = ctx.inputUnboxed("in")!;
+        const axes = AXES[type];
+        const unboxed = bindUnboxedComponents(ctx, type, axes.map((axis) => `-(${vecAxis(v, axis)})`), v.setup);
+        return { out: boxUnboxedVector(unboxed) };
+      }
       const value = ctx.input("in");
-      if (!isVector(type)) return { out: `(-(${value}))` };
       const axes = AXES[type];
       return {
         out: hoistedCall(ctx, `__util_negate${axes.length}`, "v", `({ ${axes.map((axis) => `${axis}: -v.${axis}`).join(", ")} })`, [value]),
       };
+    },
+    codegenUnboxed: (ctx) => {
+      const type = numericOperandType(ctx.node.properties, "inType");
+      if (!isVector(type) || !ctx.allocTemp) return undefined;
+      const v = readVectorAsUnboxed(ctx, "in", type);
+      if (!v) return undefined;
+      const axes = AXES[type];
+      return { out: bindUnboxedComponents(ctx, type, axes.map((axis) => `-(${vecAxis(v, axis)})`), v.setup) };
     },
   },
 ];

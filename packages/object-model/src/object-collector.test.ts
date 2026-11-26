@@ -226,6 +226,30 @@ describe("ObjectCollector incremental cycles", () => {
     expect(gc.finish(roots)).toEqual({ marked: roots.length + 1, collected: 1, cleared: 0 });
     expect([held.destroyed, orphan.destroyed]).toEqual([false, true]);
   });
+
+  it("skips scanning primitive-only owners in O(1) while still catching references written during an incremental cycle", () => {
+    const gc = collector();
+    const held = object();
+    gc.register(held);
+    const primOnly = object({ Score: 42, Label: "ok", Alive: true });
+    const holder = object({ Held: held });
+    expect(primOnly.hasNonPrimitiveVariables).toBe(false);
+
+    gc.begin([primOnly, holder]);
+    const workBefore = gc.workDone;
+    // Taking primOnly (1) + scanning it (0 map entries walked) does not touch holder yet.
+    expect(gc.step(1)).toBe(false);
+    expect(gc.workDone - workBefore).toBe(1);
+
+    // Move `held` onto `primOnly` mid-cycle and clear `holder`.
+    holder.setVariable("Held", null);
+    primOnly.setVariable("Ref", held);
+    expect(primOnly.hasNonPrimitiveVariables).toBe(true);
+    while (!gc.step(2)) { /* mark */ }
+
+    expect(gc.finish([primOnly, holder]).collected).toBe(0);
+    expect(held.destroyed).toBe(false);
+  });
 });
 
 /** Deterministic random numbers for the differential test. */

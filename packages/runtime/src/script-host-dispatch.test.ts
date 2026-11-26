@@ -415,4 +415,77 @@ describe("ScriptHost actor and component writes", () => {
     expect(label.getVariable("text")).toBe("Old");
     expect(playSound).not.toHaveBeenCalled();
   });
+
+  it("applies scalar XYZ transform setters and rejects non-finite scalar coordinates", () => {
+    const teleportActor = vi.fn();
+    const host = new ScriptHost(services({ teleportActor }));
+    const actor = new Actor({ classId: "Hero" });
+    const ctx = host.createContext(actor, 0, 0);
+
+    ctx.setActorLocationXYZ(actor, Number.NaN, 2, 3);
+    ctx.addActorWorldOffsetXYZ(actor, 1, Number.POSITIVE_INFINITY, 0);
+    ctx.setActorScaleXYZ(actor, 1, 2, Number.NaN);
+    expect(teleportActor).not.toHaveBeenCalled();
+
+    ctx.setActorLocationXYZ(actor, 1, 2, 3);
+    ctx.addActorWorldOffsetXYZ(actor, 4, -1, 2);
+    ctx.setActorScaleXYZ(actor, 2, 3, 4);
+    expect(actor.transform.position).toEqual({ x: 5, y: 1, z: 5 });
+    expect(actor.transform.scale).toEqual({ x: 2, y: 3, z: 4 });
+    expect(teleportActor).toHaveBeenCalledTimes(3);
+  });
+
+  it("reuses pooled contexts across sync ticks while keeping reentrant and latent contexts isolated", async () => {
+    let resumeLatent: (() => void) | null = null;
+    const seenContexts: unknown[] = [];
+    const host = new ScriptHost(services({
+      delay: () => new Promise<void>((resolve) => { resumeLatent = resolve; }),
+    }));
+    await host.load(script("Hero", [
+      "export function onOuter(ctx) {",
+      "  const beforeSelf = ctx.self;",
+      "  const beforeArg = ctx.args.tag;",
+      "  ctx.invokeCustomEvent(ctx.args.other, 'onInner', { tag: 'inner' });",
+      "  ctx.self.setVariable('outerCheck', ctx.self === beforeSelf && ctx.args.tag === beforeArg);",
+      "  ctx.self.setVariable('outerCtx', ctx);",
+      "}",
+      "export function onInner(ctx) {",
+      "  ctx.self.setVariable('innerTag', ctx.args.tag);",
+      "  ctx.self.setVariable('innerCtx', ctx);",
+      "}",
+      "export async function onLatent(ctx) {",
+      "  const mySelf = ctx.self;",
+      "  await ctx.delay(0.1);",
+      "  ctx.self.setVariable('latentOk', ctx.self === mySelf && ctx.args.token === 'kept');",
+      "}",
+    ].join("\n"), {
+      entryPoints: [
+        { name: "onOuter", event: "onOuter", isAsync: false },
+        { name: "onInner", event: "onInner", isAsync: false },
+        { name: "onLatent", event: "onLatent", isAsync: true },
+      ],
+    }));
+
+    const a = new Actor({ classId: "Hero", guid: "a" });
+    const b = new Actor({ classId: "Hero", guid: "b" });
+    host.invokeEvent("Hero", "onOuter", a, { tag: "outer", other: b });
+    expect(a.getVariable("outerCheck")).toBe(true);
+    expect(b.getVariable("innerTag")).toBe("inner");
+    // Reentrant outer and inner calls received distinct live contexts.
+    expect(a.getVariable("outerCtx")).not.toBe(b.getVariable("innerCtx"));
+    seenContexts.push(a.getVariable("outerCtx"));
+
+    // Subsequent non-reentrant sync call reuses a pooled context.
+    host.invokeEvent("Hero", "onInner", b, { tag: "reuse" });
+    expect(seenContexts.includes(b.getVariable("innerCtx")) || b.getVariable("innerCtx") === a.getVariable("outerCtx")).toBe(true);
+
+    // Latent call keeps its dedicated context intact even while sync calls run before it resumes.
+    host.invokeEvent("Hero", "onLatent", a, { token: "kept" });
+    host.invokeEvent("Hero", "onInner", b, { tag: "interleaved" });
+    expect(resumeLatent).not.toBeNull();
+    resumeLatent!();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(a.getVariable("latentOk")).toBe(true);
+  });
 });

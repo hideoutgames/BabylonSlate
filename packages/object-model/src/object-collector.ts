@@ -302,8 +302,15 @@ export class ObjectCollector {
   }
 
   private scanOwner(object: EngineObject): void {
-    const scalars = this.scalarVariables(object.classId);
     const recording = this.recording;
+    if (!object.hasNonPrimitiveVariables) {
+      if (recording) {
+        this.scannedOwners.push(object);
+        this.scannedRevisions.push(object.variablesRevision);
+      }
+      return;
+    }
+    const scalars = this.scalarVariables(object.classId);
     const ownerIndex = this.scannedOwners.length;
     for (const [name, value] of object.variables) {
       this.work++;
@@ -317,7 +324,7 @@ export class ObjectCollector {
         }
         continue;
       }
-      if (recording) {
+      if (recording && !Object.isFrozen(value)) {
         this.scannedContainers.push(value);
         this.scannedContainerOwners.push(ownerIndex);
       }

@@ -278,7 +278,9 @@ describe("vector nodes", () => {
     // The generated text is the contract here: what an entry declares is what each call builds.
     expect(tickSource).toContain("for (");
     expect(tickSource).not.toMatch(/__memo_|__stmt/);
-    expect(source.slice(source.indexOf("export function onBeginPlay("), source.indexOf("export function onTick("))).toMatch(/__memo_0\(\)/);
+    const beginSource = source.slice(source.indexOf("export function onBeginPlay("), source.indexOf("export function onTick("));
+    expect(beginSource).toContain("__memo_0_at === __stmt");
+    expect(beginSource).not.toContain("=>");
     let count = 0;
     const logs: string[] = [];
     const body = source.replace(/export\s+function\s+/g, "function ");

@@ -85,6 +85,14 @@ const NO_BT_HOOK = (): undefined => undefined;
 /** The arguments of a call that passes none: shared, so nothing may write to it. */
 const NO_ARGS: Record<string, unknown> = Object.freeze({});
 const NO_GAMEPAD_CONNECTIONS: NonNullable<ScriptContext["gamepadConnections"]> = Object.freeze([]);
+/** Shared COW ownership WeakSet matching compiled script modules (`cow-helpers.ts`). */
+const COW_UNIQUE_KEY = Symbol.for("haptic.cow.unique");
+function markContainerShared(value: unknown): void {
+  if (value !== null && typeof value === "object") {
+    const set = (globalThis as Record<symbol, WeakSet<object> | undefined>)[COW_UNIQUE_KEY];
+    set?.delete(value);
+  }
+}
 
 const ASSET_LOADING_UNAVAILABLE = "Asset loading is unavailable in this host";
 
@@ -122,6 +130,28 @@ export interface ScriptContextHost extends ComponentFunctionHost {
   ): { error: unknown } | null;
   invokeEntry(owner: EngineObject | null, script: CompiledScript, exportName: string, fn: (ctx: ScriptContext) => unknown, ctx: ScriptContext): unknown;
   reportLatentError(error: unknown, owner: EngineObject | null): void;
+  acquireContext(
+    self: EngineObject | null,
+    deltaSeconds: number,
+    tickIndex: number,
+    commandArgs?: Record<string, unknown>,
+    extras?: ScriptExtras,
+    flowNamespace?: string,
+  ): PooledScriptContext;
+  releaseContext(ctx: PooledScriptContext): void;
+}
+
+/** A `ScriptContext` that `ScriptHost` can reset and reuse across synchronous calls. */
+export interface PooledScriptContext extends ScriptContext {
+  reset(
+    self: EngineObject | null,
+    deltaSeconds: number,
+    tickIndex: number,
+    commandArgs?: Record<string, unknown>,
+    extras?: ScriptExtras,
+    flowNamespace?: string,
+  ): void;
+  release(): void;
 }
 
 /** Builds a context for one script call; see `ScriptHost.createContext`. */
@@ -132,7 +162,7 @@ export type ScriptContextConstructor = new (
   commandArgs?: Record<string, unknown>,
   extras?: ScriptExtras,
   flowNamespace?: string,
-) => ScriptContext;
+) => PooledScriptContext;
 
 /** The members a context holds as its own values, set when it is built. */
 type CallValueKey =
@@ -268,19 +298,19 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
   };
 
   class Context implements Pick<ScriptContext, CallValueKey> {
-    // A context is built for every script call, so it holds only what differs per call; the rest are
-    // accessors on the prototype.
-    self: ScriptContext["self"];
-    deltaSeconds: number;
-    tickIndex: number;
-    debugTrace: ScriptContext["debugTrace"];
-    commandArgs: ScriptContext["commandArgs"];
+    // A context is pooled across synchronous script calls; `reset` rebinds its
+    // per-call fields and `release` clears object references before pooling.
+    self: ScriptContext["self"] = null;
+    deltaSeconds = 0;
+    tickIndex = 0;
+    debugTrace: ScriptContext["debugTrace"] = null;
+    commandArgs: ScriptContext["commandArgs"] = NO_ARGS;
     /** The instance whose variables the call reads: `self`, or an Animation Graph's component. */
-    readonly #store: NonNullable<ScriptExtras["variableStore"]> | EngineObject | null;
+    #store: NonNullable<ScriptExtras["variableStore"]> | EngineObject | null = null;
     /** Also the Scene query caller: queries answer from this object's world, so a static Function Library call keeps its caller's. */
-    readonly #owner: EngineObject | null;
-    readonly #extras: ScriptExtras | undefined;
-    readonly #flowNamespace: string;
+    #owner: EngineObject | null = null;
+    #extras: ScriptExtras | undefined = undefined;
+    #flowNamespace = "";
 
     constructor(
       self: EngineObject | null,
@@ -290,6 +320,17 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
       extras?: ScriptExtras,
       flowNamespace = "",
     ) {
+      this.reset(self, deltaSeconds, tickIndex, commandArgs, extras, flowNamespace);
+    }
+
+    reset(
+      self: EngineObject | null,
+      deltaSeconds: number,
+      tickIndex: number,
+      commandArgs: Record<string, unknown> = NO_ARGS,
+      extras?: ScriptExtras,
+      flowNamespace = "",
+    ): void {
       const store = extras?.variableStore ?? self;
       this.self = self;
       this.deltaSeconds = deltaSeconds;
@@ -302,6 +343,18 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
       this.#owner = self ?? extras?.callerOwner ?? null;
       this.#extras = extras;
       this.#flowNamespace = flowNamespace;
+    }
+
+    release(): void {
+      this.self = null;
+      this.deltaSeconds = 0;
+      this.tickIndex = 0;
+      this.debugTrace = null;
+      this.commandArgs = NO_ARGS;
+      this.#store = null;
+      this.#owner = null;
+      this.#extras = undefined;
+      this.#flowNamespace = "";
     }
 
     get args(): ScriptContext["args"] { return this.commandArgs; }
@@ -317,8 +370,49 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
     get setBlackboard(): ScriptContext["setBlackboard"] { return this.#extras?.setBlackboard ?? NO_BT_HOOK; }
 
     static {
+      const readVariableFrom = (object: EngineObject | null | undefined, name: string): unknown => {
+        if (isReleasedObject(object)) {
+          reportDestroyedTarget(services, host.classDisplayName, "access", name, object);
+          return null;
+        }
+        if (object instanceof ActorComponent && object.classId === "2DRichTextComponent" &&
+          (name === "appearProgress" || name === "isRevealed")) {
+          const progress = services.text2DAppearProgress?.(object) ?? 1;
+          return name === "isRevealed" ? progress === 1 : progress;
+        }
+        if (object instanceof ActorComponent && object.classId === "RenderTargetCaptureComponent" && name === "actorIds") {
+          return host.canInvokeOwner(object) ? captureActorReferences(object, (id) => services.findActor?.(id)) : [];
+        }
+        if (object instanceof SceneCameraManager) {
+          if (name === "layerCamera") return services.getMainSceneCamera?.() ?? null;
+          if (name === "cameraActor") return services.getCameraActor?.() ?? null;
+          if (name === "cameraComponent") return services.getCameraComponent?.() ?? null;
+        }
+        if (name === "layerCamera") {
+          // A Scene Layer's own camera, or the camera of the layer a Scene Layer Actor belongs to.
+          if (object instanceof SceneLayer) return object.camera;
+          if (object instanceof Actor) return services.getOwningSceneLayer?.(object)?.camera ?? null;
+        }
+        // A Set Variable whose asset is still loading reads back as set; the component shows its earlier value.
+        if (object instanceof ActorComponent) {
+          const pending = host.assetLoads.pendingValue(object, name);
+          if (pending) return pending.value;
+        }
+        const value = object?.getVariable(name);
+        markContainerShared(value);
+        return value;
+      };
+      const writeVariableOnFor = (callerSelf: EngineObject | null, object: EngineObject | null | undefined, name: string, value: unknown): void => {
+        if (isReleasedObject(object)) {
+          reportDestroyedTarget(services, host.classDisplayName, "set", name, object);
+          return;
+        }
+        // An asset its owner did not load: the component keeps its value until the asset loads (`ScriptAssetLoads`).
+        if (object instanceof ActorComponent && host.assetLoads.deferComponentWrite(object, name, value, callerSelf,
+          () => writeVariable(object, name, value))) return;
+        writeVariable(object, name, value);
+      };
       // The class as scripts see it: its methods and the host members are on the prototype, which the class type omits.
-      const NestedContext = Context as unknown as ScriptContextConstructor;
       const methods: CallMethods & ThisType<Context & ScriptContext> = {
         registerSaveMigration(fromVersion, migrate) {
           const { self } = this;
@@ -394,19 +488,19 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
         getVariable(name) {
           const store = this.#store;
           return name === "layerCamera" && store instanceof EngineObject && !store.variables.has(name)
-            ? this.getVariableFrom(store, name) : store?.getVariable(name);
+            ? readVariableFrom(store, name) : store?.getVariable(name);
         },
         variableReference(target, name, implicitSelf = false) {
-          const store = this.#store, contextOwner = this.#owner;
+          const store = this.#store, contextOwner = this.#owner, callerSelf = this.self;
           const object = implicitSelf ? store : target;
           if (!object || typeof name !== "string" || !name ||
             (object instanceof EngineObject && (object.destroyed || isReadOnlyTweenProperty(object, name)))) return null;
           return {
             identity: object, property: `variable:${name}`,
             owner: object instanceof EngineObject ? object : contextOwner ?? undefined,
-            get: () => object instanceof EngineObject ? this.getVariableFrom(object, name) : object.getVariable(name),
+            get: () => object instanceof EngineObject ? readVariableFrom(object, name) : object.getVariable(name),
             set: (value) => {
-              if (object instanceof EngineObject) this.setVariableOn(object, name, tweenStorageValue(object, name, value));
+              if (object instanceof EngineObject) writeVariableOnFor(callerSelf, object, name, tweenStorageValue(object, name, value));
               else object.setVariable(name, value);
             },
           };
@@ -424,51 +518,17 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
         },
         setVariable(name, value) {
           const store = this.#store;
-          if (store instanceof Actor && name === "parentId") {
+          if (name === "parentId" && store instanceof Actor) {
             writeParentId(services, store, value);
             return;
           }
           store?.setVariable(name, value);
         },
         getVariableFrom(object, name) {
-          if (isReleasedObject(object)) {
-            reportDestroyedTarget(services, host.classDisplayName, "access", name, object);
-            return null;
-          }
-          if (object instanceof ActorComponent && object.classId === "2DRichTextComponent" &&
-            (name === "appearProgress" || name === "isRevealed")) {
-            const progress = services.text2DAppearProgress?.(object) ?? 1;
-            return name === "isRevealed" ? progress === 1 : progress;
-          }
-          if (object instanceof ActorComponent && object.classId === "RenderTargetCaptureComponent" && name === "actorIds") {
-            return host.canInvokeOwner(object) ? captureActorReferences(object, (id) => services.findActor?.(id)) : [];
-          }
-          if (object instanceof SceneCameraManager) {
-            if (name === "layerCamera") return services.getMainSceneCamera?.() ?? null;
-            if (name === "cameraActor") return services.getCameraActor?.() ?? null;
-            if (name === "cameraComponent") return services.getCameraComponent?.() ?? null;
-          }
-          if (name === "layerCamera") {
-            // A Scene Layer's own camera, or the camera of the layer a Scene Layer Actor belongs to.
-            if (object instanceof SceneLayer) return object.camera;
-            if (object instanceof Actor) return services.getOwningSceneLayer?.(object)?.camera ?? null;
-          }
-          // A Set Variable whose asset is still loading reads back as set; the component shows its earlier value.
-          if (object instanceof ActorComponent) {
-            const pending = host.assetLoads.pendingValue(object, name);
-            if (pending) return pending.value;
-          }
-          return object?.getVariable(name);
+          return readVariableFrom(object, name);
         },
         setVariableOn(object, name, value) {
-          if (isReleasedObject(object)) {
-            reportDestroyedTarget(services, host.classDisplayName, "set", name, object);
-            return;
-          }
-          // An asset its owner did not load: the component keeps its value until the asset loads (`ScriptAssetLoads`).
-          if (object instanceof ActorComponent && host.assetLoads.deferComponentWrite(object, name, value, this.self,
-            () => writeVariable(object, name, value))) return;
-          writeVariable(object, name, value);
+          writeVariableOnFor(this.self, object, name, value);
         },
         async setMeshMaterialAsync(component, materialGuid) {
           const { self } = this;
@@ -520,6 +580,12 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
           writeObservedPosition(target.transform, position.x, position.y, position.z);
           services.teleportActor?.(target);
         },
+        setActorLocationXYZ(actor, x, y, z) {
+          const target = transformTarget(actor);
+          if (!target || !Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return;
+          writeObservedPosition(target.transform, x, y, z);
+          services.teleportActor?.(target);
+        },
         addActorWorldOffset(actor, offset) {
           const target = transformTarget(actor);
           const delta = finiteVector(offset, 0);
@@ -527,6 +593,16 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
           const x = target.transform.position.x + delta.x;
           const y = target.transform.position.y + delta.y;
           const z = target.transform.position.z + delta.z;
+          if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return;
+          writeObservedPosition(target.transform, x, y, z);
+          services.teleportActor?.(target);
+        },
+        addActorWorldOffsetXYZ(actor, dx, dy, dz) {
+          const target = transformTarget(actor);
+          if (!target || !Number.isFinite(dx) || !Number.isFinite(dy) || !Number.isFinite(dz)) return;
+          const x = target.transform.position.x + dx;
+          const y = target.transform.position.y + dy;
+          const z = target.transform.position.z + dz;
           if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return;
           writeObservedPosition(target.transform, x, y, z);
           services.teleportActor?.(target);
@@ -544,6 +620,12 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
           const next = finiteVector(scale, 1);
           if (!target || !next) return;
           writeObservedScale(target.transform, next.x, next.y, next.z);
+          services.teleportActor?.(target);
+        },
+        setActorScaleXYZ(actor, x, y, z) {
+          const target = transformTarget(actor);
+          if (!target || !Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return;
+          writeObservedScale(target.transform, x, y, z);
           services.teleportActor?.(target);
         },
         setActorTransform(actor, transform, options) {
@@ -839,10 +921,12 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
               const entry = scripts[index]!;
               const fn = entry.exports[functionName];
               if (typeof fn !== "function") continue;
-              const nested = new NestedContext(receiver, deltaSeconds, tickIndex, fnArgs ?? {}, nestedExtras, entry.script.assetGuid);
+              const nested = host.acquireContext(receiver, deltaSeconds, tickIndex, fnArgs ?? NO_ARGS, nestedExtras, entry.script.assetGuid);
+              let keepNested = false;
               try {
-                const value = host.invokeEntry(receiver, entry.script, functionName, fn as (ctx: ScriptContext) => unknown, nested as unknown as ScriptContext);
+                const value = host.invokeEntry(receiver, entry.script, functionName, fn as (ctx: ScriptContext) => unknown, nested);
                 if (isThenable(value)) {
+                  keepNested = true;
                   const previous = result;
                   // A `TickWait` chain: the caller resumes in the tick the function finished in.
                   const settled = TickWait.from(value).then(
@@ -864,6 +948,8 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
                 result = value;
               } catch (error) {
                 failed(error);
+              } finally {
+                if (!keepNested) host.releaseContext(nested);
               }
             }
             return record(result);
