@@ -291,25 +291,23 @@ describe("COW containers and O(1) value-keyed Map", () => {
   });
 
   it("marks container inputs shared when passed to debug.executeJavaScript so aliased JS references stay isolated", () => {
-    const arrProp = (name: string) => ({
-      variableName: name,
-      variableType: { kind: "array", elementType: { kind: "int" } },
-    });
+    const arrProp = { variableName: "A", typeId: "int", container: "array", implicitSelf: true };
     const graph: LogicGraph = {
       id: "execJsCow",
+      kind: "event",
       nodes: [
-        node(registry, "begin", "event.beginPlay"),
-        node(registry, "make", "array.make", { count: 1, "default:item_0": 10 }),
-        node(registry, "setA0", "variables.set", arrProp("A")),
-        node(registry, "getA1", "variables.get", arrProp("A")),
+        node(registry, "begin", "flow.event.beginPlay"),
+        node(registry, "make", "array.make", { count: 1, "default:item0": 10 }),
+        node(registry, "setA0", "variables.set", arrProp),
+        node(registry, "getA1", "variables.get", arrProp),
         node(registry, "js", "debug.executeJavaScript", {
           inputs: [{ name: "arr", type: { kind: "array", elementType: { kind: "int" } } }],
           outputs: [],
           body: "ctx.stashed = arr;",
         }),
-        node(registry, "getA2", "variables.get", arrProp("A")),
+        node(registry, "getA2", "variables.get", arrProp),
         node(registry, "append", "array.append", { "default:item": 20 }),
-        node(registry, "setA1", "variables.set", arrProp("A")),
+        node(registry, "setA1", "variables.set", arrProp),
       ],
       edges: [
         edge("x1", "begin", "execOut", "setA0", "execIn"),
