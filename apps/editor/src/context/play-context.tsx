@@ -71,6 +71,7 @@ import { simulationSceneDocument, type SimulationViewport } from "../services/si
 import { GameSessionOwner, transitionClosesSessionSource, type GameSessionState, type GameSessionTicket } from "../services/game-session-owner";
 import { automatedSessionReportingHeld, publishPlaySessionClosed } from "../services/runtime-probes";
 import { preloadPrewarmedGameWorkerPhysics, prewarmGameWorker } from "../services/game-worker-host";
+import { beginPlayBootTimings, markPlayBootPhase } from "../services/play-boot-timings";
 import {
   canonicalPlaySceneGuid,
   editorHavokWasmUrl,
@@ -816,6 +817,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
       const ticket = sessionOwner.begin(simulating ? "simulate" : "play");
       if (!ticket) return;
       sessionTicketRef.current = ticket;
+      beginPlayBootTimings();
       // The session's game worker loads while its content is prepared; the ticket ending first discards it.
       prewarmGameWorker(ticket.signal);
       sessionSourceDocumentRef.current = simulating ? simulationTarget?.id ?? null : playFromScene ? openPlaySceneDocumentId : null;
@@ -935,6 +937,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         const projectAssets = requiredProjectAssets(assetRegistry, projectDocument);
         const { prepared, persistent } = await acquirePlayStartupSources(sourceHost, effectiveGuid, projectAssets,
           { consumer: `Play ${describePlayAssetForMessage(assetRegistry, effectiveGuid)}`, signal: sourceSignal });
+        markPlayBootPhase("sourcesAcquiredMs");
         if (!sessionOwner.isCurrent(ticket) || playSourceHostRef.current !== sourceHost) {
           persistent?.release();
           prepared.release();
@@ -991,6 +994,7 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         }
         setPrepareState(null);
         presentationRequested = true;
+        markPlayBootPhase("contentPreparedMs");
         launchPlay({ injectFixtureThrow: inject, scripts: nextScripts });
       } catch (error) {
         if (!sessionOwner.isCurrent(ticket)) return;

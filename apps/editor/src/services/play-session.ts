@@ -35,6 +35,7 @@ import { SimulationCaptureClient } from "./simulation-capture-client";
 import { getBuildIdentity } from "../lib/build-identity";
 import { observedMoveXFromEvents } from "../lib/play-input-observe";
 import { createGameWorkerHost, type GameWorkerHost } from "./game-worker-host";
+import { markPlayBootPhase } from "./play-boot-timings";
 import { EDITOR_BUILD_REPLACED_CODE, editorBuildReplaced } from "../lib/build-staleness";
 import {
   editorDracoPublicBase,
@@ -232,6 +233,7 @@ export function startPlaySession(options: PlaySessionOptions): PlaySession {
     else runtime?.applyScalabilityStatus(acknowledgement);
   };
 
+  markPlayBootPhase("sessionStartMs");
   const boot = playSessionLoad(options, options.acquireSceneSources !== undefined);
   const { loadControl, scripts, animGraphs } = boot;
   // The worker takes its boot content before the view is built, so its module, content parsing and physics
@@ -240,6 +242,7 @@ export function startPlaySession(options: PlaySessionOptions): PlaySession {
   try {
     worker = createGameWorkerHost();
     for (const control of playSessionWorkerControls(options, boot)) worker.postControl(control);
+    markPlayBootPhase("workerPostedMs");
   } catch (error) {
     // A worker that started but could not take its boot controls must not keep running beside the fallback.
     worker?.terminate();
@@ -720,9 +723,15 @@ export function startPlaySession(options: PlaySessionOptions): PlaySession {
         } finally { queueMicrotask(() => options.onFatalDiagnostic?.()); }
       });
     });
-    worker.onCommand((cmd) => onCommand(cmd));
+    worker.onCommand((cmd) => {
+      markPlayBootPhase("firstCommandMs");
+      if (cmd.type === "sceneLoading") markPlayBootPhase("sceneLoadingStartMs");
+      if (cmd.type === "sceneRealized") markPlayBootPhase("sceneLoadingEndMs", true);
+      onCommand(cmd);
+    });
     worker.onSnapshot((buffer) => {
       if (stopped) return;
+      markPlayBootPhase("firstSnapshotMs");
       lastWorkerTickIndex = applySnapshotTick(lastWorkerTickIndex, buffer);
       handle.pushSnapshot(buffer);
     });
@@ -745,6 +754,7 @@ export function startPlaySession(options: PlaySessionOptions): PlaySession {
     );
   }
   // The view size too: two-finger drags, cursor projection and Scene Layers measure against it.
+  markPlayBootPhase("engineCreatedMs");
   handle.publishSceneLayerSize();
   const initialScalability = handle.scalabilityStatus?.();
   if (initialScalability) publishScalabilityStatus(initialScalability);

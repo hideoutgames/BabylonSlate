@@ -22,7 +22,7 @@ import { coalesceShadowDraws, holdShadowAtlasPages } from "./shadow-atlas";
 import { readinessScanMeshes, requestCompilesAhead } from "./driver-compile";
 import { drawBorrowedTarget, type BorrowedDrawPolicy } from "./framegraph-borrowed-draw";
 import { shadowPassesOff } from "./shadow-debug";
-import { isMeshFrameReady, withSceneReadinessState } from "./scene-perf";
+import { isMeshFrameReady, withMeshProbePass, withSceneReadinessState } from "./scene-perf";
 import { isRenderTargetProbeReady } from "./readiness-scope";
 import { noteReadinessBlocker } from "./readiness-blockers";
 import { isRevealPending } from "./reveal-pending";
@@ -206,7 +206,7 @@ export class ManagedShadowObjectRendererTask extends FrameGraphObjectRendererTas
           (other) => probeAhead(other, rate, preWarm), colour ? undefined : depthReady);
         return false;
       };
-      const ready = super.isReady();
+      const ready = withMeshProbePass(() => super.isReady());
       if (ready) this.requestedAhead.clear();
       return ready;
     } finally {
@@ -553,7 +553,7 @@ export class ManagedShadowsTask extends FrameGraphTask {
         if (!map.getInternalTexture()) return false;
         continue;
       }
-      if (withSceneReadinessState(this.scene, () => isRenderTargetProbeReady(map))) continue;
+      if (withSceneReadinessState(this.scene, () => withMeshProbePass(() => isRenderTargetProbeReady(map)))) continue;
       // A steady frame never waits for a caster's depth variant. A map that has not drawn yet samples neutrally (lit)
       // and draws on the first frame every caster is ready (`record`), as a swapping Material adopts its new variant;
       // a drawn map keeps drawing without the caster (Babylon skips it and redraws the map until it is ready, a

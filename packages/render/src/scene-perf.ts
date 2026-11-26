@@ -402,6 +402,36 @@ const probedShadowMaps = new Set<RenderTargetTexture>();
 /** Generators whose caster check a tolerant probe answers while it asks one mesh, with what to restore. */
 const deferredCasters: { generator: ShadowGenerator; own: boolean; isReady: ShadowGenerator["isReady"] }[] = [];
 
+interface CachedInstanceProbe {
+  meshReady: boolean;
+  failed: Effect | undefined;
+  hasDirtySwap: boolean;
+  dirtyMaterialName: string;
+  requestsDesc: string;
+}
+
+/**
+ * Synchronous per-pass probe cache active only inside `withMeshProbePass` (cleared unconditionally on exit).
+ * Avoids repeating `material.getActiveTextures()` and identical `sourceMesh.isReady(true, true)` probes for
+ * hundreds of `InstancedMesh`es sharing the same source mesh and `renderPassId` within one readiness scan.
+ */
+let probePassDepth = 0;
+const probePassRefreshedMaterials = new Set<Material>();
+const probePassInstanced = new Map<AbstractMesh, Map<number, CachedInstanceProbe>>();
+
+export function withMeshProbePass<T>(probe: () => T): T {
+  probePassDepth += 1;
+  try {
+    return probe();
+  } finally {
+    probePassDepth -= 1;
+    if (probePassDepth === 0) {
+      probePassRefreshedMaterials.clear();
+      probePassInstanced.clear();
+    }
+  }
+}
+
 /**
  * Babylon's `Mesh.isReady` asks every map of the mesh's lights for the mesh's caster depth variant. In a tolerant
  * probe a shadow map never holds the frame (`ManagedShadowsTask`): one that has not drawn yet samples neutrally and
@@ -520,6 +550,45 @@ export function isMeshFrameReady(mesh: AbstractMesh): boolean {
   // A probe for changes that touched other meshes only: this one's variants are as the last probe found them.
   if (outsideReadinessProbeScope(mesh)) return true;
   const scene = mesh.getScene();
+  const isInstanced = mesh.getClassName() === "InstancedMesh";
+  const drawing = drawingMesh(mesh);
+  const tolerated = variantSwapsTolerated();
+  // Before the probe: a spawn's first request sets its still-compiling Effect on the submesh.
+  // A new instance waits for its actor's other meshes, as a new mesh does, though its batch draws (its group's
+  // variants are ready, so it is revealed in the round that finds them all ready).
+  const fresh = isInstanced ? !hasDrawnItself(mesh) : !hasDrawn(mesh) && !drawsSomething(mesh);
+  const hideable = tolerated && (isRevealPending(mesh) || fresh);
+  const cacheableInstance = probePassDepth > 0 && (isInstanced || (mesh instanceof Mesh && isInstanceSource(mesh)));
+  const cacheKey = cacheableInstance
+    ? scene.getEngine().currentRenderPassId * 4 + (tolerated ? (hideable ? 2 : 1) : 0)
+    : 0;
+  if (cacheableInstance) {
+    const cached = probePassInstanced.get(drawing)?.get(cacheKey);
+    if (cached) {
+      if (hideable) {
+        hideUntilReady(mesh);
+        noteRevealProbe(mesh, cached.meshReady);
+        if (cached.failed) {
+          reportFailure(cached.failed, `Mesh "${mesh.name}" stays hidden: its shader failed to compile.`);
+          noteRevealFailed(mesh);
+        } else if (isRevealPending(mesh)) noteVariantSwap();
+        return true;
+      }
+      if (!cached.meshReady) {
+        noteReadinessBlocker(() => `mesh "${mesh.name}" (Material "${(mesh.material ?? scene.defaultMaterial).name}"): ${cached.requestsDesc}`);
+        return false;
+      }
+      if (isRevealPending(mesh)) noteRevealProbe(mesh, true);
+      noteDrawn(mesh);
+      if (cached.hasDirtySwap) {
+        noteVariantSwap();
+        if (!tolerated)
+          noteReadinessBlocker(() => `mesh "${mesh.name}" (Material "${cached.dirtyMaterialName}"): its new variant is compiling (${cached.requestsDesc})`);
+        return tolerated;
+      }
+      return true;
+    }
+  }
   // Native influence edits become attribute-dirty only when the manager resolves
   // its active targets. Resolve before native readiness can accept old defines.
   void mesh.morphTargetManager?.numInfluencers;
@@ -529,7 +598,10 @@ export function isMeshFrameReady(mesh: AbstractMesh): boolean {
     states.set(material, [material.checkReadyOnEveryCall, material.checkReadyOnlyOnce]);
     // UV transform setters similarly defer texture-define invalidation until
     // getTextureMatrix detects an identity/nonidentity transition at bind time.
-    for (const texture of material.getActiveTextures()) texture.getTextureMatrix();
+    if (probePassDepth === 0 || !probePassRefreshedMaterials.has(material)) {
+      if (probePassDepth > 0) probePassRefreshedMaterials.add(material);
+      for (const texture of material.getActiveTextures()) texture.getTextureMatrix();
+    }
     // The probe evaluates the requested variant now; Material.forceCompilation's
     // temporary submesh bypasses these caches, our live submeshes need public cache flags.
     material.checkReadyOnEveryCall = true;
@@ -540,7 +612,6 @@ export function isMeshFrameReady(mesh: AbstractMesh): boolean {
   try {
     capture(mesh.material ?? scene.defaultMaterial);
     // An instance draws with its source's submeshes, whose draw wrappers hold the cached readiness to reset.
-    const drawing = drawingMesh(mesh);
     if (drawing.subMeshes) {
       for (const part of drawing.subMeshes) {
         const material = part.getMaterial();
@@ -554,7 +625,7 @@ export function isMeshFrameReady(mesh: AbstractMesh): boolean {
           if (defines) defines._renderId = -1;
           // Babylon will not draw a previous Effect after a light was disposed. The light block binds lights as data,
           // never a disposed light, so in a view that tolerates swaps the submesh keeps drawing it.
-          if (defines?._areLightsDisposed && variantSwapsTolerated() && part.effect?.isReady())
+          if (defines?._areLightsDisposed && tolerated && part.effect?.isReady())
             defines._areLightsDisposed = false;
         }
       }
@@ -563,21 +634,42 @@ export function isMeshFrameReady(mesh: AbstractMesh): boolean {
       if (!material._storeEffectOnSubMeshes)
         material._getDrawWrapper()._wasPreviouslyReady = false;
     }
-    const tolerated = variantSwapsTolerated();
-    // Before the probe: a spawn's first request sets its still-compiling Effect on the submesh.
-    // A new instance waits for its actor's other meshes, as a new mesh does, though its batch draws (its group's
-    // variants are ready, so it is revealed in the round that finds them all ready).
-    const fresh = mesh.getClassName() === "InstancedMesh" ? !hasDrawnItself(mesh) : !hasDrawn(mesh) && !drawsSomething(mesh);
-    const hideable = tolerated && (isRevealPending(mesh) || fresh);
     probedMesh = mesh;
     // A mesh to reveal also needs its caster depth variant for every map that has drawn (a map awaiting its first
     // draw waits for its casters itself); a drawn mesh lets the maps wait for theirs.
     if (tolerated) deferCasterChecks(mesh, hideable);
     const meshReady = collectEffectRequests(scene.getEngine(), meshRequests, probeMesh);
+    const failed = meshReady ? undefined : failedRequest();
+    let hasDirtySwap = false;
+    let dirtyMaterialName = "";
+    if (meshReady && !hideable) {
+      // A hot swap keeps the previous, ready effect and leaves the defines unprocessed until the new variant is ready (an
+      // instance's in its source's submeshes).
+      for (const part of drawing.subMeshes ?? []) {
+        const material = part.getMaterial();
+        if (!material?._storeEffectOnSubMeshes) continue;
+        if (part.materialDefines?.isDirty && part.effect?.isReady()) {
+          if (swapFailed(material)) continue;
+          hasDirtySwap = true;
+          dirtyMaterialName = material.name;
+          break;
+        }
+      }
+    }
+    if (cacheableInstance) {
+      let byPass = probePassInstanced.get(drawing);
+      if (!byPass) probePassInstanced.set(drawing, (byPass = new Map()));
+      byPass.set(cacheKey, {
+        meshReady,
+        failed,
+        hasDirtySwap,
+        dirtyMaterialName,
+        requestsDesc: !meshReady || hasDirtySwap ? describeRequests() : "",
+      });
+    }
     if (hideable) {
       hideUntilReady(mesh);
       noteRevealProbe(mesh, meshReady);
-      const failed = meshReady ? undefined : failedRequest();
       if (failed) {
         reportFailure(failed, `Mesh "${mesh.name}" stays hidden: its shader failed to compile.`);
         noteRevealFailed(mesh);
@@ -592,18 +684,11 @@ export function isMeshFrameReady(mesh: AbstractMesh): boolean {
     // round when every other pass agrees. Otherwise only a tolerant round could reveal it, and none follows.
     if (isRevealPending(mesh)) noteRevealProbe(mesh, true);
     noteDrawn(mesh);
-    // A hot swap keeps the previous, ready effect and leaves the defines unprocessed until the new variant is ready (an
-    // instance's in its source's submeshes).
-    for (const part of drawing.subMeshes ?? []) {
-      const material = part.getMaterial();
-      if (!material?._storeEffectOnSubMeshes) continue;
-      if (part.materialDefines?.isDirty && part.effect?.isReady()) {
-        if (swapFailed(material)) continue;
-        noteVariantSwap();
-        if (!variantSwapsTolerated())
-          noteReadinessBlocker(() => `mesh "${mesh.name}" (Material "${material.name}"): its new variant is compiling (${describeRequests()})`);
-        return variantSwapsTolerated();
-      }
+    if (hasDirtySwap) {
+      noteVariantSwap();
+      if (!tolerated)
+        noteReadinessBlocker(() => `mesh "${mesh.name}" (Material "${dirtyMaterialName}"): its new variant is compiling (${describeRequests()})`);
+      return tolerated;
     }
     return true;
   } finally {
@@ -666,7 +751,7 @@ export function isSceneFrameReady(
   probedElsewhere?: (map: RenderTargetTexture) => boolean,
 ): boolean {
   if (scene.isDisposed) return false;
-  return withSceneReadinessState(scene, () => {
+  return withSceneReadinessState(scene, () => withMeshProbePass(() => {
     const engine = scene.getEngine();
     const admitted = admittedSceneMeshes(scene);
     const meshes = admitted ?? scene.meshes;
@@ -755,5 +840,5 @@ export function isSceneFrameReady(
     }
     shadowMaps.clear();
     return ready;
-  });
+  }));
 }

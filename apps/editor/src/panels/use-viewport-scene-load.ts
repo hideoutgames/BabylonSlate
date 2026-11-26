@@ -51,6 +51,7 @@ import {
   getCachedViewportCollection,
   putCachedViewportCollection,
 } from "../lib/viewport-collection-cache";
+import { recordEditorViewportLoadTimings } from "../services/play-boot-timings";
 import { useLiveTilemapEdits } from "./use-live-tilemap-edits";
 
 /** The Scene viewport's loading dialog and failure state. */
@@ -283,6 +284,8 @@ export function useViewportSceneLoad({
     void (async () => {
       let collected: EditorSceneLoadOptions | null = null;
       let pendingIncrementalInstall: (() => void) | null = null;
+      let collectionCacheHit = false;
+      const round1 = (ms: number) => Math.round(ms * 10) / 10;
       const realize = async () => {
         if (!isCurrent()) return;
         if (appliedRenderSettingsRef.current !== renderSettingsKey) {
@@ -341,6 +344,7 @@ export function useViewportSceneLoad({
         let fontFaceEntries: Awaited<ReturnType<typeof collectPlayFontFaceEntries>>;
         let resolvedPayloadRevisions: Map<string, string>;
         if (cachedCollection) {
+          collectionCacheHit = true;
           sprites = cachedCollection.sprites;
           tileContent = cachedCollection.tileContent;
           waters = cachedCollection.waters;
@@ -548,35 +552,74 @@ export function useViewportSceneLoad({
       };
       try {
         if (blocking) {
+          const loadStart = performance.now();
           const canvas = canvasRef.current;
           if (!canvas) return;
           await waitForCanvasSize(canvas, controller.signal);
+          const waitCanvasMs = round1(performance.now() - loadStart);
           if (!isCurrent()) return;
           setSceneLoad({ open: true, progress: 0, phase: "Preparing Scene", rendering });
+          let collectMs = 0;
+          let realizeMs = 0;
+          let modelsReadyMs = 0;
+          let texturesReadyMs = 0;
+          let warmShadersMs = 0;
+          let presentFirstFrameMs = 0;
           await runSceneViewportBlockingLoad({
             signal: controller.signal,
             dialogAlreadyPainted: remount,
-            realize,
-            collect: applyCollectedAssets,
+            realize: async () => {
+              const t0 = performance.now();
+              await realize();
+              realizeMs = round1(performance.now() - t0);
+            },
+            collect: async () => {
+              const t0 = performance.now();
+              await applyCollectedAssets();
+              collectMs = round1(performance.now() - t0);
+            },
             whenModelsReady: async () => {
               if (!isCurrent()) return;
+              const t0 = performance.now();
               await handle.whenEditorModelsReady();
+              modelsReadyMs = round1(performance.now() - t0);
               if (!isCurrent()) return;
+              const t1 = performance.now();
               await handle.whenMaterialTexturesReady();
+              texturesReadyMs = round1(performance.now() - t1);
             },
             warmShaders: async (onCount) => {
               if (!isCurrent()) return;
+              const t0 = performance.now();
               await handle.prewarmSceneMaterials(undefined, onCount);
+              warmShadersMs = round1(performance.now() - t0);
             },
             presentFirstFrame: async () => {
               if (!isCurrent()) return;
+              const t0 = performance.now();
               await handle.presentFirstFrame();
+              presentFirstFrameMs = round1(performance.now() - t0);
             },
             onProgress: (progress, phase, count) => {
               if (!isCurrent()) return;
               setSceneLoad({ open: true, progress, phase, count, rendering });
             },
           });
+          if (isCurrent()) {
+            recordEditorViewportLoadTimings({
+              blocking: true,
+              remount,
+              cacheHit: collectionCacheHit,
+              waitCanvasMs,
+              collectMs,
+              realizeMs,
+              modelsReadyMs,
+              texturesReadyMs,
+              warmShadersMs,
+              presentFirstFrameMs,
+              totalMs: round1(performance.now() - loadStart),
+            });
+          }
         } else {
           await applyCollectedAssets();
           if (!isCurrent()) return;

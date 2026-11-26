@@ -10,6 +10,7 @@ import {
 import type { CommandMessage } from "@haptic/bridge";
 import { playSceneByGuid } from "../lib/play-content";
 import type { GameWorkerHost } from "./game-worker-host";
+import { markPlayBootPhase, measurePlayReadinessSpan } from "./play-boot-timings";
 import type { PlaySourceTracker } from "./play-session-sources";
 import type { PlaySessionOptions } from "./play-session-types";
 
@@ -77,10 +78,23 @@ export function createPlaySceneReadiness(ctx: PlaySceneReadinessContext): {
   let hostSceneGuid: string | null = options.sceneAssetGuid ?? null;
   let receivedActiveScene = false;
   const sceneReadiness = createSceneLoadReadiness({
-    handle: { ...handle, whenEditorModelsReady: async (owner) => {
-      await sources.sessionSourcesReady;
-      await handle.whenEditorModelsReady(owner);
-    } },
+    handle: {
+      ...handle,
+      whenEditorModelsReady: async (owner) =>
+        measurePlayReadinessSpan(owner ? `layer:${owner.layerId}` : "world", "modelsReady", async () => {
+          await sources.sessionSourcesReady;
+          await handle.whenEditorModelsReady(owner);
+        }),
+      whenMaterialTexturesReady: async (owner) =>
+        measurePlayReadinessSpan(owner ? `layer:${owner.layerId}` : "world", "texturesReady", () =>
+          handle.whenMaterialTexturesReady(owner)),
+      prewarmSceneMaterials: async (owner, onProgress) =>
+        measurePlayReadinessSpan(owner ? `layer:${owner.layerId}` : "world", "prewarm", () =>
+          handle.prewarmSceneMaterials(owner, onProgress)),
+      presentFirstFrame: async (owner) =>
+        measurePlayReadinessSpan(owner ? `layer:${owner.layerId}` : "world", "presentFirstFrame", () =>
+          handle.presentFirstFrame(owner)),
+    },
     loading: {
       acquire: () => handle.scheduler.acquireObstruction(),
       progress: (state) => options.onSceneLoading?.(state),
@@ -108,11 +122,13 @@ export function createPlaySceneReadiness(ctx: PlaySceneReadinessContext): {
       receivedActiveScene = true;
     },
     onReady: ({ sceneAssetGuid, sceneLoadId }) => {
+      markPlayBootPhase("worldReadyMs", true);
       sources.sceneReady(sceneAssetGuid);
       ctx.worker()?.postControl({ type: "sceneModelsReady", sceneAssetGuid, sceneLoadId });
       ctx.runtime()?.notifySceneModelsReady(sceneAssetGuid, sceneLoadId);
     },
     onLayerReady: ({ layerId, layerLoadId }) => {
+      markPlayBootPhase("lastLayerReadyMs", true);
       ctx.worker()?.postControl({ type: "sceneLayerReady", layerId, layerLoadId });
       ctx.runtime()?.notifySceneLayerReady(layerId, layerLoadId);
     },

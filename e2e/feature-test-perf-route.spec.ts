@@ -196,6 +196,7 @@ type PlayHost = {
     scalability: () => { revision: number; status: string; message?: string } | undefined;
     liveObjectCounts: () => Record<string, number>;
     spawnableWarm: () => { materials: number; models: number; ms: number } | null;
+    bootTimings?: () => Record<string, unknown> | null;
     verifyScopedReadinessProbes: (enabled: boolean) => void;
     verifyRetainedOverlayBatches: (enabled: boolean) => void;
     verifyLayerDrawLists: (enabled: boolean) => void;
@@ -506,9 +507,11 @@ async function measurePlay(page: Page, cdp: CDPSession, scene: string) {
   const linksSince = await pageNow(page);
   await mark(page, "play: click");
   await clickPlayAndWaitForOverlay(page);
+  const overlayShownMs = Date.now() - started;
   await mark(page, "play: overlay shown");
   await expect(page.getByTestId("play-blocked-dialog")).toHaveCount(0);
   await expect(page.getByTestId("scene-loading-dialog")).toBeHidden({ timeout: 180_000 });
+  const dialogHiddenMs = Date.now() - started;
   const loadedAt = await pageNow(page);
   await mark(page, "play: loaded", true);
   await expect(page.getByTestId("play-canvas")).toBeVisible({ timeout: 60_000 });
@@ -519,6 +522,7 @@ async function measurePlay(page: Page, cdp: CDPSession, scene: string) {
     )
     .toBeGreaterThan(30);
   const playBootMs = Date.now() - started;
+  const bootTimings = await page.evaluate(() => (globalThis as unknown as PlayHost).__hapticPlayTest?.bootTimings?.() ?? null);
   await mark(page, "play: ticking", true);
   const worldDebug = await page.evaluate(() => {
     const settings = (globalThis as unknown as PlayHost).__hapticPlayTest?.rendering()?.settings as Record<string, string> | undefined;
@@ -584,7 +588,7 @@ async function measurePlay(page: Page, cdp: CDPSession, scene: string) {
   await mark(page, "play: closed", true);
   await expect(page.getByTestId("preview-session-report")).toHaveCount(0);
   return {
-    playBootMs, settingsHoldMs, spawnableWarm, programs, windows, views, liveObjects, worldDebug, glCalls, snapshotMismatches,
+    playBootMs, overlayShownMs, dialogHiddenMs, bootTimings, settingsHoldMs, spawnableWarm, programs, windows, views, liveObjects, worldDebug, glCalls, snapshotMismatches,
     ...(parity ? { layerParity: parity } : {}), ...(mirror ? { mirrorParity: mirror } : {}),
   };
 }
@@ -981,27 +985,35 @@ test("FeatureTest performance route", async ({ page }, testInfo) => {
       }
       await page.getByTestId("viewport-canvas").screenshot({ path: testInfo.outputPath(`${scene}-viewport.png`) });
       const plays = [];
+      const editorRestoreMs: number[] = [];
+      const editorRestoreTimings: unknown[] = [];
       for (let index = 0; index < PLAYS; index += 1) {
         if (index > 0) {
           step = `the editor's reload before Play ${index + 1}`;
+          const restoreStarted = Date.now();
           await waitForSceneView(page);
+          editorRestoreMs.push(Date.now() - restoreStarted);
+          editorRestoreTimings.push(await page.evaluate(() => (globalThis as unknown as { __hapticEditorLoadTimings?: unknown }).__hapticEditorLoadTimings ?? null));
           await mark(page, "editor: view ready after Play", true);
           await page.waitForTimeout(SETTLE_MS);
         }
         step = `Play ${index + 1}`;
         plays.push(await measurePlay(page, cdp, scene));
         // What was measured survives a later step's failure.
-        if (process.env.HAPTIC_PERF_OUT) writeFileSync(`${process.env.HAPTIC_PERF_OUT}.partial.json`, JSON.stringify({ scenes, [scene]: { plays } }, null, 2));
+        if (process.env.HAPTIC_PERF_OUT) writeFileSync(`${process.env.HAPTIC_PERF_OUT}.partial.json`, JSON.stringify({ scenes, [scene]: { plays, editorRestoreMs, editorRestoreTimings } }, null, 2));
       }
       // The next scene opens over the editor's reloaded view.
       step = "the editor's reload after the last Play";
+      const restoreStarted = Date.now();
       await waitForSceneView(page);
+      editorRestoreMs.push(Date.now() - restoreStarted);
+      editorRestoreTimings.push(await page.evaluate(() => (globalThis as unknown as { __hapticEditorLoadTimings?: unknown }).__hapticEditorLoadTimings ?? null));
       await mark(page, "editor: view ready after Play", true);
       if (MEMORY) {
         await page.waitForTimeout(SETTLE_MS);
         await mark(page, "editor: settled after Play", true);
       }
-      scenes[scene] = { sceneReadyMs, loadRetries, viewport, play: plays[0], ...(PLAYS > 1 ? { repeatPlays: plays.slice(1) } : {}) };
+      scenes[scene] = { sceneReadyMs, loadRetries, viewport, play: plays[0], editorRestoreMs, editorRestoreTimings, ...(PLAYS > 1 ? { repeatPlays: plays.slice(1) } : {}) };
     } catch (error) {
       console.log(`[feature-test-perf] ${scene}: ${step} failed; last console problems:\n${consoleProblems.join("\n")}`);
       if (MEMORY) await writeMemoryTimeline(page, stopSampler).catch(() => {});

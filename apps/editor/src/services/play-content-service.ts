@@ -111,16 +111,22 @@ import {
   type GraphCompileDocument,
 } from "./script-compiler";
 
-/** 64-bit FNV-1a hex digest for collision-resistant validation catalog keys. */
+/** Fast 64-bit two-lane FNV-1a hex digest (zero BigInt allocations) for collision-resistant validation catalog keys. */
 function fnv1a64(value: string): string {
-  let hash = 0xcbf29ce484222325n;
-  const prime = 0x100000001b3n;
-  const mask = 0xffffffffffffffffn;
+  let h1 = 0x811c9dc5;
+  let h2 = 0x9e3779b9;
   for (let i = 0; i < value.length; i += 1) {
-    hash ^= BigInt(value.charCodeAt(i));
-    hash = (hash * prime) & mask;
+    const code = value.charCodeAt(i);
+    h1 = Math.imul(h1 ^ code, 0x01000193);
+    h2 = Math.imul(h2 ^ ((code << 7) | (code >>> 1)) ^ i, 0x85ebca6b);
   }
-  return hash.toString(16).padStart(16, "0");
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 0x85ebca6b);
+  h1 = Math.imul(h1 ^ (h1 >>> 13), 0xc2b2ae35);
+  h1 = (h1 ^ (h1 >>> 16)) >>> 0;
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 0xc2b2ae35);
+  h2 = Math.imul(h2 ^ (h2 >>> 13), 0x27d4eb2f);
+  h2 = (h2 ^ (h2 >>> 16)) >>> 0;
+  return h1.toString(16).padStart(8, "0") + h2.toString(16).padStart(8, "0");
 }
 
 /** Class graphs, Animation Graphs and the typed asset catalogs their compilation reads. */
@@ -506,6 +512,9 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
     const embeddedDocuments = await loadEmbeddedScriptDocuments(requiredGuids, openDocuments, strict, stored);
     const documents = [...classDocuments, ...embeddedDocuments];
     const animDocuments = await loadProjectAnimGraphDocuments(requiredGuids, openDocuments, strict, stored);
+    if (documents.length === 0 && animDocuments.length === 0) {
+      return { bundles: [], diagnostics: [] };
+    }
     const parentOf = registryClassParentLookup(projectService.registry);
     const assets = projectService.registry?.list() ?? [];
     // Every document validates and compiles against the same catalogs: build each once.

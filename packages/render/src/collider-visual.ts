@@ -1,8 +1,7 @@
 import { Color3 } from "@babylonjs/core/Maths/math.color";
-import { Matrix, Quaternion, Vector3 } from "@babylonjs/core/Maths/math.vector";
-import { CreateBoxVertexData } from "@babylonjs/core/Meshes/Builders/boxBuilder";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
-import type { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
+import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
 import { Scene } from "@babylonjs/core/scene";
 import { convexHullEdges } from "@haptic/assets";
 import type { ColliderShape } from "@haptic/physics";
@@ -32,6 +31,181 @@ export function isColliderVisualTree(mesh: { parent?: unknown } | Mesh): boolean
   return false;
 }
 
+/** Unit box local corners (24 vertices, matching Babylon CreateBoxVertexData FRONTSIDE). */
+const UNIT_BOX_POS = [
+  // +Z face
+  0.5, -0.5, 0.5, -0.5, -0.5, 0.5, -0.5, 0.5, 0.5, 0.5, 0.5, 0.5,
+  // -Z face
+  0.5, 0.5, -0.5, -0.5, 0.5, -0.5, -0.5, -0.5, -0.5, 0.5, -0.5, -0.5,
+  // +X face
+  0.5, 0.5, -0.5, 0.5, -0.5, -0.5, 0.5, -0.5, 0.5, 0.5, 0.5, 0.5,
+  // -X face
+  -0.5, 0.5, 0.5, -0.5, -0.5, 0.5, -0.5, -0.5, -0.5, -0.5, 0.5, -0.5,
+  // +Y face
+  -0.5, 0.5, 0.5, -0.5, 0.5, -0.5, 0.5, 0.5, -0.5, 0.5, 0.5, 0.5,
+  // -Y face
+  0.5, -0.5, 0.5, 0.5, -0.5, -0.5, -0.5, -0.5, -0.5, -0.5, -0.5, 0.5,
+] as const;
+
+const UNIT_BOX_NORM = [
+  0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1,
+  0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0, -1,
+  1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0,
+  -1, 0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0,
+  0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0,
+  0, -1, 0, 0, -1, 0, 0, -1, 0, 0, -1, 0,
+] as const;
+
+const UNIT_BOX_UV = [
+  1, 1, 0, 1, 0, 0, 1, 0,
+  1, 1, 0, 1, 0, 0, 1, 0,
+  1, 1, 0, 1, 0, 0, 1, 0,
+  1, 1, 0, 1, 0, 0, 1, 0,
+  1, 1, 0, 1, 0, 0, 1, 0,
+  1, 1, 0, 1, 0, 0, 1, 0,
+] as const;
+
+const UNIT_BOX_INDICES = [
+  0, 1, 2, 0, 2, 3,
+  4, 5, 6, 4, 6, 7,
+  8, 9, 10, 8, 10, 11,
+  12, 13, 14, 12, 14, 15,
+  16, 17, 18, 16, 18, 19,
+  20, 21, 22, 20, 22, 23,
+] as const;
+
+const COLLIDER_DASH_PERIOD = COLLIDER_DASH_SIZE + COLLIDER_GAP_SIZE;
+
+function countEdgeDashes(length: number): number {
+  if (length < 1e-5) return 0;
+  let count = 0;
+  for (let offset = 0; offset < length - 1e-5; offset += COLLIDER_DASH_PERIOD) {
+    const dashLen = Math.min(COLLIDER_DASH_SIZE, length - offset);
+    if (dashLen < COLLIDER_DASH_THICKNESS) break;
+    count += 1;
+  }
+  return count;
+}
+
+function buildDashedEdgesVertexData(edges: Array<[Vector3, Vector3]>): VertexData | null {
+  let totalDashes = 0;
+  for (let i = 0; i < edges.length; i++) {
+    const [from, to] = edges[i]!;
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const dz = to.z - from.z;
+    totalDashes += countEdgeDashes(Math.hypot(dx, dy, dz));
+  }
+  if (totalDashes === 0) return null;
+
+  const totalVerts = totalDashes * 24;
+  const positions = new Float32Array(totalVerts * 3);
+  const normals = new Float32Array(totalVerts * 3);
+  const uvs = new Float32Array(totalVerts * 2);
+  const indices = totalVerts > 0xffff ? new Uint32Array(totalDashes * 36) : new Uint16Array(totalDashes * 36);
+
+  let vertBase = 0;
+  let posOffset = 0;
+  let uvOffset = 0;
+  let idxOffset = 0;
+
+  for (let i = 0; i < edges.length; i++) {
+    const [from, to] = edges[i]!;
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const dz = to.z - from.z;
+    const length = Math.hypot(dx, dy, dz);
+    if (length < 1e-5) continue;
+
+    // Orthonormal basis aligned with edge direction as +X (matching quaternionAlignX).
+    const invLen = 1 / length;
+    const xx = dx * invLen;
+    const xy = dy * invLen;
+    const xz = dz * invLen;
+    // up = (0, 1, 0) unless |dot(x, up)| > 0.999, else (0, 0, 1).
+    let zx: number;
+    let zy: number;
+    let zz: number;
+    if (Math.abs(xy) > 0.999) {
+      // cross(x, (0, 0, 1)) = (xy, -xx, 0)
+      zx = xy;
+      zy = -xx;
+      zz = 0;
+    } else {
+      // cross(x, (0, 1, 0)) = (-xz, 0, xx)
+      zx = -xz;
+      zy = 0;
+      zz = xx;
+    }
+    const zInv = 1 / Math.hypot(zx, zy, zz);
+    zx *= zInv;
+    zy *= zInv;
+    zz *= zInv;
+    // y = normalize(cross(z, x))
+    let yx = zy * xz - zz * xy;
+    let yy = zz * xx - zx * xz;
+    let yz = zx * xy - zy * xx;
+    const yInv = 1 / Math.hypot(yx, yy, yz);
+    yx *= yInv;
+    yy *= yInv;
+    yz *= yInv;
+
+    const tyx = yx * COLLIDER_DASH_THICKNESS;
+    const tyy = yy * COLLIDER_DASH_THICKNESS;
+    const tyz = yz * COLLIDER_DASH_THICKNESS;
+    const tzx = zx * COLLIDER_DASH_THICKNESS;
+    const tzy = zy * COLLIDER_DASH_THICKNESS;
+    const tzz = zz * COLLIDER_DASH_THICKNESS;
+
+    for (let offset = 0; offset < length - 1e-5; offset += COLLIDER_DASH_PERIOD) {
+      const dashLen = Math.min(COLLIDER_DASH_SIZE, length - offset);
+      if (dashLen < COLLIDER_DASH_THICKNESS) break;
+      const dist = offset + dashLen * 0.5;
+      const mx = from.x + xx * dist;
+      const my = from.y + xy * dist;
+      const mz = from.z + xz * dist;
+      const dxx = xx * dashLen;
+      const dxy = xy * dashLen;
+      const dxz = xz * dashLen;
+
+      for (let v = 0; v < 24; v++) {
+        const p3 = v * 3;
+        const lx = UNIT_BOX_POS[p3]!;
+        const ly = UNIT_BOX_POS[p3 + 1]!;
+        const lz = UNIT_BOX_POS[p3 + 2]!;
+        positions[posOffset] = mx + lx * dxx + ly * tyx + lz * tzx;
+        positions[posOffset + 1] = my + lx * dxy + ly * tyy + lz * tzy;
+        positions[posOffset + 2] = mz + lx * dxz + ly * tyz + lz * tzz;
+
+        const nx = UNIT_BOX_NORM[p3]!;
+        const ny = UNIT_BOX_NORM[p3 + 1]!;
+        const nz = UNIT_BOX_NORM[p3 + 2]!;
+        normals[posOffset] = nx * xx + ny * yx + nz * zx;
+        normals[posOffset + 1] = nx * xy + ny * yy + nz * zy;
+        normals[posOffset + 2] = nx * xz + ny * yz + nz * zz;
+        posOffset += 3;
+
+        const u2 = v * 2;
+        uvs[uvOffset] = UNIT_BOX_UV[u2]!;
+        uvs[uvOffset + 1] = UNIT_BOX_UV[u2 + 1]!;
+        uvOffset += 2;
+      }
+
+      for (let k = 0; k < 36; k++) {
+        indices[idxOffset++] = vertBase + UNIT_BOX_INDICES[k]!;
+      }
+      vertBase += 24;
+    }
+  }
+
+  const data = new VertexData();
+  data.positions = positions;
+  data.normals = normals;
+  data.uvs = uvs;
+  data.indices = indices;
+  return data;
+}
+
 export function createDashedEdgesMesh(
   scene: Scene,
   name: string,
@@ -43,13 +217,8 @@ export function createDashedEdgesMesh(
   root.metadata = { ...(root.metadata ?? {}), editorColliderVisual: true };
   root.isPickable = options?.pickable === true;
   root.renderingGroupId = RENDERING_GROUP.world;
-  const dashes: VertexData[] = [];
-  for (const [from, to] of edges) {
-    addDashedEdge(dashes, from, to);
-  }
-  const merged = dashes.shift();
+  const merged = buildDashedEdgesVertexData(edges);
   if (!merged) return root;
-  merged.merge(dashes);
   // Every dash box shares one mesh and draw call. The `:dash:` name is what
   // editor collider display toggles.
   const dash = new Mesh(`${name}:dash:0`, scene);
@@ -74,46 +243,6 @@ export function createColliderVisualMesh(
   options?: { pickable?: boolean },
 ): Mesh {
   return createDashedEdgesMesh(scene, name, shapeEdges(shape), color, options);
-}
-
-function addDashedEdge(
-  dashes: VertexData[],
-  from: Vector3,
-  to: Vector3,
-): void {
-  const delta = to.subtract(from);
-  const length = delta.length();
-  if (length < 1e-5) return;
-  const unit = delta.scale(1 / length);
-  const rotation = quaternionAlignX(unit);
-  const period = COLLIDER_DASH_SIZE + COLLIDER_GAP_SIZE;
-  let offset = 0;
-  while (offset < length - 1e-5) {
-    const dashLen = Math.min(COLLIDER_DASH_SIZE, length - offset);
-    if (dashLen < COLLIDER_DASH_THICKNESS) break;
-    const mid = from.add(unit.scale(offset + dashLen / 2));
-    // Bake the dash box at its pose so every dash merges into one mesh.
-    const dash = CreateBoxVertexData({
-      width: dashLen,
-      height: COLLIDER_DASH_THICKNESS,
-      depth: COLLIDER_DASH_THICKNESS,
-      sideOrientation: Mesh.FRONTSIDE,
-    });
-    dash.transform(Matrix.Compose(Vector3.One(), rotation, mid));
-    dashes.push(dash);
-    offset += period;
-  }
-}
-
-function quaternionAlignX(direction: Vector3): Quaternion {
-  const x = direction.clone().normalize();
-  let up = Vector3.Up();
-  if (Math.abs(Vector3.Dot(x, up)) > 0.999) up = Vector3.Forward();
-  const z = Vector3.Cross(x, up).normalize();
-  const y = Vector3.Cross(z, x).normalize();
-  return Quaternion.FromRotationMatrix(
-    Matrix.FromXYZAxesToRef(x, y, z, new Matrix()),
-  );
 }
 
 function shapeEdges(shape: ColliderShape): Array<[Vector3, Vector3]> {

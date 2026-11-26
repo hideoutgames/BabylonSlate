@@ -36,6 +36,7 @@ import {
   SCENE_DRIVER_COMPILE_TIMEOUT_MS,
   SCENE_SHADER_WARM_CONCURRENCY,
   SCENE_SHADER_WARM_TIMEOUT_MS,
+  withMeshProbePass,
 } from "./scene-perf";
 import { probeVariantSwaps } from "./variant-swaps";
 
@@ -700,6 +701,38 @@ describe("prewarmSceneMaterials", () => {
       expect(compile).toHaveBeenCalledTimes(2);
       expect(counts[0]).toEqual({ done: 0, total: 2 });
       expect(counts.at(-1)).toEqual({ done: 2, total: 2 });
+    } finally {
+      scene.dispose();
+      engine.dispose();
+    }
+  });
+});
+
+describe("withMeshProbePass", () => {
+  it("deduplicates InstancedMesh probes per sourceMesh and renderPassId within a single pass", () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    try {
+      const material = new StandardMaterial("instanced-mat", scene);
+      const source = MeshBuilder.CreateBox("source", { size: 1 }, scene);
+      source.material = material;
+      const instances = Array.from({ length: 12 }, (_, index) => source.createInstance(`inst-${index}`));
+      const spy = vi.spyOn(material, "isReadyForSubMesh");
+
+      withMeshProbePass(() => {
+        for (const inst of instances) expect(isMeshFrameReady(inst)).toBe(true);
+      });
+      expect(spy).toHaveBeenCalledTimes(1);
+
+      // A different renderPassId inside the same pass must still probe once for that pass.
+      spy.mockClear();
+      withMeshProbePass(() => {
+        engine.currentRenderPassId = 1;
+        for (const inst of instances) expect(isMeshFrameReady(inst)).toBe(true);
+        engine.currentRenderPassId = 2;
+        for (const inst of instances) expect(isMeshFrameReady(inst)).toBe(true);
+      });
+      expect(spy).toHaveBeenCalledTimes(2);
     } finally {
       scene.dispose();
       engine.dispose();
