@@ -5,7 +5,9 @@ import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 import { Scene } from "@babylonjs/core/scene";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { beginSlotModelAnimLoad, createModelActorRoot } from "./glb-anim";
-import { engineGlbBlueprintCount } from "./glb-geometry-handover";
+import { engineGlbBlueprintCount, materializeEngineGlbBlueprint, rememberEngineGlbBlueprint } from "./glb-geometry-handover";
+import { AssetContainer } from "@babylonjs/core/assetContainer";
+import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
 import * as modelContainer from "./model-container";
 import { encodeAnimatedLimbGlb, encodeTriangleGlb } from "./glb-test-fixtures";
 import { createSnapshotSceneBinding } from "./snapshot-apply";
@@ -72,6 +74,41 @@ describe("Engine-scoped static GLB geometry blueprint handover", () => {
     const binding2 = createSnapshotSceneBinding();
     await beginSlotModelAnimLoad(scene2, binding2, 0, "rig", source, createModelActorRoot(scene2, "rig-2"));
     expect(loadSpy).toHaveBeenCalledTimes(2);
+    scene2.dispose();
+  });
+
+  it("preserves overrideMaterialSideOrientation (including null) and disabled node state across handover", () => {
+    const engine = new NullEngine();
+    engines.push(engine);
+    const scene1 = new Scene(engine);
+    const container1 = new AssetContainer(scene1);
+    const meshDefault = new Mesh("default-side", scene1);
+    const meshOverride = new Mesh("override-side", scene1);
+    const vd = new VertexData();
+    vd.positions = [0, 0, 0, 1, 0, 0, 0, 1, 0];
+    vd.indices = [0, 1, 2];
+    vd.applyToMesh(meshDefault);
+    vd.applyToMesh(meshOverride);
+    meshDefault.overrideMaterialSideOrientation = null;
+    meshOverride.overrideMaterialSideOrientation = Mesh.DOUBLESIDE;
+    meshOverride.setEnabled(false);
+    scene1.removeMesh(meshDefault, false);
+    scene1.removeMesh(meshOverride, false);
+    container1.meshes.push(meshDefault, meshOverride);
+    container1.rootNodes.push(meshDefault, meshOverride);
+
+    expect(rememberEngineGlbBlueprint(engine, "side-and-enabled", container1)).toBe(true);
+    scene1.dispose();
+
+    const scene2 = new Scene(engine);
+    const container2 = materializeEngineGlbBlueprint(scene2, "side-and-enabled")!;
+    expect(container2).not.toBeNull();
+    const outDefault = container2.meshes.find((m) => m.name === "default-side") as Mesh;
+    const outOverride = container2.meshes.find((m) => m.name === "override-side") as Mesh;
+    expect(outDefault.overrideMaterialSideOrientation).toBeNull();
+    expect(outDefault.isEnabled(false)).toBe(true);
+    expect(outOverride.overrideMaterialSideOrientation).toBe(Mesh.DOUBLESIDE);
+    expect(outOverride.isEnabled(false)).toBe(false);
     scene2.dispose();
   });
 });

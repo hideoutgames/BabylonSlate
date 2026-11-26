@@ -229,10 +229,11 @@ describe("bounded catalog and payload loading", () => {
     }));
     const { header: catalog, locator } = await readAssetCatalog(storage, "assets/blob.hasset");
     const selected = catalog.chunks[0]!;
-    const fullReads = vi.spyOn(storage, "readBinary");
+    const rangeReads = vi.spyOn(storage, "readBinaryRange");
     const loader = new AccountedPayloadLoader(storage);
     expect(await loader.loadChunk(locator, selected)).toEqual(new Uint8Array([1, 2]));
-    expect(fullReads.mock.calls.map(([path]) => path)).toEqual([`assets/.blobs/${selected.sha256}`]);
+    const blobRangeReads = rangeReads.mock.calls.filter(([path]) => path.startsWith("assets/.blobs/"));
+    expect(blobRangeReads.map(([path]) => path)).toEqual([`assets/.blobs/${selected.sha256}`]);
     await storage.writeBinary(`assets/.blobs/${selected.sha256}`, new Uint8Array([9, 9]));
     loader.resetAccounting();
     await expect(loader.loadChunk(locator, selected)).rejects.toThrow("Hash mismatch");
@@ -437,19 +438,23 @@ describe("bounded catalog and payload loading", () => {
     const entry = catalog.chunks[0]!;
     const loader = new AccountedPayloadLoader(storage, { blobs });
     const digestSpy = vi.spyOn(crypto.subtle, "digest");
+    const rangeSpy = vi.spyOn(storage, "readBinaryRange");
 
-    // First read: verifies SHA-256 once and caches the verified blob revision.
+    // First read: single atomic range read for the blob + 1 SHA-256 verification.
     expect(await loader.loadChunk(locator, entry)).toEqual(payload);
     expect(digestSpy).toHaveBeenCalledTimes(1);
+    expect(rangeSpy.mock.calls.filter(([path]) => path.startsWith("assets/.blobs/"))).toHaveLength(1);
 
-    // Second read at the same strong blob revision: skips SHA-256 completely.
+    // Second read at the same strong blob revision: single atomic range read and 0 SHA-256 calls.
     expect(await loader.loadChunk(locator, entry)).toEqual(payload);
     expect(digestSpy).toHaveBeenCalledTimes(1);
+    expect(rangeSpy.mock.calls.filter(([path]) => path.startsWith("assets/.blobs/"))).toHaveLength(2);
 
     // Same-size in-place corruption bumps the blob's strong revision, forcing re-hash and rejection.
     await storage.writeBinary(`assets/.blobs/${entry.sha256}`, new Uint8Array([99, 99, 99, 99, 99]));
     await expect(loader.loadChunk(locator, entry)).rejects.toThrow("Hash mismatch");
     expect(digestSpy).toHaveBeenCalledTimes(2);
+    rangeSpy.mockRestore();
     digestSpy.mockRestore();
   });
 

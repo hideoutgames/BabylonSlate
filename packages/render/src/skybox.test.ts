@@ -1,3 +1,4 @@
+import { packRawRgbaTexture } from "@haptic/assets";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { SphericalPolynomial } from "@babylonjs/core/Maths/sphericalPolynomial";
 import { PBRMaterial } from "@babylonjs/core/Materials/PBR/pbrMaterial";
@@ -20,8 +21,10 @@ import {
 import {
   ENGINE_DEFAULT_SKYBOX_GUID,
   isSkyboxMesh,
+  resolveSkyboxCubeTexture,
   skyboxCubeCacheGuid,
 } from "./skybox";
+import { resourceCacheForEngine } from "./resource-cache";
 import { RENDERING_GROUP } from "./sorting";
 import { applyAuthoredCameraLens } from "./scene-illumination";
 
@@ -199,5 +202,31 @@ describe("editor skybox mesh", () => {
     expect(after).not.toBeNull();
     expect(after).not.toBe(before);
     sync.dispose();
+  });
+
+  it("converts HRGB raw-RGBA skybox face bytes into browser-decodable PNG bytes", () => {
+    const { scene, engine } = createHandle();
+    vi.spyOn(engine, "createCubeTexture").mockImplementation((url, _scene, _files, noMipmap) => {
+      const internal = engine.createTexture(url, noMipmap ?? false, false, null);
+      internal.isCube = true;
+      internal._sphericalPolynomial = new SphericalPolynomial();
+      return internal;
+    });
+    const cache = resourceCacheForEngine(engine);
+    const blobSpy = vi.spyOn(cache, "acquireBlobUrl");
+    const rawFace = packRawRgbaTexture(2, 2, new Uint8Array(2 * 2 * 4).fill(200));
+    const lease = resolveSkyboxCubeTexture(
+      scene,
+      { px: "tex-face", py: null, pz: null, nx: null, ny: null, nz: null },
+      { resourceCache: cache, textureBytes: new Map([["tex-face", rawFace]]) },
+    );
+    try {
+      expect(blobSpy).toHaveBeenCalledTimes(1);
+      const passedBytes = blobSpy.mock.calls[0]![1] as Uint8Array;
+      // PNG signature: 0x89 0x50 0x4E 0x47 ("PNG")
+      expect(Array.from(passedBytes.subarray(0, 4))).toEqual([0x89, 0x50, 0x4e, 0x47]);
+    } finally {
+      lease.release();
+    }
   });
 });

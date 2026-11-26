@@ -37,10 +37,16 @@ export interface BlobStore {
   /** Metadata-only size lookup: a blob whose size differs from its chunk's recorded byteLength is rejected before it is read. */
   blobByteLength?(sha256: string, options?: StorageReadOptions): Promise<number>;
   /**
-   * Metadata-only size + strong storage revision lookup for immutable blobs on strong-revision storage.
-   * When present, lets `AccountedPayloadLoader` skip re-hashing a blob already verified at the same revision.
+   * Atomic read + strong storage revision lookup for immutable blobs on strong-revision storage.
+   * Rejects before returning if the blob's total size differs from `expectedByteLength`.
+   * Lets `AccountedPayloadLoader` skip re-hashing a blob already verified at the exact same revision
+   * without a TOCTOU gap or extra storage round-trip.
    */
-  blobRevision?(sha256: string, options?: StorageReadOptions): Promise<{ byteLength: number; revision: string }>;
+  readBlobWithRevision?(
+    sha256: string,
+    expectedByteLength: number,
+    options?: StorageReadOptions,
+  ): Promise<{ data: Uint8Array; revision: string }>;
 }
 
 /**
@@ -91,11 +97,24 @@ export function createVfsBlobStore(
     },
     ...(storage.hasStrongSourceRevisions
       ? {
-          async blobRevision(sha256: string, options?: StorageReadOptions) {
+          async readBlobWithRevision(
+            sha256: string,
+            expectedByteLength: number,
+            options?: StorageReadOptions,
+          ) {
             options?.signal?.throwIfAborted();
-            const probe = await storage.readBinaryRange(pathFor(sha256), 0, 0, undefined, options);
+            const result = await storage.readBinaryRange(
+              pathFor(sha256),
+              0,
+              expectedByteLength,
+              undefined,
+              options,
+            );
             options?.signal?.throwIfAborted();
-            return { byteLength: probe.totalSize, revision: probe.revision };
+            if (result.totalSize !== expectedByteLength || result.bytes.byteLength !== expectedByteLength) {
+              throw new Error(`Length mismatch for blob ${sha256}: expected ${expectedByteLength}, got ${result.totalSize}`);
+            }
+            return { data: result.bytes, revision: result.revision };
           },
         }
       : {}),

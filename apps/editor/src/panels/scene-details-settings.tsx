@@ -39,7 +39,7 @@ export interface SceneDetailsSettingsProps {
   scene: SerializedScene;
   overlay: boolean;
   projectDocument: ProjectDocument | null;
-  mutate: (next: SerializedScene) => void;
+  changeScene: (update: (current: SerializedScene) => SerializedScene) => void;
   classEntries: ClassPickerEntry[];
   pickerAssets: AssetPickerEntry[];
   environmentPickerAssets: AssetPickerEntry[];
@@ -75,7 +75,7 @@ export const SceneDetailsSettings = memo(function SceneDetailsSettings(props: Sc
     scene,
     overlay,
     projectDocument,
-    mutate,
+    changeScene,
     classEntries,
     pickerAssets,
     environmentPickerAssets,
@@ -103,7 +103,7 @@ export const SceneDetailsSettings = memo(function SceneDetailsSettings(props: Sc
     projectDocument,
     classEntries,
     pickerAssets,
-    mutate,
+    changeScene,
     setEnvTexturePickOpen,
     setCameraPickerOpen,
   });
@@ -152,9 +152,19 @@ export const SceneDetailsSettings = memo(function SceneDetailsSettings(props: Sc
   const projectRender = projectDocument?.settings.render;
   const effectsOverrides = scene.settings.effectsOverrides ?? {};
   const setEffectsLut = (lutTextureGuid: string | null) =>
-    mutate({ ...scene, settings: { ...scene.settings, effectsOverrides: normalizeRenderEffectsOverrides({
-      ...effectsOverrides, colorGrading: { ...effectsOverrides.colorGrading, lutTextureGuid },
-    }) } });
+    changeScene((current) => {
+      const currentOverrides = current.settings.effectsOverrides ?? {};
+      return {
+        ...current,
+        settings: {
+          ...current.settings,
+          effectsOverrides: normalizeRenderEffectsOverrides({
+            ...currentOverrides,
+            colorGrading: { ...currentOverrides.colorGrading, lutTextureGuid },
+          }),
+        },
+      };
+    });
   const assetName = (guid: string | null) => (guid ? pickerAssets.find((entry) => entry.guid === guid)?.name ?? "Missing Asset" : "None");
   // The Project Settings → Rendering sections a Scene overrides, in their order there; none in a Scene Layer.
   const overrideSections = overlay ? [] : RENDERING_SETTINGS_SECTIONS.filter((section) =>
@@ -162,7 +172,7 @@ export const SceneDetailsSettings = memo(function SceneDetailsSettings(props: Sc
   const overrideContext: RenderingSceneContext = {
     render: projectRender,
     settings: scene.settings,
-    setSettings: (settings) => mutate({ ...scene, settings }),
+    setSettings: (settings) => changeScene((current) => ({ ...current, settings })),
     environmentRows: <PropertyGrid rows={settingsRows.filter((row) => ENVIRONMENT_ROW_IDS.has(row.id))} />,
     lutName: assetName,
     lutControl: (control) => {
@@ -218,7 +228,10 @@ export const SceneDetailsSettings = memo(function SceneDetailsSettings(props: Sc
               title="Post-Process Passes"
               entries={postProcessEntries}
               onChange={(entries) =>
-                mutate({ ...scene, settings: { ...scene.settings, postProcessStack: normalizeScenePostProcessStack(entries) } })}
+                changeScene((current) => ({
+                  ...current,
+                  settings: { ...current.settings, postProcessStack: normalizeScenePostProcessStack(entries) },
+                }))}
               assets={pickerAssets}
               materialAssets={postProcessPickerAssets}
               scalable
@@ -245,13 +258,13 @@ export const SceneDetailsSettings = memo(function SceneDetailsSettings(props: Sc
             countNoun={{ one: "layer", other: "layers" }}
             onAdd={() => setSceneLayerPick("add")}
             onChange={(sceneLayers) =>
-              mutate({
-                ...scene,
+              changeScene((current) => ({
+                ...current,
                 settings: {
-                  ...scene.settings,
+                  ...current.settings,
                   sceneLayers,
                 },
-              })
+              }))
             }
             renderItemHeader={({ item, index }) =>
               stackAssetPicker(
@@ -317,10 +330,10 @@ export const SceneDetailsSettings = memo(function SceneDetailsSettings(props: Sc
         title="Pick Environment Texture"
         allowNone
         onPick={(environmentTextureGuid) => {
-          mutate({
-            ...scene,
-            settings: { ...scene.settings, environmentTextureGuid },
-          });
+          changeScene((current) => ({
+            ...current,
+            settings: { ...current.settings, environmentTextureGuid },
+          }));
           setEnvTexturePickOpen(false);
         }}
         data-testid="scene-environment-texture-picker"
@@ -348,30 +361,32 @@ export const SceneDetailsSettings = memo(function SceneDetailsSettings(props: Sc
         title="Pick Scene Layer"
         allowNone={sceneLayerPick !== "add"}
         onPick={(assetGuid) => {
-          const stack = [...scene.settings.sceneLayers];
-          if (sceneLayerPick === "add") {
-            if (assetGuid) {
-              stack.push({
-                assetGuid,
-                zOrder: stack.length,
-                enabled: true,
-              });
+          changeScene((current) => {
+            const stack = [...current.settings.sceneLayers];
+            if (sceneLayerPick === "add") {
+              if (assetGuid) {
+                stack.push({
+                  assetGuid,
+                  zOrder: stack.length,
+                  enabled: true,
+                });
+              }
+            } else if (typeof sceneLayerPick === "number") {
+              if (!assetGuid) {
+                stack.splice(sceneLayerPick, 1);
+              } else {
+                const entry = stack[sceneLayerPick];
+                stack[sceneLayerPick] = {
+                  assetGuid,
+                  zOrder: entry?.zOrder ?? sceneLayerPick,
+                  enabled: entry?.enabled !== false,
+                };
+              }
             }
-          } else if (typeof sceneLayerPick === "number") {
-            if (!assetGuid) {
-              stack.splice(sceneLayerPick, 1);
-            } else {
-              const current = stack[sceneLayerPick];
-              stack[sceneLayerPick] = {
-                assetGuid,
-                zOrder: current?.zOrder ?? sceneLayerPick,
-                enabled: current?.enabled !== false,
-              };
-            }
-          }
-          mutate({
-            ...scene,
-            settings: { ...scene.settings, sceneLayers: stack },
+            return {
+              ...current,
+              settings: { ...current.settings, sceneLayers: stack },
+            };
           });
           setSceneLayerPick(null);
         }}
@@ -384,10 +399,10 @@ export const SceneDetailsSettings = memo(function SceneDetailsSettings(props: Sc
         title="Pick Default Camera"
         allowNone
         onPick={(defaultCameraActorId) => {
-          mutate({
-            ...scene,
-            settings: { ...scene.settings, defaultCameraActorId },
-          });
+          changeScene((current) => ({
+            ...current,
+            settings: { ...current.settings, defaultCameraActorId },
+          }));
           setCameraPickerOpen(false);
         }}
         data-testid="scene-default-camera-picker"
@@ -408,7 +423,7 @@ export const SceneDetailsSettings = memo(function SceneDetailsSettings(props: Sc
     sameSceneForSettings &&
     prev.overlay === next.overlay &&
     prev.projectDocument === next.projectDocument &&
-    prev.mutate === next.mutate &&
+    prev.changeScene === next.changeScene &&
     prev.classEntries === next.classEntries &&
     prev.pickerAssets === next.pickerAssets &&
     prev.environmentPickerAssets === next.environmentPickerAssets &&

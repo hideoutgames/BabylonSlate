@@ -833,7 +833,7 @@ function AuthoringSceneDetailsPanel(_props: IDockviewPanelProps) {
           scene={scene}
           overlay={overlay}
           projectDocument={projectDocument}
-          mutate={mutate}
+          changeScene={changeScene}
           classEntries={classEntries}
           pickerAssets={pickerAssets}
           environmentPickerAssets={environmentPickerAssets}

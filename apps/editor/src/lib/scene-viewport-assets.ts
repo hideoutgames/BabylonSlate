@@ -81,6 +81,14 @@ function resourceRevisionKey(assets: readonly IndexedAsset[]): string {
 }
 
 const PAYLOAD_DOCUMENT_KINDS = new Map([["Tilemap", "tilemap"], ["Tileset", "tileset"], ["Water", "water"]]);
+/** Every open-document kind that viewport asset collectors can read instead of the saved registry header. */
+const VIEWPORT_OPEN_DOCUMENT_KINDS = new Set([
+  "tilemap", "tileset", "water",
+  "material", "material-instance", "material-function",
+  "model", "sprite", "sprite-animation",
+  "render-target", "render-target-texture",
+  "font", "texture",
+]);
 const identities = new WeakMap<object, number>();
 let lastIdentity = 0;
 /** A number that stays with the object, so equal numbers mean the same object. */
@@ -88,6 +96,23 @@ function identityOf(value: object): number {
   let identity = identities.get(value);
   if (identity === undefined) identities.set(value, identity = ++lastIdentity);
   return identity;
+}
+
+/**
+ * Compact fingerprint of every open tab's unsaved content that viewport asset collection can read.
+ * Changes immediately whenever any Material, Model, Sprite, Font, RenderTarget, Tilemap, Tileset,
+ * Water or Texture tab opens, closes or edits its document.
+ */
+export function viewportOpenDocumentKey(
+  openDocuments: readonly { ref: { kind: string; path: string }; content?: unknown }[],
+): string {
+  const parts: string[] = [];
+  for (const { ref, content } of openDocuments) {
+    if (!VIEWPORT_OPEN_DOCUMENT_KINDS.has(ref.kind) || !content || typeof content !== "object") continue;
+    parts.push(`${ref.kind}\0${ref.path}=${identityOf(content)}`);
+  }
+  parts.sort();
+  return parts.join("\n");
 }
 
 /**

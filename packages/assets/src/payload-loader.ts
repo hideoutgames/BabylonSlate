@@ -255,18 +255,18 @@ export class AccountedPayloadLoader {
       if (result.bytes.byteLength !== length) throw new Error(`Length mismatch for chunk ${entry.id} in ${asset.path}`);
       data = result.bytes;
     } else {
-      if (blobs.blobRevision && storage.hasStrongSourceRevisions === true) {
-        const meta = await blobs.blobRevision(entry.locator.blob, options);
-        if (meta.byteLength !== entry.byteLength) {
+      if (blobs.readBlobWithRevision && storage.hasStrongSourceRevisions === true) {
+        const result = await blobs.readBlobWithRevision(entry.locator.blob, entry.byteLength, options);
+        data = result.data;
+        blobCacheKey = `${entry.locator.blob}\0${result.revision}\0${entry.byteLength}\0${entry.sha256}`;
+      } else {
+        if (blobs.blobByteLength &&
+          await blobs.blobByteLength(entry.locator.blob, options) !== entry.byteLength) {
           throw new Error(`Length mismatch for chunk ${entry.id} in ${asset.path}`);
         }
-        blobCacheKey = `${entry.locator.blob}\0${meta.revision}\0${entry.byteLength}\0${entry.sha256}`;
-      } else if (blobs.blobByteLength &&
-        await blobs.blobByteLength(entry.locator.blob, options) !== entry.byteLength) {
-        throw new Error(`Length mismatch for chunk ${entry.id} in ${asset.path}`);
+        options.signal?.throwIfAborted();
+        data = await blobs.readBlob(entry.locator.blob, options);
       }
-      options.signal?.throwIfAborted();
-      data = await blobs.readBlob(entry.locator.blob, options);
     }
     request.payloadBytes = data.byteLength;
     options.signal?.throwIfAborted();
