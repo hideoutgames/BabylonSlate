@@ -136,9 +136,61 @@ export async function prewarmSceneMaterials(
 }
 
 /**
+ * Captures every mesh property that can alter a Material's compiled shader defines so
+ * `prewarmMeshMaterials` compiles each distinct `(Material, variant)` once per warm-up
+ * instead of serially re-warming dozens of identical static meshes.
+ */
+function meshShaderVariantKey(mesh: Mesh, material: Material, useInstances: boolean): string {
+  const kinds = mesh.getVerticesDataKinds();
+  kinds.sort();
+  const colorSize = mesh.getVertexBuffer("color")?.getSize() ?? 0;
+  const skeleton = mesh.skeleton
+    ? `${mesh.skeleton.numBoneInfluencers}:${mesh.numBoneInfluencers}:${mesh.computeBonesUsingShaders ? 1 : 0}:${mesh.skeleton.isUsingTextureForMatrices ? 1 : 0}`
+    : "0";
+  const morphs = mesh.morphTargetManager
+    ? `${mesh.morphTargetManager.numInfluencers}:${mesh.morphTargetManager.supportsNormals ? 1 : 0}:${mesh.morphTargetManager.supportsTangents ? 1 : 0}:${mesh.morphTargetManager.supportsUVs ? 1 : 0}:${mesh.morphTargetManager.isUsingTextureForTargets ? 1 : 0}`
+    : "0";
+  const meta = mesh.metadata as Record<string, unknown> | null | undefined;
+  const flags =
+    (useInstances ? 1 : 0) |
+    (mesh.hasThinInstances ? 2 : 0) |
+    (mesh.instances.length > 0 ? 4 : 0) |
+    (mesh.receiveShadows ? 8 : 0) |
+    (mesh.hasVertexAlpha ? 16 : 0) |
+    (mesh.useVertexColors ? 32 : 0) |
+    (mesh.applyFog ? 64 : 0) |
+    (meta?.text2dGlyph ? 128 : 0) |
+    (meta?.latticeDeformer ? 256 : 0) |
+    (meta?.drawBatch ? 512 : 0) |
+    (meta?.overlayStyle ? 1024 : 0);
+  const lights = material instanceof NodeMaterial ? "" : mesh.lightSources.map((light) => light.uniqueId).join(",");
+  // Text2D glyph atlases bind per-mesh in TextMaterialBlock.isReady; keep those meshes distinct.
+  const perMeshId = meta?.text2d || meta?.text2dGlyph ? `:${mesh.uniqueId}` : "";
+  return `${flags}|${colorSize}|${mesh.overrideMaterialSideOrientation ?? -1}|${kinds.join(",")}|${skeleton}|${morphs}|${lights}${perMeshId}`;
+}
+
+/** True when every live submesh of `mesh` drawing `material` already holds a ready, clean Effect. */
+function isMaterialVariantAlreadyReady(mesh: Mesh, material: Material, useInstances: boolean): boolean {
+  if (useInstances || !mesh.subMeshes?.length) return false;
+  let matched = false;
+  for (const part of mesh.subMeshes) {
+    const partMaterial = part.getMaterial();
+    if (partMaterial !== material) continue;
+    matched = true;
+    const wrapper = material._storeEffectOnSubMeshes
+      ? part._drawWrapperOverride ?? part._getDrawWrapper()
+      : material._getDrawWrapper();
+    if (!wrapper?.effect?.isReady()) return false;
+    if (part.materialDefines?.isDirty) return false;
+  }
+  return matched;
+}
+
+/**
  * Warm only an additive instance's consumers, without waiting on sibling loads. `onProgress` counts the units (one
- * Material variant for one mesh; units sharing an Effect finish at once) before the first and after each; a mesh added
- * meanwhile raises the total. With `onProgress`, `meshes` must be iterable twice (an array, as `scene.meshes`).
+ * unique Material variant; meshes sharing a Material and shader-define signature share one unit) before the first and
+ * after each; a mesh added meanwhile raises the total. With `onProgress`, `meshes` must be iterable twice (an array, as
+ * `scene.meshes`).
  */
 export async function prewarmMeshMaterials(
   scene: Scene,
@@ -168,19 +220,31 @@ export async function prewarmMeshMaterials(
     () => compiles.renew(),
     createHeldThreadBudget(),
   );
-  // Counted up front for progress; the loop below still reads each mesh's material when it reaches it, since warming
-  // one can replace another's.
-  const variantsOf = (mesh: AbstractMesh) => {
-    // A mesh without vertices draws nothing (empty roots, placeholders, geometry that arrives later).
-    if (!(mesh instanceof Mesh) || !mesh.getTotalVertices() || skipMesh?.(mesh)) return 0;
-    const material = mesh.material ?? scene.defaultMaterial;
-    const materials = material instanceof MultiMaterial ? new Set(material.subMaterials.filter((entry) => entry !== null)).size : 1;
-    const drawn = drawnMaterialVariants(mesh);
-    return materials * ((drawn.plain ? 1 : 0) + (drawn.instanced ? 1 : 0));
-  };
-  // Only with a listener: the count reads `meshes` once more, which a one-shot iterator (a stream's slots) cannot give.
+  // Counted up front for progress, deduplicated by (Material, meshShaderVariantKey) matching the loop below.
   let total = 0;
-  if (onProgress) for (const mesh of meshes) total += variantsOf(mesh);
+  if (onProgress) {
+    const counted = new Map<Material, Set<string>>();
+    for (const mesh of meshes) {
+      if (!(mesh instanceof Mesh) || !mesh.getTotalVertices() || skipMesh?.(mesh)) continue;
+      const material = mesh.material ?? scene.defaultMaterial;
+      const materials = material instanceof MultiMaterial
+        ? new Set(material.subMaterials.filter((entry): entry is Material => entry !== null))
+        : new Set([material]);
+      const drawn = drawnMaterialVariants(mesh);
+      for (const entry of materials) {
+        let keys = counted.get(entry);
+        if (!keys) counted.set(entry, keys = new Set());
+        if (drawn.plain && !isMaterialVariantAlreadyReady(mesh, entry, false)) {
+          const key = meshShaderVariantKey(mesh, entry, false);
+          if (!keys.has(key)) { keys.add(key); total += 1; }
+        }
+        if (drawn.instanced && !isMaterialVariantAlreadyReady(mesh, entry, true)) {
+          const key = meshShaderVariantKey(mesh, entry, true);
+          if (!keys.has(key)) { keys.add(key); total += 1; }
+        }
+      }
+    }
+  }
   let done = 0;
   const compiled = () => {
     done += 1;
@@ -194,6 +258,7 @@ export async function prewarmMeshMaterials(
   // `allowShaderHotSwapping` around each compile, and two at once would leave hot swapping off for good.
   const running = new Set<Promise<void>>();
   const chains = new Map<Material, Promise<void>>();
+  const seenVariants = new Map<Material, Set<string>>();
   /** Units started and not finished, oldest first: the oldest is the one a stall names. */
   const inFlight: string[] = [];
   let failure: { error: unknown } | null = null;
@@ -235,20 +300,32 @@ export async function prewarmMeshMaterials(
         if (!(mesh instanceof Mesh) || !mesh.getTotalVertices() || skipMesh?.(mesh)) continue;
         const material = mesh.material ?? scene.defaultMaterial;
         // The same material can have different effects for skinned, morphed,
-        // instanced and static meshes. Warm each consumer, including submaterials.
+        // instanced and static meshes. Warm each unique (Material, variant) once.
         const materials = material instanceof MultiMaterial
           ? new Set(material.subMaterials.filter((entry): entry is Material => entry !== null))
           : new Set([material]);
         for (const entry of materials) {
           check(mesh);
+          let seen = seenVariants.get(entry);
+          if (!seen) seenVariants.set(entry, seen = new Set());
           const drawn = drawnMaterialVariants(mesh);
           const units: Array<[string, () => Promise<void>]> = [];
-          if (drawn.plain)
-            units.push([`"${entry.name}" for "${mesh.name}"`,
-              () => entry instanceof NodeMaterial ? prewarmMaterial(entry, mesh) : entry.forceCompilationAsync(mesh)]);
-          if (drawn.instanced)
-            units.push([`"${entry.name}" for instances of "${mesh.name}"`,
-              () => entry.forceCompilationAsync(mesh, { useInstances: true })]);
+          if (drawn.plain && !isMaterialVariantAlreadyReady(mesh, entry, false)) {
+            const key = meshShaderVariantKey(mesh, entry, false);
+            if (!seen.has(key)) {
+              seen.add(key);
+              units.push([`"${entry.name}" for "${mesh.name}"`,
+                () => entry instanceof NodeMaterial ? prewarmMaterial(entry, mesh) : entry.forceCompilationAsync(mesh)]);
+            }
+          }
+          if (drawn.instanced && !isMaterialVariantAlreadyReady(mesh, entry, true)) {
+            const key = meshShaderVariantKey(mesh, entry, true);
+            if (!seen.has(key)) {
+              seen.add(key);
+              units.push([`"${entry.name}" for instances of "${mesh.name}"`,
+                () => entry.forceCompilationAsync(mesh, { useInstances: true })]);
+            }
+          }
           for (const [unit, compile] of units) {
             while (running.size >= SCENE_SHADER_WARM_CONCURRENCY && !failure) await Promise.race(running);
             if (failure) throw (failure as { error: unknown }).error;

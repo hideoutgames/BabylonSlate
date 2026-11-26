@@ -487,13 +487,15 @@ describe("prewarmSceneMaterials", () => {
     const scene = new Scene(engine);
     const perVariant = SCENE_SHADER_WARM_TIMEOUT_MS / 2;
     const compiles: string[] = [];
-    // One Material: its units compile one after another, each within budget, the whole run beyond it.
+    // One Material: its distinct shader variants compile one after another, each within budget, the whole run beyond it.
     const material = new PBRMaterial("slow-material", scene);
     vi.spyOn(material, "forceCompilationAsync").mockImplementation(
       (mesh) => new Promise((resolve) => setTimeout(() => { compiles.push(mesh.name); resolve(); }, perVariant)),
     );
     for (let index = 0; index < 4; index++) {
       const mesh = MeshBuilder.CreateBox(`slow-mesh-${index}`, {}, scene);
+      mesh.receiveShadows = (index & 1) !== 0;
+      mesh.useVertexColors = (index & 2) !== 0;
       mesh.material = material;
     }
     let settled: "ready" | "failed" | null = null;
@@ -596,7 +598,12 @@ describe("prewarmSceneMaterials", () => {
       });
       const shared = new PBRMaterial("shared", scene);
       vi.spyOn(shared, "forceCompilationAsync").mockImplementation(unit);
-      for (const name of ["shared-a", "shared-b"]) MeshBuilder.CreateBox(name, {}, scene).material = shared;
+      const sharedA = MeshBuilder.CreateBox("shared-a", {}, scene);
+      sharedA.receiveShadows = true;
+      sharedA.material = shared;
+      const sharedB = MeshBuilder.CreateBox("shared-b", {}, scene);
+      sharedB.receiveShadows = false;
+      sharedB.material = shared;
       for (let index = 0; index < SCENE_SHADER_WARM_CONCURRENCY + 1; index++) {
         const mesh = MeshBuilder.CreateBox(`own-${index}`, {}, scene);
         mesh.material = new PBRMaterial(`own-material-${index}`, scene);
@@ -640,5 +647,30 @@ describe("prewarmSceneMaterials", () => {
     scene.dispose();
     engine.dispose();
     vi.useRealTimers();
+  });
+
+  it("deduplicates identical (Material, shader-variant) static meshes to one compile while compiling distinct variants", async () => {
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    try {
+      const material = new PBRMaterial("wall", scene);
+      const compile = vi.spyOn(material, "forceCompilationAsync").mockResolvedValue();
+      for (let index = 0; index < 12; index++) {
+        const box = MeshBuilder.CreateBox(`wall-${index}`, {}, scene);
+        box.material = material;
+      }
+      // One mesh with a distinct shader flag must still compile separately.
+      const unlitReceiver = MeshBuilder.CreateBox("wall-noshadow", {}, scene);
+      unlitReceiver.receiveShadows = false;
+      unlitReceiver.material = material;
+      const counts: Array<{ done: number; total: number }> = [];
+      await prewarmSceneMaterials(scene, undefined, undefined, (count) => counts.push({ ...count }));
+      expect(compile).toHaveBeenCalledTimes(2);
+      expect(counts[0]).toEqual({ done: 0, total: 2 });
+      expect(counts.at(-1)).toEqual({ done: 2, total: 2 });
+    } finally {
+      scene.dispose();
+      engine.dispose();
+    }
   });
 });

@@ -14,6 +14,11 @@ export interface SceneWorkOptions {
    * (`SCENE_WORK_STEPS_PER_YIELD`).
    */
   stepsPerYield?: number;
+  /**
+   * Milliseconds of work per cooperative slice before yielding (defaults to `SCENE_WORK_BUDGET_MS`).
+   * Blocking modal scene loads may pass a wider slice (e.g. 24 ms) to reduce macrotask overhead.
+   */
+  budgetMs?: number;
 }
 
 /**
@@ -77,6 +82,7 @@ export async function runSceneWork(
 ): Promise<void> {
   const yieldControl = options.yieldControl ?? yieldSceneWork;
   const stepsPerYield = options.stepsPerYield ?? SCENE_WORK_STEPS_PER_YIELD;
+  const budgetMs = options.budgetMs ?? SCENE_WORK_BUDGET_MS;
   let start = performance.now();
   let count = 0;
   let progress: number | null = null;
@@ -94,7 +100,7 @@ export async function runSceneWork(
         return;
       }
       progress = step.value;
-      if (++count >= stepsPerYield || performance.now() - start >= SCENE_WORK_BUDGET_MS) {
+      if (++count >= stepsPerYield || performance.now() - start >= budgetMs) {
         report();
         await yieldControl(options.signal);
         options.signal.throwIfAborted();

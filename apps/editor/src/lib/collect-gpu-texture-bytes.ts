@@ -28,6 +28,14 @@ export async function collectGpuTextureBytes(options: {
     bytes: Uint8Array,
     targetEdge: number,
   ) => Promise<Uint8Array>;
+  /** Cache-aware downsampler receiving `(bytes, targetEdge, cacheKey)` where `cacheKey` is `${guid}\0${sha256}`. */
+  downsampleSourceCached?: (
+    bytes: Uint8Array,
+    targetEdge: number,
+    cacheKey?: string,
+  ) => Promise<Uint8Array>;
+  /** Concurrency limit for source downsampling (default 1 on main thread; higher with Worker pool). */
+  downsampleConcurrency?: number;
   onMissingKtx2?: (guid: string) => void;
 }): Promise<Map<string, Uint8Array>> {
   const { assets } = options;
@@ -45,8 +53,8 @@ export async function collectGpuTextureBytes(options: {
     const asset = guid ? lookup(guid) : undefined;
     return asset && asset.header.type === "Texture" ? [{ guid, asset }] : [];
   });
-  // Reads overlap; a source downsample decodes a whole image, so those run one at a time.
-  const downsample = createLimiter(1);
+  // Reads overlap; source downsampling runs under the caller's concurrency limit (1 main-thread, >1 with workers).
+  const downsample = createLimiter(Math.max(1, options.downsampleConcurrency ?? 1));
   const resolved = await mapBounded(textures, COLLECTOR_READS, async ({ guid, asset }) => {
     const texture = await resolveGpuTexture({
       header: asset.header,
@@ -58,10 +66,16 @@ export async function collectGpuTextureBytes(options: {
     if (
       texture.kind !== "ktx2" &&
       texture.targetEdge < texture.sourceEdge &&
-      options.downsampleSource
+      (options.downsampleSourceCached || options.downsampleSource)
     ) {
       try {
-        const resize = options.downsampleSource;
+        if (options.downsampleSourceCached) {
+          const resize = options.downsampleSourceCached;
+          const sourceChunk = asset.header.chunks.find((chunk) => chunk.id === "source") ?? asset.header.chunks[0];
+          const cacheKey = sourceChunk ? `${guid}\0${sourceChunk.sha256}` : undefined;
+          return await downsample(() => resize(texture.bytes, texture.targetEdge, cacheKey));
+        }
+        const resize = options.downsampleSource!;
         return await downsample(() => resize(texture.bytes, texture.targetEdge));
       } catch {
         return texture.bytes;

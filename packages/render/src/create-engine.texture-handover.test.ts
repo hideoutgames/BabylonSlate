@@ -7,6 +7,7 @@ import { createEngine } from "./editor-engine";
 import type { EngineHandle } from "./create-engine-types";
 import { isDisposedGpuTexture } from "./gpu-resource-live";
 import { encodeRgbaPng } from "./png-encode";
+import { packRawRgbaTexture } from "@haptic/assets";
 import { acquireMaterialTexture } from "./resource-cache";
 
 class FakeCanvas {
@@ -233,5 +234,37 @@ describe("textures handed over between the editor's view and Play", () => {
     editor.dispose();
     await editor.whenReleased();
     expect(isDisposedGpuTexture(edited.shared!)).toBe(true);
+  });
+
+  it("uploads HRGB raw-RGBA textures directly without Blob URLs and preserves them across handover", async () => {
+    const engine = sharedEngine();
+    const rawRgba = packRawRgbaTexture(4, 4, new Uint8Array(4 * 4 * 4).fill(180));
+    const canvas1 = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const editor = createEngine(canvas1, {
+      sharedEngine: engine,
+      editor: true,
+      textureBytes: new Map([["lod-tex", rawRgba]]),
+    });
+    handles.push(editor);
+    const lease1 = acquireMaterialTexture(editor.resourceCache, "lod-tex", engine, rawRgba, "linear");
+    expect(lease1.resource.isReady()).toBe(true);
+    expect(editor.resourceCache.accountedBytes()).toBeGreaterThan(0);
+
+    editor.handOverTextures();
+    lease1.release();
+    editor.dispose();
+    await editor.whenReleased();
+
+    const canvas2 = new FakeCanvas() as unknown as HTMLCanvasElement;
+    const next = createEngine(canvas2, {
+      sharedEngine: engine,
+      editor: true,
+      textureBytes: new Map([["lod-tex", rawRgba]]),
+    });
+    handles.push(next);
+    const lease2 = acquireMaterialTexture(next.resourceCache, "lod-tex", engine, rawRgba, "linear");
+    expect(lease2.resource).toBe(lease1.resource);
+    expect(isDisposedGpuTexture(lease2.resource)).toBe(false);
+    lease2.release();
   });
 });

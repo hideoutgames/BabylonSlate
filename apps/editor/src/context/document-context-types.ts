@@ -532,6 +532,7 @@ export interface DocumentContextValue {
     extraGuids?: readonly string[],
     spriteAnimations?: ReadonlyMap<string, SpriteAnimationPayload>,
     includeMaterialParameterTextures?: boolean,
+    editorLodOverride?: import("@haptic/assets").EditorTextureLod | null,
   ) => Promise<Map<string, Uint8Array>>;
   /** Authored Texture payload pixels for overlay 2DTexture world size. */
   collectPlayTexturePixelSizes: (
