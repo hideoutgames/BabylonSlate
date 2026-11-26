@@ -215,16 +215,42 @@ export class ShadowCasterList {
   /** The box around every caster's world box, shown or hidden; undefined without casters. Reused between calls. */
   bounds(): Bounds | undefined {
     const meshes = this.meshes;
-    if (!meshes.length) return undefined;
+    const count = meshes.length;
+    if (!count) return undefined;
     let minX = Infinity, minY = Infinity, minZ = Infinity, maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
-    for (let index = 0; index < meshes.length; index += 1) {
-      const box = meshes[index]!.getBoundingInfo().boundingBox, min = box.minimumWorld, max = box.maximumWorld;
-      if (min.x < minX) minX = min.x;
-      if (min.y < minY) minY = min.y;
-      if (min.z < minZ) minZ = min.z;
-      if (max.x > maxX) maxX = max.x;
-      if (max.y > maxY) maxY = max.y;
-      if (max.z > maxZ) maxZ = max.z;
+    if (this.prepared) {
+      const boxes = this.boxes, states = this.states;
+      for (let index = 0; index < count; index += 1) {
+        if (states[index] !== 0) {
+          const at = index * 6;
+          const x0 = boxes[at]!, y0 = boxes[at + 1]!, z0 = boxes[at + 2]!;
+          const x1 = boxes[at + 3]!, y1 = boxes[at + 4]!, z1 = boxes[at + 5]!;
+          if (x0 < minX) minX = x0;
+          if (y0 < minY) minY = y0;
+          if (z0 < minZ) minZ = z0;
+          if (x1 > maxX) maxX = x1;
+          if (y1 > maxY) maxY = y1;
+          if (z1 > maxZ) maxZ = z1;
+        } else {
+          const box = meshes[index]!.getBoundingInfo().boundingBox, min = box.minimumWorld, max = box.maximumWorld;
+          if (min.x < minX) minX = min.x;
+          if (min.y < minY) minY = min.y;
+          if (min.z < minZ) minZ = min.z;
+          if (max.x > maxX) maxX = max.x;
+          if (max.y > maxY) maxY = max.y;
+          if (max.z > maxZ) maxZ = max.z;
+        }
+      }
+    } else {
+      for (let index = 0; index < count; index += 1) {
+        const box = meshes[index]!.getBoundingInfo().boundingBox, min = box.minimumWorld, max = box.maximumWorld;
+        if (min.x < minX) minX = min.x;
+        if (min.y < minY) minY = min.y;
+        if (min.z < minZ) minZ = min.z;
+        if (max.x > maxX) maxX = max.x;
+        if (max.y > maxY) maxY = max.y;
+        if (max.z > maxZ) maxZ = max.z;
+      }
     }
     this.union.min.set(minX, minY, minZ);
     this.union.max.set(maxX, maxY, maxZ);

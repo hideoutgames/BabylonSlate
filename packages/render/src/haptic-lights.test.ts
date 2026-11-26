@@ -938,4 +938,23 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     const records = buffer._bufferData.subarray(buffer._uniformLocations.hapticRect!, buffer._uniformLocations.hapticRect! + 64);
     expect([0, 1, 2, 3].map((index) => records[index * 16 + 15]).sort()).toEqual([-1, 0, 0, 1]);
   });
+
+  it("skips redundant HapticLights UBO uploads when lighting state is unchanged", () => {
+    const { scene } = host();
+    const light = new PointLight("lamp", new Vector3(1, 2, 3), scene);
+    light.intensity = 2;
+    syncSceneLighting(scene);
+    const buffer = hapticLightBuffer(scene);
+    const update = vi.spyOn(buffer, "update");
+    // Unchanged lighting does not upload the UBO again.
+    syncSceneLighting(scene);
+    syncSceneLighting(scene);
+    expect(update).not.toHaveBeenCalled();
+    // Moving the light triggers a single UBO upload.
+    light.position.x = 4;
+    syncSceneLighting(scene);
+    expect(update).toHaveBeenCalledTimes(1);
+    syncSceneLighting(scene);
+    expect(update).toHaveBeenCalledTimes(1);
+  });
 });

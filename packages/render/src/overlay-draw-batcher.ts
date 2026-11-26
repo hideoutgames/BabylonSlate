@@ -22,7 +22,7 @@ import { LayerImageAtlas, type LayerImageCell } from "./layer-image-atlas";
 import { disableOverlayClipScissor, enableOverlayClipScissor, overlayDrawClip } from "./overlay-layout-render";
 import { overlayVisualStyle, shareOverlayVisualStyle } from "./overlay-visual-style";
 import { journalFollows, openRenderChangeReader, RenderChange, type RenderChangeReader } from "./render-change-journal";
-import { sceneReadinessRevision } from "./scene-readiness-signal";
+import { onSceneReadinessScope, sceneUnscopedReadinessRevision } from "./scene-readiness-signal";
 import { hasStockOrPlannedVertexStage } from "./shadow-material-policy";
 import { bindTextMaterialGlyph, textMaterialGlyphBinding, type TextMaterialBinding } from "./text-material-block";
 import { isUnlitMaterial } from "./unlit-material";
@@ -726,6 +726,7 @@ function pollValues(stamp: Stamp, object: object, texture: boolean): boolean {
  */
 class OverlayDrawBatcher implements SceneDrawBatcher {
   private readonly scene: Scene;
+  private readonly stopReadiness: () => void;
   /** Each pass of an Engine frame's kept work, by the pass's place among the frame's passes. */
   private readonly records: PassRecord[] = [];
   /** The Engine frame whose passes took the first `passCount` records. */
@@ -763,6 +764,8 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
     indices: new Float64Array(0),
   };
   private readonly scratchBounds: Bounds = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+  /** Dirty entries whose projected bounds changed this pass and their pre-move bounds, to skip regroup when isolated. */
+  private readonly boundsChanged: Array<{ entry: Entry; minX: number; minY: number; maxX: number; maxY: number }> = [];
   private readonly scratchCorner = { x: 0, y: 0, z: 0 };
   private readonly scratchGrid = [0, 0];
   private readonly scratchViewport = new Viewport(0, 0, 1, 1);
@@ -777,6 +780,12 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
     this.scene = scene;
     this.atlas = new LayerImageAtlas(scene);
     this.reader = openRenderChangeReader(scene);
+    this.stopReadiness = onSceneReadinessScope(scene, (scope) => {
+      for (const mesh of scope) {
+        const entries = this.entriesByNode.get(mesh);
+        if (entries) for (const entry of entries) entry.readyKnown = false;
+      }
+    });
   }
 
   /** Whether batches sample the Scene's shared page of small images (they do unless turned off, as a proof does). */
@@ -875,6 +884,7 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.stopReadiness();
     for (const slot of this.slots) {
       slot.mesh.dispose(false, false);
       slot.worldBuffer?.dispose();
@@ -1128,7 +1138,7 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
     record.atlas = this.atlas;
     record.atlasRevision = this.atlas?.revision ?? -1;
     record.latticeRevision = latticeMarksRevision();
-    record.readinessRevision = sceneReadinessRevision(this.scene);
+    record.readinessRevision = sceneUnscopedReadinessRevision(this.scene);
     record.renderPassId = this.scene.getEngine().currentRenderPassId;
   }
 
@@ -1146,13 +1156,15 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
     const all = eye.x !== record.eyeX || eye.y !== record.eyeY || eye.z !== record.eyeZ || this.atlas !== record.atlas ||
       (this.atlas?.revision ?? -1) !== record.atlasRevision || latticeMarksRevision() !== record.latticeRevision;
     // A readiness answer, and the Effect it leaves on the submesh, is the render pass's own.
-    if (sceneReadinessRevision(this.scene) !== record.readinessRevision || this.scene.getEngine().currentRenderPassId !== record.renderPassId)
+    if (sceneUnscopedReadinessRevision(this.scene) !== record.readinessRevision || this.scene.getEngine().currentRenderPassId !== record.renderPassId)
       for (const entry of entries) entry.readyKnown = false;
     for (const entry of record.polled) markDirty(entry);
     const reread = all ? entries : record.dirty;
     let regroup = moved || record.listChanged;
     record.listChanged = false;
     let rereadCount = 0;
+    const boundsChanged = this.boundsChanged;
+    boundsChanged.length = 0;
     for (const entry of reread) {
       entry.queued = false;
       // One the list let go of since it was named.
@@ -1166,9 +1178,50 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
         const before = this.scratchBounds;
         before.minX = entry.minX; before.minY = entry.minY; before.maxX = entry.maxX; before.maxY = entry.maxY;
         this.bound(entry, this.transform!, this.marginX, this.marginY);
-        if (!sameBounds(before, entry)) regroup = true;
+        if (!sameBounds(before, entry)) {
+          const batchIndex = entry.batch;
+          if (!regroup && batchIndex >= 0 && batchIndex < record.batchCount) {
+            const batch = batches[batchIndex]!;
+            if (entry.minX < batch.minX) batch.minX = entry.minX;
+            if (entry.minY < batch.minY) batch.minY = entry.minY;
+            if (entry.maxX > batch.maxX) batch.maxX = entry.maxX;
+            if (entry.maxY > batch.maxY) batch.maxY = entry.maxY;
+            boundsChanged.push({ entry, minX: before.minX, minY: before.minY, maxX: before.maxX, maxY: before.maxY });
+          } else {
+            regroup = true;
+          }
+        }
       }
     }
+    // If every bounds-changed member overlaps no member of any other batch (neither before nor after moving),
+    // every member's batch assignment in `group()` is guaranteed unchanged: skip the full O(N^2) regroup pass.
+    if (!regroup && boundsChanged.length > 0) {
+      const batchCount = record.batchCount;
+      checkOverlap: for (let index = 0; index < boundsChanged.length; index += 1) {
+        const changed = boundsChanged[index]!;
+        const entry = changed.entry;
+        const ownBatch = entry.batch;
+        for (let other = 0; other < batchCount; other += 1) {
+          if (other === ownBatch) continue;
+          const batch = batches[other]!;
+          if (
+            (overlaps(changed, batch) && overlapsAny(changed, batch.entries)) ||
+            (overlaps(entry, batch) && overlapsAny(entry, batch.entries))
+          ) {
+            regroup = true;
+            break checkOverlap;
+          }
+        }
+        for (let peer = index + 1; peer < boundsChanged.length; peer += 1) {
+          const otherChanged = boundsChanged[peer]!;
+          if (otherChanged.entry.batch !== ownBatch && overlaps(changed, otherChanged)) {
+            regroup = true;
+            break checkOverlap;
+          }
+        }
+      }
+    }
+    boundsChanged.length = 0;
     if (!all) record.dirty.length = 0;
     else {
       for (const entry of entries) entry.queued = false;

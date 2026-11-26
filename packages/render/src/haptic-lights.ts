@@ -107,6 +107,15 @@ type SceneLights = {
   clusterBuilds: number; clusterChecks: number; clusterMismatches: number;
   /** Whether any active shadowed light last observed had `useContactHardeningShadow` enabled. */
   anyContactHardening: boolean;
+  /** Last uploaded UBO values so static/unchanged frames skip redundant `bufferSubData` uploads. */
+  uboInitialized: boolean;
+  prevCountsFill: Float32Array;
+  prevDirectional: Float32Array;
+  prevPoint: Float32Array;
+  prevSpot: Float32Array;
+  prevRect: Float32Array;
+  prevShadowViews: Float32Array;
+  prevSunShadow: Float32Array;
 };
 const scenes = new WeakMap<Scene, SceneLights>();
 /** The view inputs a build reads: the view and projection matrices, the depth range, the floating origin and whether it culls. */
@@ -116,6 +125,19 @@ const point = new Float32Array(HAPTIC_LIGHT_MAXIMUM.point * 12);
 const spot = new Float32Array(HAPTIC_LIGHT_MAXIMUM.spot * 16);
 const shadowTransform = new Matrix();
 const rect = new Float32Array(HAPTIC_LIGHT_MAXIMUM.rect * 16);
+
+/** Copies `src[0..length-1]` into `dst` and returns true if any value changed (or `force`). */
+function copyArrayIfChanged(src: Float32Array, dst: Float32Array, length: number, force: boolean): boolean {
+  let changed = force;
+  for (let index = 0; index < length; index += 1) {
+    const value = src[index]!;
+    if (dst[index] !== value) {
+      dst[index] = value;
+      changed = true;
+    }
+  }
+  return changed;
+}
 
 function sceneLights(scene: Scene): SceneLights {
   let lights = scenes.get(scene);
@@ -140,23 +162,30 @@ function sceneLights(scene: Scene): SceneLights {
       shadowViews: new Float32Array(HAPTIC_SHADOW_VIEWS * HAPTIC_SHADOW_VIEW_VEC4S * 4), sunShadow: new Float32Array(16),
       clusterLights: [], clusterRevision: 0, clusterSlots: new Map(), clusterLastCamera: null,
       clusterBuilds: 0, clusterChecks: 0, clusterMismatches: 0, anyContactHardening: false,
+      uboInitialized: false,
+      prevCountsFill: new Float32Array(16),
+      prevDirectional: new Float32Array(HAPTIC_LIGHT_MAXIMUM.directional * 8),
+      prevPoint: new Float32Array(HAPTIC_LIGHT_MAXIMUM.point * 12),
+      prevSpot: new Float32Array(HAPTIC_LIGHT_MAXIMUM.spot * 16),
+      prevRect: new Float32Array(HAPTIC_LIGHT_MAXIMUM.rect * 16),
+      prevShadowViews: new Float32Array(HAPTIC_SHADOW_VIEWS * HAPTIC_SHADOW_VIEW_VEC4S * 4),
+      prevSunShadow: new Float32Array(16),
     };
     scenes.set(scene, lights);
     // A map draws after the block's write, with the views it is then sampled by.
     const state = lights;
     watchShadowDraws(scene, () => {
-      writeShadowViews(scene, state);
-      state.buffer.update();
+      if (writeShadowViews(scene, state)) state.buffer.update();
     });
     // A view with its own sun map (a High or Full Quality capture's, a reflection's) draws with it, a reflection without
     // one with none, and the scene view with its own after.
     const cameraChanged = scene.onActiveCameraChanged.add(() => {
       if (!state.sun || sunShadowMap(scene, state.sun) === state.sunWritten) return;
-      writeShadowViews(scene, state);
-      state.buffer.update();
+      if (writeShadowViews(scene, state)) state.buffer.update();
     });
     const engine = scene.getEngine();
     const restored = engine.onContextRestoredObservable.add(() => {
+      state.uboInitialized = false;
       for (const slot of state.clusterSlots.values()) slot.buffer = engine.createUniformBuffer(slot.words, "HapticClusters");
     });
     scene.onDisposeObservable.addOnce(() => {
@@ -476,20 +505,24 @@ function writeViews(scene: Scene, state: SceneLights, shadow: AtlasShadowGenerat
  * first view, always 0; the camera's view depth plane; its cascades' far ends and lengths in it), as last drawn.
  * Updates them in the buffer, which the caller updates.
  */
-function writeShadowViews(scene: Scene, state: SceneLights): void {
+function writeShadowViews(scene: Scene, state: SceneLights, forceUpload = false): boolean {
   const offset = scene.floatingOriginOffset;
   // The atlas's pages are its texture's layers.
   const edge = shadowAtlasTexture(scene).getRenderSize();
   state.sunShadow.fill(0);
   let anyContactHardening = false;
+  let maxView = 0;
   for (const { shadow, first } of state.shadowed) {
     if (shadow.useContactHardeningShadow) anyContactHardening = true;
     writeViews(scene, state, shadow, first, edge);
+    const end = first + shadow.tiles.length;
+    if (end > maxView) maxView = end;
   }
   const shadow = state.sunWritten = state.sun && sunShadowMap(scene, state.sun);
   if (shadow) {
     if (shadow.useContactHardeningShadow) anyContactHardening = true;
     writeViews(scene, state, shadow, 0, edge);
+    if (shadow.tiles.length > maxView) maxView = shadow.tiles.length;
     const plane = shadow.cascadeDepth;
     // The camera's view depth of a block position, which is relative to the floating origin.
     const sign = scene.useRightHandedSystem ? -1 : 1;
@@ -508,13 +541,23 @@ function writeShadowViews(scene: Scene, state: SceneLights): void {
     for (let index = 0; index < Math.min(4, ends.length); index++) sun[8 + index] = ends[index]!;
     for (let index = 0; index < Math.min(4, lengths.length); index++) sun[12 + index] = lengths[index]!;
   }
-  state.buffer.updateFloatArray("hapticShadowViews", state.shadowViews);
-  state.buffer.updateFloatArray("hapticSunShadow", state.sunShadow);
+  const force = forceUpload || !state.uboInitialized;
+  const viewFloats = maxView * HAPTIC_SHADOW_VIEW_VEC4S * 4;
+  let dirty = false;
+  if (copyArrayIfChanged(state.shadowViews, state.prevShadowViews, force ? state.shadowViews.length : viewFloats, force)) {
+    state.buffer.updateFloatArray("hapticShadowViews", state.shadowViews);
+    dirty = true;
+  }
+  if (copyArrayIfChanged(state.sunShadow, state.prevSunShadow, 16, force)) {
+    state.buffer.updateFloatArray("hapticSunShadow", state.sunShadow);
+    dirty = true;
+  }
   if (anyContactHardening !== state.anyContactHardening) {
     state.anyContactHardening = anyContactHardening;
     const settings = sceneRenderingSettings(scene);
     for (const listener of settings.listeners) listener(settings.mode);
   }
+  return dirty;
 }
 
 /**
@@ -699,24 +742,63 @@ export function writeHapticLights(scene: Scene): void {
       state.limits.push(`${light.name}: draws its flat colour; this device holds ${AREA_EMISSION_LAYERS} area light emission textures at once`);
   }
   const buffer = state.buffer;
-  buffer.updateFloat4("hapticCounts", directionals, points, spots, rects);
-  if (!fill) buffer.updateFloat4("hapticFillDirection", 0, 1, 0, 0);
-  else {
+  const force = !state.uboInitialized;
+  const cf = state.prevCountsFill;
+  let dirty = force;
+  if (force || cf[0] !== directionals || cf[1] !== points || cf[2] !== spots || cf[3] !== rects) {
+    cf[0] = directionals; cf[1] = points; cf[2] = spots; cf[3] = rects;
+    buffer.updateFloat4("hapticCounts", directionals, points, spots, rects);
+    dirty = true;
+  }
+  if (!fill) {
+    if (force || cf[4] !== 0 || cf[5] !== 1 || cf[6] !== 0 || cf[7] !== 0) {
+      cf[4] = 0; cf[5] = 1; cf[6] = 0; cf[7] = 0;
+      buffer.updateFloat4("hapticFillDirection", 0, 1, 0, 0);
+      dirty = true;
+    }
+  } else {
     const direction = fill.direction.normalizeToRef(fillDirection);
     const sky = fill.diffuse;
     const skyScale = fill.getScaledIntensity();
     const ground = fill.groundColor;
+    const sr = sky.r * skyScale, sg = sky.g * skyScale, sb = sky.b * skyScale;
+    const gr = ground.r * fill.intensity, gg = ground.g * fill.intensity, gb = ground.b * fill.intensity;
     // w marks the fill present.
-    buffer.updateFloat4("hapticFillDirection", direction.x, direction.y, direction.z, 1);
-    buffer.updateFloat4("hapticFillSky", sky.r * skyScale, sky.g * skyScale, sky.b * skyScale, 0);
-    buffer.updateFloat4("hapticFillGround", ground.r * fill.intensity, ground.g * fill.intensity, ground.b * fill.intensity, 0);
+    if (force || cf[4] !== direction.x || cf[5] !== direction.y || cf[6] !== direction.z || cf[7] !== 1) {
+      cf[4] = direction.x; cf[5] = direction.y; cf[6] = direction.z; cf[7] = 1;
+      buffer.updateFloat4("hapticFillDirection", direction.x, direction.y, direction.z, 1);
+      dirty = true;
+    }
+    if (force || cf[8] !== sr || cf[9] !== sg || cf[10] !== sb || cf[11] !== 0) {
+      cf[8] = sr; cf[9] = sg; cf[10] = sb; cf[11] = 0;
+      buffer.updateFloat4("hapticFillSky", sr, sg, sb, 0);
+      dirty = true;
+    }
+    if (force || cf[12] !== gr || cf[13] !== gg || cf[14] !== gb || cf[15] !== 0) {
+      cf[12] = gr; cf[13] = gg; cf[14] = gb; cf[15] = 0;
+      buffer.updateFloat4("hapticFillGround", gr, gg, gb, 0);
+      dirty = true;
+    }
   }
-  buffer.updateFloatArray("hapticDirectional", directional);
-  buffer.updateFloatArray("hapticPoint", point);
-  buffer.updateFloatArray("hapticSpot", spot);
-  buffer.updateFloatArray("hapticRect", rect);
-  writeShadowViews(scene, state);
-  buffer.update();
+  if (copyArrayIfChanged(directional, state.prevDirectional, force ? directional.length : directionals * 8, force)) {
+    buffer.updateFloatArray("hapticDirectional", directional);
+    dirty = true;
+  }
+  if (copyArrayIfChanged(point, state.prevPoint, force ? point.length : points * 12, force)) {
+    buffer.updateFloatArray("hapticPoint", point);
+    dirty = true;
+  }
+  if (copyArrayIfChanged(spot, state.prevSpot, force ? spot.length : spots * 16, force)) {
+    buffer.updateFloatArray("hapticSpot", spot);
+    dirty = true;
+  }
+  if (copyArrayIfChanged(rect, state.prevRect, force ? rect.length : rects * 16, force)) {
+    buffer.updateFloatArray("hapticRect", rect);
+    dirty = true;
+  }
+  if (writeShadowViews(scene, state, force)) dirty = true;
+  state.uboInitialized = true;
+  if (dirty) buffer.update();
 }
 
 /**

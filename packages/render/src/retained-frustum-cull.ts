@@ -88,6 +88,8 @@ const NEW = 32;
  * last: the mesh is asked itself (`isInFrustum`) until a read finds it its own again.
  */
 const SHARED = 64;
+/** Per slot: the 8 world corners have not been materialized into `corners` since `copy` ran (lazy until a frustum straddle). */
+const CORNERS_STALE = 128;
 
 /** Babylon's own classes: members they define are the ones the copies follow. */
 const STOCK_PROTOTYPES = new Set<object>([Node.prototype, TransformNode.prototype, AbstractMesh.prototype, Mesh.prototype, InstancedMesh.prototype]);
@@ -416,7 +418,7 @@ export class RetainedFrustumCull {
       const info = readBounds(mesh);
       if (state & BOUNDS_STALE) {
         const shared = this.copy(slot, mesh, info);
-        this.states[slot] = (state & ~(BOUNDS_STALE | SHARED)) | (shared ? SHARED : 0);
+        this.states[slot] = (this.states[slot]! & ~(BOUNDS_STALE | SHARED)) | (shared ? SHARED : 0);
         work.boundsReads += 1;
       } else this.checkBounds(slot, mesh, info);
       // The read may have rewritten, or newly shared, a bounding info other meshes hold: Babylon's loop reads their new
@@ -468,6 +470,14 @@ export class RetainedFrustumCull {
     if (straddleMask === 0) return ALL_IN;
     let boxIn = true;
     const corners = this.corners, base = slot * 24, end = base + 24;
+    if (this.states[slot]! & CORNERS_STALE) {
+      const vectors = this.infos[slot]!.boundingBox.vectorsWorld;
+      for (let corner = 0; corner < 8; corner++) {
+        const vector = vectors[corner]!, cAt = base + corner * 3;
+        corners[cAt] = vector.x; corners[cAt + 1] = vector.y; corners[cAt + 2] = vector.z;
+      }
+      this.states[slot] = this.states[slot]! & ~CORNERS_STALE;
+    }
     for (let plane = 0, p = 0; boxIn && plane < 24; plane += 4, p++) {
       if ((straddleMask & (1 << p)) === 0) continue;
       const nx = planes[plane]!, ny = planes[plane + 1]!, nz = planes[plane + 2]!, d = planes[plane + 3]!;
@@ -522,30 +532,25 @@ export class RetainedFrustumCull {
     return (state & ~(FLAGS_STALE | OUT)) | (out ? OUT : 0);
   }
 
-  /** Copies `info`'s world values into `slot`; true when another mesh follows the same bounding info. */
+  /** Copies `info`'s world sphere & AABB into `slot` (8 corners materialize lazily on straddle); true when shared. */
   private copy(slot: number, mesh: AbstractMesh, info: BoundingInfo): boolean {
     const shared = followBounds(mesh, info);
     this.infos[slot] = info;
     const sphere = info.boundingSphere, centre = sphere.centerWorld, spheres = this.spheres, at = slot * 4;
     spheres[at] = centre.x; spheres[at + 1] = centre.y; spheres[at + 2] = centre.z; spheres[at + 3] = sphere.radiusWorld;
-    const box = info.boundingBox, vectors = box.vectorsWorld, corners = this.corners, base = slot * 24;
-    let maxDistSq = 0;
-    for (let corner = 0; corner < 8; corner++) {
-      const vector = vectors[corner]!, at = base + corner * 3;
-      const vx = vector.x, vy = vector.y, vz = vector.z;
-      corners[at] = vx; corners[at + 1] = vy; corners[at + 2] = vz;
-      const dx = vx - centre.x, dy = vy - centre.y, dz = vz - centre.z;
-      const distSq = dx * dx + dy * dy + dz * dz;
-      if (!(distSq <= maxDistSq)) maxDistSq = distSq;
-    }
-    const maxDist = Math.sqrt(maxDistSq);
+    const box = info.boundingBox, min = box.minimumWorld, max = box.maximumWorld, boxes = this.boxes, edge = slot * 6;
+    boxes[edge] = min.x; boxes[edge + 1] = min.y; boxes[edge + 2] = min.z;
+    boxes[edge + 3] = max.x; boxes[edge + 4] = max.y; boxes[edge + 5] = max.z;
+    // Every world corner lies inside [min, max], so the farthest AABB vertex from `centre` strictly upper-bounds corner radius.
+    const dx = Math.max(Math.abs(min.x - centre.x), Math.abs(max.x - centre.x));
+    const dy = Math.max(Math.abs(min.y - centre.y), Math.abs(max.y - centre.y));
+    const dz = Math.max(Math.abs(min.z - centre.z), Math.abs(max.z - centre.z));
+    const maxDist = Math.hypot(dx, dy, dz);
     const scale = Math.abs(centre.x) + Math.abs(centre.y) + Math.abs(centre.z) + maxDist;
     this.cornerRadii[slot] = Number.isFinite(maxDist) && Number.isFinite(scale)
       ? maxDist * (1 + 1e-9) + 1e-9 * (1 + scale)
       : Infinity;
-    const min = box.minimumWorld, max = box.maximumWorld, boxes = this.boxes, edge = slot * 6;
-    boxes[edge] = min.x; boxes[edge + 1] = min.y; boxes[edge + 2] = min.z;
-    boxes[edge + 3] = max.x; boxes[edge + 4] = max.y; boxes[edge + 5] = max.z;
+    this.states[slot] = this.states[slot]! | CORNERS_STALE;
     return shared;
   }
 
@@ -567,10 +572,13 @@ export class RetainedFrustumCull {
     const sphere = info.boundingSphere, centre = sphere.centerWorld, spheres = this.spheres, at = slot * 4;
     if (!Object.is(spheres[at], centre.x) || !Object.is(spheres[at + 1], centre.y) || !Object.is(spheres[at + 2], centre.z) ||
       !Object.is(spheres[at + 3], sphere.radiusWorld)) return false;
-    const box = info.boundingBox, vectors = box.vectorsWorld, corners = this.corners, base = slot * 24;
-    for (let corner = 0; corner < 8; corner++) {
-      const vector = vectors[corner]!, at = base + corner * 3;
-      if (!Object.is(corners[at], vector.x) || !Object.is(corners[at + 1], vector.y) || !Object.is(corners[at + 2], vector.z)) return false;
+    const box = info.boundingBox;
+    if (!(this.states[slot]! & CORNERS_STALE)) {
+      const vectors = box.vectorsWorld, corners = this.corners, base = slot * 24;
+      for (let corner = 0; corner < 8; corner++) {
+        const vector = vectors[corner]!, at = base + corner * 3;
+        if (!Object.is(corners[at], vector.x) || !Object.is(corners[at + 1], vector.y) || !Object.is(corners[at + 2], vector.z)) return false;
+      }
     }
     const min = box.minimumWorld, max = box.maximumWorld, boxes = this.boxes, edge = slot * 6;
     if (!Object.is(boxes[edge], min.x) || !Object.is(boxes[edge + 1], min.y) || !Object.is(boxes[edge + 2], min.z) ||

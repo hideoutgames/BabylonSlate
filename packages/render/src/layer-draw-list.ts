@@ -16,7 +16,8 @@ import { observeSortedPasses, sceneDrawBatcher, setPresortedPass } from "./draw-
 import { layerDrawableMeshes, layerDrawableMeshRevision } from "./layer-drawable-meshes";
 import { journalFollows, openRenderChangeReader, RenderChange, type RenderChangeReader } from "./render-change-journal";
 import { isRevealPending, revealPendingRevision } from "./reveal-pending";
-import { sceneReadinessRevision } from "./scene-readiness-signal";
+import { onSceneReadinessScope, sceneUnscopedReadinessRevision } from "./scene-readiness-signal";
+import { setTransparentBlendKeys } from "./transparent-depth-pre-pass";
 
 /**
  * A Scene Layer's retained draw list: what its objects pass draws, kept between frames, so that Babylon's per-frame
@@ -204,6 +205,8 @@ const NO_CANDIDATES: AbstractMesh[] = [];
 export class LayerDrawList {
   private readonly scene: Scene;
   private readonly reader: RenderChangeReader;
+  private readonly stopReadiness: () => void;
+  private readonly scopedReadiness = new Set<AbstractMesh>();
   private readonly restoreCandidates: () => void;
   private readonly drawableCandidates: () => ISmartArrayLike<AbstractMesh>;
   private readonly work: LayerDrawListWork = {
@@ -248,6 +251,9 @@ export class LayerDrawList {
   constructor(scene: Scene) {
     this.scene = scene;
     this.reader = openRenderChangeReader(scene);
+    this.stopReadiness = onSceneReadinessScope(scene, (scope) => {
+      for (const mesh of scope) this.scopedReadiness.add(mesh);
+    });
     const candidates = scene.getActiveMeshCandidates;
     this.drawableCandidates = () => candidates.call(scene);
     scene.getActiveMeshCandidates = () => this.meshLoopCandidates();
@@ -292,6 +298,8 @@ export class LayerDrawList {
   }
 
   dispose(): void {
+    this.stopReadiness();
+    this.scopedReadiness.clear();
     this.reader.dispose();
     this.restoreCandidates();
     observeSortedPasses(this.scene, null);
@@ -400,7 +408,7 @@ export class LayerDrawList {
     this.eye = camera.globalPosition;
     const cameraMoved = this.readCamera(camera);
     const settingsChanged = this.readSettings(renderer);
-    const readiness = sceneReadinessRevision(scene), reveal = revealPendingRevision(scene), drawable = layerDrawableMeshRevision(scene);
+    const readiness = sceneUnscopedReadinessRevision(scene), reveal = revealPendingRevision(scene), drawable = layerDrawableMeshRevision(scene);
     const named = this.named;
     named.clear();
     const heard = this.reader.drain(this.visit);
@@ -413,6 +421,7 @@ export class LayerDrawList {
       const reasons = this.work.fullReadReasons;
       const why = !this.valid ? "invalid" : !heard ? "journal" : settingsChanged ? "settings" : readiness !== previousReadiness ? "readiness" : "reveal";
       reasons[why] = (reasons[why] ?? 0) + 1;
+      this.scopedReadiness.clear();
       this.readAll(renderer, meshes);
       this.drawableRevision = drawable;
       this.valid = true;
@@ -422,6 +431,13 @@ export class LayerDrawList {
     if (drawable !== this.drawableRevision) {
       this.drawableRevision = drawable;
       this.syncEntries(renderer, meshes);
+    }
+    if (this.scopedReadiness.size > 0) {
+      for (const mesh of this.scopedReadiness) {
+        const entry = this.entries.get(mesh);
+        if (entry) this.reread(renderer, entry, true);
+      }
+      this.scopedReadiness.clear();
     }
     if (cameraMoved) {
       // The frustum and every distance to the camera: no readiness answer moves.
@@ -574,10 +590,11 @@ export class LayerDrawList {
 
   /** Sets blended parts' sort keys anew; one whose keys changed is checked in its place. */
   private rekey(parts: readonly Part[]): void {
+    const camera = this.camera();
     for (const part of parts) {
       if ((part.key & 3) !== BLENDED) continue;
       const subMesh = part.subMesh, alphaIndex = subMesh._alphaIndex, distance = subMesh._distanceToCamera;
-      setBlendKeys(subMesh, this.eye);
+      setTransparentBlendKeys(subMesh, camera, this.eye);
       if (subMesh._alphaIndex !== alphaIndex || !Object.is(subMesh._distanceToCamera, distance)) this.moved.push(part);
     }
   }
@@ -722,7 +739,10 @@ export class LayerDrawList {
       const compare = list.kind === OPAQUE ? group._opaqueSortCompareFn : list.kind === ALPHA_TEST ? group._alphaTestSortCompareFn
         : group._transparentSortCompareFn ?? RenderingGroup.defaultTransparentSortCompare;
       // As `TransparentDepthPrePass` keys a blended list before it sorts it.
-      if (list.kind === BLENDED) for (const part of list.parts) setBlendKeys(part.subMesh, this.eye);
+      if (list.kind === BLENDED) {
+        const activeCamera = this.camera();
+        for (const part of list.parts) setTransparentBlendKeys(part.subMesh, activeCamera, this.eye);
+      }
       // Babylon's sort, on its input (dispatch order): the same comparisons give the same order.
       if (compare && list.parts.length > 1) list.parts.sort((a, b) => compare(a.subMesh, b.subMesh));
       list.subMeshes.length = list.parts.length;
@@ -827,12 +847,6 @@ function meshBlocker(mesh: AbstractMesh): LayerDrawListFallback | null {
   if (mesh._edgesRenderer) return "edges";
   if (mesh.showBoundingBox) return "boundingBox";
   return null;
-}
-
-/** The keys a blended list sorts by, as Babylon sets them before its sort. */
-function setBlendKeys(subMesh: SubMesh, eye: Vector3): void {
-  subMesh._alphaIndex = subMesh.getMesh().alphaIndex;
-  subMesh._distanceToCamera = Vector3.Distance(subMesh.getBoundingInfo().boundingSphere.centerWorld, eye);
 }
 
 function sameParts(a: readonly Part[], b: readonly Part[]): boolean {

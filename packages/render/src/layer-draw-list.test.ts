@@ -14,6 +14,7 @@ import { applyOverlayUnlitMaterial } from "./overlay-texture-quad";
 import { applyOverlayVisualStyle } from "./overlay-visual-style";
 import { SceneLayerCompositor } from "./scene-layer-compositor";
 import { layerCanvas } from "./scene-layer-canvas-fixtures";
+import { markSceneReadinessDirty } from "./scene-readiness-signal";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -262,5 +263,33 @@ describe("layer draw list", () => {
     q0.getBoundingInfo().reConstruct(new Vector3(500, 500, 0), new Vector3(501, 501, 0), q0.getWorldMatrix());
     frames(4);
     expect(work()).toMatchObject({ mismatches: 1, heals: 0 });
+  });
+
+  it("handles scoped readiness marks incrementally and keeps orthographic X/Y motion order-invariant", async () => {
+    let q0!: Mesh, q1!: Mesh;
+    const { scene, frames, work } = await layer((scene) => {
+      q0 = quad(scene, "q0", -2, 0);
+      q1 = quad(scene, "q1", 2, 0);
+    });
+    frames(2);
+    const before = work();
+    // Moving a quad in X/Y on an orthographic Scene Layer leaves signed view-Z unchanged: zero relists.
+    q0.position.x = 6;
+    q0.position.y = -3;
+    frames(2);
+    expect(work().relists).toBe(before.relists);
+    expect(work().fullReads).toBe(before.fullReads);
+    // Scoped readiness marks re-read only the named mesh without triggering a full layer read.
+    markSceneReadinessDirty(scene, "layerStyle", [q0]);
+    frames(1);
+    expect(work().fullReads).toBe(before.fullReads);
+    expect(work().fullReadReasons.readiness ?? 0).toBe(before.fullReadReasons.readiness ?? 0);
+    expect(work().rereads).toBeGreaterThan(before.rereads);
+    // Unscoped readiness marks still trigger a full layer read.
+    markSceneReadinessDirty(scene, "renderSettings");
+    frames(1);
+    expect(work().fullReads).toBe(before.fullReads + 1);
+    expect(work().fullReadReasons.readiness).toBe((before.fullReadReasons.readiness ?? 0) + 1);
+    expect(q1.isDisposed()).toBe(false);
   });
 });

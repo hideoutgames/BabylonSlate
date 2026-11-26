@@ -162,6 +162,7 @@ type Caster = {
   visit: number;
   geometry: Geometry | null;
   world: Matrix | null;
+  pendingWorld: Matrix | null;
   worldFlag: number;
   worldValue: Matrix;
   transformRevision: number;
@@ -244,8 +245,8 @@ type LocalMember = { revision: number; level: number | undefined; scan: number }
  */
 type LocalRange = { cursor: number; members: Map<Caster, LocalMember>; live: Set<Caster>; valid: boolean };
 
-/** A caster as a map last saw it: what it drew and where (`ShadowMapRefresh.note`). */
-type SeenCaster = { revision: number; level: number | undefined; stamp: number; bounded: boolean; readonly box: Float64Array };
+/** A caster as a map last saw it: what it drew and where (`ShadowMapRefresh.note`), plus cached cascade reach mask. */
+type SeenCaster = { revision: number; level: number | undefined; stamp: number; bounded: boolean; reach: number; readonly box: Float64Array };
 
 /**
  * Whether a world sphere may touch the light-space rectangle of one cascade (its transform matrix, with the world
@@ -769,6 +770,7 @@ export class ShadowMapRefresh {
         visit: 0,
         geometry: null,
         world: null,
+        pendingWorld: null,
         worldFlag: -1,
         worldValue: Matrix.Identity(),
         transformRevision: 0,
@@ -784,6 +786,7 @@ export class ShadowMapRefresh {
     record.seen = walk;
     this.order[this.collected++] = record;
     const world = mesh.computeWorldMatrix();
+    record.pendingWorld = world;
     if (record.sourceShared) record.sourceShared.used = walk;
     if (record.materialShared) record.materialShared.used = walk;
     if (everything || record.dirty === walk) return kept;
@@ -834,12 +837,21 @@ export class ShadowMapRefresh {
    * `collect`. A move changes only its transform revision, the snapshot's first value: the result is the full read's.
    */
   private moveCaster(record: Caster): void {
-    const world = record.mesh.computeWorldMatrix();
-    const moved = !world.equals(record.worldValue);
-    record.worldValue.copyFrom(world);
+    const world = record.pendingWorld ?? record.mesh.computeWorldMatrix();
+    const src = world.m;
+    const dst = record.worldValue.m as unknown as Float32Array;
+    let moved = false;
+    for (let index = 0; index < 16; index += 1) {
+      const value = src[index]!;
+      if (dst[index] !== value) {
+        dst[index] = value;
+        moved = true;
+      }
+    }
     record.world = world;
     record.worldFlag = world.updateFlag;
     if (!moved) return;
+    record.worldValue.markAsUpdated();
     record.snapshot.rewrite(0, ++record.transformRevision);
     record.revision++;
     this.casterChanged?.(record.mesh);
@@ -1368,40 +1380,55 @@ export class ShadowMapRefresh {
     let continuous = false;
     const eye = camera?.globalPosition;
     const orthographic = camera?.mode === Camera.ORTHOGRAPHIC_CAMERA;
+    const canReuseReach = !everywhere && !this.check && matrices.length > 0 && !quiet;
     const casters = this.listCasters();
     for (let index = 0; index < casters.length; index++) {
       const record = casters[index]!;
       const mesh = record.mesh;
-      let reach = all;
-      if (matrices.length) {
-        const sphere = mesh.getBoundingInfo().boundingSphere;
-        const center = sphere.centerWorld;
-        const radius = sphere.radiusWorld;
-        reach = cascadesDrawnInto(matrices, this.cascadeScales, center, radius, sizes, minTexels);
-        if (!reach) {
-          // Deforming geometry is drawn into the cascades whatever its bounds: no
-          // plane culls it, and its skin can leave its bind-pose bounds anywhere.
-          // So a visible one within the shadow distance of the camera (or near a
-          // rectangle) reaches; any other caster out of reach is not drawn.
-          if (!record.unsafe || !hasDeformingShadowBounds(mesh)) continue;
-          if (!reachesCascade(matrices, this.cascadeScales, center, 2 * radius) && eye && !orthographic) {
-            const limit = generator.shadowMaxZ + 2 * radius;
-            const dx = center.x - eye.x;
-            const dy = center.y - eye.y;
-            const dz = center.z - eye.z;
-            // Not negated: a non-finite distance reaches.
-            if (dx * dx + dy * dy + dz * dz > limit * limit) continue;
-          }
-          reach = all;
-        } else if (record.sourceShared?.thin || (record.unsafe && hasDeformingShadowBounds(mesh) && !deformsWithinBounds(mesh))) {
-          // Its own bounds are not what the caster lists cull it by: thin instances are culled as a batch, by bounds
-          // that hold every instance, and deforming geometry is drawn into every cascade (it changes on its own, so is
-          // unsafe whenever it is shown). Each cascade counts it.
-          reach = all;
-        }
-      }
       const level = this.lodLevels.get(mesh);
-      this.note(seen, mesh, record, level, quiet && !record.unsafe ? null : region);
+      const existingSeen = seen.get(mesh);
+      let reach: number;
+      if (
+        canReuseReach &&
+        !record.unsafe &&
+        existingSeen &&
+        existingSeen.reach > 0 &&
+        existingSeen.revision === record.revision &&
+        existingSeen.level === level
+      ) {
+        reach = existingSeen.reach;
+        existingSeen.stamp = this.stamp;
+      } else {
+        reach = all;
+        if (matrices.length) {
+          const sphere = mesh.getBoundingInfo().boundingSphere;
+          const center = sphere.centerWorld;
+          const radius = sphere.radiusWorld;
+          reach = cascadesDrawnInto(matrices, this.cascadeScales, center, radius, sizes, minTexels);
+          if (!reach) {
+            // Deforming geometry is drawn into the cascades whatever its bounds: no
+            // plane culls it, and its skin can leave its bind-pose bounds anywhere.
+            // So a visible one within the shadow distance of the camera (or near a
+            // rectangle) reaches; any other caster out of reach is not drawn.
+            if (!record.unsafe || !hasDeformingShadowBounds(mesh)) continue;
+            if (!reachesCascade(matrices, this.cascadeScales, center, 2 * radius) && eye && !orthographic) {
+              const limit = generator.shadowMaxZ + 2 * radius;
+              const dx = center.x - eye.x;
+              const dy = center.y - eye.y;
+              const dz = center.z - eye.z;
+              // Not negated: a non-finite distance reaches.
+              if (dx * dx + dy * dy + dz * dz > limit * limit) continue;
+            }
+            reach = all;
+          } else if (record.sourceShared?.thin || (record.unsafe && hasDeformingShadowBounds(mesh) && !deformsWithinBounds(mesh))) {
+            // Its own bounds are not what the caster lists cull it by: thin instances are culled as a batch, by bounds
+            // that hold every instance, and deforming geometry is drawn into every cascade (it changes on its own, so is
+            // unsafe whenever it is shown). Each cascade counts it.
+            reach = all;
+          }
+        }
+        this.note(seen, mesh, record, level, quiet && !record.unsafe ? null : region, everywhere ? -1 : reach);
+      }
       if (record.unsafe) {
         continuous = true;
         live |= reach;
@@ -1633,11 +1660,16 @@ export class ShadowMapRefresh {
    * it is now (everywhere for an unbounded one).
    */
   private note(
-    seen: Map<AbstractMesh, SeenCaster>, mesh: AbstractMesh, record: Caster, level: number | undefined, region: ShadowChangeRegion | null,
+    seen: Map<AbstractMesh, SeenCaster>, mesh: AbstractMesh, record: Caster, level: number | undefined, region: ShadowChangeRegion | null, reach = -1,
   ): void {
+    let entry = seen.get(mesh);
+    if (!this.check && entry && !record.unsafe && entry.revision === record.revision && entry.level === level) {
+      entry.stamp = this.stamp;
+      entry.reach = reach;
+      return;
+    }
     const box = this.box;
     const bounded = this.casterBox(mesh, record, box);
-    let entry = seen.get(mesh);
     // Without a region, what the map saw is only noted (a quiet frame after skipped ones, `trackCascades`).
     if (region && (!entry || record.unsafe || entry.revision !== record.revision || entry.level !== level)) {
       if (entry) addSeen(entry, region);
@@ -1645,11 +1677,12 @@ export class ShadowMapRefresh {
       else region.addAll();
     }
     // Every field is written below, so an entry another map or caster dropped serves as a new one.
-    if (!entry) seen.set(mesh, (entry = this.spareSeen.pop() ?? { revision: 0, level: undefined, stamp: 0, bounded: false, box: new Float64Array(6) }));
+    if (!entry) seen.set(mesh, (entry = this.spareSeen.pop() ?? { revision: 0, level: undefined, stamp: 0, bounded: false, reach: -1, box: new Float64Array(6) }));
     entry.revision = record.revision;
     entry.level = level;
     entry.stamp = this.stamp;
     entry.bounded = bounded;
+    entry.reach = reach;
     entry.box.set(box);
   }
 
