@@ -25,6 +25,7 @@ import {
 import { AssetCreateProvider, TagProvider } from "@haptic/editor-kit";
 import { dispatchPointerEvent } from "@haptic/editor-kit/test-support/pointer-events";
 import { SceneDetailsPanel } from "./scene-details-panel";
+import * as componentPropertyRowsModule from "../lib/component-property-rows";
 import { clearTextEditorSessions, getTextEditorSession } from "../services/text-editor-sessions";
 import { RENDERING_SETTINGS_SECTIONS } from "../components/rendering-settings-sections";
 import { AppSettingsProvider } from "../context/app-settings-context";
@@ -68,6 +69,12 @@ const harness = vi.hoisted(() => ({
   /** Project Settings Scene Layer post-processing, which a Scene Layer's Inspector shows and edits. */
   sceneLayerPostProcessStack: [] as Array<{ id: string; materialGuid: string; enabled: boolean }>,
   updateProjectSettings: vi.fn<(settings: Record<string, unknown>) => void>(),
+  /** When set, keeps `projectDocument`, `assetRegistry`, and non-scene `documentRevisions` stable across renders (matching production DocumentProvider). */
+  stableProviderContext: null as {
+    projectDocument: unknown;
+    assetRegistry: unknown;
+    documentRevisions: Record<string, number>;
+  } | null,
 }));
 
 vi.mock("../context/document-workspace-context", () => ({
@@ -100,7 +107,8 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
   ],
   applySceneChange: harness.applySceneChange,
   updateProjectSettings: harness.updateProjectSettings,
-  projectDocument: {
+  ...(harness.stableProviderContext ? { documentRevisions: harness.stableProviderContext.documentRevisions } : {}),
+  projectDocument: harness.stableProviderContext?.projectDocument ?? {
     settings: {
       sceneLayerPostProcessStack: harness.sceneLayerPostProcessStack,
       twoD: { sortingLayers: ["Background", "Default", "UI"] },
@@ -109,7 +117,7 @@ vi.mock("../context/document-context", async () => (await import("../testing/doc
       render: harness.render,
     },
   },
-  assetRegistry: {
+  assetRegistry: harness.stableProviderContext?.assetRegistry ?? {
     list: () => [
       ...harness.createdAssets,
       ...(harness.prefabComponents.length ? [{
@@ -1682,5 +1690,92 @@ it("hides scene CEL overrides in PBR and persists only explicitly overridden fie
   harness.render.mode = "pbr";
   view.rerender(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
   expect(screen.queryByTestId("scene-cel-settings")).toBeNull();
+});
+
+it("skips rebuilding component property rows on actor transform drags and unrelated actor moves", () => {
+  const meshComponent = createMeshComponent("mesh-1");
+  const selected = createActor("actor-a", "Hero", { components: [meshComponent] });
+  const other = createActor("actor-b", "Prop", { components: [createMeshComponent("mesh-2")] });
+  harness.scene = { ...createDefaultScene("3d"), actors: [selected, other] };
+  harness.selectedActorIds = ["actor-a"];
+  const stableProjectDocument = {
+    settings: {
+      sceneLayerPostProcessStack: [],
+      twoD: { sortingLayers: ["Background", "Default", "UI"] },
+      fonts: { defaultFontGuid: null, globalFallback: "sans-serif" },
+      gameInstanceClass: "MyGame",
+      render: harness.render,
+    },
+  };
+  const stableAssetRegistry = {
+    list: () => [],
+    getByGuid: () => undefined,
+  };
+  harness.stableProviderContext = {
+    projectDocument: stableProjectDocument,
+    assetRegistry: stableAssetRegistry,
+    documentRevisions: { scene: 1 },
+  };
+
+  const spy = vi.spyOn(componentPropertyRowsModule, "componentPropertyRows");
+  try {
+    const view = render(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    const initialCalls = spy.mock.calls.length;
+    expect(initialCalls).toBeGreaterThan(0);
+
+    // Move the selected actor's transform (same components array reference): component rows stay memoized.
+    harness.scene = {
+      ...harness.scene,
+      actors: [
+        { ...selected, transform: { ...selected.transform, position: [5, 2, -3] } },
+        other,
+      ],
+    };
+    harness.stableProviderContext = {
+      projectDocument: stableProjectDocument,
+      assetRegistry: stableAssetRegistry,
+      documentRevisions: { scene: 2 },
+    };
+    view.rerender(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    expect(spy.mock.calls.length).toBe(initialCalls);
+
+    // Move an unrelated actor: component rows still stay memoized.
+    harness.scene = {
+      ...harness.scene,
+      actors: [
+        harness.scene.actors[0]!,
+        { ...other, transform: { ...other.transform, position: [10, 0, 0] } },
+      ],
+    };
+    harness.stableProviderContext = {
+      projectDocument: stableProjectDocument,
+      assetRegistry: stableAssetRegistry,
+      documentRevisions: { scene: 3 },
+    };
+    view.rerender(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    expect(spy.mock.calls.length).toBe(initialCalls);
+
+    // Editing a component property on the selected actor DOES rebuild its component rows.
+    harness.scene = {
+      ...harness.scene,
+      actors: [
+        {
+          ...harness.scene.actors[0]!,
+          components: [{ ...meshComponent, properties: { ...meshComponent.properties, castShadows: false } }],
+        },
+        harness.scene.actors[1]!,
+      ],
+    };
+    harness.stableProviderContext = {
+      projectDocument: stableProjectDocument,
+      assetRegistry: stableAssetRegistry,
+      documentRevisions: { scene: 4 },
+    };
+    view.rerender(<SceneDetailsPanel {...({} as IDockviewPanelProps)} />);
+    expect(spy.mock.calls.length).toBeGreaterThan(initialCalls);
+  } finally {
+    harness.stableProviderContext = null;
+    spy.mockRestore();
+  }
 });
 

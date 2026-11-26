@@ -735,4 +735,28 @@ describe("its input list", () => {
     master.removeLODLevel(level);
     expect(run(list)).toEqual(["loading", "master", "level"]);
   });
+
+  it("matches Babylon across all culling strategies for strictly inside, straddling, and outside meshes", async () => {
+    const { run, box } = await task();
+    // At z = 10, view spans roughly x in [-8.3, 8.3], y in [-4.7, 4.7].
+    const inside = box("inside", 0);
+    const straddleEdge = box("straddle-edge", 8.2);
+    const straddleNear = box("straddle-near", 0);
+    straddleNear.position.z = 0.25;
+    const outsideLeft = box("outside-left", -30);
+    const behind = box("behind", 0);
+    behind.position.z = -15;
+    const zeroRadius = box("zero-radius", 0);
+    zeroRadius.scaling.set(0.0001, 0.0001, 0.0001);
+    const list = [inside, straddleEdge, straddleNear, outsideLeft, behind, zeroRadius];
+    for (const strategy of [0, 1, 2, 3]) {
+      for (const mesh of list) mesh.cullingStrategy = strategy;
+      // verifyRetainedFrustumCull(true) compares retained output bit-for-bit against Babylon's loop.
+      const kept = run(list);
+      expect(kept).toContain("inside");
+      expect(kept).toContain("zero-radius");
+      expect(kept).not.toContain("outside-left");
+      expect(kept).not.toContain("behind");
+    }
+  });
 });

@@ -278,6 +278,12 @@ function useSettingSelector<T extends string | number | boolean>(select: (settin
   return useSyncExternalStore(owner?.subscribe ?? subscribeAppSettings, read, read);
 }
 
+const fallbackUpdateSettings: AppSettingsContextValue["updateSettings"] = (mutate) =>
+  activeOwner.update(mutate);
+
+const fallbackUpdateDebuggerDefaults: AppSettingsContextValue["updateDebuggerDefaults"] = (patch) =>
+  activeOwner.update((settings) => Object.assign(settings.debuggerDefaults, patch));
+
 export function useAppSettings(): AppSettingsContextValue {
   const value = useContext(AppSettingsContext);
   const snapshot = useSyncExternalStore(
@@ -288,11 +294,8 @@ export function useAppSettings(): AppSettingsContextValue {
   return (
     value ?? {
       ...snapshot,
-      updateSettings: (mutate) => activeOwner.update(mutate),
-      updateDebuggerDefaults: (patch) =>
-        activeOwner.update((settings) =>
-          Object.assign(settings.debuggerDefaults, patch),
-        ),
+      updateSettings: fallbackUpdateSettings,
+      updateDebuggerDefaults: fallbackUpdateDebuggerDefaults,
     }
   );
 }
