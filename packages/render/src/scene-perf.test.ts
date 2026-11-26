@@ -659,10 +659,10 @@ describe("prewarmSceneMaterials", () => {
         const box = MeshBuilder.CreateBox(`wall-${index}`, {}, scene);
         box.material = material;
       }
-      // One mesh with a distinct shader flag must still compile separately.
-      const unlitReceiver = MeshBuilder.CreateBox("wall-noshadow", {}, scene);
-      unlitReceiver.receiveShadows = false;
-      unlitReceiver.material = material;
+      // One mesh with a distinct shader flag must still compile separately (default receiveShadows is false).
+      const shadowReceiver = MeshBuilder.CreateBox("wall-shadow", {}, scene);
+      shadowReceiver.receiveShadows = true;
+      shadowReceiver.material = material;
       const counts: Array<{ done: number; total: number }> = [];
       await prewarmSceneMaterials(scene, undefined, undefined, (count) => counts.push({ ...count }));
       expect(compile).toHaveBeenCalledTimes(2);

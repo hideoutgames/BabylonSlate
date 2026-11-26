@@ -251,8 +251,8 @@ describe("textures handed over between the editor's view and Play", () => {
     expect(editor.resourceCache.accountedBytes()).toBeGreaterThan(0);
 
     editor.handOverTextures();
-    lease1.release();
     editor.dispose();
+    lease1.release();
     await editor.whenReleased();
 
     const canvas2 = new FakeCanvas() as unknown as HTMLCanvasElement;
