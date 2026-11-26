@@ -206,7 +206,7 @@ export function sceneRenderingSettings(scene: Scene): SceneRendering {
       effectsKey: sceneEffectsKey(effects, "pbr", true),
       effectsPlan: planSceneEffects(effects, "pbr", true),
       fsrOutputAtView: true,
-      lightingDefines: "pbr|false|false|false",
+      lightingDefines: "pbr|false|false",
       screenShadowsSupported: null,
       maxSamples: 1,
       listeners: new Set(),
@@ -302,9 +302,9 @@ function replanSceneEffects(state: SceneRendering): void {
   const samples = multisampleCount(state);
   state.effectsKey = `${sceneEffectsKey(state.effects, state.mode, state.effectsEnabled, inputs)}${samples > 1 ? `:msaa${samples}` : ""}${state.fsrOutputAtView ? "" : ":fsrdevice"}`;
   state.effectsPlan = planSceneEffects(state.effects, state.mode, state.effectsEnabled, inputs);
-  // The light block's scene-level defines: the render mode, Screen-Space Shadows support, Contact Hardening (PCSS),
-  // and Low shadow filter quality (narrow 4-tap PCF). Changing any of these hot-swaps lit programs in parallel.
-  const lightingDefines = `${state.mode}|${readsScreenShadows(state)}|${state.shadows.filter === "pcss"}|${state.shadows.filterQuality === "low"}`;
+  // The light block's scene-level defines: the render mode, Screen-Space Shadows support, and Contact Hardening (PCSS)
+  // in PBR mode. Quality tier switches stay on PCF so lit programs never recompile across tiers.
+  const lightingDefines = `${state.mode}|${readsScreenShadows(state)}|${state.mode !== "cel" && state.shadows.filter === "pcss"}`;
   if (lightingDefines === state.lightingDefines) return;
   state.lightingDefines = lightingDefines;
   for (const listener of state.listeners) listener(state.mode);

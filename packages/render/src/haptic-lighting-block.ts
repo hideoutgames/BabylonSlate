@@ -410,12 +410,11 @@ export class HapticLightingBlock extends NodeMaterialBlock {
     // `worlddebug shadowtaps off` and `locallights off`: shadow lookups return lit, and no local light is visited.
     defines.setValue(WORLD_DEBUG_NO_SHADOW_TAPS_DEFINE, worldDebugOff(scene, "shadowtaps"), true);
     defines.setValue(WORLD_DEBUG_NO_LOCAL_LIGHTS_DEFINE, worldDebugOff(scene, "locallights"), true);
-    // Water, CEL, and Low PCF quality draw shadows through low quality's four taps, without Contact Hardening:
-    // on moving water or CEL's sharpened edge a wider penumbra buys nothing, and omitting PCSS/wide PCF loops cuts
-    // ANGLE D3D11 fragment compile times dramatically when they are not active.
-    const shadows = sceneRenderingSettings(scene).shadows;
-    const contactHardening = !cel && !isWaterSurfaceMesh(mesh) && sceneUsesContactHardeningShadows(scene);
-    const narrow = cel || isWaterSurfaceMesh(mesh) || (!contactHardening && shadows.filterQuality === "low");
+    // Water and CEL draw shadows through low quality's four taps, without Contact Hardening: on moving water or CEL's
+    // sharpened edge a wider penumbra buys nothing. Contact Hardening (PCSS) is gated on `HAPTIC_SHADOW_CONTACT_HARDENING`
+    // so default PCF programs omit PCSS and its Poisson tables without recompiling across quality tiers.
+    const narrow = cel || isWaterSurfaceMesh(mesh);
+    const contactHardening = !narrow && sceneUsesContactHardeningShadows(scene);
     defines.setValue("HAPTIC_SHADOW_NARROW", narrow, true);
     defines.setValue("HAPTIC_SHADOW_CONTACT_HARDENING", contactHardening, true);
     // The environment's light is part of every lit program, whatever environment lights the mesh: its presence, a
