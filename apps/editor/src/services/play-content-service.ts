@@ -541,7 +541,7 @@ export function createPlayContentService(options: PlayContentServiceOptions) {
       enums: typeSchemas.enums,
       structs: typeSchemas.structs,
       dataDefinitions: typeSchemas.dataDefinitions,
-      materialDomains: [...materialDomains.entries()].sort(([a], [b]) => a.localeCompare(b)),
+      materialDomains: Object.entries(materialDomains).sort(([a], [b]) => a.localeCompare(b)),
       subsystemClasses: [...subsystemClasses].sort(),
       classGraphIds: Object.entries(classGraphs)
         .sort(([a], [b]) => a.localeCompare(b))
