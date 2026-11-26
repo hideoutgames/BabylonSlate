@@ -63,7 +63,7 @@ export const RETAINED_CULL_MIN_MESHES = 512;
  * recording for them) and Babylon's loop culls for `FIRST_BACK_OFF` frames, then the copies are read again to look;
  * each look that finds the list still busy doubles the wait, up to `MAX_BACK_OFF`.
  */
-export const BUSY_SHARE = 0.75;
+export const BUSY_SHARE = 0.35;
 const BUSY_FRAMES = 3;
 const FIRST_BACK_OFF = 8;
 const MAX_BACK_OFF = 256;

@@ -764,6 +764,8 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
     indices: new Float64Array(0),
   };
   private readonly scratchBounds: Bounds = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+  /** Dirty entries whose projected bounds changed this pass and their pre-move bounds, to skip regroup when isolated. */
+  private readonly boundsChanged: Array<{ entry: Entry; minX: number; minY: number; maxX: number; maxY: number }> = [];
   private readonly scratchCorner = { x: 0, y: 0, z: 0 };
   private readonly scratchGrid = [0, 0];
   private readonly scratchViewport = new Viewport(0, 0, 1, 1);
@@ -1161,6 +1163,8 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
     let regroup = moved || record.listChanged;
     record.listChanged = false;
     let rereadCount = 0;
+    const boundsChanged = this.boundsChanged;
+    boundsChanged.length = 0;
     for (const entry of reread) {
       entry.queued = false;
       // One the list let go of since it was named.
@@ -1174,9 +1178,50 @@ class OverlayDrawBatcher implements SceneDrawBatcher {
         const before = this.scratchBounds;
         before.minX = entry.minX; before.minY = entry.minY; before.maxX = entry.maxX; before.maxY = entry.maxY;
         this.bound(entry, this.transform!, this.marginX, this.marginY);
-        if (!sameBounds(before, entry)) regroup = true;
+        if (!sameBounds(before, entry)) {
+          const batchIndex = entry.batch;
+          if (!regroup && batchIndex >= 0 && batchIndex < record.batchCount) {
+            const batch = batches[batchIndex]!;
+            if (entry.minX < batch.minX) batch.minX = entry.minX;
+            if (entry.minY < batch.minY) batch.minY = entry.minY;
+            if (entry.maxX > batch.maxX) batch.maxX = entry.maxX;
+            if (entry.maxY > batch.maxY) batch.maxY = entry.maxY;
+            boundsChanged.push({ entry, minX: before.minX, minY: before.minY, maxX: before.maxX, maxY: before.maxY });
+          } else {
+            regroup = true;
+          }
+        }
       }
     }
+    // If every bounds-changed member overlaps no member of any other batch (neither before nor after moving),
+    // every member's batch assignment in `group()` is guaranteed unchanged: skip the full O(N^2) regroup pass.
+    if (!regroup && boundsChanged.length > 0) {
+      const batchCount = record.batchCount;
+      checkOverlap: for (let index = 0; index < boundsChanged.length; index += 1) {
+        const changed = boundsChanged[index]!;
+        const entry = changed.entry;
+        const ownBatch = entry.batch;
+        for (let other = 0; other < batchCount; other += 1) {
+          if (other === ownBatch) continue;
+          const batch = batches[other]!;
+          if (
+            (overlaps(changed, batch) && overlapsAny(changed, batch.entries)) ||
+            (overlaps(entry, batch) && overlapsAny(entry, batch.entries))
+          ) {
+            regroup = true;
+            break checkOverlap;
+          }
+        }
+        for (let peer = index + 1; peer < boundsChanged.length; peer += 1) {
+          const otherChanged = boundsChanged[peer]!;
+          if (otherChanged.entry.batch !== ownBatch && overlaps(changed, otherChanged)) {
+            regroup = true;
+            break checkOverlap;
+          }
+        }
+      }
+    }
+    boundsChanged.length = 0;
     if (!all) record.dirty.length = 0;
     else {
       for (const entry of entries) entry.queued = false;

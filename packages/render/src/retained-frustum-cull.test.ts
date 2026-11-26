@@ -133,8 +133,8 @@ describe("the retained frustum cull", () => {
     verifyRetainedFrustumCull(false);
     const { box, fill, frame, settle, work } = await world();
     fill();
-    // 2000 of the 2512 meshes (or > BUSY_SHARE of the list) move each frame.
-    const movers = Array.from({ length: 1800 }, (_, index) => box(`mover ${index}`, (index % 40) - 20, 0, 10 + Math.floor(index / 40), 0.2));
+    // 300 of the 812 meshes, over `BUSY_SHARE` of the list, move each frame.
+    const movers = Array.from({ length: 300 }, (_, index) => box(`mover ${index}`, (index % 20) - 10, 0, 10 + Math.floor(index / 20), 0.2));
     await settle();
     const before = work();
     for (let step = 0; step < 3; step++) {

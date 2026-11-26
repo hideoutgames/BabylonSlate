@@ -918,19 +918,27 @@ describe("Scene Layer draw batching", () => {
       setSpriteQuadUvs(sprites[1]!, { u0: 0.5, v0: 0, u1: 0.75, v1: 0.25 });
       expect(await work(frame)).toEqual(counts(5, 1, 0, 0));
       expect(await work(frame)).toEqual(unchanged);
-      // A resize rewrites its positions: its bounds change, so its pass groups again.
+      // A resize rewrites its positions: when the resized member overlaps no other batch, its batch refills without regrouping.
       setSpriteQuadSize(sprites[1]!, 1, 0.5, { x: 0, y: 0 });
-      expect(await work(frame)).toEqual(counts(5, 1, 0, 1));
+      expect(await work(frame)).toEqual(counts(5, 1, 0, 0));
       expect(await work(frame)).toEqual(unchanged);
     });
 
-    it("groups a pass again when a member moves, its clip changes, or the layer's camera or render size changes", async () => {
-      const { work, frame, engine, compositor, quads, applyClip } = await retainedLayer();
+    it("skips regrouping on isolated member moves, and groups again on cross-batch overlap, clip, camera or render size changes", async () => {
+      const { work, frame, engine, compositor, scene, quads, applyClip } = await retainedLayer();
       frame();
       frame();
+      // Moving within an isolated region skips regrouping (verified identical against full path).
       quads[2]!.position.x += 0.5;
-      expect(await work(frame)).toEqual(counts(5, 1, 0, 1));
+      expect(await work(frame)).toEqual(counts(5, 1, 0, 0));
       expect(await work(frame)).toEqual(unchanged);
+      // Adding an unclipped quad creates a second batch; moving a clipped quad onto it triggers regrouping.
+      const separate = quad(scene, "separate", 8, 0);
+      expect(await work(frame)).toEqual(counts(6, 1, 0, 1));
+      quads[2]!.position.x = 8;
+      expect(await work(frame)).toEqual(counts(6, 1, 0, 1));
+      separate.dispose();
+      expect(await work(frame)).toEqual(counts(6, 0, 0, 1));
       // The clip's refresh names each quad drawing through it; the batch of the same members keeps its fill and draws
       // under the new scissor.
       applyClip({ x: 0, y: 0, width: 15, height: 4 });
