@@ -25,6 +25,7 @@ import {
   environmentTextureGuidsFromScenes,
   postProcessTextureGuidsFromScenes,
   materialInstanceTextureGuidsFromScenes,
+  textureGuidsFromPlayPayloads,
 } from "../lib/play-content";
 import { fontMsdfMapsFromPairs, fontGuidsForSceneRepresentation } from "../lib/play-fonts";
 import { savedMaterialLibraryKey } from "../lib/material-asset-revision";
@@ -369,13 +370,10 @@ export function useViewportSceneLoad({
           let bytes: Map<string, Uint8Array>;
           if (prefetchedTexturesWork) {
             const prefetched = await prefetchedTexturesWork;
-            const wantedFromPayloads = new Set<string>(extraTextureGuids);
-            for (const sprite of spritePayloads.values()) {
-              if (sprite.textureAssetGuid) wantedFromPayloads.add(sprite.textureAssetGuid);
-            }
-            for (const tileset of tiles.tilesets.values()) {
-              if (tileset.textureAssetGuid) wantedFromPayloads.add(tileset.textureAssetGuid);
-            }
+            const wantedFromPayloads = new Set<string>([
+              ...textureGuidsFromPlayPayloads(spritePayloads, tiles.tilesets),
+              ...extraTextureGuids,
+            ]);
             const missing = [...wantedFromPayloads].filter((guid) => guid && !prefetchedTextureSet.has(guid));
             if (missing.length === 0) {
               bytes = prefetched;
