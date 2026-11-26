@@ -21,7 +21,7 @@ import type { Effect } from "@babylonjs/core/Materials/effect";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
 import type { AreaEmissionPixels } from "@haptic/assets";
-import { normalizeRenderingQuality, qualityPresetPatch } from "@haptic/core";
+import { normalizeRenderingQuality, normalizeShadowSettings, qualityPresetPatch } from "@haptic/core";
 import { createDefaultMaterialDocument, createWaterMaterialDocument, lowerMaterialDocument, materialPinDefaultPropertyKey } from "@haptic/shader-graph";
 import { areaEmissionTexture, setRectLightEmission, syncAreaEmissionLayers } from "./area-emission-array";
 import { retainAreaLightLookup } from "./area-light-resources";
@@ -294,23 +294,34 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     expect((await drawnDefines(scene, water.mesh, water.material)).some((line) => environment.test(line))).toBe(false);
   });
 
-  it("binds the shadow atlas to every draw, compared and read plainly, and whether the drawn mesh receives shadows", async () => {
+  it("binds the shadow atlas to every draw (plain depth only for Contact Hardening), and whether the drawn mesh receives shadows", async () => {
     const { scene } = host();
     const { mesh, material } = await litBox(scene);
     await drawnDefines(scene, mesh, material);
-    const effect = mesh.subMeshes[0]!.effect!, atlases: unknown[] = [], receivers: number[] = [];
-    vi.spyOn(effect, "setDepthStencilTexture").mockImplementation((name, texture) => { atlases.push([name, texture]); });
-    vi.spyOn(effect, "setFloat").mockImplementation((name, value) => {
+    const atlas = shadowAtlasTexture(scene);
+
+    // Default PCF omits hapticShadowAtlasDepth.
+    const pcfEffect = mesh.subMeshes[0]!.effect!, pcfAtlases: unknown[] = [], receivers: number[] = [];
+    vi.spyOn(pcfEffect, "setDepthStencilTexture").mockImplementation((name, texture) => { pcfAtlases.push([name, texture]); });
+    vi.spyOn(pcfEffect, "setFloat").mockImplementation((name, value) => {
       if (name === "hapticShadowReceiver") receivers.push(value);
-      return effect;
+      return pcfEffect;
     });
     for (const receives of [true, false]) {
       mesh.receiveShadows = receives;
       material.bindForSubMesh(mesh.computeWorldMatrix(true), mesh, mesh.subMeshes[0]!);
     }
     expect(receivers).toEqual([1, 0]);
-    const atlas = shadowAtlasTexture(scene);
-    expect(atlases).toEqual([["hapticShadowAtlas", atlas], ["hapticShadowAtlasDepth", atlas], ["hapticShadowAtlas", atlas], ["hapticShadowAtlasDepth", atlas]]);
+    expect(pcfAtlases).toEqual([["hapticShadowAtlas", atlas], ["hapticShadowAtlas", atlas]]);
+
+    // Contact Hardening (PCSS) compiles and binds both compare and plain depth samplers.
+    updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ filter: "pcss" }) });
+    await drawnDefines(scene, mesh, material);
+    const pcssEffect = mesh.subMeshes[0]!.effect!, pcssAtlases: unknown[] = [];
+    vi.spyOn(pcssEffect, "setDepthStencilTexture").mockImplementation((name, texture) => { pcssAtlases.push([name, texture]); });
+    mesh.receiveShadows = true;
+    material.bindForSubMesh(mesh.computeWorldMatrix(true), mesh, mesh.subMeshes[0]!);
+    expect(pcssAtlases).toEqual([["hapticShadowAtlas", atlas], ["hapticShadowAtlasDepth", atlas]]);
   });
 
   it("binds the Scene's light, cluster, environment and Material record blocks at every draw of a frozen Material, a second mesh's that shares its program too", async () => {
@@ -334,6 +345,7 @@ describe("HapticLightingBlock and the HapticLights block", () => {
 
   it("reads the atlas plainly on WebGL2 through a sampler object without compare on its own unit, which a texture bound there next does without", async () => {
     const { engine, scene } = host();
+    setSceneRenderSettings(scene, { shadows: normalizeShadowSettings({ filter: "pcss" }) });
     const { mesh, material } = await litBox(scene);
     await drawnDefines(scene, mesh, material);
     // The WebGL2 context's sampler objects, which NullEngine has none of.
@@ -375,6 +387,7 @@ describe("HapticLightingBlock and the HapticLights block", () => {
 
   it("makes no atlas sampler object while the context is lost, and binds a new one after the restore, never one the lost context made", async () => {
     const { engine, scene } = host();
+    setSceneRenderSettings(scene, { shadows: normalizeShadowSettings({ filter: "pcss" }) });
     const { mesh, material } = await litBox(scene);
     await drawnDefines(scene, mesh, material);
     // A WebGL2 context that can be lost: objects it creates meanwhile, and those it held, are never valid again.

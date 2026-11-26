@@ -213,6 +213,25 @@ function releaseKept(keep: Keep): void {
   for (const effect of [...keep.effects]) drop(keep, effect);
 }
 
+/**
+ * Keeps a single compiled utility Effect (such as `hdrFiltering` or `hapticEnvironmentBaseRadiance`) in `engine`'s
+ * keep so subsequent skyboxes, reflection probe captures and Scene transitions find the program already linked in
+ * Babylon's Effect cache instead of disposing and re-linking it on every call. Tracked by `keptEffectCount` and
+ * released automatically on Engine disposal, context loss, or `releaseKeptEffects`.
+ */
+export function retainEngineEffect(engine: AbstractEngine, effect: Effect | null | undefined): void {
+  if (engine.isDisposed || !(effect instanceof Effect) || effect.isDisposed || failed(effect)) return;
+  const keep = keepFor(engine);
+  if (keep.effects.delete(effect)) {
+    keep.effects.add(effect);
+    return;
+  }
+  if (effect.isReady()) {
+    retain(keep, effect);
+    forgetCreator(effect);
+  }
+}
+
 /** How many Effects `engine` keeps for Play. Test seam: production code does not call it. */
 export function keptEffectCount(engine: AbstractEngine): number {
   return keeps.get(engine)?.effects.size ?? 0;

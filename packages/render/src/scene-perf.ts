@@ -267,38 +267,56 @@ export async function prewarmMeshMaterials(
     total = Math.max(total, done);
     onProgress?.({ done, total });
   };
-  // Units of different Materials compile concurrently, so a driver with parallel compilation
-  // (KHR_parallel_shader_compile) links several programs at once and each unit's 16 ms readiness poll overlaps the
-  // others'. Units of one Material stay in order: Babylon's forceCompilation saves and restores the Material's
-  // `allowShaderHotSwapping` around each compile, and two at once would leave hot swapping off for good.
+  // Units across and within Materials compile concurrently so KHR_parallel_shader_compile links every variant
+  // in parallel. Babylon's `forceCompilation` saves and restores `material.allowShaderHotSwapping` around each call;
+  // holding it `false` in one ref-counted guard per Material prevents concurrent variants from racing on restore.
   const running = new Set<Promise<void>>();
-  const chains = new Map<Material, Promise<void>>();
+  const hotSwapGuards = new Map<Material, { original: boolean; active: number }>();
   const seenVariants = new Map<Material, Set<string>>();
   /** Units started and not finished, oldest first: the oldest is the one a stall names. */
   const inFlight: string[] = [];
   let failure: { error: unknown } | null = null;
   let first = true;
+  const acquireHotSwapGuard = (material: Material) => {
+    const existing = hotSwapGuards.get(material);
+    if (existing) {
+      existing.active += 1;
+      return;
+    }
+    hotSwapGuards.set(material, { original: material.allowShaderHotSwapping, active: 1 });
+    material.allowShaderHotSwapping = false;
+  };
+  const releaseHotSwapGuard = (material: Material) => {
+    const guard = hotSwapGuards.get(material);
+    if (!guard) return;
+    guard.active -= 1;
+    if (guard.active <= 0) {
+      hotSwapGuards.delete(material);
+      material.allowShaderHotSwapping = guard.original;
+    }
+  };
   const start = (material: Material, mesh: AbstractMesh, unit: string, compile: () => Promise<void>) => {
     // The first unit names the stall window at once, as it opens; later ones as earlier units finish.
     if (first) {
       first = false;
       deadline.advance(unit);
     }
-    const previous = chains.get(material) ?? Promise.resolve();
-    const job = previous.then(async () => {
+    const job = (async () => {
       check(mesh);
       inFlight.push(unit);
+      acquireHotSwapGuard(material);
       try {
         await attributeCompileFailure(unit, () => compileUnlessDisposed(material, mesh, compile));
         check(mesh);
         compiled();
       } finally {
-        inFlight.splice(inFlight.indexOf(unit), 1);
+        releaseHotSwapGuard(material);
+        const at = inFlight.indexOf(unit);
+        if (at >= 0) inFlight.splice(at, 1);
       }
       // Progress renews the stall window; it names the oldest unit still compiling.
       deadline.advance(inFlight[0] ?? unit);
-    });
-    chains.set(material, job.catch(() => {}));
+    })();
     const tracked: Promise<void> = job.then(() => {}, (error: unknown) => { failure ??= { error }; })
       .finally(() => { running.delete(tracked); });
     running.add(tracked);
@@ -359,8 +377,13 @@ export async function prewarmMeshMaterials(
     check();
   } finally {
     // A timeout cannot cancel Babylon's in-flight GPU compile. Its continuation
-    // must stop before touching any more meshes, freezing, or reporting ready.
+    // must stop before touching any more meshes, freezing, or reporting ready,
+    // and any Material whose hot-swapping guard is still held must be restored.
     finished = true;
+    for (const [material, guard] of hotSwapGuards) {
+      material.allowShaderHotSwapping = guard.original;
+    }
+    hotSwapGuards.clear();
   }
 }
 

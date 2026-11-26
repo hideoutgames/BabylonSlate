@@ -5,6 +5,8 @@ import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture
 import { CubeTexture } from "@babylonjs/core/Materials/Textures/cubeTexture";
 import type { InternalTexture } from "@babylonjs/core/Materials/Textures/internalTexture";
 import { EffectRenderer, EffectWrapper } from "@babylonjs/core/Materials/effectRenderer";
+import type { Observer } from "@babylonjs/core/Misc/observable";
+import { retainEngineEffect } from "./effect-bridge";
 import { withDrawingState } from "./engine-drawing-state";
 import {
   beginManagedRenderAllocation,
@@ -29,12 +31,60 @@ export interface FilteredEnvironment {
   release(): void;
 }
 
+/**
+ * How long an unreferenced GGX-prefiltered environment cube stays parked on its Engine for the next Scene
+ * (Play start/stop, Scene tab reopen), matching `PARKED_SHADOW_ATLAS_MS`.
+ */
+export const PARKED_FILTERED_ENVIRONMENT_MS = 10_000;
+
 type Entry = {
   owned: FilteredEnvironmentTarget;
   ready: Promise<void>;
   references: number;
+  parkedTimer: ReturnType<typeof setTimeout> | null;
+  failed: boolean;
 };
-const caches = new WeakMap<AbstractEngine, Map<InternalTexture, Entry>>();
+type EngineCache = {
+  entries: Map<InternalTexture, Entry>;
+  lost: Observer<AbstractEngine>;
+  disposed: Observer<AbstractEngine>;
+};
+const caches = new WeakMap<AbstractEngine, EngineCache>();
+
+function dropEntry(cache: Map<InternalTexture, Entry>, internal: InternalTexture, entry: Entry): void {
+  if (entry.parkedTimer !== null) {
+    clearTimeout(entry.parkedTimer);
+    entry.parkedTimer = null;
+  }
+  if (cache.get(internal) === entry) cache.delete(internal);
+  entry.owned.release();
+}
+
+/** Releases every parked (zero-reference) filtered environment cube on `engine` immediately. */
+export function discardParkedFilteredEnvironments(engine: AbstractEngine): number {
+  const bucket = caches.get(engine);
+  if (!bucket) return 0;
+  let discarded = 0;
+  for (const [internal, entry] of [...bucket.entries]) {
+    if (entry.references !== 0) continue;
+    dropEntry(bucket.entries, internal, entry);
+    discarded += 1;
+  }
+  return discarded;
+}
+
+/** Internal textures of parked filtered environment cubes on `engine`, which no live Scene holds. */
+export function parkedFilteredEnvironmentTextures(engine: AbstractEngine): InternalTexture[] {
+  const bucket = caches.get(engine);
+  if (!bucket) return [];
+  const textures: InternalTexture[] = [];
+  for (const entry of bucket.entries.values()) {
+    if (entry.references !== 0) continue;
+    const internal = entry.owned.cube.getInternalTexture();
+    if (internal) textures.push(internal);
+  }
+  return textures;
+}
 
 // Babylon's cube face basis for the hdrFiltering vertex shader (up, right, front per face).
 const FACES = [
@@ -139,16 +189,49 @@ export function retainFilteredEnvironment(
 ): FilteredEnvironment | null {
   const internal = source.getInternalTexture();
   if (!internal?.isReady) return null;
-  let cache = caches.get(engine);
-  if (!cache) { cache = new Map(); caches.set(engine, cache); }
+  let bucket = caches.get(engine);
+  if (!bucket) {
+    const entries = new Map<InternalTexture, Entry>();
+    const clearParked = () => {
+      for (const [key, item] of [...entries]) {
+        if (item.references === 0) dropEntry(entries, key, item);
+      }
+    };
+    const lost = engine.onContextLostObservable.add(clearParked);
+    const disposed = engine.onDisposeObservable.addOnce(() => {
+      engine.onContextLostObservable.remove(lost);
+      for (const [key, item] of [...entries]) dropEntry(entries, key, item);
+      caches.delete(engine);
+    });
+    bucket = { entries, lost, disposed };
+    caches.set(engine, bucket);
+  }
+  const cache = bucket.entries;
   let entry = cache.get(internal);
+  if (entry?.failed && entry.references === 0) {
+    dropEntry(cache, internal, entry);
+    entry = undefined;
+  }
   if (!entry) {
     const owned = createFilteredEnvironmentTarget(engine, source.getSize().width);
     if (!owned) return null;
-    entry = { owned, references: 0, ready: filterEnvironment(engine, source, owned) };
-    // A failed filter is reported to each holder through `ready`.
-    void entry.ready.catch(() => {});
+    const created: Entry = {
+      owned,
+      references: 0,
+      parkedTimer: null,
+      failed: false,
+      ready: filterEnvironment(engine, source, owned),
+    };
+    // A failed filter is reported to each holder through `ready`, and never stays parked once released.
+    void created.ready.catch(() => {
+      created.failed = true;
+      if (created.references === 0) dropEntry(cache, internal, created);
+    });
+    entry = created;
     cache.set(internal, entry);
+  } else if (entry.parkedTimer !== null) {
+    clearTimeout(entry.parkedTimer);
+    entry.parkedTimer = null;
   }
   entry.references++;
   const held = entry;
@@ -160,8 +243,15 @@ export function retainFilteredEnvironment(
       if (released) return;
       released = true;
       if (--held.references !== 0) return;
-      if (cache.get(internal) === held) cache.delete(internal);
-      held.owned.release();
+      const contextLost = Boolean((engine as unknown as { _contextWasLost?: boolean })._contextWasLost);
+      if (engine.isDisposed || contextLost || held.failed) {
+        dropEntry(cache, internal, held);
+        return;
+      }
+      held.parkedTimer = setTimeout(() => {
+        held.parkedTimer = null;
+        if (held.references === 0) dropEntry(cache, internal, held);
+      }, PARKED_FILTERED_ENVIRONMENT_MS);
     },
   };
 }
@@ -192,6 +282,8 @@ export async function filterEnvironment(
   let renderer: EffectRenderer | undefined;
   try {
     await effect.effect.whenCompiledAsync();
+    // Retain the compiled hdrFiltering shader on the Engine keep so reflection probes and Scene switches reuse it.
+    retainEngineEffect(engine, effect.effect);
     if (!target.texture || source.getInternalTexture() === null) throw new Error("Environment filtering lost its source or target.");
     const sourceWidth = source.getSize().width;
     const sourceMips = Math.floor(Math.log2(sourceWidth)) + 1;

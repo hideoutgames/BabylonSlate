@@ -5,6 +5,7 @@ import type { RenderTargetWrapper } from "@babylonjs/core/Engines/renderTargetWr
 import { ShaderStore } from "@babylonjs/core/Engines/shaderStore";
 import type { CubeTexture } from "@babylonjs/core/Materials/Textures/cubeTexture";
 import { EffectRenderer, EffectWrapper } from "@babylonjs/core/Materials/effectRenderer";
+import { retainEngineEffect } from "./effect-bridge";
 import { withDrawingState } from "./engine-drawing-state";
 
 const shaderName = "hapticEnvironmentBaseRadiance";
@@ -163,6 +164,8 @@ export async function readEnvironmentBaseRadiance(
         resolve();
       });
     });
+    // Retain the compiled base-radiance shader on the Engine keep so Scene switches reuse it without re-linking.
+    retainEngineEffect(engine, compiled);
     if (!current()) return null;
     withDrawingState(engine, () => {
       renderer = new EffectRenderer(engine);

@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { NullEngine } from "@babylonjs/core/Engines/nullEngine";
 import type { Effect } from "@babylonjs/core/Materials/effect";
 import type { WebGLPipelineContext } from "@babylonjs/core/Engines/WebGL/webGLPipelineContext";
-import { bridgeEngineEffects, EFFECT_BRIDGE_MS, holdCompiledEffects, keepPlayEffects, keptEffectCount, releaseBridgedEffects } from "./effect-bridge";
+import { bridgeEngineEffects, EFFECT_BRIDGE_MS, holdCompiledEffects, keepPlayEffects, keptEffectCount, releaseBridgedEffects, releaseKeptEffects, retainEngineEffect } from "./effect-bridge";
 
 const engines: NullEngine[] = [];
 afterEach(() => {
@@ -176,5 +176,23 @@ it("lets the kept programs go with a lost context, and forgets their creators' c
   // A restore would relink every Effect left in the cache: only the one its owner still holds stays.
   expect(created.isDisposed).toBe(true);
   expect(held.isDisposed).toBe(false);
+  expect(keptEffectCount(engine)).toBe(0);
+});
+
+it("retains a compiled utility effect via retainEngineEffect and releases it on context loss or releaseKeptEffects", () => {
+  const engine = new NullEngine();
+  engines.push(engine);
+  const utility = compile(engine, "#define UTILITY_FILTER");
+  retainEngineEffect(engine, utility);
+  // Calling twice does not double-retain.
+  retainEngineEffect(engine, utility);
+  utility.dispose();
+  expect(utility.isDisposed).toBe(false);
+  expect(keptEffectCount(engine)).toBe(1);
+  // Subsequent caller gets the cached Effect without recompiling.
+  expect(compile(engine, "#define UTILITY_FILTER")).toBe(utility);
+  utility.dispose();
+  releaseKeptEffects(engine);
+  expect(utility.isDisposed).toBe(true);
   expect(keptEffectCount(engine)).toBe(0);
 });

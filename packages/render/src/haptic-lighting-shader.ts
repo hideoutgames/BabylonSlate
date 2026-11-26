@@ -133,8 +133,8 @@ float hapticPlaneTap(vec4 tile, float layer, vec2 tap, vec2 origin, float depth,
 // compare taps; 1 without a blocker. With receiver-plane bias (\`gradient\`, a cascade's under automatic bias) each read
 // and tap compares against the receiver's plane there, as the view's PCF does, where Babylon's PCSS compares against the
 // receiver's own depth: a flat receiver does not shadow itself. Without it, the blockers' mean distance is Babylon's.
-// CEL never draws it (\`HAPTIC_SHADOW_NARROW\`), and its programs do not declare the plain read.
-#ifndef HAPTIC_CEL
+// CEL and non-Contact-Hardening programs omit PCSS entirely (\`HAPTIC_SHADOW_CONTACT_HARDENING\`) and do not declare the plain read.
+#ifdef HAPTIC_SHADOW_CONTACT_HARDENING
 ${poissonGlsl("hapticPoisson32", POISSON_32)}${poissonGlsl("hapticPoisson64", POISSON_64)}
 // The atlas's depth at a texel of the tile, read without compare (\`hapticShadowAtlasDepth\`).
 float hapticShadowDepth(vec4 tile, float layer, vec2 texel, float size) {
@@ -209,7 +209,7 @@ float hapticContactLit(vec4 tile, float layer, vec4 shading, vec4 contact, vec4 
   float size = tile.z / tile.w;
   vec2 texels = uv * size;
 ${surface ? `  vec2 gradient = shading.w > 0.5 ? hapticReceiverGradient(view, dPdx, dPdy, size) : vec2(0.0);
-#ifndef HAPTIC_SHADOW_NARROW
+#ifdef HAPTIC_SHADOW_CONTACT_HARDENING
   if (shading.y > 2.5) return mix(shading.x, 1.0, hapticContactLit(tile, layer, shading, hapticShadowViews[base + 6], clip, depth, texels, size, gradient, maximum));
 #endif
   // Water and CEL (\`HAPTIC_SHADOW_NARROW\`) draw every filter, Contact Hardening's too, as low quality's four taps.

@@ -266,6 +266,28 @@ function celEffect(effect: Effect): boolean {
   return cel;
 }
 
+const contactHardeningEffects = new WeakMap<Effect, boolean>();
+
+/** Whether `effect` compiled Contact Hardening (PCSS) and declares `hapticShadowAtlasDepth`. */
+function contactHardeningEffect(effect: Effect): boolean {
+  let enabled = contactHardeningEffects.get(effect);
+  if (enabled === undefined) {
+    enabled = /^#define HAPTIC_SHADOW_CONTACT_HARDENING$/m.test(effect.defines);
+    contactHardeningEffects.set(effect, enabled);
+  }
+  return enabled;
+}
+
+/** Whether `scene` requires Contact Hardening (PCSS) in its lit surface programs. */
+export function sceneUsesContactHardeningShadows(scene: Scene): boolean {
+  if (sceneRenderingSettings(scene).shadows.filter === "pcss") return true;
+  for (const light of scene.lights) {
+    const shadow = light.getShadowGenerator() as { useContactHardeningShadow?: boolean } | null | undefined;
+    if (shadow?.useContactHardeningShadow) return true;
+  }
+  return false;
+}
+
 /** The Scene's environment cube as it lights `scene`'s current mesh (a reflection probe's, `mesh-environment.ts`). */
 /** The cube that lights the mesh being bound (its Reflection Probe's, or the Scene's), once it can be sampled. */
 export function environmentCube(scene: Scene): BaseTexture | null {
@@ -388,10 +410,13 @@ export class HapticLightingBlock extends NodeMaterialBlock {
     // `worlddebug shadowtaps off` and `locallights off`: shadow lookups return lit, and no local light is visited.
     defines.setValue(WORLD_DEBUG_NO_SHADOW_TAPS_DEFINE, worldDebugOff(scene, "shadowtaps"), true);
     defines.setValue(WORLD_DEBUG_NO_LOCAL_LIGHTS_DEFINE, worldDebugOff(scene, "locallights"), true);
-    // Water receives every shadow through low quality's four taps, without Contact Hardening: on its moving surface a
-    // wider penumbra barely shows, and it would cost up to sixteen taps (more with Contact Hardening) per water pixel.
-    // CEL too: it sharpens the shadow's edge to a pixel (`hapticShadow`), so a wider kernel would buy nothing.
-    defines.setValue("HAPTIC_SHADOW_NARROW", cel || isWaterSurfaceMesh(mesh), true);
+    // Water and CEL draw shadows through low quality's four taps, without Contact Hardening: on moving water or CEL's
+    // sharpened edge a wider penumbra buys nothing. Contact Hardening (PCSS) is gated on `HAPTIC_SHADOW_CONTACT_HARDENING`
+    // so default PCF programs omit PCSS and its Poisson tables without recompiling across quality tiers.
+    const narrow = cel || isWaterSurfaceMesh(mesh);
+    const contactHardening = !narrow && sceneUsesContactHardeningShadows(scene);
+    defines.setValue("HAPTIC_SHADOW_NARROW", narrow, true);
+    defines.setValue("HAPTIC_SHADOW_CONTACT_HARDENING", contactHardening, true);
     // The environment's light is part of every lit program, whatever environment lights the mesh: its presence, a
     // reflection probe's box, its handedness and its encoding are bound values (`bind`), so an environment that
     // appears, a probe's volume the mesh enters or a cube of another encoding compiles nothing, as no light does. CEL
@@ -466,12 +491,12 @@ export class HapticLightingBlock extends NodeMaterialBlock {
       return;
     }
     const scene = mesh.getScene();
-    // A CEL program declares neither the split-sum table nor the atlas's plain read (Contact Hardening's).
+    // A CEL program omits the split-sum table; only a Contact Hardening program declares the atlas's plain depth read.
     const cel = celEffect(effect);
     effect.setTexture("hapticAreaLtcSampler", areaLightLtcTexture(scene));
     effect.setTexture("hapticAreaEmissionSampler", areaEmissionTexture(scene));
     effect.setDepthStencilTexture(HAPTIC_SHADOW_ATLAS, shadowAtlasTexture(scene));
-    if (!cel) {
+    if (contactHardeningEffect(effect)) {
       plainDepthSampler(scene.getEngine());
       effect.setDepthStencilTexture(HAPTIC_SHADOW_ATLAS_DEPTH, shadowAtlasTexture(scene));
     }
@@ -505,10 +530,9 @@ export class HapticLightingBlock extends NodeMaterialBlock {
     state._emit2DSampler("hapticAreaLtcSampler");
     state._emit2DArraySampler("hapticAreaEmissionSampler");
     // The shadow atlas, a depth texture array of pages, compares as it samples (`shadow-atlas.ts`); the build state has
-    // no helper for a compare sampler. A PBR program also reads it plainly for Contact Hardening's blocker search, which
-    // CEL never draws.
+    // no helper for a compare sampler. Only Contact Hardening programs read it plainly for PCSS blocker search.
     if (!state.samplers.includes(HAPTIC_SHADOW_ATLAS)) {
-      state._samplerDeclaration += `uniform highp sampler2DArrayShadow ${HAPTIC_SHADOW_ATLAS};\n#ifndef HAPTIC_CEL\nuniform highp sampler2DArray ${HAPTIC_SHADOW_ATLAS_DEPTH};\n#endif\n`;
+      state._samplerDeclaration += `uniform highp sampler2DArrayShadow ${HAPTIC_SHADOW_ATLAS};\n#ifdef HAPTIC_SHADOW_CONTACT_HARDENING\nuniform highp sampler2DArray ${HAPTIC_SHADOW_ATLAS_DEPTH};\n#endif\n`;
       state.samplers.push(HAPTIC_SHADOW_ATLAS);
       state.samplers.push(HAPTIC_SHADOW_ATLAS_DEPTH);
     }

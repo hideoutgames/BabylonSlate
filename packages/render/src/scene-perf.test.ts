@@ -487,23 +487,22 @@ describe("prewarmSceneMaterials", () => {
     const scene = new Scene(engine);
     const perVariant = SCENE_SHADER_WARM_TIMEOUT_MS / 2;
     const compiles: string[] = [];
-    // One Material: its distinct shader variants compile one after another, each within budget, the whole run beyond it.
-    const material = new PBRMaterial("slow-material", scene);
-    vi.spyOn(material, "forceCompilationAsync").mockImplementation(
-      (mesh) => new Promise((resolve) => setTimeout(() => { compiles.push(mesh.name); resolve(); }, perVariant)),
-    );
-    for (let index = 0; index < 4; index++) {
+    // More distinct variants than SCENE_SHADER_WARM_CONCURRENCY: batches run back-to-back beyond the per-variant budget.
+    const total = SCENE_SHADER_WARM_CONCURRENCY * 3;
+    for (let index = 0; index < total; index++) {
       const mesh = MeshBuilder.CreateBox(`slow-mesh-${index}`, {}, scene);
-      mesh.receiveShadows = (index & 1) !== 0;
-      mesh.useVertexColors = (index & 2) !== 0;
+      const material = new PBRMaterial(`slow-material-${index}`, scene);
+      vi.spyOn(material, "forceCompilationAsync").mockImplementation(
+        (target) => new Promise((resolve) => setTimeout(() => { compiles.push(target.name); resolve(); }, perVariant)),
+      );
       mesh.material = material;
     }
     let settled: "ready" | "failed" | null = null;
     const done = prewarmSceneMaterials(scene).then(() => { settled = "ready"; }, () => { settled = "failed"; });
-    await vi.advanceTimersByTimeAsync(perVariant * 4);
+    await vi.advanceTimersByTimeAsync(perVariant * 3);
     await done;
-    expect(compiles).toEqual(["slow-mesh-0", "slow-mesh-1", "slow-mesh-2", "slow-mesh-3"]);
-    expect(perVariant * 4).toBeGreaterThan(SCENE_SHADER_WARM_TIMEOUT_MS);
+    expect(compiles).toHaveLength(total);
+    expect(perVariant * 3).toBeGreaterThan(SCENE_SHADER_WARM_TIMEOUT_MS);
     expect(settled).toBe("ready");
     scene.dispose();
     engine.dispose();
@@ -586,7 +585,7 @@ describe("prewarmSceneMaterials", () => {
     }
   });
 
-  it("compiles different Materials at once, bounded, and one Material's units in order", async () => {
+  it("compiles distinct variants of the same and different Materials concurrently up to the concurrency bound and restores allowShaderHotSwapping", async () => {
     const engine = new NullEngine();
     const scene = new Scene(engine);
     try {
@@ -597,6 +596,7 @@ describe("prewarmSceneMaterials", () => {
         finish.set(mesh.name, resolve);
       });
       const shared = new PBRMaterial("shared", scene);
+      shared.allowShaderHotSwapping = true;
       vi.spyOn(shared, "forceCompilationAsync").mockImplementation(unit);
       const sharedA = MeshBuilder.CreateBox("shared-a", {}, scene);
       sharedA.receiveShadows = true;
@@ -604,17 +604,23 @@ describe("prewarmSceneMaterials", () => {
       const sharedB = MeshBuilder.CreateBox("shared-b", {}, scene);
       sharedB.receiveShadows = false;
       sharedB.material = shared;
-      for (let index = 0; index < SCENE_SHADER_WARM_CONCURRENCY + 1; index++) {
+      for (let index = 0; index < SCENE_SHADER_WARM_CONCURRENCY; index++) {
         const mesh = MeshBuilder.CreateBox(`own-${index}`, {}, scene);
         mesh.material = new PBRMaterial(`own-material-${index}`, scene);
         vi.spyOn(mesh.material, "forceCompilationAsync").mockImplementation(unit);
       }
       const done = prewarmSceneMaterials(scene);
-      await vi.waitFor(() => expect(started).toHaveLength(SCENE_SHADER_WARM_CONCURRENCY - 1));
-      // "shared-b" waits for "shared-a"; the bound holds back the last Material until a slot frees.
-      expect(started).toEqual(["shared-a", ...Array.from({ length: SCENE_SHADER_WARM_CONCURRENCY - 2 }, (_, index) => `own-${index}`)]);
+      await vi.waitFor(() => expect(started).toHaveLength(SCENE_SHADER_WARM_CONCURRENCY));
+      // Both variants of the shared Material start in parallel instead of serializing behind one another.
+      expect(started).toContain("shared-a");
+      expect(started).toContain("shared-b");
+      expect(shared.allowShaderHotSwapping).toBe(false);
+      // Completing one variant keeps hot-swapping disabled until the sibling variant also completes.
       finish.get("shared-a")!();
-      await vi.waitFor(() => expect(started).toContain("shared-b"));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(shared.allowShaderHotSwapping).toBe(false);
+      finish.get("shared-b")!();
+      await vi.waitFor(() => expect(shared.allowShaderHotSwapping).toBe(true));
       for (;;) {
         const pending = [...finish].filter(([name]) => started.includes(name));
         if (pending.length === 0) break;
@@ -622,10 +628,36 @@ describe("prewarmSceneMaterials", () => {
         await new Promise((resolve) => setTimeout(resolve, 0));
       }
       await done;
-      expect(new Set(started)).toEqual(new Set(["shared-a", "shared-b", ...Array.from({ length: SCENE_SHADER_WARM_CONCURRENCY + 1 }, (_, index) => `own-${index}`)]));
+      expect(shared.allowShaderHotSwapping).toBe(true);
+      expect(new Set(started)).toEqual(new Set(["shared-a", "shared-b", ...Array.from({ length: SCENE_SHADER_WARM_CONCURRENCY }, (_, index) => `own-${index}`)]));
     } finally {
       scene.dispose();
       engine.dispose();
+    }
+  });
+
+  it("restores allowShaderHotSwapping when a parallel same-Material compile rejects or times out", async () => {
+    vi.useFakeTimers();
+    const engine = new NullEngine();
+    const scene = new Scene(engine);
+    try {
+      const shared = new PBRMaterial("shared-timeout", scene);
+      shared.allowShaderHotSwapping = true;
+      vi.spyOn(shared, "forceCompilationAsync").mockReturnValue(new Promise(() => {}));
+      const a = MeshBuilder.CreateBox("a", {}, scene);
+      a.receiveShadows = true;
+      a.material = shared;
+      const b = MeshBuilder.CreateBox("b", {}, scene);
+      b.receiveShadows = false;
+      b.material = shared;
+      const rejected = expect(prewarmSceneMaterials(scene)).rejects.toThrow("Stalled compiling");
+      await vi.advanceTimersByTimeAsync(SCENE_SHADER_WARM_TIMEOUT_MS);
+      await rejected;
+      expect(shared.allowShaderHotSwapping).toBe(true);
+    } finally {
+      scene.dispose();
+      engine.dispose();
+      vi.useRealTimers();
     }
   });
 

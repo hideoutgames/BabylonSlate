@@ -9,7 +9,7 @@ import type { Effect } from "@babylonjs/core/Materials/effect";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
-import { createDefaultWaterDefinition, normalizeRenderingQuality, normalizeWaterBody } from "@haptic/core";
+import { createDefaultWaterDefinition, normalizeRenderingQuality, normalizeShadowSettings, normalizeWaterBody } from "@haptic/core";
 import { createDefaultMaterialDocument, createWaterMaterialDocument, lowerMaterialDocument, type MaterialDocument } from "@haptic/shader-graph";
 import { acquireAuthoredMaterialVariant, acquireWaterVariant, compileMaterialPlan, waterVariantBase, type CompiledMaterial } from "./material-compiler";
 import { MaterialLibrary } from "./material-library";
@@ -815,6 +815,7 @@ describe("Water debug switches", () => {
   it("filters water's shadows with four taps and no Contact Hardening, other surfaces at their view's quality", async () => {
     const scene = host();
     overlook(scene);
+    updateSceneRenderingSettings(scene, { shadows: normalizeShadowSettings({ filter: "pcss" }) });
     const { result, lake } = starter(scene);
     const surface = compile(scene, createDefaultMaterialDocument("Rock"));
     const rock = MeshBuilder.CreateBox("rock", {}, scene);

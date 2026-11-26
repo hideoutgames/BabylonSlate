@@ -14,6 +14,7 @@ import {
 import {
   normalizeCelShadingSettings,
   normalizeEnvironmentLightingSettings,
+  normalizeShadowSettings,
 } from "@haptic/core";
 import { compileMaterialPlan } from "./material-compiler";
 import { HapticLightingBlock } from "./haptic-lighting-block";
@@ -149,13 +150,13 @@ describe("CEL render mode", () => {
     compiled.dispose();
   });
 
-  it("compiles neither the PBR lighting nor the samplers it never reads into a CEL program", async () => {
+  it("compiles neither the PBR lighting nor the samplers it never reads into a CEL program, and omits PCSS on default PCF PBR", async () => {
     // The fragment source is the contract here: what a program declares and links is what its source holds once the
     // GPU's preprocessor has resolved it (`preprocessed`).
-    const fragment = async (mode: "cel" | "pbr") => {
+    const fragment = async (mode: "cel" | "pbr", filter: "pcf" | "pcss" = "pcf") => {
       const scene = host();
       scene.setTransformMatrix(Matrix.Identity(), Matrix.Identity());
-      setSceneRenderSettings(scene, { mode, cel: normalizeCelShadingSettings({}) });
+      setSceneRenderSettings(scene, { mode, cel: normalizeCelShadingSettings({}), shadows: normalizeShadowSettings({ filter }) });
       const compiled = await defaultGraph(scene, "graph-modes");
       const mesh = MeshBuilder.CreateSphere("sphere", {}, scene);
       mesh.material = compiled.material;
@@ -165,15 +166,25 @@ describe("CEL render mode", () => {
       compiled.dispose();
       return source;
     };
-    const pbrOnly = ["hapticDirectLights", "hapticEnvironmentBrdfSampler", "hapticShadowAtlasDepth", "hapticContactLit", "hapticPoisson64"];
-    const cel = await fragment("cel");
+    const pbrBase = ["hapticDirectLights", "hapticEnvironmentBrdfSampler"];
+    const pcssOnly = ["hapticShadowAtlasDepth", "hapticContactLit", "hapticPoisson64"];
+    const cel = await fragment("cel", "pcss");
     expect(cel).toContain("hapticCelLighting");
-    for (const name of pbrOnly) expect(cel, name).not.toContain(name);
-    const pbr = await fragment("pbr");
-    expect(pbr).not.toContain("hapticCelLighting");
-    for (const name of pbrOnly) expect(pbr, name).toContain(name);
+    for (const name of [...pbrBase, ...pcssOnly]) expect(cel, name).not.toContain(name);
+
+    // Default PCF PBR keeps PBR lighting while compiling out Contact Hardening (PCSS) and its Poisson tables.
+    const pbrPcf = await fragment("pbr", "pcf");
+    expect(pbrPcf).not.toContain("hapticCelLighting");
+    for (const name of pbrBase) expect(pbrPcf, name).toContain(name);
+    for (const name of pcssOnly) expect(pbrPcf, name).not.toContain(name);
+
+    // Contact Hardening PBR compiles PCSS and the plain depth sampler in.
+    const pbrPcss = await fragment("pbr", "pcss");
+    expect(pbrPcss).not.toContain("hapticCelLighting");
+    for (const name of [...pbrBase, ...pcssOnly]) expect(pbrPcss, name).toContain(name);
+
     // CEL's highlights read the Material's Roughness: the same input the PBR program shades with.
-    const roughness = /hapticS\.roughness = clamp\((\w+), 0\.0, 1\.0\);/.exec(pbr)?.[1];
+    const roughness = /hapticS\.roughness = clamp\((\w+), 0\.0, 1\.0\);/.exec(pbrPcf)?.[1];
     expect(roughness).toBeTruthy();
     expect(cel).toMatch(new RegExp(`hapticCelLighting\\([^;]*clamp\\(${roughness}, 0\\.0, 1\\.0\\)\\)`));
   });
