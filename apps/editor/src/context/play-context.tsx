@@ -303,6 +303,11 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
     cookPlayComplexCollision,
     releaseAllSources,
   } = usePlayAssetSources({ resetContent: playContentActions.reset, setSessionPlayScene });
+  const verifiedPlayRevisionsRef = useRef<{
+    registry: unknown;
+    generation: number;
+    map: Map<string, string>;
+  } | null>(null);
   const releasePlaySources = useCallback(() => {
     releaseAllSources();
     setPlayInputAssets([]);
@@ -873,14 +878,30 @@ function PlaySessionProvider({ children }: { children: ReactNode }) {
         if (openScene?.content) {
           preloadPrewarmedGameWorkerPhysics(playPhysicsFromOpenDocuments([openScene], openScene.id).physicsWorld, editorHavokWasmUrl());
         }
+        const registryGeneration = typeof assetRegistry.generation === "number" ? assetRegistry.generation : -1;
+        const strongProjectStorage =
+          typeof assetRegistry.storageFor === "function" &&
+          assetRegistry.storageFor("project")?.hasStrongSourceRevisions === true;
+        let verifiedRevisions: Map<string, string>;
+        if (strongProjectStorage && registryGeneration >= 0) {
+          const cached = verifiedPlayRevisionsRef.current;
+          if (cached && cached.registry === assetRegistry && cached.generation === registryGeneration) {
+            verifiedRevisions = cached.map;
+          } else {
+            verifiedRevisions = new Map();
+            verifiedPlayRevisionsRef.current = { registry: assetRegistry, generation: registryGeneration, map: verifiedRevisions };
+          }
+        } else {
+          verifiedRevisions = new Map();
+        }
         const sourceHost: PlayAssetSourceHost = {
           registry: assetRegistry,
           documentOverrides: playDocumentOverrides(assetRegistry, sourceDocuments),
           project: projectDocument,
           // What a session released stays cached by revision, so the next Play reads only what changed.
           createScope: (owner) => createAssetLoadScope(owner, { keep: true }),
-          // Each session checks storage once per asset; its later slot acquisitions trust those checks.
-          verifiedRevisions: new Map(),
+          // Reuse verified revisions across Play launches while the registry generation holds on strong storage.
+          verifiedRevisions,
           // Editor Play and Simulation compile with the breakpoint check and the graph debugger's probes,
           // each a null check per node while nothing is set or followed. Preview Build and exports compile neither.
           traceExecution: true,

@@ -46,6 +46,10 @@ import {
   type SceneViewportLoadPhase,
 } from "../lib/scene-viewport-load";
 import { waitForSceneLoadingPaint } from "@haptic/render/scene-load-readiness";
+import {
+  getCachedViewportCollection,
+  putCachedViewportCollection,
+} from "../lib/viewport-collection-cache";
 import { useLiveTilemapEdits } from "./use-live-tilemap-edits";
 
 /** The Scene viewport's loading dialog and failure state. */
@@ -307,112 +311,177 @@ export function useViewportSceneLoad({
         const catalog = assetRegistry?.list() ?? [];
         // Read before collecting, and again after: a payload whose revision moved meanwhile has none.
         const payloadRevisionsBefore = viewportPayloadRevisions(catalog, getOpenDocuments());
-        const fontSources = catalog.map((asset) => ({ guid: asset.header.guid, path: asset.path, type: asset.header.type, payload: asset.header.payload }));
-        const bitmapFonts = new Set(fontGuidsForSceneRepresentation([scene], fontSources, "source", projectDocument?.settings.fonts.defaultFontGuid));
-        const required = sceneViewportRequiredAssets(scene, catalog, [
-          ...(JSON.parse(effectsAssetGuidsKey) as string[]),
-          ...bitmapFonts,
-          ...fontGuidsForSceneRepresentation([scene], fontSources, "msdf", projectDocument?.settings.fonts.defaultFontGuid),
+        const collectionCacheKey = JSON.stringify([
+          viewportAssetsKey,
+          materialLibraryKey,
+          areaEmissionKey,
+          textureLodKey,
+          effectsAssetGuidsKey,
+          projectDocument?.settings.fonts.defaultFontGuid ?? null,
+          projectDocument?.settings.fonts.globalFallback ?? null,
+          [...payloadRevisionsBefore.entries()].sort(([a], [b]) => a.localeCompare(b)),
         ]);
-        // Independent collectors read at once. When no open Model or Water tab can introduce
-        // unindexed references, Materials and Textures start immediately at t=0 from the
-        // transitive `required` header closure instead of waiting behind a 3-deep waterfall.
-        const started = <T,>(work: Promise<T>): Promise<T> => { work.catch(() => undefined); return work; };
-        const openDocs = getOpenDocuments();
-        const hasOpenModelOrWater = openDocs.some(
-          (doc) => doc.ref.kind === "model" || doc.ref.kind === "water",
-        );
-        const editorLod = {
-          enabled: editorTextureLodEnabled,
-          quality: editorTextureLodQuality,
-        };
-        const catalogByGuid = new Map(catalog.map((asset) => [asset.header.guid, asset] as const));
-        const requiredMaterialGuids: string[] = [];
-        const prefetchedTextureGuids: string[] = [];
-        for (const guid of required) {
-          const asset = catalogByGuid.get(guid);
-          if (!asset) continue;
-          if (asset.header.type === "Material" || asset.header.type === "MaterialInstance") {
-            requiredMaterialGuids.push(guid);
-          } else if (asset.header.type === "Texture") {
-            prefetchedTextureGuids.push(guid);
+        const cachedCollection = getCachedViewportCollection(assetRegistry, collectionCacheKey, encodings);
+        let sprites: Awaited<ReturnType<typeof collectPlaySpritePayloads>>;
+        let tileContent: Awaited<ReturnType<typeof collectPlayTilemapContent>>;
+        let waters: Awaited<ReturnType<typeof collectPlayWaterContent>>;
+        let renderTargetAssets: Awaited<ReturnType<typeof collectPlayRenderTargets>>;
+        let modelBytes: Awaited<ReturnType<typeof collectPlayModelBytes>>;
+        let modelPayloads: Awaited<ReturnType<typeof collectPlayModelPayloads>>;
+        let materials: Awaited<ReturnType<typeof collectPlayMaterialLibrary>>;
+        let textureBytes: Map<string, Uint8Array>;
+        let texturePixelSizes: Map<string, { width: number; height: number }>;
+        let fontFacetypeBytes: Map<string, Uint8Array>;
+        let areaEmissions: Awaited<ReturnType<typeof collectPlayAreaEmissions>>;
+        let msdf: ReturnType<typeof fontMsdfMapsFromPairs>;
+        let fontFaceEntries: Awaited<ReturnType<typeof collectPlayFontFaceEntries>>;
+        let resolvedPayloadRevisions: Map<string, string>;
+        if (cachedCollection) {
+          sprites = cachedCollection.sprites;
+          tileContent = cachedCollection.tileContent;
+          waters = cachedCollection.waters;
+          renderTargetAssets = cachedCollection.renderTargetAssets;
+          modelBytes = cachedCollection.modelBytes;
+          modelPayloads = cachedCollection.modelPayloads;
+          materials = cachedCollection.materials;
+          textureBytes = cachedCollection.textureBytes;
+          texturePixelSizes = cachedCollection.texturePixelSizes;
+          fontFacetypeBytes = cachedCollection.fontFacetypeBytes;
+          areaEmissions = cachedCollection.areaEmissions;
+          msdf = cachedCollection.msdf;
+          fontFaceEntries = cachedCollection.fontFaceEntries;
+          resolvedPayloadRevisions = cachedCollection.payloadRevisions;
+        } else {
+          const fontSources = catalog.map((asset) => ({ guid: asset.header.guid, path: asset.path, type: asset.header.type, payload: asset.header.payload }));
+          const bitmapFonts = new Set(fontGuidsForSceneRepresentation([scene], fontSources, "source", projectDocument?.settings.fonts.defaultFontGuid));
+          const required = sceneViewportRequiredAssets(scene, catalog, [
+            ...(JSON.parse(effectsAssetGuidsKey) as string[]),
+            ...bitmapFonts,
+            ...fontGuidsForSceneRepresentation([scene], fontSources, "msdf", projectDocument?.settings.fonts.defaultFontGuid),
+          ]);
+          // Independent collectors read at once. When no open Model or Water tab can introduce
+          // unindexed references, Materials and Textures start immediately at t=0 from the
+          // transitive `required` header closure instead of waiting behind a 3-deep waterfall.
+          const started = <T,>(work: Promise<T>): Promise<T> => { work.catch(() => undefined); return work; };
+          const openDocs = getOpenDocuments();
+          const hasOpenModelOrWater = openDocs.some(
+            (doc) => doc.ref.kind === "model" || doc.ref.kind === "water",
+          );
+          const editorLod = {
+            enabled: editorTextureLodEnabled,
+            quality: editorTextureLodQuality,
+          };
+          const catalogByGuid = new Map(catalog.map((asset) => [asset.header.guid, asset] as const));
+          const requiredMaterialGuids: string[] = [];
+          const prefetchedTextureGuids: string[] = [];
+          for (const guid of required) {
+            const asset = catalogByGuid.get(guid);
+            if (!asset) continue;
+            if (asset.header.type === "Material" || asset.header.type === "MaterialInstance") {
+              requiredMaterialGuids.push(guid);
+            } else if (asset.header.type === "Texture") {
+              prefetchedTextureGuids.push(guid);
+            }
+          }
+          const prefetchedTextureSet = new Set(prefetchedTextureGuids);
+          const spritesWork = started(collectPlaySpritePayloads(scene));
+          const tileContentWork = started(collectPlayTilemapContent(scene));
+          const watersWork = started(collectPlayWaterContent(required));
+          const renderTargetsWork = started(collectPlayRenderTargets(required));
+          const modelBytesWork = started(collectPlayModelBytes(scene, [], required));
+          const modelPayloadsWork = started(collectPlayModelPayloads(scene));
+          const materialsWork = started(
+            !hasOpenModelOrWater
+              ? collectPlayMaterialLibrary(scene, [], requiredMaterialGuids)
+              : Promise.all([modelPayloadsWork, watersWork]).then(([payloads, waterContent]) => collectPlayMaterialLibrary(
+                  scene,
+                  [],
+                  [...modelSlotMaterialGuidsFromPayloads(payloads), ...[...waterContent.values()].flatMap((water) => water.materialGuid ? [water.materialGuid] : [])],
+                )),
+          );
+          const prefetchedTexturesWork = prefetchedTextureGuids.length > 0
+            ? started(collectPlayTextureBytes(new Map(), new Map(), prefetchedTextureGuids, undefined, false, editorLod))
+            : null;
+          const texturesWork = started(Promise.all([spritesWork, tileContentWork, materialsWork]).then(async ([spritePayloads, tiles, materialLibrary]) => {
+            const extraTextureGuids = [
+              ...environmentTextureGuidsFromScenes([scene]),
+              ...postProcessTextureGuidsFromScenes([scene]),
+              ...materialInstanceTextureGuidsFromScenes([scene]),
+              ...materialLibrary.textureGuids,
+              ...skyboxFaceGuidsFromScene(scene),
+              ...overlayTextureGuidsFromScene(scene),
+              ...(JSON.parse(effectsAssetGuidsKey) as string[]),
+            ];
+            let bytes: Map<string, Uint8Array>;
+            if (prefetchedTexturesWork) {
+              const prefetched = await prefetchedTexturesWork;
+              const wantedFromPayloads = new Set<string>([
+                ...textureGuidsFromPlayPayloads(spritePayloads, tiles.tilesets),
+                ...extraTextureGuids,
+              ]);
+              const missing = [...wantedFromPayloads].filter((guid) => guid && !prefetchedTextureSet.has(guid));
+              if (missing.length === 0) {
+                bytes = prefetched;
+              } else {
+                const extra = await collectPlayTextureBytes(new Map(), new Map(), missing, undefined, false, editorLod);
+                bytes = new Map([...prefetched, ...extra]);
+              }
+            } else {
+              bytes = await collectPlayTextureBytes(spritePayloads, tiles.tilesets, extraTextureGuids, undefined, false, editorLod);
+            }
+            return {
+              bytes,
+              pixelSizes: collectPlayTexturePixelSizes(spritePayloads, tiles.tilesets, extraTextureGuids),
+            };
+          }));
+          const fontFacetypeWork = started(collectPlayFontFacetypeBytes(scene));
+          const areaEmissionsWork = started(collectPlayAreaEmissions([scene]));
+          const msdfWork = started(collectPlayFontMsdfPair(scene));
+          const fontFaceEntriesWork = started(collectPlayFontFaceEntries(bitmapFonts));
+          sprites = await spritesWork;
+          controller.signal.throwIfAborted();
+          tileContent = await tileContentWork;
+          waters = await watersWork;
+          renderTargetAssets = await renderTargetsWork;
+          controller.signal.throwIfAborted();
+          modelBytes = await modelBytesWork;
+          controller.signal.throwIfAborted();
+          modelPayloads = await modelPayloadsWork;
+          controller.signal.throwIfAborted();
+          materials = await materialsWork;
+          controller.signal.throwIfAborted();
+          ({ bytes: textureBytes, pixelSizes: texturePixelSizes } = await texturesWork);
+          controller.signal.throwIfAborted();
+          fontFacetypeBytes = await fontFacetypeWork;
+          areaEmissions = await areaEmissionsWork;
+          controller.signal.throwIfAborted();
+          msdf = fontMsdfMapsFromPairs(await msdfWork);
+          controller.signal.throwIfAborted();
+          fontFaceEntries = await fontFaceEntriesWork;
+          resolvedPayloadRevisions = stableViewportPayloadRevisions(
+            payloadRevisionsBefore,
+            viewportPayloadRevisions(assetRegistry?.list() ?? [], getOpenDocuments()),
+          );
+          if (isCurrent()) {
+            putCachedViewportCollection(assetRegistry, collectionCacheKey, {
+              sprites,
+              tileContent,
+              waters,
+              renderTargetAssets,
+              modelBytes,
+              modelPayloads,
+              materials,
+              textureBytes,
+              texturePixelSizes,
+              fontFacetypeBytes,
+              areaEmissions,
+              msdf,
+              fontFaceEntries,
+              payloadRevisions: resolvedPayloadRevisions,
+              encodings: new Map([...textureBytes.keys()].map((guid): [string, string] => [guid, encodings.get(guid) ?? ""])),
+            });
           }
         }
-        const prefetchedTextureSet = new Set(prefetchedTextureGuids);
-        const spritesWork = started(collectPlaySpritePayloads(scene));
-        const tileContentWork = started(collectPlayTilemapContent(scene));
-        const watersWork = started(collectPlayWaterContent(required));
-        const renderTargetsWork = started(collectPlayRenderTargets(required));
-        const modelBytesWork = started(collectPlayModelBytes(scene, [], required));
-        const modelPayloadsWork = started(collectPlayModelPayloads(scene));
-        const materialsWork = started(
-          !hasOpenModelOrWater
-            ? collectPlayMaterialLibrary(scene, [], requiredMaterialGuids)
-            : Promise.all([modelPayloadsWork, watersWork]).then(([payloads, waterContent]) => collectPlayMaterialLibrary(
-                scene,
-                [],
-                [...modelSlotMaterialGuidsFromPayloads(payloads), ...[...waterContent.values()].flatMap((water) => water.materialGuid ? [water.materialGuid] : [])],
-              )),
-        );
-        const prefetchedTexturesWork = prefetchedTextureGuids.length > 0
-          ? started(collectPlayTextureBytes(new Map(), new Map(), prefetchedTextureGuids, undefined, false, editorLod))
-          : null;
-        const texturesWork = started(Promise.all([spritesWork, tileContentWork, materialsWork]).then(async ([spritePayloads, tiles, materialLibrary]) => {
-          const extraTextureGuids = [
-            ...environmentTextureGuidsFromScenes([scene]),
-            ...postProcessTextureGuidsFromScenes([scene]),
-            ...materialInstanceTextureGuidsFromScenes([scene]),
-            ...materialLibrary.textureGuids,
-            ...skyboxFaceGuidsFromScene(scene),
-            ...overlayTextureGuidsFromScene(scene),
-            ...(JSON.parse(effectsAssetGuidsKey) as string[]),
-          ];
-          let bytes: Map<string, Uint8Array>;
-          if (prefetchedTexturesWork) {
-            const prefetched = await prefetchedTexturesWork;
-            const wantedFromPayloads = new Set<string>([
-              ...textureGuidsFromPlayPayloads(spritePayloads, tiles.tilesets),
-              ...extraTextureGuids,
-            ]);
-            const missing = [...wantedFromPayloads].filter((guid) => guid && !prefetchedTextureSet.has(guid));
-            if (missing.length === 0) {
-              bytes = prefetched;
-            } else {
-              const extra = await collectPlayTextureBytes(new Map(), new Map(), missing, undefined, false, editorLod);
-              bytes = new Map([...prefetched, ...extra]);
-            }
-          } else {
-            bytes = await collectPlayTextureBytes(spritePayloads, tiles.tilesets, extraTextureGuids, undefined, false, editorLod);
-          }
-          return {
-            bytes,
-            pixelSizes: collectPlayTexturePixelSizes(spritePayloads, tiles.tilesets, extraTextureGuids),
-          };
-        }));
-        const fontFacetypeWork = started(collectPlayFontFacetypeBytes(scene));
-        const areaEmissionsWork = started(collectPlayAreaEmissions([scene]));
-        const msdfWork = started(collectPlayFontMsdfPair(scene));
-        const fontFaceEntriesWork = started(collectPlayFontFaceEntries(bitmapFonts));
-        const sprites = await spritesWork;
-        controller.signal.throwIfAborted();
-        const tileContent = await tileContentWork;
-        const waters = await watersWork;
-        const renderTargetAssets = await renderTargetsWork;
-        controller.signal.throwIfAborted();
-        const modelBytes = await modelBytesWork;
-        controller.signal.throwIfAborted();
-        const modelPayloads = await modelPayloadsWork;
-        controller.signal.throwIfAborted();
-        const materials = await materialsWork;
-        controller.signal.throwIfAborted();
-        const { bytes: textureBytes, pixelSizes: texturePixelSizes } = await texturesWork;
-        controller.signal.throwIfAborted();
-        const fontFacetypeBytes = await fontFacetypeWork;
-        const areaEmissions = await areaEmissionsWork;
-        controller.signal.throwIfAborted();
-        const msdf = fontMsdfMapsFromPairs(await msdfWork);
-        controller.signal.throwIfAborted();
-        const fontFaceEntries = await fontFaceEntriesWork;
         const fontCss = collectPlayFontCssStacks();
         if (!isCurrent()) return;
         await handle.registerFonts(fontFaceEntries);
@@ -422,10 +491,7 @@ export function useViewportSceneLoad({
           spritePayloads: sprites,
           tilemaps: tileContent.tilemaps,
           waters,
-          payloadRevisions: stableViewportPayloadRevisions(
-            payloadRevisionsBefore,
-            viewportPayloadRevisions(assetRegistry?.list() ?? [], getOpenDocuments()),
-          ),
+          payloadRevisions: resolvedPayloadRevisions,
           ...renderTargetAssets,
           tilesets: tileContent.tilesets,
           textureBytes,
