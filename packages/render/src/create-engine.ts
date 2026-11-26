@@ -4351,12 +4351,13 @@ function waitForSceneTextureProgress(scene: Scene): Promise<void> {
     const timer = setTimeout(finish, 32);
     const watch = (texture: BaseTexture) => {
       if (texture.isRenderTarget || texture.isReady()) return;
-      if (texture instanceof Texture || texture instanceof CubeTexture) {
-        const loadObs = texture.onLoadObservable.addOnce(finish);
+      const withLoad = texture as BaseTexture & { onLoadObservable?: BaseTexture["onDisposeObservable"] };
+      if (withLoad.onLoadObservable) {
+        const loadObs = withLoad.onLoadObservable.addOnce(finish);
         if (loadObs) cleanups.push(() => loadObs.remove(true));
-        const disposeObs = texture.onDisposeObservable.addOnce(finish);
-        if (disposeObs) cleanups.push(() => disposeObs.remove(true));
       }
+      const disposeObs = texture.onDisposeObservable.addOnce(finish);
+      if (disposeObs) cleanups.push(() => disposeObs.remove(true));
     };
     for (const texture of scene.textures) watch(texture);
     for (const material of scene.materials) {

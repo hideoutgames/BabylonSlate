@@ -145,7 +145,7 @@ function meshShaderVariantKey(mesh: Mesh, material: Material, useInstances: bool
   kinds.sort();
   const colorSize = mesh.getVertexBuffer("color")?.getSize() ?? 0;
   const skeleton = mesh.skeleton
-    ? `${mesh.skeleton.numBoneInfluencers}:${mesh.numBoneInfluencers}:${mesh.computeBonesUsingShaders ? 1 : 0}:${mesh.skeleton.isUsingTextureForMatrices ? 1 : 0}`
+    ? `${mesh.skeleton.bones.length}:${mesh.numBoneInfluencers}:${mesh.computeBonesUsingShaders ? 1 : 0}:${mesh.skeleton.isUsingTextureForMatrices ? 1 : 0}`
     : "0";
   const morphs = mesh.morphTargetManager
     ? `${mesh.morphTargetManager.numInfluencers}:${mesh.morphTargetManager.supportsNormals ? 1 : 0}:${mesh.morphTargetManager.supportsTangents ? 1 : 0}:${mesh.morphTargetManager.supportsUVs ? 1 : 0}:${mesh.morphTargetManager.isUsingTextureForTargets ? 1 : 0}`

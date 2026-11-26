@@ -246,13 +246,14 @@ describe("textures handed over between the editor's view and Play", () => {
       textureBytes: new Map([["lod-tex", rawRgba]]),
     });
     handles.push(editor);
-    const lease1 = acquireMaterialTexture(editor.resourceCache, "lod-tex", engine, rawRgba, "linear");
-    expect(lease1.resource.isReady()).toBe(true);
+    const lease1 = acquireMaterialTexture(editor.resourceCache, "lod-tex", engine, rawRgba);
+    expect(lease1).not.toBeNull();
+    expect(lease1!.resource.isReady()).toBe(true);
     expect(editor.resourceCache.accountedBytes()).toBeGreaterThan(0);
 
     editor.handOverTextures();
     editor.dispose();
-    lease1.release();
+    lease1!.release();
     await editor.whenReleased();
 
     const canvas2 = new FakeCanvas() as unknown as HTMLCanvasElement;
@@ -262,9 +263,10 @@ describe("textures handed over between the editor's view and Play", () => {
       textureBytes: new Map([["lod-tex", rawRgba]]),
     });
     handles.push(next);
-    const lease2 = acquireMaterialTexture(next.resourceCache, "lod-tex", engine, rawRgba, "linear");
-    expect(lease2.resource).toBe(lease1.resource);
-    expect(isDisposedGpuTexture(lease2.resource)).toBe(false);
-    lease2.release();
+    const lease2 = acquireMaterialTexture(next.resourceCache, "lod-tex", engine, rawRgba);
+    expect(lease2).not.toBeNull();
+    expect(lease2!.resource).toBe(lease1!.resource);
+    expect(isDisposedGpuTexture(lease2!.resource)).toBe(false);
+    lease2!.release();
   });
 });

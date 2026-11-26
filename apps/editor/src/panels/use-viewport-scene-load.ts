@@ -565,6 +565,8 @@ export function useViewportSceneLoad({
     materialLibraryKey,
     areaEmissionKey,
     textureLodKey,
+    editorTextureLodEnabled,
+    editorTextureLodQuality,
     effectsAssetGuidsKey,
     collectPlaySpritePayloads,
     collectPlayWaterContent,
