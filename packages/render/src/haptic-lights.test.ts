@@ -220,19 +220,33 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     expect(scene.isDisposed).toBe(false);
   });
 
-  it("draws a lit Material with one program whatever environment lights its mesh, binding its presence and form", async () => {
+  it("draws a lit Material with one program whatever environment lights its mesh, binding its presence and form in HapticEnvironment", async () => {
     const { engine, scene } = host();
+    const uboBytes = new Map<unknown, Float32Array>();
+    const createUbo = engine.createUniformBuffer.bind(engine);
+    vi.spyOn(engine, "createUniformBuffer").mockImplementation((elements) => {
+      const buf = createUbo(elements);
+      uboBytes.set(buf, Float32Array.from(elements as ArrayLike<number>));
+      return buf;
+    });
+    const updateUbo = engine.updateUniformBuffer.bind(engine);
+    vi.spyOn(engine, "updateUniformBuffer").mockImplementation((buf, elements, offset, count) => {
+      updateUbo(buf, elements, offset, count);
+      uboBytes.set(buf, Float32Array.from(elements as ArrayLike<number>));
+    });
     const { mesh, material } = await litBox(scene);
     const none = await drawnDefines(scene, mesh, material);
     expect(none).toContain("#define HAPTIC_ENVIRONMENT");
     const bound = () => {
-      const effect = mesh.subMeshes[0]!.effect!, values = new Map<string, number[]>();
-      vi.spyOn(effect, "setFloat4").mockImplementation((name, x, y, z, w) => { values.set(name, [x, y, z, w]); return effect; });
+      const effect = mesh.subMeshes[0]!.effect!;
+      let envBuf: unknown;
+      vi.spyOn(effect, "bindUniformBuffer").mockImplementation((buf, name) => { if (name === "HapticEnvironment") envBuf = buf; });
       material.bindForSubMesh(mesh.computeWorldMatrix(true), mesh, mesh.subMeshes[0]!);
-      return { scale: values.get("hapticEnvironment")?.[3], form: values.get("hapticEnvironmentForm") };
+      const data = uboBytes.get(envBuf);
+      return { scale: data?.[19], form: data ? Array.from(data.subarray(20, 24)) : undefined };
     };
-    // No environment: a scale of zero, and nothing else of it.
-    expect(bound()).toEqual({ scale: 0, form: undefined });
+    // No environment: a scale of zero and zeroed form in the disabled UBO.
+    expect(bound()).toEqual({ scale: 0, form: [0, 0, 0, 0] });
     const cube = (setup: (texture: CubeTexture) => void) => {
       const internal = engine.createTexture("sky", false, false, null);
       internal.isCube = true;
@@ -299,7 +313,7 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     expect(atlases).toEqual([["hapticShadowAtlas", atlas], ["hapticShadowAtlasDepth", atlas], ["hapticShadowAtlas", atlas], ["hapticShadowAtlasDepth", atlas]]);
   });
 
-  it("binds the Scene's light and cluster blocks at every draw of a frozen Material, a second mesh's that shares its program too", async () => {
+  it("binds the Scene's light, cluster, environment and Material record blocks at every draw of a frozen Material, a second mesh's that shares its program too", async () => {
     const { scene } = host();
     const { mesh, material } = await litBox(scene);
     await drawnDefines(scene, mesh, material);
@@ -315,7 +329,7 @@ describe("HapticLightingBlock and the HapticLights block", () => {
     material.bindForSubMesh(mesh.computeWorldMatrix(true), mesh, mesh.subMeshes[0]!);
     bound.length = 0;
     material.bindForSubMesh(second.computeWorldMatrix(true), second, second.subMeshes[0]!);
-    expect(bound.filter((name) => name.startsWith("Haptic")).sort()).toEqual(["HapticClusters", "HapticLights"]);
+    expect(bound.filter((name) => name.startsWith("Haptic")).sort()).toEqual(["HapticClusters", "HapticEnvironment", "HapticLights", "HapticMaterial"]);
   });
 
   it("reads the atlas plainly on WebGL2 through a sampler object without compare on its own unit, which a texture bound there next does without", async () => {

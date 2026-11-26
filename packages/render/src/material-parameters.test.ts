@@ -12,6 +12,7 @@ import {
   lowerMaterialDocument,
 } from "@haptic/shader-graph";
 import { compileMaterialPlan, MATERIAL_BLOCK_PREFIX } from "./material-compiler";
+import { MaterialRecordReadBlock } from "./material-record";
 import { nodeBlockName } from "./test-support/material-node-blocks";
 import { materialParameterRevision } from "./material-parameters";
 import { MaterialLibrary } from "./material-library";
@@ -241,11 +242,11 @@ describe("material parameter bindings", () => {
     const compiled = compileMaterialPlan(lowered.plan, { scene, name: "raw" });
     if (!compiled.ok) throw new Error("Compile failed");
     disposers.push(compiled.dispose);
-    const rect = compiled.material.getBlockByName(nodeBlockName(doc, "rect")) as InputBlock;
-    const tint = compiled.material.getBlockByName(nodeBlockName(doc, "tint")) as InputBlock;
+    const rect = compiled.material.getBlockByName(nodeBlockName(doc, "rect")) as MaterialRecordReadBlock;
+    const tint = compiled.material.getBlockByName(nodeBlockName(doc, "tint")) as MaterialRecordReadBlock;
+    expect(rect).toBeInstanceOf(MaterialRecordReadBlock);
     expect(rect.value).toBeInstanceOf(Vector4);
     expect(rect.convertToLinearSpace).toBe(false);
-    expect(rect.isConstant).toBe(false);
     expect(tint.convertToLinearSpace).toBe(true);
     expect(compiled.getParameter("Rect")).toEqual({ kind: "vec4", value: [0.5, 0.5, 0.5, 0.5] });
     expect(compiled.setParameter("Rect", { kind: "vec4", value: [1, 2, 3, 4] })).toBe(true);

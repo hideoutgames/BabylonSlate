@@ -1,3 +1,4 @@
+import type { DataBuffer } from "@babylonjs/core/Buffers/dataBuffer";
 import type { AbstractEngine } from "@babylonjs/core/Engines/abstractEngine";
 import { WORLD_DEBUG_NO_LOCAL_LIGHTS_DEFINE, WORLD_DEBUG_NO_SHADOW_TAPS_DEFINE, worldDebugOff } from "./world-debug";
 import { Constants } from "@babylonjs/core/Engines/constants";
@@ -27,8 +28,10 @@ import { CEL_UNIFORMS, bindCelSettings, celFunctions } from "./cel-shader";
 import { HAPTIC_CLUSTERS_GLSL, HAPTIC_LIGHTS_GLSL, bindHapticClusters, bindHapticLights } from "./haptic-lights";
 import { HAPTIC_LIGHT_UNIFORM_BLOCKS } from "./material-record";
 import {
+  HAPTIC_ENVIRONMENT_BLOCK,
+  HAPTIC_ENVIRONMENT_FLOATS,
+  HAPTIC_ENVIRONMENT_GLSL,
   HAPTIC_IRRADIANCE_KEYS,
-  HAPTIC_IRRADIANCE_UNIFORMS,
   HAPTIC_SHADOW_ATLAS,
   HAPTIC_SHADOW_ATLAS_DEPTH,
   HAPTIC_LIGHTING_FUNCTIONS_GLSL,
@@ -42,7 +45,109 @@ import { waterDebugOff } from "./water-debug";
 import { shadowAtlasTexture } from "./shadow-atlas";
 import { GEOMETRY_PASS_WITHOUT_COLOR, isGeometryPassWithoutColor } from "./geometry-surface-output-block";
 
-const VECTOR4_UNIFORMS = ["hapticEnvironment", "hapticEnvironmentForm", "hapticEnvironmentBoxPosition", "hapticEnvironmentBoxSize", ...HAPTIC_IRRADIANCE_UNIFORMS];
+interface EnvironmentUboEntry {
+  data: Float32Array;
+  buffer: DataBuffer;
+}
+
+interface SceneEnvironmentUbos {
+  disabled: DataBuffer;
+  active: Map<BaseTexture, EnvironmentUboEntry>;
+}
+
+const sceneEnvironmentUbos = new WeakMap<Scene, SceneEnvironmentUbos>();
+
+function environmentUbosFor(scene: Scene): SceneEnvironmentUbos {
+  let state = sceneEnvironmentUbos.get(scene);
+  if (!state) {
+    const engine = scene.getEngine();
+    const disabledData = new Float32Array(HAPTIC_ENVIRONMENT_FLOATS);
+    // `hapticEnvironment = vec4(1, 0, 0, 0)`: scale zero, read before sampling.
+    disabledData[16] = 1;
+    const disabled = engine.createUniformBuffer(disabledData, HAPTIC_ENVIRONMENT_BLOCK);
+    state = { disabled, active: new Map() };
+    sceneEnvironmentUbos.set(scene, state);
+    scene.onDisposeObservable.addOnce(() => {
+      const current = sceneEnvironmentUbos.get(scene);
+      if (!current) return;
+      sceneEnvironmentUbos.delete(scene);
+      engine._releaseBuffer(current.disabled);
+      for (const entry of current.active.values()) engine._releaseBuffer(entry.buffer);
+      current.active.clear();
+    });
+  }
+  return state;
+}
+
+function writeEnvironmentFloat(data: Float32Array, index: number, value: number): boolean {
+  const f = Math.fround(value);
+  if (data[index] === f) return false;
+  data[index] = f;
+  return true;
+}
+
+/**
+ * Binds the `HapticEnvironment` uniform block for `environment` (or the 272-byte zero/disabled block when null).
+ * Uploads only when a field actually changes; consecutive draws sharing an environment hit Babylon's UBO binding cache.
+ */
+function bindHapticEnvironment(scene: Scene, effect: Effect, environment: BaseTexture | null): void {
+  const state = environmentUbosFor(scene);
+  if (!environment) {
+    effect.bindUniformBuffer(state.disabled, HAPTIC_ENVIRONMENT_BLOCK);
+    return;
+  }
+  const engine = scene.getEngine();
+  let entry = state.active.get(environment);
+  let created = false;
+  if (!entry) {
+    const data = new Float32Array(HAPTIC_ENVIRONMENT_FLOATS);
+    entry = { data, buffer: engine.createUniformBuffer(data, HAPTIC_ENVIRONMENT_BLOCK) };
+    state.active.set(environment, entry);
+    environment.onDisposeObservable.addOnce(() => {
+      const removed = state.active.get(environment);
+      if (!removed) return;
+      state.active.delete(environment);
+      engine._releaseBuffer(removed.buffer);
+    });
+    created = true;
+  }
+  const data = entry.data;
+  let dirty = created;
+  const matrix = environment.getReflectionTextureMatrix().m;
+  for (let i = 0; i < 16; i++) if (writeEnvironmentFloat(data, i, matrix[i]!)) dirty = true;
+  if (writeEnvironmentFloat(data, 16, environment.getSize().width)) dirty = true;
+  if (writeEnvironmentFloat(data, 17, environment.lodGenerationScale)) dirty = true;
+  if (writeEnvironmentFloat(data, 18, environment.lodGenerationOffset)) dirty = true;
+  if (writeEnvironmentFloat(data, 19, scene.iblIntensity * environment.level)) dirty = true;
+  const box = environment as CubeTexture;
+  const hasBox = !!box.boundingBoxSize;
+  if (writeEnvironmentFloat(data, 20, hasBox ? 1 : 0)) dirty = true;
+  if (writeEnvironmentFloat(data, 21, environment.coordinatesMode === Constants.TEXTURE_INVCUBIC_MODE ? -1 : 1)) dirty = true;
+  if (writeEnvironmentFloat(data, 22, (scene.useRightHandedSystem ? !environment.invertZ : environment.invertZ) ? -1 : 1)) dirty = true;
+  if (writeEnvironmentFloat(data, 23, environment.isRGBD ? 2 : environment.gammaSpace ? 1 : 0)) dirty = true;
+  if (hasBox) {
+    const origin = scene.floatingOriginOffset;
+    if (writeEnvironmentFloat(data, 24, box.boundingBoxPosition.x - origin.x)) dirty = true;
+    if (writeEnvironmentFloat(data, 25, box.boundingBoxPosition.y - origin.y)) dirty = true;
+    if (writeEnvironmentFloat(data, 26, box.boundingBoxPosition.z - origin.z)) dirty = true;
+    if (writeEnvironmentFloat(data, 27, 0)) dirty = true;
+    if (writeEnvironmentFloat(data, 28, box.boundingBoxSize.x)) dirty = true;
+    if (writeEnvironmentFloat(data, 29, box.boundingBoxSize.y)) dirty = true;
+    if (writeEnvironmentFloat(data, 30, box.boundingBoxSize.z)) dirty = true;
+    if (writeEnvironmentFloat(data, 31, 0)) dirty = true;
+  }
+  const harmonics = renderingHarmonics(environment.sphericalPolynomial);
+  for (let index = 0; index < HAPTIC_IRRADIANCE_KEYS.length; index++) {
+    const value = harmonics?.[HAPTIC_IRRADIANCE_KEYS[index]!];
+    const base = 32 + index * 4;
+    if (writeEnvironmentFloat(data, base, value?.x ?? 0)) dirty = true;
+    if (writeEnvironmentFloat(data, base + 1, value?.y ?? 0)) dirty = true;
+    if (writeEnvironmentFloat(data, base + 2, value?.z ?? 0)) dirty = true;
+    if (writeEnvironmentFloat(data, base + 3, 0)) dirty = true;
+  }
+  if (dirty) engine.updateUniformBuffer(entry.buffer, data);
+  effect.bindUniformBuffer(entry.buffer, HAPTIC_ENVIRONMENT_BLOCK);
+}
 
 const harmonicsByPolynomial = new WeakMap<SphericalPolynomial, SphericalHarmonics>();
 
@@ -329,7 +434,12 @@ export class HapticLightingBlock extends NodeMaterialBlock {
     const scene = mesh.getScene();
     bindHapticLights(scene, effect);
     bindHapticClusters(scene, effect);
-    if (!this.readsBindings(effect)) return;
+    if (!this.readsBindings(effect)) {
+      bindHapticEnvironment(scene, effect, null);
+      return;
+    }
+    const cel = celEffect(effect);
+    bindHapticEnvironment(scene, effect, cel || this.noEnvironment ? null : environmentCube(scene));
     // `waterdebug shadows off`: water receives none, to measure what they cost on it.
     const receives = mesh.receiveShadows && !(isWaterSurfaceMesh(mesh) && waterDebugOff(scene, "shadows"));
     effect.setFloat("hapticShadowReceiver", receives ? 1 : 0);
@@ -343,7 +453,7 @@ export class HapticLightingBlock extends NodeMaterialBlock {
 
   /**
    * Whether `effect` reads the block's textures and uniforms. A geometry pass program without a colour output compiles
-   * no lighting (`unlitGeometryEffect`): its draws bind only the light and cluster blocks (`bindReceiver`).
+   * no lighting (`unlitGeometryEffect`): its draws bind only the light, cluster and environment blocks (`bindReceiver`).
    */
   readsBindings(effect: Effect): boolean {
     return !unlitGeometryEffect(effect);
@@ -374,34 +484,7 @@ export class HapticLightingBlock extends NodeMaterialBlock {
     effect.setTexture("hapticEnvironmentBrdfSampler", GetEnvironmentBRDFTexture(scene));
     if (this.noEnvironment) return;
     const environment = environmentCube(scene);
-    if (!environment) {
-      // No environment lights this mesh: a scale of zero, which the program reads before it samples anything.
-      effect.setTexture("hapticEnvironmentSampler", environmentPlaceholder(scene));
-      effect.setFloat4("hapticEnvironment", 1, 0, 0, 0);
-      return;
-    }
-    effect.setTexture("hapticEnvironmentSampler", environment);
-    effect.setMatrix("hapticEnvironmentMatrix", environment.getReflectionTextureMatrix());
-    effect.setFloat4("hapticEnvironment", environment.getSize().width, environment.lodGenerationScale, environment.lodGenerationOffset,
-      scene.iblIntensity * environment.level);
-    const box = environment as CubeTexture;
-    // Its form: a probe's box projection, the signs of the cube's y and z axes, and its encoding (0 linear, 1 gamma, 2 RGBD).
-    effect.setFloat4("hapticEnvironmentForm", box.boundingBoxSize ? 1 : 0,
-      environment.coordinatesMode === Constants.TEXTURE_INVCUBIC_MODE ? -1 : 1,
-      (scene.useRightHandedSystem ? !environment.invertZ : environment.invertZ) ? -1 : 1,
-      environment.isRGBD ? 2 : environment.gammaSpace ? 1 : 0);
-    if (box.boundingBoxSize) {
-      // Relative to the floating origin, as the surface's world position is.
-      const origin = scene.floatingOriginOffset;
-      effect.setFloat4("hapticEnvironmentBoxPosition", box.boundingBoxPosition.x - origin.x, box.boundingBoxPosition.y - origin.y,
-        box.boundingBoxPosition.z - origin.z, 0);
-      effect.setFloat4("hapticEnvironmentBoxSize", box.boundingBoxSize.x, box.boundingBoxSize.y, box.boundingBoxSize.z, 0);
-    }
-    const harmonics = renderingHarmonics(environment.sphericalPolynomial);
-    for (let index = 0; index < HAPTIC_IRRADIANCE_KEYS.length; index++) {
-      const value = harmonics?.[HAPTIC_IRRADIANCE_KEYS[index]!];
-      effect.setFloat4(HAPTIC_IRRADIANCE_UNIFORMS[index]!, value?.x ?? 0, value?.y ?? 0, value?.z ?? 0, 0);
-    }
+    effect.setTexture("hapticEnvironmentSampler", environment ?? environmentPlaceholder(scene));
   }
 
   protected override _buildBlock(state: NodeMaterialBuildState): this {
@@ -413,9 +496,7 @@ export class HapticLightingBlock extends NodeMaterialBlock {
     state.sharedData.blockingBlocks.push(this);
     state.sharedData.dynamicUniformBlocks.push(this);
     state.sharedData.forcedBindableBlocks.push(this);
-    for (const uniform of VECTOR4_UNIFORMS) state._emitUniformFromString(uniform, NodeMaterialBlockConnectionPointTypes.Vector4);
     for (const uniform of CEL_UNIFORMS) state._emitUniformFromString(uniform, NodeMaterialBlockConnectionPointTypes.Vector4, "HAPTIC_CEL");
-    state._emitUniformFromString("hapticEnvironmentMatrix", NodeMaterialBlockConnectionPointTypes.Matrix);
     state._emitUniformFromString("hapticShadowReceiver", NodeMaterialBlockConnectionPointTypes.Float);
     state._emitUniformFromString("hapticScreenShadowTerms", NodeMaterialBlockConnectionPointTypes.Vector4, "HAPTIC_SCREEN_SHADOWS");
     state._emit2DSampler("hapticScreenShadowSampler", "defined(HAPTIC_SCREEN_SHADOWS)");
@@ -433,6 +514,7 @@ export class HapticLightingBlock extends NodeMaterialBlock {
     }
     state._emitFunction("hapticLights", HAPTIC_LIGHTS_GLSL, "// HapticLights");
     state._emitFunction("hapticClusters", HAPTIC_CLUSTERS_GLSL, "// HapticClusters");
+    state._emitFunction("hapticEnvironment", HAPTIC_ENVIRONMENT_GLSL, "// HapticEnvironment");
     state._emitFunction("hapticCelFunctions", `#ifdef HAPTIC_CEL\n${celFunctions()}\n#endif\n`, "// CEL");
     state._emitFunction("hapticLightingFunctions", HAPTIC_LIGHTING_FUNCTIONS_GLSL, "// Haptic lighting");
     for (const output of this._outputs) state.compilationString += `${state._declareOutput(output)} = vec3(0.0);\n`;

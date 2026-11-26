@@ -2,7 +2,6 @@ import type { NodeMaterial } from "@babylonjs/core/Materials/Node/nodeMaterial";
 import type { Scene } from "@babylonjs/core/scene";
 import { createWaterMaterialDocument, lowerMaterialDocument } from "@haptic/shader-graph";
 import { compileMaterialPlan, type CompiledMaterial } from "./material-compiler";
-import { replaceSceneMaterial } from "./material-library";
 import { markBuiltInWaterMaterial } from "./water-mesh";
 
 const templates = new WeakMap<Scene, CompiledMaterial>();
@@ -30,27 +29,3 @@ export function builtInWaterMaterial(scene: Scene): NodeMaterial {
   scene.onDisposeObservable.addOnce(() => templates.get(scene)?.dispose());
   return compiled.material;
 }
-
-/**
- * Compiles `scene`'s built-in water Material again after a change to how the Scene compiles Materials (`worlddebug
- * materialrecords`): once the new build is ready its water meshes move to it (each draws its water variant, built on
- * its first draw) and the old one is disposed.
- */
-export function recompileBuiltInWaterMaterial(scene: Scene): Promise<void> {
-  // One at a time, so the last switch decides the build that stays.
-  const run = (recompiles.get(scene) ?? Promise.resolve()).then(async () => {
-    const previous = templates.get(scene);
-    if (!previous || scene.isDisposed) return;
-    const next = compileBuiltInWater(scene);
-    if (!await replaceSceneMaterial(scene, previous.material, next.material, () => false)) {
-      next.dispose();
-      return;
-    }
-    templates.set(scene, next);
-    previous.dispose();
-  });
-  recompiles.set(scene, run);
-  return run;
-}
-
-const recompiles = new WeakMap<Scene, Promise<void>>();

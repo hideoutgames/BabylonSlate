@@ -58,7 +58,6 @@ const PLAY_ENGINE_COMMAND_TYPES = [
   "setGpuProbeDebug",
   "setFramesInFlightDebug",
   "setPreserveDrawingBufferDebug",
-  "setMaterialRecordsStartupDebug",
   "assignParticle",
   "setParticlePlaying",
   "setSimulationTimeScale",

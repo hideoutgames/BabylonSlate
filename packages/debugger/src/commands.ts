@@ -54,7 +54,6 @@ export const DEBUG_COMMAND_NAMES = [
   "gpuprobe",
   "framesinflight",
   "preservebuffer",
-  "materialrecords",
   "pause",
   "resume",
   "unpause",
@@ -242,7 +241,7 @@ export function builtinCommands(): RegisteredCommand[] {
       name: "worlddebug",
       tier: "debug",
       category: "engine",
-      description: "Switch one share of the world's drawing off or back on, to size it: every world mesh of the view's passes (world), lighting (lit surfaces draw their base colour), shadow lookups (shadowtaps; maps still drawn, every lookup lit), point, spot and rect lights (locallights), all shading (every surface one constant colour); or, the picture unchanged, the geometry pass the screen-space effects read drawn once (geometryonce; off, it is drawn a second time first into targets nothing reads) or its second pass's fragments (geometryoncescissor; off, the second pass runs under a 1x1 scissor), or, the picture unchanged, Play world sprites drawn in thin-instanced batches (spritebatching; off, every sprite draws as a quad of its own), or, off by default, graph Materials reading their parameters and literals from a per-Material uniform block (materialrecords; on, the Scene's Materials compile again so Materials of one shape share a program)",
+      description: "Switch one share of the world's drawing off or back on, to size it: every world mesh of the view's passes (world), lighting (lit surfaces draw their base colour), shadow lookups (shadowtaps; maps still drawn, every lookup lit), point, spot and rect lights (locallights), all shading (every surface one constant colour); or, the picture unchanged, the geometry pass the screen-space effects read drawn once (geometryonce; off, it is drawn a second time first into targets nothing reads) or its second pass's fragments (geometryoncescissor; off, the second pass runs under a 1x1 scissor), or, the picture unchanged, Play world sprites drawn in thin-instanced batches (spritebatching; off, every sprite draws as a quad of its own)",
       parameters: [{ name: "part", type: "enum", enumValues: [...WORLD_DEBUG_PARTS] }, FLAG],
       run(args, host) {
         const part = args.part as WorldDebugPart, enabled = Boolean(args.enabled);
@@ -338,8 +337,6 @@ export function builtinCommands(): RegisteredCommand[] {
     },
     flagCommand("preservebuffer", (host, enabled) => host.setPreserveDrawingBuffer?.(enabled),
       "Keep (on, the default) or drop the Engine's drawing buffer between presentations; applies after reloading the editor"),
-    flagCommand("materialrecords", (host, enabled) => host.setMaterialRecordsStartup?.(enabled),
-      "Start the project Engine with graph Materials reading their parameters and literals from a per-Material uniform block (on), or without (off, the default), so the load and its warm-up are measured with it; applies after reloading the editor (worlddebug materialrecords switches the running Play session)"),
     flagCommand(
       "freecam",
       (host, enabled) => host.setFreeCam?.(enabled),

@@ -36,9 +36,7 @@ import { isFogVolumeOnlySceneEdit } from "./fog-volume-edit";
 import { isFoliageDistanceOnlySceneEdit } from "./foliage-mesh";
 import { isBuiltInWaterMesh, setSceneWaterDebug, setSceneWaterTime, settleSceneWater } from "./water-mesh";
 import { waterDebugFingerprint } from "./water-debug";
-import { setSceneWorldDebug, startEngineWithMaterialRecords, worldDebugFingerprint, worldDebugOff } from "./world-debug";
-import { recompileEngineDefaultMaterial } from "./default-material";
-import { recompileBuiltInWaterMaterial } from "./water-template";
+import { setSceneWorldDebug, worldDebugFingerprint, worldDebugOff } from "./world-debug";
 import { shadowDebugFingerprint } from "./shadow-debug";
 import { discardsSamples, setDiscardSamples } from "./sample-discard";
 import { RuntimeScalability } from "./runtime-scalability";
@@ -81,7 +79,6 @@ import { spawnsLights2D, type SpawnableLight } from "./spawnable-lights";
 import { createStartingStateDraw, type StartingStateDraw } from "./starting-state-draw";
 import { estimateTextureMemory } from "./texture-memory-estimate";
 import { preserveDrawingBufferSetting, setPreserveDrawingBufferSetting } from "./preserve-drawing-buffer-setting";
-import { materialRecordsStartupSetting, setMaterialRecordsStartupSetting } from "./material-records-setting";
 import { nativePreparationForEngine, prepareTogether } from "./native-preparation";
 import { createSceneStreamAdmission, isSceneStreamSlotPending } from "./scene-stream-admission";
 import type { Camera } from "@babylonjs/core/Cameras/camera";
@@ -409,14 +406,9 @@ function projectEngineOptions(largeWorldRendering: boolean): EngineOptions {
   };
 }
 
-/**
- * A new project Engine: `projectEngineOptions`, and the stored debug settings that apply from its creation on (the
- * Material record from the start, `materialRecordsStartupSetting`), before any Scene of it compiles.
- */
+/** A new project Engine built with `projectEngineOptions`. */
 function newProjectEngine(canvas: HTMLCanvasElement, largeWorldRendering: boolean): Engine {
-  const engine = new Engine(canvas, false, projectEngineOptions(largeWorldRendering));
-  startEngineWithMaterialRecords(engine, materialRecordsStartupSetting());
-  return engine;
+  return new Engine(canvas, false, projectEngineOptions(largeWorldRendering));
 }
 
 /** Frames with no layer still presenting share this set instead of building one. */
@@ -553,8 +545,8 @@ function initializeEngine(
     compileHolds: true, occlusion: !presentRtt && !options.previewLighting,
     // A game's view only: the editor viewport's depth also holds its helper visuals.
     seedsFromSceneDepth: options.playMode === true,
-    // A game's view only: the editor viewport keeps Babylon's preparation.
-    leanPreparation: options.playMode === true,
+    // World views (both editor viewport and Play/player) use lean render preparation.
+    leanPreparation: !presentRtt && !options.previewLighting,
   });
   onRollback(() => worldRenderer.dispose());
   let disposed = false;
@@ -3602,7 +3594,6 @@ function initializeEngine(
       }
       if (command.type === "setPostProcessingDebug") setPostProcessingEnabled(command.enabled);
       if (command.type === "setPreserveDrawingBufferDebug") setPreserveDrawingBufferSetting(command.enabled);
-      if (command.type === "setMaterialRecordsStartupDebug") setMaterialRecordsStartupSetting(command.enabled);
       if (command.type === "setFramesInFlightDebug") engineFrameBackpressure(engine).setMode(command.mode);
       if (command.type === "setDiscardSamplesDebug" && setDiscardSamples(engine, command.enabled)) scheduler.invalidate("asset");
       if (command.type === "resetRenderingDebug") {
@@ -3657,13 +3648,6 @@ function initializeEngine(
       }
       if (command.type === "setWaterDebug" && setSceneWaterDebug(scene, command.part, command.enabled)) scheduler.invalidate("asset");
       if (command.type === "setWorldDebug" && setSceneWorldDebug(scene, command.part, command.enabled)) {
-        // The Material record is how a Material compiles: the Scene's Materials compile again, keeping their values, and
-        // so do the engine default and built-in water, which no library holds.
-        if (command.part === "materialrecords") {
-          materialLibrary.recompileScene(scene);
-          void recompileEngineDefaultMaterial(scene);
-          void recompileBuiltInWaterMaterial(scene);
-        }
         syncWorldSpriteBatching();
         scheduler.invalidate("asset");
       }

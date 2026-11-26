@@ -46,8 +46,10 @@ it("builds converted fragment math as native Babylon blocks with live numeric un
 
   for (const [name, value] of Object.entries({ gain: 0.17, "tint.x": 0.29, "tint.y": 0.43, "tint.z": 0.67 })) {
     expect(compiled.setParameter(name, { kind: "float", value })).toBe(true);
-    const input = compiled.material.getInputBlocks().find((block) => block.value === value);
-    expect(input?.output.endpoints.length).toBeGreaterThan(0);
+    const input = compiled.material.attachedBlocks.find(
+      (block) => (block as { value?: unknown }).value === value,
+    ) as { output?: { endpoints: unknown[] }; convertToLinearSpace?: boolean } | undefined;
+    expect(input?.output?.endpoints.length).toBeGreaterThan(0);
     expect(input?.convertToLinearSpace).toBe(false);
   }
 

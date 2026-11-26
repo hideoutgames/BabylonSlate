@@ -18,7 +18,6 @@ import {
   lowerMaterialDocumentCached,
 } from "@haptic/shader-graph";
 import { isDisposedNodeMaterial } from "./gpu-resource-live";
-import { materialRecordsOn } from "./world-debug";
 import { validMaterialParameterValue } from "./material-parameters";
 import { applyMaterialBounds } from "./material-bounds";
 import { isInstancePoolSource } from "./instance-pool";
@@ -123,35 +122,6 @@ function rebindMaterial(scene: Scene, from: Material, to: Material): void {
   }
 }
 
-/**
- * Moves `scene`'s meshes from `from`, a Material compiled outside a library (the engine default, built-in water), to
- * `to`, a new build of it, once `to` built and compiled for each mesh `draws` says draws `from`, as a library
- * generation replaces its predecessor. False, with nothing moved, when the build or a warm-up failed or the Scene went:
- * the caller disposes `to`.
- */
-export async function replaceSceneMaterial(scene: Scene, from: Material, to: NodeMaterial, draws: (mesh: Mesh) => boolean): Promise<boolean> {
-  try {
-    for (const mesh of [...scene.meshes]) {
-      if (scene.isDisposed) return false;
-      if (mesh instanceof Mesh && mesh.getTotalVertices() && draws(mesh)) await prewarmMaterial(to, mesh);
-    }
-    await prewarmMaterial(to, null);
-  } catch {
-    return false;
-  }
-  if (scene.isDisposed || isDisposedNodeMaterial(from, scene) || isDisposedNodeMaterial(to, scene)) return false;
-  rebindMaterial(scene, from, to);
-  return true;
-}
-
-/**
- * Whether `plan` compiles differently with the Material record on: a Material-mode program's (Particle and Post Process
- * programs keep plain uniforms, `compileMaterialPlan`).
- */
-function readsMaterialRecord(plan: MaterialBuildPlan): boolean {
-  return plan.domain !== "particle" && plan.domain !== "postProcess";
-}
-
 const NO_FUNCTIONS: Record<string, MaterialFunctionDocument> = Object.freeze({});
 
 /**
@@ -188,8 +158,6 @@ interface MaterialLibraryOptions {
 
 interface CacheEntry {
   assetGuid: string;
-  /** The document it was compiled from and how, to compile it again (`recompileScene`). */
-  source: { doc: MaterialDocument; options: MaterialAcquireOptions | undefined };
   material: NodeMaterial;
   hash: string;
   refCount: number;
@@ -231,12 +199,11 @@ export class MaterialLibrary {
     this.options = options;
   }
 
-  /** A generation's identity: its plan, its textures' identities, and whether `scene` compiles it reading the record. */
-  private generationHash(plan: MaterialBuildPlan, scene: Scene): string {
-    const base = this.options.textureIdentity
+  /** A generation's identity: its plan and its textures' identities. */
+  private generationHash(plan: MaterialBuildPlan): string {
+    return this.options.textureIdentity
       ? JSON.stringify([plan.hash, plan.textures.map((texture) => [texture.textureGuid, this.options.textureIdentity!(texture.textureGuid) ?? null])])
       : plan.hash;
-    return materialRecordsOn(scene) && readsMaterialRecord(plan) ? `${base}:records` : base;
   }
 
   private entriesFor(scene: Scene): Map<string, CacheEntry> {
@@ -279,7 +246,7 @@ export class MaterialLibrary {
     const entry = this.pending.get(scene)?.get(key) ?? entries.get(key);
     return (
       entry !== undefined &&
-      entry.hash === this.generationHash(lowered.plan, scene) &&
+      entry.hash === this.generationHash(lowered.plan) &&
       !isDisposedNodeMaterial(entry.material, scene)
     );
   }
@@ -324,7 +291,7 @@ export class MaterialLibrary {
     const existing = entries.get(key);
     const pending = this.pending.get(scene)!;
     const waiting = pending.get(key);
-    const hash = this.generationHash(lowered.plan, scene);
+    const hash = this.generationHash(lowered.plan);
     if (waiting?.hash === hash && !isDisposedNodeMaterial(waiting.material, scene)) {
       waiting.refCount += 1;
       return { ok: true, material: waiting.material, hash: waiting.hash, plan: lowered.plan, ready: waiting.ready };
@@ -546,7 +513,6 @@ export class MaterialLibrary {
     };
     const candidate: CacheEntry = {
       assetGuid,
-      source: { doc, options },
       material: compiled.material,
       hash,
       refCount: (waiting?.refCount ?? existing?.refCount ?? 0) + 1,
@@ -656,29 +622,6 @@ export class MaterialLibrary {
     if (entry.refCount > 0) return;
     entry.dispose();
     entries.delete(key);
-  }
-
-  /**
-   * Compiles every published Material of `scene` again, as its next resolve would after a change to how the Scene
-   * compiles Materials (`worlddebug materialrecords`): each keeps its parameter values, and its meshes move to the new
-   * generation once it is ready, as for an edited document.
-   */
-  recompileScene(scene: Scene): void {
-    for (const [, entry] of [...(this.scenes.get(scene) ?? [])]) {
-      if (isDisposedNodeMaterial(entry.material, scene)) continue;
-      const { doc, options } = entry.source;
-      const lowered = this.planFor(doc, options?.unlit);
-      // Particle and Post Process programs never read the record: their builds stay, as do the passes holding them.
-      if (!lowered.ok || !readsMaterialRecord(lowered.plan)) continue;
-      const parameters = new Map<string, MaterialParameterValue>();
-      for (const operation of lowered.plan.operations) {
-        if (!operation.nodeType.startsWith("param.") || operation.source.callPath.length) continue;
-        const name = String(operation.properties.name ?? "").trim();
-        const value = entry.getParameter(name);
-        if (value) parameters.set(name, value);
-      }
-      this.resolve(scene, entry.assetGuid, doc, { ...options, instanceKey: entry.instanceKey, parameters });
-    }
   }
 
   releaseScene(scene: Scene): void {
@@ -829,7 +772,7 @@ export class MaterialLibrary {
 
   private isReadyPlan(scene: Scene, assetGuid: string, plan: MaterialLowerResult, options?: MaterialAcquireOptions): boolean {
     const entry = this.scenes.get(scene)?.get(cacheKey(assetGuid, options?.unlit, options?.instanceKey, options?.logicalSceneBuffers));
-    return plan.ok && !!entry && entry.hash === this.generationHash(plan.plan, scene) && !isDisposedNodeMaterial(entry.material, scene);
+    return plan.ok && !!entry && entry.hash === this.generationHash(plan.plan) && !isDisposedNodeMaterial(entry.material, scene);
   }
 
   /** Recompile changed dependencies while retaining the last usable generation. */

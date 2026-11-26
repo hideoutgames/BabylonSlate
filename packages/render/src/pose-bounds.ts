@@ -5,6 +5,7 @@ import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import type { Geometry } from "@babylonjs/core/Meshes/geometry";
 import { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import type { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import type { Observer } from "@babylonjs/core/Misc/observable";
 import type { Scene } from "@babylonjs/core/scene";
 import type { Nullable } from "@babylonjs/core/types";
@@ -64,6 +65,140 @@ const min = new Vector3(), max = new Vector3(), partMin = new Vector3(), partMax
  * the call writes a bone or a node: it reads vertex data and writes bounds.
  */
 const prepared = new Set<Skeleton>();
+
+/** Babylon internal fields read to avoid redundant per-frame `Skeleton.prepare()` and bone-texture uploads. */
+interface SkeletonInternals {
+  _isDirty?: boolean;
+  _currentRenderId?: number;
+  _numBonesWithLinkedTransformNode?: number;
+  _transformMatrices?: Nullable<Float32Array>;
+  _meshesWithPoseMatrix?: Array<AbstractMesh & { _bonesTransformMatrices?: Nullable<Float32Array> }>;
+}
+
+const skeletonInternals = (skeleton: Skeleton): SkeletonInternals => skeleton as unknown as SkeletonInternals;
+
+/** 11 floats per linked bone: pos(3), hasQuat(1), rot(4), scale(3). */
+const LINKED_TRS_STRIDE = 11;
+
+interface SkeletonPoseGuard {
+  originalPrepare: (dontCheckFrameId?: boolean) => void;
+  refs: number;
+  hasSnapshot: boolean;
+  linkedCount: number;
+  linkedNodes: Array<TransformNode | null>;
+  linkedTrs: Float32Array;
+}
+
+const skeletonGuards = new WeakMap<Skeleton, SkeletonPoseGuard>();
+
+function linkedNodesChanged(skeleton: Skeleton, guard: SkeletonPoseGuard, record: boolean): boolean {
+  const internal = skeletonInternals(skeleton);
+  const linkedCount = internal._numBonesWithLinkedTransformNode ?? 0;
+  if (linkedCount !== guard.linkedCount) {
+    if (!record) return true;
+    guard.linkedCount = linkedCount;
+    guard.linkedNodes = new Array(linkedCount).fill(null);
+    guard.linkedTrs = new Float32Array(linkedCount * LINKED_TRS_STRIDE);
+  }
+  if (linkedCount === 0) return false;
+  let changed = !guard.hasSnapshot;
+  let slot = 0;
+  const nodes = guard.linkedNodes;
+  const trs = guard.linkedTrs;
+  for (const bone of skeleton.bones) {
+    const node = bone._linkedTransformNode;
+    if (!node) continue;
+    const base = slot * LINKED_TRS_STRIDE;
+    const p = node.position;
+    const q = node.rotationQuaternion;
+    const r = node.rotation;
+    const s = node.scaling;
+    const hasQ = q ? 1 : 0;
+    const rx = q ? q.x : r.x;
+    const ry = q ? q.y : r.y;
+    const rz = q ? q.z : r.z;
+    const rw = q ? q.w : 0;
+    if (
+      nodes[slot] !== node ||
+      trs[base] !== p.x || trs[base + 1] !== p.y || trs[base + 2] !== p.z ||
+      trs[base + 3] !== hasQ ||
+      trs[base + 4] !== rx || trs[base + 5] !== ry || trs[base + 6] !== rz || trs[base + 7] !== rw ||
+      trs[base + 8] !== s.x || trs[base + 9] !== s.y || trs[base + 10] !== s.z
+    ) {
+      if (!record) return true;
+      changed = true;
+      nodes[slot] = node;
+      trs[base] = p.x; trs[base + 1] = p.y; trs[base + 2] = p.z;
+      trs[base + 3] = hasQ;
+      trs[base + 4] = rx; trs[base + 5] = ry; trs[base + 6] = rz; trs[base + 7] = rw;
+      trs[base + 8] = s.x; trs[base + 9] = s.y; trs[base + 10] = s.z;
+    }
+    slot += 1;
+  }
+  return changed || slot !== linkedCount;
+}
+
+function skeletonNeedsPrepare(skeleton: Skeleton, guard: SkeletonPoseGuard): boolean {
+  if (!guard.hasSnapshot) return true;
+  const internal = skeletonInternals(skeleton);
+  if (internal._isDirty) return true;
+  if (skeleton.needInitialSkinMatrix) {
+    const meshes = internal._meshesWithPoseMatrix;
+    if (meshes) {
+      for (const mesh of meshes) if (!mesh._bonesTransformMatrices) return true;
+    }
+  } else if (!internal._transformMatrices) {
+    return true;
+  }
+  return linkedNodesChanged(skeleton, guard, false);
+}
+
+function retainSkeletonGuard(skeleton: Skeleton): SkeletonPoseGuard {
+  let guard = skeletonGuards.get(skeleton);
+  if (guard) {
+    guard.refs += 1;
+    return guard;
+  }
+  const originalPrepare = skeleton.prepare;
+  guard = {
+    originalPrepare,
+    refs: 1,
+    hasSnapshot: false,
+    linkedCount: 0,
+    linkedNodes: [],
+    linkedTrs: new Float32Array(0),
+  };
+  skeletonGuards.set(skeleton, guard);
+  const owned = guard;
+  // Intercept render-pass `prepare(false)` calls: `updatePoseBounds` already prepared this skeleton in
+  // `onBeforeRenderObservable` before Babylon increments `scene._renderId`, and idle linked-node skeletons whose
+  // linked `TransformNode` TRS have not changed do not need another matrix recompute or bone-texture upload.
+  skeleton.prepare = function (dontCheckFrameId = false) {
+    const internal = skeletonInternals(this);
+    if (!dontCheckFrameId) {
+      const currentRenderId = this.getScene().getRenderId();
+      if (internal._currentRenderId === currentRenderId) return;
+      if (!skeletonNeedsPrepare(this, owned)) {
+        internal._currentRenderId = currentRenderId;
+        return;
+      }
+    }
+    owned.originalPrepare.call(this, dontCheckFrameId);
+    linkedNodesChanged(this, owned, true);
+    owned.hasSnapshot = true;
+    internal._currentRenderId = this.getScene().getRenderId();
+  };
+  return guard;
+}
+
+function releaseSkeletonGuard(skeleton: Skeleton): void {
+  const guard = skeletonGuards.get(skeleton);
+  if (!guard) return;
+  guard.refs -= 1;
+  if (guard.refs > 0) return;
+  skeletonGuards.delete(skeleton);
+  skeleton.prepare = guard.originalPrepare;
+}
 
 /** The vertex data of `kind` the CPU holds for `mesh`, or null. */
 function held(mesh: Mesh, kind: string): ArrayLike<number> | null {
@@ -140,6 +275,7 @@ function partsHold(entry: Followed): boolean {
 
 function release(entry: Followed): void {
   entry.skeleton.onBeforeComputeObservable.remove(entry.computed);
+  releaseSkeletonGuard(entry.skeleton);
   followed.delete(entry.mesh);
   scenes.get(entry.mesh.getScene())?.entries.delete(entry);
 }
@@ -168,6 +304,7 @@ export function followPose(mesh: AbstractMesh): boolean {
   const parts = partsOf(mesh, skeleton);
   if (!parts) return false;
   const entry: Followed = { mesh, skeleton, parts, dirty: true, computed: null };
+  retainSkeletonGuard(skeleton);
   // Babylon notifies as it computes the matrices: the bounds are stale from then.
   entry.computed = skeleton.onBeforeComputeObservable.add(() => { entry.dirty = true; });
   followed.set(mesh, entry);
@@ -231,9 +368,10 @@ export function updatePoseBounds(scene: Scene): void {
  */
 function pose(entry: Followed, done?: Set<Skeleton>): void {
   if (!done?.has(entry.skeleton)) {
-    // Whatever the render id: Babylon's own check would take last frame's matrices for this frame's, where no render
-    // came between.
-    entry.skeleton.prepare(true);
+    const guard = skeletonGuards.get(entry.skeleton);
+    // Compute only when the skeleton is dirty or a linked TransformNode's TRS changed since last prepare; `prepare`
+    // records the snapshot and render id so Babylon's render-pass `prepare(false)` does not compute and upload again.
+    if (!guard || skeletonNeedsPrepare(entry.skeleton, guard)) entry.skeleton.prepare(true);
     done?.add(entry.skeleton);
   }
   if (!entry.dirty) return;

@@ -102,8 +102,6 @@ Profile shows what each feature costs the GPU at your device's own quality setti
 
 Each row also lists what its change compiled (shaders first drawn, long frames, new programs and how long it took) apart from the frames it measured.
 
-Profile never switches how Materials compile while it runs: that compiles every Material of the scene again on top of everything else, which a device with little memory may not survive. To compare Materials reading their values from a small block of their own, run Profile in a project started with `materialrecords on` (see [the console](../debugging/console.md)) and again after `materialrecords off`, and compare the two reports.
-
 Profile never turns shadows off as a whole or changes the shadow level, so the shadow textures stay as they are and a device with little memory is not asked to allocate them again.
 
 The heavy view is measured again at the start, throughout and at the end, unchanged; the report's drift lines show how much the device slowed or sped up over the run (a warm tablet slows down), so you can discount it. Each change is shown with the two measurements around it; when those two differ by more than the change itself, the row says **UNSETTLED** and its number means little. Every row is marked **FAST** or **SLOW** against the best its view managed, and a change whose two unchanged measurements are in different states is listed as straddling a state change instead of being ranked. Profile holds the session's resolution scale for the whole run and says which in the report. The views are cameras in the Feature Test starter's main scene; if your Feature Test project has none, Profile stops and asks you to create the project again.

@@ -28,7 +28,7 @@ import { setTestTextureBudget } from "./test-support/resource-cache-budget";
 import { applyUserInterfaceFallback } from "./overlay-texture-quad";
 import { isUnlitMaterial } from "./unlit-material";
 import { nodeBlockName } from "./test-support/material-node-blocks";
-import { setSceneWorldDebug, startEngineWithMaterialRecords, worldDebugFingerprint } from "./world-debug";
+import { worldDebugFingerprint } from "./world-debug";
 
 const disposers: Array<() => void> = [];
 
@@ -947,7 +947,7 @@ describe("material library", () => {
     expect(library.getParameter(scene, "brick", "Tint")).toEqual({ kind: "color", value: [0.6, 0.2, 0.1, 1] });
   });
 
-  it("compiles a Scene's Materials again when worlddebug materialrecords switches, keeping their values and moving their meshes", async () => {
+  it("always compiles Material-mode library entries reading the Material record, leaving Post Process plain", async () => {
     const scene = host();
     const library = new MaterialLibrary();
     disposers.push(() => library.dispose());
@@ -958,57 +958,15 @@ describe("material library", () => {
     if (!acquired.ok) throw new Error("acquire failed");
     expect(await acquired.ready).toEqual([]);
     library.setParameter(scene, "grit", "Grit", { kind: "float", value: 0.8 }, { instanceKey: "1|body" });
-    const mesh = MeshBuilder.CreateBox("body", {}, scene);
-    mesh.material = acquired.material;
-    expect(acquired.material.compiledShaders).not.toContain("HapticMaterial");
-    // A Post Process Material never reads the record: its pass holds the build, which the switch must leave alone.
+    expect(acquired.material.compiledShaders).toContain("uniform HapticMaterial");
+    expect(library.getParameter(scene, "grit", "Grit", { instanceKey: "1|body" })).toEqual({ kind: "float", value: 0.8 });
+    expect(worldDebugFingerprint(scene)).toBe("none");
+    // A Post Process Material never reads the record.
     const grade = createDefaultMaterialDocument("Grade", "postProcess");
     const pass = library.acquire(scene, "grade", grade);
     if (!pass.ok) throw new Error("acquire failed");
     expect(await pass.ready).toEqual([]);
-
-    setSceneWorldDebug(scene, "materialrecords", true);
-    library.recompileScene(scene);
-    expect([library.materialFor(scene, "grade"), library.isReady(scene, "grade", grade)]).toEqual([pass.material, true]);
-    await vi.waitFor(() => expect(library.isReady(scene, "grit", doc, { instanceKey: "1|body" })).toBe(true));
-    const recompiled = library.materialFor(scene, "grit", { instanceKey: "1|body" })!;
-    expect(recompiled).not.toBe(acquired.material);
-    expect(recompiled.compiledShaders).toContain("uniform HapticMaterial");
-    expect(mesh.material).toBe(recompiled);
-    expect(library.getParameter(scene, "grit", "Grit", { instanceKey: "1|body" })).toEqual({ kind: "float", value: 0.8 });
-
-    // Back off: the plain program again, the value kept.
-    setSceneWorldDebug(scene, "materialrecords", false);
-    library.recompileScene(scene);
-    await vi.waitFor(() => expect(library.isReady(scene, "grit", doc, { instanceKey: "1|body" })).toBe(true));
-    const plain = library.materialFor(scene, "grit", { instanceKey: "1|body" })!;
-    expect(plain.compiledShaders).not.toContain("HapticMaterial");
-    expect(mesh.material).toBe(plain);
-    expect(library.getParameter(scene, "grit", "Grit", { instanceKey: "1|body" })).toEqual({ kind: "float", value: 0.8 });
-    expect(library.materialFor(scene, "grade")).toBe(pass.material);
-    expect(scene.materials.includes(pass.material)).toBe(true);
-  });
-
-  it("compiles with the Material record from the first acquire on an Engine started with it, until worlddebug switches it off", async () => {
-    const scene = host();
-    startEngineWithMaterialRecords(scene.getEngine(), true);
-    const library = new MaterialLibrary();
-    disposers.push(() => library.dispose());
-    const doc = tinted(0.4);
-    expect(worldDebugFingerprint(scene)).toBe("materialrecords on");
-    const acquired = library.acquire(scene, "tinted", doc);
-    if (!acquired.ok) throw new Error("acquire failed");
-    expect(await acquired.ready).toEqual([]);
-    expect(acquired.material.compiledShaders).toContain("uniform HapticMaterial");
-    // Another Engine keeps the built-in default.
-    expect(worldDebugFingerprint(host())).toBe("none");
-
-    expect(setSceneWorldDebug(scene, "materialrecords", true)).toBe(false);
-    expect(setSceneWorldDebug(scene, "materialrecords", false)).toBe(true);
-    expect(worldDebugFingerprint(scene)).toBe("none");
-    library.recompileScene(scene);
-    await vi.waitFor(() => expect(library.isReady(scene, "tinted", doc)).toBe(true));
-    expect(library.materialFor(scene, "tinted")!.compiledShaders).not.toContain("HapticMaterial");
+    expect(pass.material.compiledShaders).not.toContain("HapticMaterial");
   });
 
   it("never shares one material instance across two scenes", () => {
