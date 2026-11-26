@@ -1,4 +1,4 @@
-import { unpackRawRgbaTexture } from "@haptic/assets";
+import { RAW_RGBA_TEXTURE_HEADER_BYTES, readRawRgbaTextureHeader } from "@haptic/assets";
 import { Constants } from "@babylonjs/core/Engines/constants";
 import type { BaseTexture } from "@babylonjs/core/Materials/Textures/baseTexture";
 import { RawTexture3D } from "@babylonjs/core/Materials/Textures/rawTexture3D";
@@ -30,8 +30,14 @@ export function lutStripToVolume(
 
 async function decodeStrip(bytes: Uint8Array | Blob) {
   if (bytes instanceof Uint8Array) {
-    const raw = unpackRawRgbaTexture(bytes);
-    if (raw) return lutStripToVolume(raw.rgba, raw.width, raw.height);
+    const rawHeader = readRawRgbaTextureHeader(bytes);
+    if (rawHeader) {
+      return lutStripToVolume(
+        bytes.subarray(RAW_RGBA_TEXTURE_HEADER_BYTES),
+        rawHeader.width,
+        rawHeader.height,
+      );
+    }
   }
   const blob = bytes instanceof Blob ? bytes : new Blob([bytes as BlobPart]);
   const bitmap = await createImageBitmap(blob, {

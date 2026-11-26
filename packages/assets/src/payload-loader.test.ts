@@ -60,7 +60,7 @@ describe("bounded catalog and payload loading", () => {
       kind === "blob" && options?.signal ? stalled<Uint8Array>(options.signal) : readBinary(path, options));
     const readRange = storage.readBinaryRange.bind(storage);
     const rangeRead = vi.spyOn(storage, "readBinaryRange").mockImplementation((path, offset, length, revision, options) =>
-      kind === "inline" && offset === locator.payloadOffset && options?.signal
+      ((kind === "inline" && offset === locator.payloadOffset) || (kind === "blob" && path.startsWith("assets/.blobs/"))) && options?.signal
         ? stalled<Awaited<ReturnType<typeof readRange>>>(options.signal)
         : readRange(path, offset, length, revision, options));
     const load = registry.readChunk("asset", "source", locator.revision, { signal: controller.signal });

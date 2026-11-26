@@ -77,7 +77,7 @@ describe("Engine-scoped static GLB geometry blueprint handover", () => {
     scene2.dispose();
   });
 
-  it("preserves overrideMaterialSideOrientation (including null) and disabled node state across handover", () => {
+  it("preserves mesh sideOrientation and disabled node state across handover", () => {
     const engine = new NullEngine();
     engines.push(engine);
     const scene1 = new Scene(engine);
@@ -89,8 +89,8 @@ describe("Engine-scoped static GLB geometry blueprint handover", () => {
     vd.indices = [0, 1, 2];
     vd.applyToMesh(meshDefault);
     vd.applyToMesh(meshOverride);
-    meshDefault.overrideMaterialSideOrientation = null;
-    meshOverride.overrideMaterialSideOrientation = Mesh.DOUBLESIDE;
+    const defaultSide = meshDefault.sideOrientation;
+    meshOverride.sideOrientation = Mesh.BACKSIDE;
     meshOverride.setEnabled(false);
     scene1.removeMesh(meshDefault, false);
     scene1.removeMesh(meshOverride, false);
@@ -105,9 +105,9 @@ describe("Engine-scoped static GLB geometry blueprint handover", () => {
     expect(container2).not.toBeNull();
     const outDefault = container2.meshes.find((m) => m.name === "default-side") as Mesh;
     const outOverride = container2.meshes.find((m) => m.name === "override-side") as Mesh;
-    expect(outDefault.overrideMaterialSideOrientation).toBeNull();
+    expect(outDefault.sideOrientation).toBe(defaultSide);
     expect(outDefault.isEnabled(false)).toBe(true);
-    expect(outOverride.overrideMaterialSideOrientation).toBe(Mesh.DOUBLESIDE);
+    expect(outOverride.sideOrientation).toBe(Mesh.BACKSIDE);
     expect(outOverride.isEnabled(false)).toBe(false);
     scene2.dispose();
   });

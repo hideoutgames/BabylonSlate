@@ -48,7 +48,7 @@ interface CapturedNode {
   scaling: [number, number, number];
   isVisible: boolean;
   enabled: boolean;
-  overrideMaterialSideOrientation: number | null;
+  sideOrientation: number;
   materialIndex: number | null | undefined;
   geometryIndex: number;
   subMeshes: CapturedSubMesh[];
@@ -193,7 +193,7 @@ export function captureGlbBlueprint(container: AssetContainer): GlbGeometryBluep
         scaling: [node.scaling.x, node.scaling.y, node.scaling.z],
         isVisible: node.isVisible,
         enabled: node.isEnabled(false),
-        overrideMaterialSideOrientation: node.overrideMaterialSideOrientation,
+        sideOrientation: node.sideOrientation,
         materialIndex: modelMaterialIndexOf(node),
         geometryIndex,
         subMeshes,
@@ -212,7 +212,7 @@ export function captureGlbBlueprint(container: AssetContainer): GlbGeometryBluep
         scaling: [node.scaling.x, node.scaling.y, node.scaling.z],
         isVisible: true,
         enabled: node.isEnabled(false),
-        overrideMaterialSideOrientation: null,
+        sideOrientation: Mesh.FRONTSIDE,
         materialIndex: undefined,
         geometryIndex: -1,
         subMeshes: [],
@@ -302,7 +302,7 @@ export function materializeEngineGlbBlueprint(scene: Scene, key: string): AssetC
       const mesh = new Mesh(spec.name, scene, null, null, true, false);
       scene.removeMesh(mesh, false);
       mesh.isVisible = spec.isVisible;
-      mesh.overrideMaterialSideOrientation = spec.overrideMaterialSideOrientation;
+      mesh.sideOrientation = spec.sideOrientation;
       if (spec.geometryIndex >= 0) {
         builtGeometries[spec.geometryIndex]!.applyToMesh(mesh);
         if (spec.subMeshes.length > 0) {
