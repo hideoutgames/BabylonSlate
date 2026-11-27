@@ -20,6 +20,7 @@ import {
 } from "@haptic/render";
 import { SceneLoadingDialog } from "./scene-loading-dialog";
 import { PLAY_PROBE_KEY, playProbes } from "../services/runtime-probes";
+import { snapshotPlayBootTimings, type PlayBootTimings } from "../services/play-boot-timings";
 import { clipText } from "../lib/diagnostic-info";
 import { formatRuntimeLogLine } from "../lib/output-log-line";
 import { formatSceneLoadReport, hostMemoryLine, textureMemoryLine, worldLoadLine } from "../lib/scene-load-report";
@@ -1388,6 +1389,8 @@ function PlayOverlayView({
         materialDefines: () => ReturnType<PlaySession["handle"]["playMeshMaterialDefines"]>;
         /** Play's load-time warm-up of what it may spawn. */
         spawnableWarm: () => ReturnType<PlaySession["handle"]["spawnableWarmStats"]>;
+        /** Sub-phase millisecond breakdown of Play launch from click to first snapshot. */
+        bootTimings: () => PlayBootTimings | null;
         /** Follows every scoped readiness probe with a probe of every mesh, which must agree (`rendererWork.scopedReadinessMismatches`). */
         verifyScopedReadinessProbes: (enabled: boolean) => void;
         /**
@@ -1451,6 +1454,7 @@ function PlayOverlayView({
       setRenderSettings: (settings) => sessionRef.current?.handle.setRenderSettings(settings),
       materialDefines: () => sessionRef.current?.handle.playMeshMaterialDefines() ?? [],
       spawnableWarm: () => sessionRef.current?.handle.spawnableWarmStats() ?? null,
+      bootTimings: () => snapshotPlayBootTimings(),
       verifyScopedReadinessProbes,
       verifyRetainedOverlayBatches,
       verifyLayerDrawLists,

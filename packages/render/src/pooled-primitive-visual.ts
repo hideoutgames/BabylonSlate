@@ -28,8 +28,10 @@ function primitiveGeometry(scene: Scene, kind: string): InstanceGeometry {
     template.doNotSerialize = true;
     geometry = {
       key: `primitive:${kind}`,
-      build: (_scene, name) => {
-        const source = template.clone(name, null, true, false);
+      build: (targetScene, name) => {
+        const source = new Mesh(name, targetScene);
+        source.sideOrientation = template.sideOrientation;
+        template.geometry?.applyToMesh(source);
         source.setEnabled(true);
         source.isPickable = true;
         // A member occludes as the primitive does (`occluderShape` reads an instance's source): the source itself, hidden,

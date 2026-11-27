@@ -1,6 +1,7 @@
 import { VertexBuffer } from "@babylonjs/core/Buffers/buffer";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
+import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import type { Scene } from "@babylonjs/core/scene";
@@ -24,8 +25,78 @@ import { setUnlitMaterial, type UnlitBinding, type UnlitMaterialKey } from "./un
 import { VisualBundle } from "./visual-bundle";
 
 const TEXT3D_RESOLUTION = 4;
+/** Max cached CPU 3D text geometries per font (zero GPU memory held between Scenes). */
+const TEXT3D_GEOMETRY_CACHE_MAX = 256;
 // Keyed by the cached chunk instance; CreateTextShapePaths only reads the font.
 const parsedTypeFaces = new WeakMap<Uint8Array, IFontData | null>();
+
+interface CachedText3DGeometry {
+  positions: Float32Array;
+  normals: Float32Array | null;
+  uvs: Float32Array | null;
+  indices: Uint16Array | Uint32Array | null;
+}
+
+const text3DGeometryCache = new WeakMap<IFontData, Map<string, CachedText3DGeometry | null>>();
+
+function getCachedText3DGeometry(font: IFontData, key: string): CachedText3DGeometry | null | undefined {
+  const byFont = text3DGeometryCache.get(font);
+  if (!byFont || !byFont.has(key)) return undefined;
+  const hit = byFont.get(key)!;
+  // Touch LRU order.
+  byFont.delete(key);
+  byFont.set(key, hit);
+  return hit;
+}
+
+function putCachedText3DGeometry(font: IFontData, key: string, value: CachedText3DGeometry | null): void {
+  let byFont = text3DGeometryCache.get(font);
+  if (!byFont) {
+    byFont = new Map();
+    text3DGeometryCache.set(font, byFont);
+  }
+  byFont.delete(key);
+  byFont.set(key, value);
+  while (byFont.size > TEXT3D_GEOMETRY_CACHE_MAX) {
+    const oldest = byFont.keys().next().value;
+    if (oldest === undefined) break;
+    byFont.delete(oldest);
+  }
+}
+
+function captureText3DGeometry(mesh: Mesh): CachedText3DGeometry | null {
+  const rawPositions = mesh.getVerticesData(VertexBuffer.PositionKind);
+  if (!rawPositions || rawPositions.length === 0) return null;
+  const positions = rawPositions instanceof Float32Array ? rawPositions.slice() : Float32Array.from(rawPositions);
+  const rawNormals = mesh.getVerticesData(VertexBuffer.NormalKind);
+  const normals = rawNormals && rawNormals.length > 0
+    ? (rawNormals instanceof Float32Array ? rawNormals.slice() : Float32Array.from(rawNormals))
+    : null;
+  const rawUvs = mesh.getVerticesData(VertexBuffer.UVKind);
+  const uvs = rawUvs && rawUvs.length > 0
+    ? (rawUvs instanceof Float32Array ? rawUvs.slice() : Float32Array.from(rawUvs))
+    : null;
+  const rawIndices = mesh.getIndices();
+  let indices: Uint16Array | Uint32Array | null = null;
+  if (rawIndices && rawIndices.length > 0) {
+    const is32 = positions.length / 3 > 0xffff;
+    indices = is32
+      ? (rawIndices instanceof Uint32Array ? rawIndices.slice() : Uint32Array.from(rawIndices))
+      : (rawIndices instanceof Uint16Array ? rawIndices.slice() : Uint16Array.from(rawIndices));
+  }
+  return { positions, normals, uvs, indices };
+}
+
+function materializeText3DGeometry(scene: Scene, name: string, cached: CachedText3DGeometry): Mesh {
+  const mesh = new Mesh(name, scene);
+  const vd = new VertexData();
+  vd.positions = cached.positions;
+  if (cached.normals) vd.normals = cached.normals;
+  if (cached.uvs) vd.uvs = cached.uvs;
+  if (cached.indices) vd.indices = cached.indices;
+  vd.applyToMesh(mesh);
+  return mesh;
+}
 
 export function resolveText3DFontData(
   properties: Text3DProperties,
@@ -109,8 +180,14 @@ function createFlatTextMesh(
   font: IFontData,
   alignment: Text3DAlignment,
 ): Mesh | null {
+  const normalized = normalizeText3DNewlines(text);
+  const cacheKey = `${normalized}\0${size}\0${alignment}`;
+  const cached = getCachedText3DGeometry(font, cacheKey);
+  if (cached !== undefined) {
+    return cached ? materializeText3DGeometry(scene, name, cached) : null;
+  }
   const shapePaths = CreateTextShapePaths(
-    normalizeText3DNewlines(text),
+    normalized,
     size,
     TEXT3D_RESOLUTION,
     font,
@@ -147,15 +224,20 @@ function createFlatTextMesh(
       );
     }
   }
-  if (meshes.length === 0) return null;
+  if (meshes.length === 0) {
+    putCachedText3DGeometry(font, cacheKey, null);
+    return null;
+  }
   const merged =
     meshes.length === 1 ? meshes[0]! : Mesh.MergeMeshes(meshes, true, true);
   if (!merged) {
     for (const mesh of meshes) mesh.dispose();
+    putCachedText3DGeometry(font, cacheKey, null);
     return null;
   }
   bakeCreateTextOrientation(merged, scene, alignment);
   merged.name = name;
+  putCachedText3DGeometry(font, cacheKey, captureText3DGeometry(merged));
   return merged;
 }
 

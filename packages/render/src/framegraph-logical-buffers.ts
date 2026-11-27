@@ -12,7 +12,7 @@ import type { FrameGraphTextureHandle } from "@babylonjs/core/FrameGraph/frameGr
 import { readinessScanMeshes, requestCompilesAhead } from "./driver-compile";
 import { drawGeometryDepthSeed, type GeometryDepthSeed } from "./geometry-depth-seed";
 import { LightNeutralGeometryRendererTask } from "./light-neutral-tasks";
-import { isMeshFrameReady, withSceneReadinessState } from "./scene-perf";
+import { isMeshFrameReady, withMeshProbePass, withSceneReadinessState } from "./scene-perf";
 
 /**
  * Texture type for a geometry pass's view-depth attachment. Transparent meshes
@@ -148,7 +148,7 @@ export class LogicalGeometryTask extends LightNeutralGeometryRendererTask {
     try {
       // Probe the meshes even while the seed compiles, so their variants link meanwhile.
       const seeded = this.seed?.wrapper.isReady() ?? true;
-      const done = withSceneReadinessState(this._frameGraph.scene, () => super.isReady()) && seeded;
+      const done = withSceneReadinessState(this._frameGraph.scene, () => withMeshProbePass(() => super.isReady())) && seeded;
       if (done) this.requestedAhead.clear();
       return done;
     } finally { this.objectRenderer.customIsReadyFunction = ready; }

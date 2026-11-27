@@ -327,4 +327,38 @@ describe("3D Text mesh", () => {
     expect(leftBox.minimum.y).toBeCloseTo(centerBox.minimum.y, 4);
     expect(rightBox.minimum.y).toBeCloseTo(centerBox.minimum.y, 4);
   });
+
+  it("reuses cached CPU geometry across separate Scenes with identical bounds and counts", () => {
+    const firstHandle = createTestEngine();
+    const secondHandle = createTestEngine();
+    handles.push(firstHandle, secondHandle);
+    const bytes = new TextEncoder().encode(JSON.stringify(TEXT3D_TEST_FONTFACE_T));
+    const assets = { fontFacetypeBytes: new Map([["font-t", bytes]]) };
+    const first = createText3DMesh(
+      firstHandle.scene,
+      "cached-first",
+      { text: "T", size: 1.5, fontAssetGuid: "font-t", alignment: "center" },
+      assets,
+    );
+    const second = createText3DMesh(
+      secondHandle.scene,
+      "cached-second",
+      { text: "T", size: 1.5, fontAssetGuid: "font-t", alignment: "center" },
+      assets,
+    );
+    first.refreshBoundingInfo();
+    second.refreshBoundingInfo();
+    expect(second.getTotalVertices()).toBe(first.getTotalVertices());
+    expect(second.getTotalIndices()).toBe(first.getTotalIndices());
+    const boxA = first.getBoundingInfo().boundingBox;
+    const boxB = second.getBoundingInfo().boundingBox;
+    expect(boxB.minimum.x).toBeCloseTo(boxA.minimum.x, 5);
+    expect(boxB.maximum.x).toBeCloseTo(boxA.maximum.x, 5);
+    expect(boxB.minimum.y).toBeCloseTo(boxA.minimum.y, 5);
+    expect(boxB.maximum.y).toBeCloseTo(boxA.maximum.y, 5);
+    // Disposing the first Scene must not disturb the second Scene's independent GPU buffers.
+    firstHandle.scene.dispose();
+    expect(second.isDisposed()).toBe(false);
+    expect(second.getTotalVertices()).toBeGreaterThan(0);
+  });
 });
