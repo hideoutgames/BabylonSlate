@@ -2030,20 +2030,41 @@ export class ForwardSceneFrameGraph {
       // Created after the first fence wait: it asks every Engine effect for readiness.
       let compiles: DriverCompileWatch | undefined;
       let creditLeft = SCENE_THREAD_HELD_BUDGET_MS;
+      const engine = scene.getEngine();
+      // Pending Effects requested by the previous probe iteration; while every one is still
+      // compiling and compile-ahead budget has not opened up, re-walking every mesh in the
+      // Scene cannot pass or queue new compiles and only starves driver completion callbacks.
+      let waitedEffects: Effect[] = [];
+      let waitedBudget = 0;
       for (;;) {
         // Readiness probes finalise effects; a synchronous GL query waits behind
         // an outstanding presentation fence's driver compile, so defer them.
-        deadline += await whenPresentationFenceClear(scene.getEngine(), assertCurrent);
-        compiles ??= new DriverCompileWatch(scene.getEngine(), started);
-        const probeStart = performance.now();
-        const ready = this.disposed || probeVariantSwaps(tolerateVariantSwaps, () => this.isReady());
-        // Where links are synchronous (SwiftShader) the probe links
-        // every effect before it returns: the time inside it is compiling, not
-        // waiting. It extends the bound up to a budget, so a scene that never
-        // becomes ready still fails.
-        const grant = Math.min(performance.now() - probeStart, creditLeft);
-        creditLeft -= grant;
-        deadline += grant;
+        deadline += await whenPresentationFenceClear(engine, assertCurrent);
+        compiles ??= new DriverCompileWatch(engine, started);
+        const stillWaitingOnSameEffects =
+          !this.disposed &&
+          !this.warmsVariants &&
+          waitedEffects.length > 0 &&
+          waitedEffects.every((effect) => !effect.isReady() && !effect.isDisposed && !effect.getCompilationError()) &&
+          compileAheadBudget(engine) <= waitedBudget;
+        let ready = false;
+        if (!stillWaitingOnSameEffects) {
+          const probeStart = performance.now();
+          ready = this.disposed || probeVariantSwaps(tolerateVariantSwaps, () => this.isReady());
+          // Where links are synchronous (SwiftShader) the probe links
+          // every effect before it returns: the time inside it is compiling, not
+          // waiting. It extends the bound up to a budget, so a scene that never
+          // becomes ready still fails.
+          const grant = Math.min(performance.now() - probeStart, creditLeft);
+          creditLeft -= grant;
+          deadline += grant;
+          if (!ready && !this.disposed) {
+            waitedEffects = [...this.requestedEffects].filter(
+              (effect) => !effect.isReady() && !effect.isDisposed && !effect.getCompilationError(),
+            );
+            waitedBudget = compileAheadBudget(engine);
+          }
+        }
         if (ready) break;
         assertCurrent();
         // A failed shader never becomes ready; report it instead of timing out.
@@ -2061,7 +2082,7 @@ export class ForwardSceneFrameGraph {
           }
           deadline = now + READINESS_STALL_MS;
         }
-        await new Promise<void>((resolve) => setTimeout(resolve, 16));
+        await waitForEffectsOrTimeout(waitedEffects, 16);
       }
       if (this.disposed) throw new Error("FrameGraph coordinator is disposed.");
       this.markGraphProbed();
@@ -2553,4 +2574,34 @@ export class ForwardSceneFrameGraph {
     this.preparedWidth = this.preparedHeight = 0;
     this.preparedScale = 1;
   }
+}
+
+/**
+ * Waits up to `timeoutMs`, waking early as soon as any pending `Effect` finishes compiling or errors.
+ * All listeners and the fallback timer are cleaned up unconditionally on settle.
+ */
+function waitForEffectsOrTimeout(effects: readonly Effect[], timeoutMs: number): Promise<void> {
+  if (effects.length === 0) return new Promise<void>((resolve) => setTimeout(resolve, timeoutMs));
+  for (const effect of effects) {
+    if (effect.isReady() || effect.isDisposed || effect.getCompilationError()) return Promise.resolve();
+  }
+  return new Promise<void>((resolve) => {
+    let settled = false;
+    const cleanups: Array<() => void> = [];
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      for (const cleanup of cleanups) cleanup();
+      cleanups.length = 0;
+      resolve();
+    };
+    const timer = setTimeout(finish, timeoutMs);
+    for (const effect of effects) {
+      const onCompile = effect.onCompileObservable?.addOnce(finish);
+      if (onCompile) cleanups.push(() => effect.onCompileObservable?.remove(onCompile));
+      const onError = effect.onErrorObservable?.addOnce(finish);
+      if (onError) cleanups.push(() => effect.onErrorObservable?.remove(onError));
+    }
+  });
 }

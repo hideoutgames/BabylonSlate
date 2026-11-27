@@ -1017,23 +1017,54 @@ export function mergePreparedPlaySources(entries: Iterable<PreparedPlaySources>)
 
 /**
  * Merged source controls for the live preparations, rebuilt only when the set of
- * preparations changes. Prepared content is immutable once acquired, so membership
- * identifies the result. `reset` drops the retained union at session end.
+ * preparations changes. Append-only additions merge incrementally in O(delta) and
+ * reuse the existing controls array reference when the new preparation adds no
+ * unseen or changed entries, avoiding O(N^2) rebuilds during Play startup.
+ * `reset` drops the retained union at session end.
  */
 export function createMergedPlaySourceControls(entries: () => Iterable<PreparedPlaySources>): {
   (): ControlMessage[];
   reset(): void;
 } {
   let members: PreparedPlaySources[] = [];
-  let merged: ControlMessage[] | null = null;
+  let state: {
+    game: PreparedPlaySources["game"];
+    content: PreparedPlaySources["content"];
+    controls: ControlMessage[];
+  } | null = null;
   const get = () => {
     const current = [...entries()];
-    if (merged && current.length === members.length && current.every((entry, index) => entry === members[index])) return merged;
+    if (state && current.length === members.length && current.every((entry, index) => entry === members[index])) {
+      return state.controls;
+    }
+    if (!current.length) {
+      members = [];
+      state = null;
+      return emptyPlaySourceControls();
+    }
+    if (
+      state &&
+      current.length > members.length &&
+      members.every((entry, index) => current[index] === entry)
+    ) {
+      const added = current.slice(members.length);
+      let changed = false;
+      for (const next of added) {
+        if (mergeContainersDetectingChange(state.game, next.game)) changed = true;
+        if (mergeContainersDetectingChange(state.game.manifest, next.game.manifest)) changed = true;
+        if (mergeContainersDetectingChange(state.content, next.content)) changed = true;
+        if (mergeContainersDetectingChange(state.content.audioLibrary, next.content.audioLibrary)) changed = true;
+        if (mergeContainersDetectingChange(state.content.particleLibrary, next.content.particleLibrary)) changed = true;
+      }
+      members = current;
+      if (changed) state.controls = packedSourceControls(state.game, state.content);
+      return state.controls;
+    }
     members = current;
-    merged = mergePreparedPlaySources(current)?.controls ?? emptyPlaySourceControls();
-    return merged;
+    state = mergePreparedPlaySources(current);
+    return state?.controls ?? emptyPlaySourceControls();
   };
-  get.reset = () => { members = []; merged = null; };
+  get.reset = () => { members = []; state = null; };
   return get;
 }
 
@@ -1081,4 +1112,66 @@ function mergeContainers(target: object, sources: readonly object[]): void {
 
 function keyedEntry(entry: { guid?: string; classId?: string }): [unknown, unknown] {
   return [entry.guid ?? entry.classId, entry];
+}
+
+function sameMergedValue(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) return true;
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
+  if (ArrayBuffer.isView(a) || ArrayBuffer.isView(b) || a instanceof ArrayBuffer || b instanceof ArrayBuffer) return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  if (Array.isArray(a)) {
+    const arrB = b as unknown[];
+    if (a.length !== arrB.length) return false;
+    for (let i = 0; i < a.length; i += 1) if (!sameMergedValue(a[i], arrB[i])) return false;
+    return true;
+  }
+  if (Object.getPrototypeOf(a) !== Object.getPrototypeOf(b)) return false;
+  if (a instanceof Map && b instanceof Map) {
+    if (a.size !== b.size) return false;
+    for (const [k, v] of a) if (!b.has(k) || !sameMergedValue(v, b.get(k))) return false;
+    return true;
+  }
+  if (Object.getPrototypeOf(a) !== Object.prototype) return false;
+  const keysA = Object.keys(a);
+  if (keysA.length !== Object.keys(b).length) return false;
+  for (const key of keysA) {
+    if (!Object.hasOwn(b, key)) return false;
+    if (!sameMergedValue((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key])) return false;
+  }
+  return true;
+}
+
+/** Merge a single appended `source` container into `target`, returning true if any key changed. */
+function mergeContainersDetectingChange(target: object, source: object): boolean {
+  const merged = target as Record<string, unknown>;
+  let changed = false;
+  for (const [key, value] of Object.entries(source)) {
+    const current = merged[key];
+    if (current instanceof Map && value instanceof Map) {
+      for (const [id, entry] of value) {
+        if (!current.has(id) || !sameMergedValue(current.get(id), entry)) {
+          current.set(id, entry);
+          changed = true;
+        }
+      }
+    } else if (
+      Array.isArray(current) && Array.isArray(value) && value.length
+      && typeof value[0] === "object" && value[0] !== null && ("guid" in value[0] || "classId" in value[0])
+    ) {
+      const entries = new Map(current.map(keyedEntry));
+      let arrayChanged = false;
+      for (const entry of value) {
+        const [id, item] = keyedEntry(entry);
+        if (!entries.has(id) || !sameMergedValue(entries.get(id), item)) {
+          entries.set(id, item);
+          arrayChanged = true;
+        }
+      }
+      if (arrayChanged) {
+        merged[key] = [...entries.values()];
+        changed = true;
+      }
+    }
+  }
+  return changed;
 }

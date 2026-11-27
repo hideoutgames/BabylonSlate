@@ -221,12 +221,17 @@ export function createPlaySourceTracker(ctx: PlaySourceTrackerContext): PlaySour
     publishAssetStates(scope.guids, "ready");
   };
   let sourceControlWork: Promise<void> = Promise.resolve();
+  let lastPublishedBatch: readonly ControlMessage[] | null = null;
   const publishSourceBatch = (getControls: () => readonly ControlMessage[] | void): Promise<void> => {
     const work = sourceControlWork.catch(() => {}).then(async () => {
       if (ctx.stopped()) return;
-      for (const control of options.getSourceControls?.() ?? getControls() ?? []) {
+      const controls = options.getSourceControls?.() ?? getControls() ?? [];
+      if (controls.length > 0 && controls === lastPublishedBatch && heldScripts !== null) return;
+      lastPublishedBatch = null;
+      for (const control of controls) {
         await publishSourceControl(control);
       }
+      if (heldScripts !== null) lastPublishedBatch = controls;
     });
     sourceControlWork = work;
     return work;

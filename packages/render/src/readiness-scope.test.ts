@@ -87,3 +87,28 @@ it("keeps asking every mesh of a render target that a whole probe found unready"
   expect(withReadinessProbeScope(new Set([second]), () => isRenderTargetProbeReady(unready.texture))).toBe(false);
   expect(unready.asked).toContain(first);
 });
+
+it("deduplicates InstancedMesh checks per source within one render target probe and restores customIsReadyFunction", () => {
+  const { first, second, target } = fixture();
+  const firstInstances = Array.from({ length: 8 }, (_, index) => first.createInstance(`first-inst-${index}`));
+  const secondInstances = Array.from({ length: 4 }, (_, index) => second.createInstance(`second-inst-${index}`));
+  const probed = target("instanced-shadow-map");
+  probed.texture.renderList = [...firstInstances, ...secondInstances];
+  const check = probed.texture.customIsReadyFunction;
+
+  expect(isRenderTargetProbeReady(probed.texture)).toBe(true);
+  // 8 instances of `first` and 4 instances of `second` collapse to 1 probe per source mesh.
+  expect(probed.asked).toEqual([firstInstances[0], secondInstances[0]]);
+  expect(probed.texture.customIsReadyFunction).toBe(check);
+
+  // Scoped probe after whole probe also deduplicates instances sharing a source in scope.
+  probed.asked.length = 0;
+  expect(withReadinessProbeScope(new Set([first]), () => isRenderTargetProbeReady(probed.texture))).toBe(true);
+  expect(probed.asked).toEqual([firstInstances[0]]);
+  expect(probed.texture.customIsReadyFunction).toBe(check);
+
+  // Subsequent whole probes re-evaluate (cache is strictly per-call).
+  probed.asked.length = 0;
+  expect(isRenderTargetProbeReady(probed.texture)).toBe(true);
+  expect(probed.asked).toEqual([firstInstances[0], secondInstances[0]]);
+});

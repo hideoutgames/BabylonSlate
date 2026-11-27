@@ -90,10 +90,11 @@ function captureText3DGeometry(mesh: Mesh): CachedText3DGeometry | null {
 function materializeText3DGeometry(scene: Scene, name: string, cached: CachedText3DGeometry): Mesh {
   const mesh = new Mesh(name, scene);
   const vd = new VertexData();
-  vd.positions = cached.positions;
-  if (cached.normals) vd.normals = cached.normals;
-  if (cached.uvs) vd.uvs = cached.uvs;
-  if (cached.indices) vd.indices = cached.indices;
+  // Slice defensively so in-place mesh edits or baking cannot mutate the shared CPU cache entry.
+  vd.positions = cached.positions.slice();
+  if (cached.normals) vd.normals = cached.normals.slice();
+  if (cached.uvs) vd.uvs = cached.uvs.slice();
+  if (cached.indices) vd.indices = cached.indices.slice();
   vd.applyToMesh(mesh);
   return mesh;
 }

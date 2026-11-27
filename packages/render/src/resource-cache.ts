@@ -367,6 +367,23 @@ export class ResourceCache {
   private handover: TextureHandover | null = null;
   private handoverGeneration = 0;
 
+  /** True when this exact texture variant is already live in `cache` and ready (zero decode work); static to keep the per-handle owner surface unchanged. */
+  static hasReadyTexture(
+    cache: ResourceCache,
+    assetGuid: string,
+    engine: AbstractEngine,
+    bytes: Uint8Array | Blob,
+    options: TextureSamplingOptions = {},
+  ): boolean {
+    const normalized = {
+      ...options,
+      anisotropicFilteringLevel: Math.max(1, Math.min(options.anisotropicFilteringLevel ?? 4, engine.getCaps().maxAnisotropy ?? 4)),
+    };
+    const existing = cache.entries.get(`${assetGuid}\0${contentKey(bytes)}`);
+    const texture = existing ? liveTexture(existing, samplingKey(normalized)) : undefined;
+    return Boolean(texture && texture.isReady());
+  }
+
   /** A lease owns one exact generation. Reading its resource never acquires again. */
   acquireTexture(assetGuid: string, engine: AbstractEngine, bytes: Uint8Array | Blob,
     options: TextureSamplingOptions = {}): ResourceLease<Texture | CubeTexture> {

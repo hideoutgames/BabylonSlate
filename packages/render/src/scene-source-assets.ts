@@ -1,5 +1,6 @@
 import type { ModelPayload, RetargetAnimationLoad } from "@haptic/assets";
 import type { MaterialDocument, MaterialFunctionDocument } from "@haptic/shader-graph";
+import { assetByteFingerprint } from "./asset-byte-fingerprint";
 import type { AudioLibrary } from "./audio-service";
 import type { ParticleLibrary } from "./particle-service";
 import type { FontAssetEntry } from "./font-registry";
@@ -120,4 +121,146 @@ export function mergeSceneSourceAssets(sources: Iterable<SceneSourceAssets>): Sc
     fonts: [...new Map(rows.flatMap((row) => (row.fonts ?? []).map((font) => [font.guid, font] as const))).values()],
     spawnableLights: mergeMaps(rows.map((row) => row.spawnableLights)),
   };
+}
+
+function sameByteView(a: BufferSource, b: BufferSource): boolean {
+  if (a === b) return true;
+  if (ArrayBuffer.isView(a) && ArrayBuffer.isView(b)) {
+    if (a.buffer === b.buffer && a.byteOffset === b.byteOffset && a.byteLength === b.byteLength) return true;
+    const viewA = new Uint8Array(a.buffer, a.byteOffset, a.byteLength);
+    const viewB = new Uint8Array(b.buffer, b.byteOffset, b.byteLength);
+    return assetByteFingerprint(viewA) === assetByteFingerprint(viewB);
+  }
+  return false;
+}
+
+function sameSourceValue(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) return true;
+  if (a === null || b === null || typeof a !== "object" || typeof b !== "object") return false;
+  if ((a instanceof Blob || a instanceof Uint8Array) && (b instanceof Blob || b instanceof Uint8Array)) {
+    return assetByteFingerprint(a) === assetByteFingerprint(b);
+  }
+  if (ArrayBuffer.isView(a) || ArrayBuffer.isView(b) || a instanceof Blob || b instanceof Blob) return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  if (Array.isArray(a)) {
+    const arrB = b as unknown[];
+    if (a.length !== arrB.length) return false;
+    for (let i = 0; i < a.length; i += 1) if (!sameSourceValue(a[i], arrB[i])) return false;
+    return true;
+  }
+  if (Object.getPrototypeOf(a) !== Object.getPrototypeOf(b)) return false;
+  if (a instanceof Map && b instanceof Map) {
+    if (a.size !== b.size) return false;
+    for (const [k, v] of a) if (!b.has(k) || !sameSourceValue(v, b.get(k))) return false;
+    return true;
+  }
+  if (a instanceof Set && b instanceof Set) {
+    if (a.size !== b.size) return false;
+    for (const v of a) if (!b.has(v)) return false;
+    return true;
+  }
+  if (Object.getPrototypeOf(a) !== Object.prototype) return false;
+  const keysA = Object.keys(a);
+  if (keysA.length !== Object.keys(b).length) return false;
+  for (const key of keysA) {
+    if (!Object.hasOwn(b, key)) return false;
+    if (!sameSourceValue((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key])) return false;
+  }
+  return true;
+}
+
+function mapIsSubset<T>(
+  incoming: ReadonlyMap<string, T> | undefined,
+  installed: ReadonlyMap<string, T> | undefined,
+  equal: (a: T, b: T) => boolean = sameSourceValue,
+): boolean {
+  if (!incoming || incoming.size === 0) return true;
+  if (!installed) return false;
+  for (const [key, value] of incoming) {
+    if (!installed.has(key) || !equal(value, installed.get(key)!)) return false;
+  }
+  return true;
+}
+
+/**
+ * True when merging `incoming` on top of `installed` would leave the merged `SceneSourceAssets`
+ * union unchanged. Runs in O(|incoming|) so Play startup actor acquisitions (already covered by
+ * the startup Scene's owner 0) avoid O(N^2) full-union rebuilds while keeping per-owner leases.
+ */
+export function isSceneSourceAssetsSubset(incoming: SceneSourceAssets, installed: SceneSourceAssets): boolean {
+  const incAssets = incoming.assets;
+  const instAssets = installed.assets;
+  if (incAssets) {
+    if (!instAssets) return false;
+    if (incAssets.resourceCache !== undefined && incAssets.resourceCache !== instAssets.resourceCache) return false;
+    if (typeof incAssets.pixelsPerUnit === "number" && incAssets.pixelsPerUnit !== instAssets.pixelsPerUnit) return false;
+    if (incAssets.sortingLayers !== undefined && !sameSourceValue(incAssets.sortingLayers, instAssets.sortingLayers)) return false;
+    if (incAssets.fontCssStack !== undefined && incAssets.fontCssStack !== instAssets.fontCssStack) return false;
+    if (incAssets.fontPixelSize !== undefined && incAssets.fontPixelSize !== instAssets.fontPixelSize) return false;
+    for (const key of assetMaps) {
+      if (key === "modelClipAnimationGuids") {
+        const incClips = incAssets.modelClipAnimationGuids;
+        const instClips = instAssets.modelClipAnimationGuids;
+        if (incClips && incClips.size > 0) {
+          if (!instClips) return false;
+          for (const [model, named] of incClips) {
+            if (!mapIsSubset(named, instClips.get(model), Object.is)) return false;
+          }
+        }
+      } else if (key === "retargetAnimationLoads") {
+        const incLoads = incAssets.retargetAnimationLoads;
+        const instLoads = instAssets.retargetAnimationLoads;
+        if (incLoads && incLoads.size > 0) {
+          if (!instLoads) return false;
+          for (const [model, list] of incLoads) {
+            const existing = instLoads.get(model);
+            if (!existing) return false;
+            for (const load of list) {
+              if (!existing.some((entry) => entry.animationGuid === load.animationGuid)) return false;
+            }
+          }
+        }
+      } else {
+        const incMap = incAssets[key] as ReadonlyMap<string, unknown> | undefined;
+        const instMap = instAssets[key] as ReadonlyMap<string, unknown> | undefined;
+        if (!mapIsSubset(incMap, instMap)) return false;
+      }
+    }
+  }
+  if (!mapIsSubset(incoming.materialDocuments, installed.materialDocuments)) return false;
+  if (!mapIsSubset(incoming.materialFunctions, installed.materialFunctions)) return false;
+  if (!mapIsSubset(incoming.spawnableLights, installed.spawnableLights)) return false;
+  if (incoming.audioLibrary) {
+    const instAudio = installed.audioLibrary;
+    if (!instAudio) return false;
+    if (incoming.audioLibrary.mixerGuid !== null && incoming.audioLibrary.mixerGuid !== instAudio.mixerGuid) return false;
+    if (!mapIsSubset(incoming.audioLibrary.mixers, instAudio.mixers)) return false;
+    if (!mapIsSubset(incoming.audioLibrary.channels, instAudio.channels)) return false;
+    if (!mapIsSubset(incoming.audioLibrary.audio, instAudio.audio)) return false;
+    if (!mapIsSubset(incoming.audioLibrary.attenuations, instAudio.attenuations)) return false;
+    if (!mapIsSubset(incoming.audioLibrary.sourceRevisions, instAudio.sourceRevisions, Object.is)) return false;
+  }
+  if (incoming.particleLibrary) {
+    const instParticles = installed.particleLibrary;
+    if (!instParticles) return false;
+    if (!mapIsSubset(incoming.particleLibrary.systems, instParticles.systems)) return false;
+    if (!mapIsSubset(incoming.particleLibrary.emitters, instParticles.emitters)) return false;
+  }
+  if (incoming.fonts && incoming.fonts.length > 0) {
+    const instFonts = installed.fonts;
+    if (!instFonts || instFonts.length === 0) return false;
+    for (const font of incoming.fonts) {
+      const existing = instFonts.find((entry) => entry.guid === font.guid);
+      if (
+        !existing ||
+        existing.family !== font.family ||
+        existing.weight !== font.weight ||
+        existing.style !== font.style ||
+        !sameByteView(existing.bytes, font.bytes)
+      ) {
+        return false;
+      }
+    }
+  }
+  return true;
 }
