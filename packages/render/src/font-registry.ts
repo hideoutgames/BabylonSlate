@@ -34,15 +34,20 @@ interface ParkedFontFace {
   timer: ReturnType<typeof setTimeout>;
 }
 
+export interface FontRegistryOptions {
+  /** Park loaded document FontFaces briefly on dispose so Editor <-> Play handovers adopt them without reloading. */
+  parkOnDispose?: boolean;
+}
+
 const parkedDocumentFaces = new Map<string, ParkedFontFace>();
 
-let sharedDefaultHost: FontFaceHost | null | undefined;
+let sharedDefaultHost: FontFaceHost | undefined;
 
 function defaultHost(): FontFaceHost | null {
   if (typeof FontFace === "undefined" || typeof document === "undefined") {
     return null;
   }
-  if (sharedDefaultHost !== undefined) return sharedDefaultHost;
+  if (sharedDefaultHost) return sharedDefaultHost;
   sharedDefaultHost = {
     create(family, source, descriptors) {
       return new FontFace(family, source, descriptors);
@@ -118,9 +123,9 @@ export class FontRegistry {
   private disposed = false;
   private readonly parksOnDispose: boolean;
 
-  constructor(host: FontFaceHost | null | undefined = defaultHost()) {
+  constructor(host: FontFaceHost | null | undefined = defaultHost(), options: FontRegistryOptions = {}) {
     this.host = host ?? null;
-    this.parksOnDispose = this.host !== null && this.host === sharedDefaultHost;
+    this.parksOnDispose = options.parkOnDispose === true && this.host !== null && this.host === sharedDefaultHost;
   }
 
   getWarnings(): readonly FontRegistryWarning[] {

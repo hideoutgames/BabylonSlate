@@ -1005,7 +1005,8 @@ function initializeEngine(
   // The world view that follows a released one on this Engine (Play after the editor's, the editor's after Play's)
   // claims the textures it held as soon as it installs its texture sources: at construction when its options carry
   // them, else at its first asset install. What it does not name is flushed before it allocates anything.
-  let textureHandoverClaimable = !ownsEngine && !presentRtt && !options.previewLighting && (options.editor === true || options.playMode === true);
+  const sharesWorldViewHandover = !ownsEngine && !presentRtt && !options.previewLighting && (options.editor === true || options.playMode === true);
+  let textureHandoverClaimable = sharesWorldViewHandover;
   const claimTextureHandover = () => {
     if (!textureHandoverClaimable) return;
     textureHandoverClaimable = false;
@@ -1016,7 +1017,7 @@ function initializeEngine(
   binding.fontCssStackByGuid = options.fontCssStackByGuid;
   binding.fontPixelSize = options.fontPixelSize;
   binding.fontPixelSizeByGuid = options.fontPixelSizeByGuid;
-  const fontRegistry = new FontRegistry();
+  const fontRegistry = new FontRegistry(undefined, { parkOnDispose: sharesWorldViewHandover });
   onRollback(() => fontRegistry.dispose());
   binding.modelBytes = options.modelBytes;
   binding.modelSources = installModelSources(options);
