@@ -8,6 +8,7 @@ import {
   collectFoliageChunksForPlay,
   collectLandscapeChunksForPlay,
   compileText2DFontStacks, complexCollisionModelGuids, cookComplexCollisionMesh, createDefaultMigrationRegistry, gltfGeometryDecodersReady, createLimiter, createReadAhead, currentAreaEmissionChunk, decodeAreaEmission, DOCUMENT_CHUNK_ID,
+  installAssetBytes, installTextureSource,
   normalizeAudioPayload, normalizeFontPayload, normalizeModelPayload, normalizeSkeletonPayload, withSkeletonSockets,
   registryAssetRepresentation, selectTextureChunk, type AssetLoadPriority, type AssetLoadScope, type AssetRegistry, type AssetSourceLocator,
   type IndexedAsset, type ModelPayload, type RegistryLoadedAsset, sceneLayerPostProcessAssetGuids,
@@ -606,6 +607,11 @@ async function acquirePlayAssetSourcesAttempt(
           return key ? [[guid, key] as const] : [];
         })
         .sort(([a], [b]) => a.localeCompare(b));
+      const hasCompileOwner =
+        compileInputs.length > 0 ||
+        embeddedScripts.length > 0 ||
+        order.some((guid) => EMBEDDED_SCRIPT_OWNER_TYPES.has(host.registry.getByGuid(guid)!.header.type));
+      if (!hasCompileOwner) return { bundles: [], diagnostics: [] };
       const compileRoot = compileInputs.find(([guid]) => SCRIPT_ASSET_TYPES.has(host.registry.getByGuid(guid)!.header.type))?.[0] ??
         embeddedScripts[0]?.[0] ?? roots[0] ?? required.values().next().value;
       if (!compileRoot) return { bundles: [], diagnostics: [] };
@@ -851,13 +857,13 @@ async function acquirePlayAssetSourcesAttempt(
     }
     const sources: SceneSourceAssets = {
       assets: {
-        modelBytes: game.modelBytes, modelPayloads: content.modelPayloads,
+        modelSources: installCachedModelBlobs(game.modelBytes), modelPayloads: content.modelPayloads,
         modelClipAnimationGuids: content.modelClipAnimationGuids, retargetAnimationLoads: content.retargetAnimationLoads,
-        textureBytes: game.textureBytes, texturePixelSizes: content.texturePixelSizes, areaEmissions: game.areaEmissions,
+        textureBytes: installCachedTextureBlobs(game.textureBytes), texturePixelSizes: content.texturePixelSizes, areaEmissions: game.areaEmissions,
         spritePayloads: content.spritePayloads, spriteAnimations: content.spriteAnimationPayloads,
         tilemaps: content.tilemapPayloads, tilesets: content.tilesetPayloads, waters: content.waterPayloads,
         renderTargets: content.renderTargets, renderTargetTextures: content.renderTargetTextures,
-        fontFacetypeBytes: game.fontFacetypeBytes, fontMsdfJson: game.fontMsdfJson, fontMsdfPng: game.fontMsdfPng,
+        fontFacetypeBytes: game.fontFacetypeBytes, fontMsdfJson: game.fontMsdfJson, fontMsdfPng: installCachedTextureBlobs(game.fontMsdfPng),
         ...playText2DFontStacks(host, game.fontFamilies),
         pixelsPerUnit: content.pixelsPerUnit, sortingLayers: content.sortingLayers,
       },
@@ -894,12 +900,76 @@ async function acquirePlayAssetSourcesAttempt(
 }
 
 /**
+ * Cache installed Blobs per immutable `AssetCache`-owned `Uint8Array` chunk so repeated Play startup
+ * command acquisitions reuse the exact same `Blob` identity without re-hashing or copying bytes.
+ */
+const cachedInstalledTextureBlobs = new WeakMap<Uint8Array, Blob>();
+const cachedInstalledModelBlobs = new WeakMap<Uint8Array, Blob>();
+
+function installCachedTextureBlobs(bytes: ReadonlyMap<string, Uint8Array>): Map<string, Blob> {
+  const result = new Map<string, Blob>();
+  for (const [guid, source] of bytes) {
+    let blob = cachedInstalledTextureBlobs.get(source);
+    if (!blob) {
+      blob = installTextureSource(source);
+      cachedInstalledTextureBlobs.set(source, blob);
+    }
+    result.set(guid, blob);
+  }
+  return result;
+}
+
+function installCachedModelBlobs(bytes: ReadonlyMap<string, Uint8Array>): Map<string, Blob> {
+  const result = new Map<string, Blob>();
+  for (const [guid, source] of bytes) {
+    let blob = cachedInstalledModelBlobs.get(source);
+    if (!blob) {
+      blob = installAssetBytes(source, "model/gltf-binary");
+      cachedInstalledModelBlobs.set(source, blob);
+    }
+    result.set(guid, blob);
+  }
+  return result;
+}
+
+type CompiledFontStacksResult = {
+  fontCssStack: string;
+  fontCssStackByGuid: ReadonlyMap<string, string>;
+  fontPixelSize: number;
+  fontPixelSizeByGuid: ReadonlyMap<string, number>;
+};
+
+const cachedDefaultFontStacks = new WeakMap<PlayAssetSourceHost, { key: string; value: CompiledFontStacksResult }>();
+
+function hasFontOverride(host: PlayAssetSourceHost): boolean {
+  if (!host.documentOverrides || host.documentOverrides.size === 0) return false;
+  for (const guid of host.documentOverrides.keys()) {
+    if (host.registry.getByGuid(guid)?.header.type === "Font") return true;
+  }
+  return false;
+}
+
+/**
  * Bitmap 2D Text stacks for every project Font, as the Scene Viewport and the exported player compile them:
  * the Font, its fallbacks, the project default Font, then the global fallback. Engine source unions keep the
  * last acquisition's default stack, so each acquisition publishes the whole project's stacks. A prepared
  * Font's family is the one its FontFace registers under.
  */
-function playText2DFontStacks(host: PlayAssetSourceHost, preparedFamilies: ReadonlyMap<string, string>) {
+function playText2DFontStacks(host: PlayAssetSourceHost, preparedFamilies: ReadonlyMap<string, string>): CompiledFontStacksResult {
+  const { defaultFontGuid, globalFallback } = host.project.settings.fonts;
+  const generation = host.registry.generation;
+  if (preparedFamilies.size === 0 && typeof generation === "number" && !hasFontOverride(host)) {
+    const key = `${generation}\0${defaultFontGuid ?? ""}\0${globalFallback}`;
+    const hit = cachedDefaultFontStacks.get(host);
+    if (hit && hit.key === key) return hit.value;
+    const value = computePlayText2DFontStacks(host, preparedFamilies);
+    cachedDefaultFontStacks.set(host, { key, value });
+    return value;
+  }
+  return computePlayText2DFontStacks(host, preparedFamilies);
+}
+
+function computePlayText2DFontStacks(host: PlayAssetSourceHost, preparedFamilies: ReadonlyMap<string, string>): CompiledFontStacksResult {
   const fonts = host.registry.list({ type: "Font" }).map((asset) => {
     const guid = asset.header.guid;
     const payload = normalizeFontPayload(host.documentOverrides?.get(guid)?.payload ?? asset.header.payload, asset.header.name);

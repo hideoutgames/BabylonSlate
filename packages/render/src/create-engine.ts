@@ -505,8 +505,12 @@ function initializeEngine(
   trackFirstDraws(engine);
   const firstDraws = options.playMode ? openFirstDrawStats(engine) : null;
   onRollback(() => firstDraws?.close());
-  // Play's programs outlive it on the editor's Engine, so the next Play, and this load's own rebuilds, link them once.
-  const stopKeepingEffects = options.playMode && !ownsEngine ? keepPlayEffects(engine) : null;
+  // World-view programs (Play and Editor on the shared Engine) outlive their view in the bounded LRU keep
+  // so Play <-> Editor Stop/Restore transitions and rebuilds reuse compiled programs without re-linking.
+  const stopKeepingEffects =
+    !ownsEngine && !presentRtt && !options.previewLighting && (options.playMode || options.editor)
+      ? keepPlayEffects(engine)
+      : null;
   onRollback(() => stopKeepingEffects?.(true));
   configureKtx2DecoderRuntime(KhronosTextureContainer2, {
     mainThread: mainThreadDecoding,

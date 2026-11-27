@@ -164,13 +164,16 @@ export function withTransformNodeAnimationTargets(group: AnimationGroup): {
 }
 
 /** Name-match retarget that first proxies Mesh clip targets for AnimatorAvatar. */
-/**
- * Binds another file's clip to a Model on the same Skeleton: each channel drives the node (or morph target) of the
- * same name under `targetRoot`, with its keys unchanged. Channels with no such node are dropped; null when none bind.
- */
-export function bindAnimationGroupByName(source: AnimationGroup, targetRoot: TransformNode): AnimationGroup | null {
+export interface AnimationTargetLookup {
+  readonly nodes: ReadonlyMap<string, TransformNode>;
+  readonly morphTargets: ReadonlyMap<string, MorphTarget>;
+}
+
+/** Pre-indexes `targetRoot`'s transform nodes and morph targets once when binding multiple clips by name. */
+export function buildAnimationTargetLookup(targetRoot: TransformNode): AnimationTargetLookup {
   const nodes = new Map<string, TransformNode>();
-  for (const node of [targetRoot, ...targetRoot.getChildTransformNodes(false)]) {
+  nodes.set(targetRoot.name, targetRoot);
+  for (const node of targetRoot.getChildTransformNodes(false)) {
     if (!nodes.has(node.name)) nodes.set(node.name, node);
   }
   const morphTargets = new Map<string, MorphTarget>();
@@ -181,6 +184,19 @@ export function bindAnimationGroupByName(source: AnimationGroup, targetRoot: Tra
       if (!morphTargets.has(target.name)) morphTargets.set(target.name, target);
     }
   }
+  return { nodes, morphTargets };
+}
+
+/**
+ * Binds another file's clip to a Model on the same Skeleton: each channel drives the node (or morph target) of
+ * the same name under `targetRoot`, with its keys unchanged. Channels with no such node are dropped; null when none bind.
+ */
+export function bindAnimationGroupByName(
+  source: AnimationGroup,
+  targetRoot: TransformNode,
+  lookup?: AnimationTargetLookup,
+): AnimationGroup | null {
+  const { nodes, morphTargets } = lookup ?? buildAnimationTargetLookup(targetRoot);
   const group = new AnimationGroup(source.name, targetRoot.getScene());
   for (const { animation, target } of source.targetedAnimations) {
     const name = (target as { name?: unknown } | null)?.name;
