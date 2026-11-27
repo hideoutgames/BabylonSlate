@@ -1138,7 +1138,13 @@ describe("Play prepared sets", () => {
     const later = await acquirePlayAssetSources(host, ["model", "material"], options("Scene Layer"));
     expect(later.content.materialDocuments.get("material")?.name).toBe("Granite");
     expect(fixture.payloadReadsSince(requests)).toEqual(["assets/material.hasset"]);
-    startup.release(); slot.release(); later.release();
+    // Non-script closures skip host.compile and reuse the cached installed Blob reference for unchanged Model bytes.
+    const compileSpy = vi.spyOn(host, "compile");
+    compileSpy.mockClear();
+    const modelOnly = await acquirePlayAssetSources(host, ["model"], options("Static Prop"));
+    expect(compileSpy).not.toHaveBeenCalled();
+    expect(modelOnly.sources.assets?.modelSources?.get("model")).toBe(startup.sources.assets?.modelSources?.get("model"));
+    startup.release(); slot.release(); later.release(); modelOnly.release();
     fixture.loading.dispose();
   });
 

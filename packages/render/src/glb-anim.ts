@@ -10,13 +10,18 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { loadModelContainer, parentContainerRoots } from "./model-container";
-import { materializeEngineGlbBlueprint, rememberEngineGlbBlueprint } from "./glb-geometry-handover";
+import { hasEngineGlbBlueprint, materializeEngineGlbBlueprint, rememberEngineGlbBlueprint } from "./glb-geometry-handover";
 import { Scene } from "@babylonjs/core/scene";
 import { installedAssetIdentity, normalizeModelImportScale } from "@haptic/assets";
 import { applyAnimStateToScene, sceneAnimHostFromBinding } from "./anim-apply";
 import { bindPoseClip, type PoseClip, type PoseClipSource } from "./anim-pose";
 import { isGltfModelBytes } from "./model-mesh";
-import { bindAnimationGroupByName, retargetAnimationGroupWithMeshProxy } from "./node-rig";
+import {
+  bindAnimationGroupByName,
+  buildAnimationTargetLookup,
+  retargetAnimationGroupWithMeshProxy,
+  type AnimationTargetLookup,
+} from "./node-rig";
 import type { SnapshotSceneBinding } from "./snapshot-apply";
 import { RENDERING_GROUP } from "./sorting";
 import { accountedGeometryBytes } from "./perf-ceilings";
@@ -319,25 +324,7 @@ export function acquireGlbContainer(
     cache.entries.set(key, entry);
     const created = entry;
     cache.loadCount += 1;
-    created.load = nativePreparationForEngine(scene.getEngine()).schedule({
-      label: `Model ${guid}`, temporaryBytes: Math.max(1024, source.size * 4), signal: created.controller.signal,
-      priority,
-    }, async () => {
-      if (cache.disposed || created.retired) throw new Error("Model preparation cancelled");
-      // Reuse a static GLB's decoded CPU blueprint on the same Engine (e.g. Editor <-> Play)
-      // to skip GLB parsing and Draco/Meshopt decoding while holding zero GPU memory between Scenes.
-      let container = materializeEngineGlbBlueprint(scene, key);
-      if (!container) {
-        const bytes = new Uint8Array(await source.arrayBuffer());
-        if (!isGltfModelBytes(bytes)) throw new Error("Unsupported model content");
-        if (cache.disposed || created.retired) throw new Error("Model preparation cancelled");
-        container = await loadModelContainer(scene, bytes, `${guid}.glb`);
-        if (cache.disposed || created.retired) {
-          container.dispose();
-          throw new Error("Model preparation cancelled");
-        }
-        rememberEngineGlbBlueprint(scene.getEngine(), key, container);
-      }
+    const finishContainer = (container: AssetContainer): AssetContainer => {
       created.container = container;
       created.accounted = accountedAssetContainerGeometry(container);
       cache.accountedBytes += created.accounted;
@@ -347,10 +334,40 @@ export function acquireGlbContainer(
         if (previous && previous !== created) releaseUnusedSource(cache, previous);
       }
       return container;
-    }).catch((error) => {
-      retireSource(cache, created);
-      throw error;
-    });
+    };
+    // Static GLB CPU blueprints already decoded on this Engine require zero decode memory or
+    // WASM work: materialize directly without contending for cold nativePreparation slots.
+    const materialized = hasEngineGlbBlueprint(scene.getEngine(), key)
+      ? materializeEngineGlbBlueprint(scene, key)
+      : null;
+    if (materialized) {
+      created.load = Promise.resolve(finishContainer(materialized));
+    } else {
+      created.load = nativePreparationForEngine(scene.getEngine()).schedule({
+        label: `Model ${guid}`, temporaryBytes: Math.max(1024, source.size * 4), signal: created.controller.signal,
+        priority,
+      }, async () => {
+        if (cache.disposed || created.retired) throw new Error("Model preparation cancelled");
+        // Reuse a static GLB's decoded CPU blueprint on the same Engine (e.g. Editor <-> Play)
+        // to skip GLB parsing and Draco/Meshopt decoding while holding zero GPU memory between Scenes.
+        let container = materializeEngineGlbBlueprint(scene, key);
+        if (!container) {
+          const bytes = new Uint8Array(await source.arrayBuffer());
+          if (!isGltfModelBytes(bytes)) throw new Error("Unsupported model content");
+          if (cache.disposed || created.retired) throw new Error("Model preparation cancelled");
+          container = await loadModelContainer(scene, bytes, `${guid}.glb`);
+          if (cache.disposed || created.retired) {
+            container.dispose();
+            throw new Error("Model preparation cancelled");
+          }
+          rememberEngineGlbBlueprint(scene.getEngine(), key, container);
+        }
+        return finishContainer(container);
+      }).catch((error) => {
+        retireSource(cache, created);
+        throw error;
+      });
+    }
   }
   entry.references += 1;
   const held = entry;
@@ -645,24 +662,33 @@ export function beginSlotModelAnimLoad(
       const wrapped: Array<PoseClip & { dispose(): void }> = instance.animationGroups.map((group) =>
         bindGameplayAnimationGroup(group, clipGuids?.get(group.name) ?? clipAssetGuid),
       );
+      const retargetLoads: Array<{ row: (typeof retargets)[number]; load: Promise<AssetContainer> }> = [];
       for (const row of retargets) {
         const sourceBytes = binding.modelSources?.get(row.sourceModelGuid);
         if (!sourceBytes) continue;
         const sourceLease = acquireGlbContainer(scene, row.sourceModelGuid, sourceBytes, priority);
         prepared.bundle.releaseWith(() => sourceLease.release());
-        const sourceContainer = await wait(sourceLease.load);
+        retargetLoads.push({ row, load: sourceLease.load });
+      }
+      if (retargetLoads.length > 0) {
+        const sourceContainers = await wait(Promise.all(retargetLoads.map((item) => item.load)));
         if (!request.isCurrent()) return;
-        const sourceGroup = sourceContainer.animationGroups.find(
-          (group) => group.name === row.clipName,
-        );
-        if (sourceGroup) {
-          // Another Model's clip on the same Skeleton binds as it is; a clip from another rig is retargeted.
-          const retargeted = row.bindByName
-            ? bindAnimationGroupByName(sourceGroup, prepared.staging)
-            : retargetAnimationGroupWithMeshProxy(sourceGroup, prepared.staging);
-          if (retargeted) {
-            prepared.bundle.ownRenderUser(retargeted);
-            wrapped.push(bindGameplayAnimationGroup(retargeted, row.animationGuid));
+        let targetLookup: AnimationTargetLookup | undefined;
+        for (let index = 0; index < retargetLoads.length; index += 1) {
+          const { row } = retargetLoads[index]!;
+          const sourceContainer = sourceContainers[index]!;
+          const sourceGroup = sourceContainer.animationGroups.find(
+            (group) => group.name === row.clipName,
+          );
+          if (sourceGroup) {
+            // Another Model's clip on the same Skeleton binds as it is; a clip from another rig is retargeted.
+            const retargeted = row.bindByName
+              ? bindAnimationGroupByName(sourceGroup, prepared.staging, targetLookup ??= buildAnimationTargetLookup(prepared.staging))
+              : retargetAnimationGroupWithMeshProxy(sourceGroup, prepared.staging);
+            if (retargeted) {
+              prepared.bundle.ownRenderUser(retargeted);
+              wrapped.push(bindGameplayAnimationGroup(retargeted, row.animationGuid));
+            }
           }
         }
       }

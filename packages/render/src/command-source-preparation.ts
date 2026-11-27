@@ -60,7 +60,7 @@ export class CommandSourcePreparation {
 
   constructor(options: { onError?: (error: Error) => void; concurrency?: number } = {}) {
     this.onError = options.onError ?? (() => undefined);
-    this.concurrency = options.concurrency ?? 4;
+    this.concurrency = options.concurrency ?? 8;
     if (!Number.isSafeInteger(this.concurrency) || this.concurrency < 1) throw new Error("Source preparation concurrency must be positive");
   }
 

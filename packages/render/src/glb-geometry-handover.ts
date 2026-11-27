@@ -259,6 +259,12 @@ export function rememberEngineGlbBlueprint(
   return true;
 }
 
+/** True when `engine` holds a cached pure-CPU static GLB blueprint for `key`. */
+export function hasEngineGlbBlueprint(engine: AbstractEngine, key: string): boolean {
+  if (engine.isDisposed) return false;
+  return engineCaches.get(engine)?.entries.has(key) === true;
+}
+
 /**
  * Rebuild an `AssetContainer` in `scene` synchronously from a cached CPU blueprint on `scene.getEngine()`.
  * Returns null on cache miss.

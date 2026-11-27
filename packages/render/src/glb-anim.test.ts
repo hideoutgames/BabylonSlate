@@ -5,6 +5,7 @@ import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
+import { Scene } from "@babylonjs/core/scene";
 import { encodeGlbJsonBin, splitGlbJsonBin } from "@haptic/assets";
 import { applyAnimStateToScene, sceneAnimHostFromBinding } from "./anim-apply";
 import { applyPoseClip, poseRigFor } from "./anim-pose";
@@ -436,6 +437,34 @@ describe("beginSlotModelAnimLoad", () => {
       lease.release();
     } finally {
       vi.unstubAllGlobals();
+    }
+  });
+
+  it("materializes a cached static GLB blueprint without waiting on occupied nativePreparation slots", async () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const engine = handle.scene.getEngine();
+    const preparation = nativePreparationForEngine(engine, { maxConcurrent: 1 });
+    const source = installAssetBytes(encodeTriangleGlb());
+    const first = acquireGlbContainer(handle.scene, "cached-tri", source);
+    await first.load;
+    first.release();
+
+    // Occupy the only nativePreparation slot with a held cold job, then load the same static GLB on a second Scene.
+    let releaseHeld!: () => void;
+    const held = preparation.schedule({ label: "cold-blocker", temporaryBytes: 1 }, () => new Promise<void>((resolve) => {
+      releaseHeld = resolve;
+    }));
+    const secondScene = new Scene(engine);
+    try {
+      const second = acquireGlbContainer(secondScene, "cached-tri", source);
+      const container = await second.load;
+      expect(container.meshes.length).toBeGreaterThan(0);
+      second.release();
+    } finally {
+      releaseHeld();
+      await held;
+      secondScene.dispose();
     }
   });
 

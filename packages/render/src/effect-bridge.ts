@@ -7,11 +7,11 @@ import { watchEngineEffects } from "./effect-requests";
 export const EFFECT_BRIDGE_MS = 120_000;
 
 /**
- * Most Effects an Engine keeps for its next Play (`keepPlayEffects`), least recently used first out: about two
- * Feature Test scenes' Play programs (a large level links about 100, a light one about 50). An Effect holds its
- * program, never a texture or render target, so the bound is a count of programs.
+ * Most Effects an Engine keeps across world view transitions (`keepPlayEffects`), least recently used first out:
+ * covers both Editor and Play programs on the shared Engine (a large level links ~100 in Play plus Editor-only
+ * variants). An Effect holds its program, never a texture or render target, so the bound is a count of programs.
  */
-const PLAY_EFFECT_KEEP_BUDGET = 256;
+const PLAY_EFFECT_KEEP_BUDGET = 384;
 
 type Bridge = { effects: Effect[]; timer: ReturnType<typeof setTimeout> };
 const bridges = new WeakMap<AbstractEngine, Bridge>();
