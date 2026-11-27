@@ -361,4 +361,21 @@ describe("3D Text mesh", () => {
     expect(second.isDisposed()).toBe(false);
     expect(second.getTotalVertices()).toBeGreaterThan(0);
   });
+
+  it("defensively copies cached CPU geometry so mutating a materialized mesh cannot corrupt subsequent cache hits", () => {
+    const handle = createTestEngine();
+    handles.push(handle);
+    const bytes = new TextEncoder().encode(JSON.stringify(TEXT3D_TEST_FONTFACE_T));
+    const assets = { fontFacetypeBytes: new Map([["font-t", bytes]]) };
+    // Prime the cache, then materialize a cached mesh and mutate its vertex positions in place.
+    createText3DMesh(handle.scene, "prime", { text: "T", size: 2, fontAssetGuid: "font-t", alignment: "left" }, assets);
+    const cachedMesh = createText3DMesh(handle.scene, "mutated", { text: "T", size: 2, fontAssetGuid: "font-t", alignment: "left" }, assets);
+    const positions = cachedMesh.getVerticesData(VertexBuffer.PositionKind) as Float32Array;
+    const originalX = positions[0]!;
+    positions[0] = 9999;
+
+    const freshMesh = createText3DMesh(handle.scene, "fresh", { text: "T", size: 2, fontAssetGuid: "font-t", alignment: "left" }, assets);
+    const freshPositions = freshMesh.getVerticesData(VertexBuffer.PositionKind) as Float32Array;
+    expect(freshPositions[0]).toBeCloseTo(originalX, 5);
+  });
 });

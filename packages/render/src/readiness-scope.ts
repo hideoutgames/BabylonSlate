@@ -62,25 +62,43 @@ export function lastProbedMesh(): AbstractMesh | undefined {
 /**
  * `target.isReadyForRendering()` for a readiness probe. Inside a scoped probe a target asks only the scope's meshes of
  * its list, unless no whole probe has found it ready yet (a mirror or shadow map made since): that one asks them all.
+ * Within one synchronous probe call, `InstancedMesh`es sharing the same source mesh share their readiness check
+ * because Babylon probes their source's submeshes, visibility and instanced shader variant identically for every instance.
  */
 export function isRenderTargetProbeReady(target: RenderTargetTexture): boolean {
   const meshes = scope;
+  const whole = target.customIsReadyFunction;
+  // Babylon asks `mesh.isReady(true)` of a target without a check of its own.
+  const evaluate = (mesh: AbstractMesh, refreshRate: number, preWarm?: boolean): boolean =>
+    whole ? whole(mesh, refreshRate, preWarm) : mesh.isReady(true);
+  const instancedReady = new Map<AbstractMesh, boolean>();
+  const probeWithInstancedDedup = (mesh: AbstractMesh, refreshRate: number, preWarm?: boolean): boolean => {
+    if (mesh.getClassName() === "InstancedMesh") {
+      const source = drawingMesh(mesh);
+      const cached = instancedReady.get(source);
+      if (cached !== undefined) return cached;
+      const ready = evaluate(mesh, refreshRate, preWarm);
+      instancedReady.set(source, ready);
+      return ready;
+    }
+    return evaluate(mesh, refreshRate, preWarm);
+  };
   if (!meshes || !probedWhole.has(target)) {
     const outer = listScope;
     scope = listScope = undefined;
+    target.customIsReadyFunction = probeWithInstancedDedup;
     try {
       const ready = target.isReadyForRendering();
       if (ready) probedWhole.add(target);
       return ready;
     } finally {
+      target.customIsReadyFunction = whole;
       scope = meshes;
       listScope = outer;
     }
   }
-  const whole = target.customIsReadyFunction;
-  // Babylon asks `mesh.isReady(true)` of a target without a check of its own.
   target.customIsReadyFunction = (mesh, refreshRate, preWarm) =>
-    outsideReadinessProbeScope(mesh) || (whole ? whole(mesh, refreshRate, preWarm) : mesh.isReady(true));
+    outsideReadinessProbeScope(mesh) || probeWithInstancedDedup(mesh, refreshRate, preWarm);
   const outer = listScope;
   listScope = meshes;
   try {

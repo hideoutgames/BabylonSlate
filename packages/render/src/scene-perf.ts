@@ -751,7 +751,7 @@ export function isSceneFrameReady(
   probedElsewhere?: (map: RenderTargetTexture) => boolean,
 ): boolean {
   if (scene.isDisposed) return false;
-  return withSceneReadinessState(scene, () => withMeshProbePass(() => {
+  return withSceneReadinessState(scene, () => {
     const engine = scene.getEngine();
     const admitted = admittedSceneMeshes(scene);
     const meshes = admitted ?? scene.meshes;
@@ -776,23 +776,25 @@ export function isSceneFrameReady(
       ready = unready(() => "depth peeling renderer");
     const renderTargets = new Set([...scene.customRenderTargets, ...targets]);
     const materials = new Set<Material>();
-    for (const mesh of meshes) {
-      if (!mesh.subMeshes?.length) continue;
-      // Start all consumers' compilation even when an earlier one is unready.
-      if (!skipVariant?.(mesh) && !isMeshFrameReady(mesh)) { ready = false; continue; }
-      const instanced = mesh.hasThinInstances || mesh.getClassName() === "InstancedMesh" ||
-        mesh.getClassName() === "InstancedLinesMesh" || Boolean(engine.getCaps().instancedArrays && mesh instanceof Mesh && mesh.instances.length);
-      for (const step of scene._isReadyForMeshStage) {
-        if (!step.action(mesh, instanced)) ready = unready(() => `mesh "${mesh.name}" (a scene component's mesh stage)`);
-      }
-      const material = mesh.material ?? scene.defaultMaterial;
-      if (material._storeEffectOnSubMeshes) {
-        for (const subMesh of mesh.subMeshes) {
-          const entry = subMesh.getMaterial();
-          if (entry) materials.add(entry);
+    withMeshProbePass(() => {
+      for (const mesh of meshes) {
+        if (!mesh.subMeshes?.length) continue;
+        // Start all consumers' compilation even when an earlier one is unready.
+        if (!skipVariant?.(mesh) && !isMeshFrameReady(mesh)) { ready = false; continue; }
+        const instanced = mesh.hasThinInstances || mesh.getClassName() === "InstancedMesh" ||
+          mesh.getClassName() === "InstancedLinesMesh" || Boolean(engine.getCaps().instancedArrays && mesh instanceof Mesh && mesh.instances.length);
+        for (const step of scene._isReadyForMeshStage) {
+          if (!step.action(mesh, instanced)) ready = unready(() => `mesh "${mesh.name}" (a scene component's mesh stage)`);
         }
-      } else materials.add(material);
-    }
+        const material = mesh.material ?? scene.defaultMaterial;
+        if (material._storeEffectOnSubMeshes) {
+          for (const subMesh of mesh.subMeshes) {
+            const entry = subMesh.getMaterial();
+            if (entry) materials.add(entry);
+          }
+        } else materials.add(material);
+      }
+    });
     for (const material of materials) {
       if (material.hasRenderTargetTextures) {
         const textures = material.getRenderTargetTextures?.();
@@ -840,5 +842,5 @@ export function isSceneFrameReady(
     }
     shadowMaps.clear();
     return ready;
-  }));
+  });
 }

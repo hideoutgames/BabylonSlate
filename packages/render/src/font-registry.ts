@@ -230,6 +230,17 @@ export class FontRegistry {
     return this.loaded.has(guid);
   }
 
+  /** True when `entry` is already loaded under this exact family, descriptors and byte content. */
+  isRegistered(entry: FontAssetEntry): boolean {
+    if (this.disposed || !this.loaded.has(entry.guid)) return false;
+    const family = entry.family.trim();
+    if (!family) return false;
+    const weight = String(entry.weight ?? "400");
+    const style = entry.style === "italic" ? "italic" : "normal";
+    const key = `${family}|${weight}|${style}|${fontBytesDigest(entry.bytes)}`;
+    return this.registrations.get(entry.guid)?.key === key;
+  }
+
   /** Release both a prepared face and any pending registration for this owner. */
   unregister(guid: string): void {
     this.registrations.delete(guid);

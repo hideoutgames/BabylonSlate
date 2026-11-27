@@ -60,7 +60,7 @@ import { isTransformOnlySceneEdit } from "./scene-transform-edit";
 import { isLightValueOnlySceneEdit } from "./light-edit";
 import type { SceneLayerLoadIdentity, SceneLoadCount } from "./scene-load-readiness";
 import { prepareSceneStream } from "./scene-stream-preparation";
-import { captureMeshSourceAssets, mergeSceneSourceAssets, type SceneSourceAssets } from "./scene-source-assets";
+import { captureMeshSourceAssets, isSceneSourceAssetsSubset, mergeSceneSourceAssets, type SceneSourceAssets } from "./scene-source-assets";
 import { releaseInitialSourceOptions } from "./initial-source-options";
 import { acquireGlbContainer, releaseUnownedGlbSources } from "./glb-anim";
 import { warmSpawnables } from "./spawnable-warm";
@@ -161,6 +161,7 @@ import {
   materialTextureSampling,
   MATERIAL_TEXTURE_SAMPLING,
   releaseResourceCacheForEngine,
+  ResourceCache,
   resourceCacheForEngine,
 } from "./resource-cache";
 import { largeWorldEngineOptions } from "./large-world";
@@ -1799,17 +1800,20 @@ function initializeEngine(
   let deferredEditorApply = false;
   let deferredEditorReselect = false;
 
-  const sourceOwners = new Map<number, SceneSourceAssets>([[0, mergeSceneSourceAssets([{
+  const initialSourceOwner = mergeSceneSourceAssets([{
     assets: captureMeshSourceAssets(binding), materialDocuments: new Map(materialDocuments),
     materialFunctions: new Map(materialFunctions), audioLibrary: options.audioLibrary,
     particleLibrary: options.particleLibrary, fonts: options.fontFaceEntries, spawnableLights: options.spawnableLights,
-  }])]]);
+  }]);
+  const sourceOwners = new Map<number, SceneSourceAssets>([[0, initialSourceOwner]]);
+  let installedSources: SceneSourceAssets = initialSourceOwner;
   /** The light parts the owned sources' Classes may spawn: with any, Play's load draws its starting state. */
   let spawnableLights: ReadonlyMap<string, SpawnableLight> = new Map(options.spawnableLights ?? []);
   let nextSourceOwner = 0;
   let sourceFontGuids = new Set(options.fontFaceEntries?.map((font) => font.guid));
   const installOwnedSources = () => {
     const union = mergeSceneSourceAssets(sourceOwners.values());
+    installedSources = union;
     installMeshAssets(union.assets!);
     installMaterialDocuments(union.materialDocuments!, union.materialFunctions);
     spawnableLights = union.spawnableLights ?? new Map();
@@ -3971,24 +3975,27 @@ function initializeEngine(
       preparation?.signal?.throwIfAborted();
       const owner = ++nextSourceOwner;
       const nativeReleases: Array<() => void> = [];
-      sourceOwners.set(owner, mergeSceneSourceAssets([{ ...sources, assets: sources.assets ? {
+      const owned = mergeSceneSourceAssets([{ ...sources, assets: sources.assets ? {
         ...sources.assets, textureBytes: installTextureBytes(sources.assets.textureBytes),
         modelBytes: undefined, modelSources: installModelSources(sources.assets),
         fontMsdfPng: installTextureBytes(sources.assets.fontMsdfPng),
-      } : undefined }]));
+      } : undefined }]);
+      sourceOwners.set(owner, owned);
       const cancel = () => {
         for (const release of nativeReleases.splice(0)) release();
         releaseSceneSources(owner);
       };
       preparation?.signal?.addEventListener("abort", cancel, { once: true });
       try {
-        installOwnedSources();
+        if (!isSceneSourceAssetsSubset(owned, installedSources)) installOwnedSources();
         // Each group (fonts, textures, Materials, models) is scheduled at once: the
         // Engine's queue, shared by simultaneous source scopes and scene-specific
         // model containers, bounds its concurrency and temporary memory. A job
         // pushes its release before it first awaits, and a group settles before it
         // rethrows, so `cancel` always sees every release a failed scope acquired.
-        const fonts = sources.fonts ?? [];
+        // Entries already live and ready in the registry/cache take their leases
+        // directly without queuing behind cold decode/compile admission slots.
+        const fonts = (sources.fonts ?? []).filter((font) => !fontRegistry.isRegistered(font));
         if (fonts.length) await prepareTogether(preparation?.signal, fonts.map((font) => (signal) => nativePreparation.schedule({
           label: `Font ${font.guid}`, temporaryBytes: Math.max(1024, font.bytes.byteLength * 4), signal, priority: preparation?.priority,
         }, async () => {
@@ -4008,29 +4015,42 @@ function initializeEngine(
             const isCube = bytes instanceof Blob
               ? bytes.type === "application/vnd.babylon.env" || bytes.type === "image/vnd-ms.dds"
               : environmentTextureContainer(bytes) !== null;
+            const sampling = isCube ? { isCube } : MATERIAL_TEXTURE_SAMPLING;
+            if (ResourceCache.hasReadyTexture(sharedCache, guid, engine, bytes, sampling)) {
+              check();
+              const lease = resourceCache.acquireTexture(guid, engine, bytes, sampling);
+              nativeReleases.push(() => lease.release());
+              return lease.ready ?? Promise.resolve();
+            }
             return nativePreparation.schedule({ label: `Texture ${guid}`, signal, priority: preparation.priority,
               temporaryBytes: sourceSize + (size ? size.width * size.height * 8 * (isCube ? 6 : 1) : Math.max(1024 * 1024, sourceSize * 16)),
             }, async () => {
               check();
               // Materials sample a 2D Texture unflipped: preparing that sampling warms the upload they bind, not a second one.
-              const lease = resourceCache.acquireTexture(guid, engine, bytes, isCube ? { isCube } : MATERIAL_TEXTURE_SAMPLING);
+              const lease = resourceCache.acquireTexture(guid, engine, bytes, sampling);
               nativeReleases.push(() => lease.release());
               await lease.ready;
             });
           }));
           const materials = [...prepared.materialDocuments ?? []];
           if (materials.length) check();
+          const acquirePreparedMaterial = async (guid: string, document: MaterialDocument) => {
+            check();
+            const material = materialLibrary.acquire(scene, guid, document);
+            if (!material.ok) throw new Error(`Material ${guid}: ${material.diagnostics.map((entry) => entry.message).join("; ")}`);
+            nativeReleases.push(() => materialLibrary.release(scene, guid));
+            const diagnostics = await material.ready;
+            if (diagnostics.some((entry) => entry.severity === "error"))
+              throw new Error(`Material ${guid}: ${diagnostics.map((entry) => entry.message).join("; ")}`);
+            return document.domain === "surface" ? material.material : null;
+          };
           const spawnableMaterials = (await prepareTogether(preparation.signal, materials.map(([guid, document]) => (signal) =>
-            nativePreparation.schedule({ label: `Material ${guid}`, signal, priority: preparation.priority, temporaryBytes: 1024 * 1024 }, async () => {
-              check();
-              const material = materialLibrary.acquire(scene, guid, document);
-              if (!material.ok) throw new Error(`Material ${guid}: ${material.diagnostics.map((entry) => entry.message).join("; ")}`);
-              nativeReleases.push(() => materialLibrary.release(scene, guid));
-              const diagnostics = await material.ready;
-              if (diagnostics.some((entry) => entry.severity === "error"))
-                throw new Error(`Material ${guid}: ${diagnostics.map((entry) => entry.message).join("; ")}`);
-              return document.domain === "surface" ? material.material : null;
-            })))).flatMap((material) => material ? [material] : []);
+            materialLibrary.isCompiled(scene, guid, document)
+              ? acquirePreparedMaterial(guid, document)
+              : nativePreparation.schedule(
+                  { label: `Material ${guid}`, signal, priority: preparation.priority, temporaryBytes: 1024 * 1024 },
+                  () => acquirePreparedMaterial(guid, document),
+                )))).flatMap((material) => material ? [material] : []);
           const models = [...prepared.assets?.modelSources ?? []];
           if (models.length) check();
           const spawnableContainers: AssetContainer[] = await prepareTogether(preparation.signal, models.map(([guid, source]) => (signal) => {

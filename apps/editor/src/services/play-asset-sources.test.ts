@@ -1071,6 +1071,9 @@ describe("Play source ownership", () => {
     const afterRelease = controls();
     expect(afterRelease).not.toBe(first);
     expect(controls()).toBe(afterRelease);
+    // Appending a subset set back onto the union reuses the existing controls reference in O(delta).
+    live.add(sets[2]);
+    expect(controls()).toBe(afterRelease);
     live.clear();
     expect(controls()).toEqual(emptyPlaySourceControls());
     for (const set of sets) set.release();

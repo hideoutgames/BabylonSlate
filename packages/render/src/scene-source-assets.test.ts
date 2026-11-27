@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { normalizeModelPayload } from "@haptic/assets";
-import { mergeSceneSourceAssets } from "./scene-source-assets";
+import { installAssetBytes, normalizeModelPayload } from "@haptic/assets";
+import { isSceneSourceAssetsSubset, mergeSceneSourceAssets } from "./scene-source-assets";
 
 const model = (skeletonGuid: string | null) => normalizeModelPayload({ skeletonGuid });
 
@@ -44,5 +44,55 @@ describe("mergeSceneSourceAssets", () => {
       { assets: { modelPayloads: new Map([["hero", model(null)], ["mixamo", model(null)]]), retargetAnimationLoads: new Map([["hero", [retarget]]]) } },
     ]).assets!;
     expect(merged.retargetAnimationLoads!.get("hero")).toEqual([retarget]);
+  });
+});
+
+describe("isSceneSourceAssetsSubset", () => {
+  it("treats identical byte content and structurally equal asset metadata as a subset", () => {
+    const texBytes = new Uint8Array([1, 2, 3, 4]);
+    const modelBytes = new Uint8Array([5, 6, 7, 8]);
+    const installed = mergeSceneSourceAssets([{
+      assets: {
+        textureBytes: new Map([["tex-a", installAssetBytes(texBytes, "image/png")]]),
+        modelSources: new Map([["mod-a", installAssetBytes(modelBytes, "model/gltf-binary")]]),
+        modelPayloads: new Map([["mod-a", model("rig-1")]]),
+        texturePixelSizes: new Map([["tex-a", { width: 64, height: 64 }]]),
+        sortingLayers: ["Default"],
+        pixelsPerUnit: 100,
+      },
+      fonts: [{ guid: "font-a", family: "Sans", bytes: new Uint8Array([9, 10]) }],
+    }]);
+    // Fresh Blob wrappers and freshly normalized metadata for the same assets must still be a subset.
+    const sameSubset = mergeSceneSourceAssets([{
+      assets: {
+        textureBytes: new Map([["tex-a", installAssetBytes(texBytes.slice(), "image/png")]]),
+        modelSources: new Map([["mod-a", installAssetBytes(modelBytes.slice(), "model/gltf-binary")]]),
+        modelPayloads: new Map([["mod-a", model("rig-1")]]),
+        texturePixelSizes: new Map([["tex-a", { width: 64, height: 64 }]]),
+        sortingLayers: ["Default"],
+        pixelsPerUnit: 100,
+      },
+      fonts: [{ guid: "font-a", family: "Sans", bytes: new Uint8Array([9, 10]) }],
+    }]);
+    expect(isSceneSourceAssetsSubset(sameSubset, installed)).toBe(true);
+
+    // Introducing a new asset, changed byte content, or a new animation clip is not a subset.
+    const newAsset = mergeSceneSourceAssets([{
+      assets: { textureBytes: new Map([["tex-b", installAssetBytes(texBytes, "image/png")]]) },
+    }]);
+    expect(isSceneSourceAssetsSubset(newAsset, installed)).toBe(false);
+
+    const changedBytes = mergeSceneSourceAssets([{
+      assets: { textureBytes: new Map([["tex-a", installAssetBytes(new Uint8Array([4, 3, 2, 1]), "image/png")]]) },
+    }]);
+    expect(isSceneSourceAssetsSubset(changedBytes, installed)).toBe(false);
+
+    const newClip = mergeSceneSourceAssets([{
+      assets: {
+        modelPayloads: new Map([["mod-a", model("rig-1")]]),
+        modelClipAnimationGuids: new Map([["mod-a", new Map([["Walk", "walk-guid"]])]]),
+      },
+    }]);
+    expect(isSceneSourceAssetsSubset(newClip, installed)).toBe(false);
   });
 });
