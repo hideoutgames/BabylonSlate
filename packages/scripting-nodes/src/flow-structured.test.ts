@@ -441,6 +441,206 @@ describe("structured flow compile + runtime", () => {
     (mod.run as (c: unknown) => void)(ctx);
     expect(logs).toEqual(["once"]);
   });
+
+  it("elides .slice() on read-only For Each over a variable while preserving snapshots when the body mutates or calls user code", () => {
+    const registry = createDefaultNodeRegistry();
+    const listProp = { variableName: "Items", typeId: "int", container: "array", implicitSelf: true };
+
+    const readOnlyGraph: LogicGraph = {
+      id: "roArr",
+      kind: "event",
+      nodes: [
+        node(registry, "entry", "flow.entry"),
+        node(registry, "get", "variables.get", listProp),
+        node(registry, "loop", "flow.forEachWithBreak"),
+        node(registry, "log", "debug.log"),
+      ],
+      edges: [
+        edge("e1", "entry", "execOut", "loop", "execIn"),
+        edge("e2", "get", "value", "loop", "array"),
+        edge("e3", "loop", "loopBody", "log", "execIn"),
+        edge("e4", "loop", "element", "log", "message"),
+      ],
+    };
+    const readOnly = compileGraph(readOnlyGraph, { assetGuid: "a", registry });
+    expect(readOnly.source).not.toContain(".slice(");
+    expect(readOnly.source).not.toContain("__cowShare(");
+    const roLogs: string[] = [];
+    (loadModule(readOnly.source).run as (c: unknown) => void)(
+      stubCtx({ logs: roLogs, getVariable: () => [10, 20, 30] }),
+    );
+    expect(roLogs).toEqual(["10", "20", "30"]);
+
+    // Body mutates the same variable -> MUST snapshot with .slice() and iterate original elements.
+    const mutatingGraph: LogicGraph = {
+      id: "mutArr",
+      kind: "event",
+      nodes: [
+        node(registry, "entry", "flow.entry"),
+        node(registry, "get1", "variables.get", listProp),
+        node(registry, "loop", "flow.forEach"),
+        node(registry, "get2", "variables.get", listProp),
+        node(registry, "append", "array.append"),
+        node(registry, "set", "variables.set", listProp),
+        node(registry, "log", "debug.log"),
+      ],
+      edges: [
+        edge("e1", "entry", "execOut", "loop", "execIn"),
+        edge("e2", "get1", "value", "loop", "array"),
+        edge("e3", "loop", "loopBody", "set", "execIn"),
+        edge("e4", "get2", "value", "append", "array"),
+        edge("e5", "loop", "element", "append", "item"),
+        edge("e6", "append", "out", "set", "value"),
+        edge("e7", "set", "execOut", "log", "execIn"),
+        edge("e8", "loop", "element", "log", "message"),
+      ],
+    };
+    const mutating = compileGraph(mutatingGraph, { assetGuid: "a", registry });
+    expect(mutating.source).toContain(".slice(");
+    let stored: unknown = [1, 2];
+    const mutLogs: string[] = [];
+    (loadModule(mutating.source).run as (c: unknown) => void)(
+      stubCtx({
+        logs: mutLogs,
+        getVariable: () => stored,
+        setVariable: (_k: string, v: unknown) => { stored = v; },
+      }),
+    );
+    expect(mutLogs).toEqual(["1", "2"]);
+    expect(stored).toEqual([1, 2, 1, 2]);
+  });
+
+  it("iterates read-only For Each Map directly without __mapEntries while snapshotting mutating loops", () => {
+    const registry = createDefaultNodeRegistry();
+    const mapProp = { variableName: "Scores", typeId: "int", container: "map", keyTypeId: "string", implicitSelf: true };
+
+    const readOnlyGraph: LogicGraph = {
+      id: "roMap",
+      kind: "event",
+      nodes: [
+        node(registry, "entry", "flow.entry"),
+        node(registry, "get", "variables.get", mapProp),
+        node(registry, "loop", "flow.forEachMap"),
+        node(registry, "log", "debug.log"),
+      ],
+      edges: [
+        edge("e1", "entry", "execOut", "loop", "execIn"),
+        edge("e2", "get", "value", "loop", "map"),
+        edge("e3", "loop", "loopBody", "log", "execIn"),
+        edge("e4", "loop", "value", "log", "message"),
+      ],
+    };
+    const readOnly = compileGraph(readOnlyGraph, { assetGuid: "a", registry });
+    expect(readOnly.source).not.toContain("__mapEntries");
+    const roLogs: string[] = [];
+    (loadModule(readOnly.source).run as (c: unknown) => void)(
+      stubCtx({ logs: roLogs, getVariable: () => new Map([["a", 4], ["b", 9]]) }),
+    );
+    expect(roLogs).toEqual(["4", "9"]);
+
+    // Body calls a user function -> MUST snapshot with __mapEntries.
+    const callingGraph: LogicGraph = {
+      id: "callMap",
+      kind: "event",
+      nodes: [
+        node(registry, "entry", "flow.entry"),
+        node(registry, "get", "variables.get", mapProp),
+        node(registry, "loop", "flow.forEachMap"),
+        node(registry, "call", "functions.call", { classId: "Actor", functionName: "Mutate", implicitSelf: true, inputs: [], outputs: [] }),
+      ],
+      edges: [
+        edge("e1", "entry", "execOut", "loop", "execIn"),
+        edge("e2", "get", "value", "loop", "map"),
+        edge("e3", "loop", "loopBody", "call", "execIn"),
+      ],
+    };
+    const calling = compileGraph(callingGraph, { assetGuid: "a", registry });
+    expect(calling.source).toContain("__mapEntries(");
+  });
+
+  it("hoists invariant For Loop bounds and keeps dynamic bounds re-evaluated every iteration", () => {
+    const registry = createDefaultNodeRegistry();
+
+    // Literal bounds: no __loopBound helper needed at all.
+    const literalGraph: LogicGraph = {
+      id: "litFor",
+      kind: "event",
+      nodes: [
+        node(registry, "entry", "flow.entry"),
+        node(registry, "loop", "flow.forLoop", { "default:firstIndex": 0, "default:lastIndex": 3 }),
+        node(registry, "log", "debug.log"),
+      ],
+      edges: [
+        edge("e1", "entry", "execOut", "loop", "execIn"),
+        edge("e2", "loop", "loopBody", "log", "execIn"),
+        edge("e3", "loop", "index", "log", "message"),
+      ],
+    };
+    const literalCompiled = compileGraph(literalGraph, { assetGuid: "a", registry });
+    expect(literalCompiled.source).not.toContain("__loopBound");
+    const litLogs: string[] = [];
+    (loadModule(literalCompiled.source).run as (c: unknown) => void)(stubCtx({ logs: litLogs }));
+    expect(litLogs).toEqual(["0", "1", "2", "3"]);
+
+    // Dynamic Last Index wired to a variable mutated inside the body: must re-evaluate each pass.
+    const limitProp = { variableName: "Limit", typeId: "int", implicitSelf: true };
+    const dynamicGraph: LogicGraph = {
+      id: "dynFor",
+      kind: "event",
+      nodes: [
+        node(registry, "entry", "flow.entry"),
+        node(registry, "getLimit", "variables.get", limitProp),
+        node(registry, "loop", "flow.forLoop", { "default:firstIndex": 0 }),
+        node(registry, "setLimit", "variables.set", { ...limitProp, "default:value": 1 }),
+        node(registry, "log", "debug.log"),
+      ],
+      edges: [
+        edge("e1", "entry", "execOut", "loop", "execIn"),
+        edge("e2", "getLimit", "value", "loop", "lastIndex"),
+        edge("e3", "loop", "loopBody", "log", "execIn"),
+        edge("e4", "loop", "index", "log", "message"),
+        edge("e5", "log", "execOut", "setLimit", "execIn"),
+      ],
+    };
+    const dynamicCompiled = compileGraph(dynamicGraph, { assetGuid: "a", registry });
+    expect(dynamicCompiled.source).toContain("__loopBound");
+    let limit = 5;
+    const dynLogs: string[] = [];
+    (loadModule(dynamicCompiled.source).run as (c: unknown) => void)(
+      stubCtx({
+        logs: dynLogs,
+        getVariable: () => limit,
+        setVariable: (_k: string, v: unknown) => { limit = Number(v); },
+      }),
+    );
+    expect(dynLogs).toEqual(["0", "1"]);
+  });
+
+  it("prunes constant unwired Branch only when stripDevelopmentOnly is enabled", () => {
+    const registry = createDefaultNodeRegistry();
+    const graph: LogicGraph = {
+      id: "constBranch",
+      kind: "event",
+      nodes: [
+        node(registry, "entry", "flow.entry"),
+        node(registry, "branch", "flow.branch", { "default:condition": false }),
+        node(registry, "t", "debug.log", { "default:message": "dead" }),
+        node(registry, "f", "debug.log", { "default:message": "live" }),
+      ],
+      edges: [
+        edge("e1", "entry", "execOut", "branch", "execIn"),
+        edge("e2", "branch", "true", "t", "execIn"),
+        edge("e3", "branch", "false", "f", "execIn"),
+      ],
+    };
+    const stripped = compileGraph(graph, { assetGuid: "a", registry, stripDevelopmentOnly: true });
+    expect(stripped.source).not.toContain("if (");
+    expect(stripped.source).not.toContain('"dead"');
+    expect(stripped.source).toContain('"live"');
+    const logs: string[] = [];
+    (loadModule(stripped.source).run as (c: unknown) => void)(stubCtx({ logs }));
+    expect(logs).toEqual(["live"]);
+  });
 });
 
 describe("structured flow validation", () => {

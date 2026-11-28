@@ -400,6 +400,9 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
     commandArgs: ScriptContext["commandArgs"] = NO_ARGS;
     /** The instance whose variables the call reads: `self`, or an Animation Graph's component. */
     #store: NonNullable<ScriptExtras["variableStore"]> | EngineObject | null = null;
+    /** Direct `Map` backing `#store` when it does not override `EngineObject.prototype.getVariable` / `setVariable`. */
+    #directGetVars: Map<string, unknown> | null = null;
+    #directSetVars: Map<string, unknown> | null = null;
     /** Also the Scene query caller: queries answer from this object's world, so a static Function Library call keeps its caller's. */
     #owner: EngineObject | null = null;
     #extras: ScriptExtras | undefined = undefined;
@@ -435,6 +438,13 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
       this.debugTrace = host.debugTraceFor(store);
       this.commandArgs = commandArgs;
       this.#store = store;
+      if (store instanceof EngineObject) {
+        this.#directGetVars = store.getVariable === EngineObject.prototype.getVariable ? store.variables : null;
+        this.#directSetVars = store.setVariable === EngineObject.prototype.setVariable ? store.variables : null;
+      } else {
+        this.#directGetVars = null;
+        this.#directSetVars = null;
+      }
       this.#owner = self ?? callerOwner ?? extras?.callerOwner ?? null;
       this.#extras = extras;
       this.#flowNamespace = flowNamespace;
@@ -447,6 +457,8 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
       this.debugTrace = null;
       this.commandArgs = NO_ARGS;
       this.#store = null;
+      this.#directGetVars = null;
+      this.#directSetVars = null;
       this.#owner = null;
       this.#extras = undefined;
       this.#flowNamespace = "";
@@ -581,8 +593,12 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
         },
         // Get Layer Camera on Self (a Scene Layer or Scene Layer Actor) is read live, unless the class declares its own.
         getVariable(name) {
+          if (name !== "layerCamera") {
+            const direct = this.#directGetVars;
+            return direct !== null ? direct.get(name) : this.#store?.getVariable(name);
+          }
           const store = this.#store;
-          return name === "layerCamera" && store instanceof EngineObject && !store.variables.has(name)
+          return store instanceof EngineObject && !store.variables.has(name)
             ? readVariableFrom(store, name) : store?.getVariable(name);
         },
         variableReference(target, name, implicitSelf = false) {
@@ -612,8 +628,17 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
           return this.tweenValue(reference, type, a, b, duration, curve);
         },
         setVariable(name, value) {
+          if (name !== "parentId") {
+            const direct = this.#directSetVars;
+            if (direct !== null) {
+              direct.set(name, value);
+              return;
+            }
+            this.#store?.setVariable(name, value);
+            return;
+          }
           const store = this.#store;
-          if (name === "parentId" && store instanceof Actor) {
+          if (store instanceof Actor) {
             writeParentId(services, store, value);
             return;
           }

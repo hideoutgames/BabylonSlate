@@ -10,6 +10,7 @@ import { collapseReroutes } from "./reroute";
 import {
   execSuccessorEdges,
   indexGraph,
+  stripExecSuccessors,
   withResolvedPinTypes,
   type ExecTarget,
   type GraphIndex,
@@ -252,7 +253,124 @@ const NON_ESCAPING_CONTAINER_CONSUMERS: Readonly<Record<string, ReadonlySet<stri
   "map.set": new Set(["map"]),
   "map.remove": new Set(["map"]),
   "map.clear": new Set(["map"]),
+  "flow.forEach": new Set(["array"]),
+  "flow.forEachWithBreak": new Set(["array"]),
+  "flow.forEachMap": new Set(["map"]),
+  "flow.forEachMapWithBreak": new Set(["map"]),
 };
+
+/** Pure nodes whose output is always a freshly allocated array or Map with no external aliases. */
+const FRESH_CONTAINER_PRODUCERS: ReadonlySet<string> = new Set([
+  "array.make",
+  "array.slice",
+  "array.reverse",
+  "array.filter",
+  "map.make",
+  "map.keys",
+  "map.values",
+  "actor.getAllOfClass",
+  "actor.getAllWithTag",
+  "string.split",
+]);
+
+/** Exec nodes that can invoke user script code or mutate variables indirectly. */
+const OPAQUE_LOOP_BODY_NODES: ReadonlySet<string> = new Set([
+  "functions.call",
+  "flow.event.call",
+  "flow.event.callParent",
+  "interface.call",
+  "dispatcher.call",
+  "dispatcher.bind",
+  "variables.setByRef",
+  "debug.executeJavaScript",
+  "actor.spawn",
+  "actor.destroy",
+  "component.add",
+  "component.destroy",
+  "scene.load",
+  "scene.open",
+  "sceneLayer.add",
+  "sceneLayer.remove",
+]);
+
+function variableStoreKey(node: GraphNode): string {
+  const name = typeof node.properties.variableName === "string" && node.properties.variableName.trim()
+    ? node.properties.variableName.trim()
+    : "Value";
+  return typeof node.properties.propertyKey === "string" && node.properties.propertyKey.length > 0
+    ? node.properties.propertyKey
+    : name;
+}
+
+/**
+ * Conservatively proves that `loopNode`'s body (`loopBodyPin`) cannot mutate
+ * the container fed into `containerPinId`, so `For Each` / `For Each Map` can
+ * iterate directly without cloning a snapshot. Falls back to `false` whenever
+ * aliasing, external callbacks, latent suspension, or `ExecuteJavaScript` is
+ * possible.
+ */
+export function isLoopBodyReadOnlyFor(
+  s: CodegenState,
+  loopNode: GraphNode,
+  loopBodyPin: string,
+  containerPinId: string,
+): boolean {
+  if (s.hasExecuteJavaScript) return false;
+  const inEdge = s.index.incoming(loopNode.id, containerPinId);
+  if (!inEdge) return false;
+  const srcNode = s.index.node(inEdge.sourceNodeId);
+  if (!srcNode) return false;
+
+  let varKey: string | undefined;
+  let selfKey: string | undefined;
+  if (srcNode.typeId === "variables.get") {
+    varKey = variableIdentityKey(srcNode);
+    if (!varKey) return false;
+    if (varKey.startsWith("self:")) selfKey = varKey.slice(5);
+  } else if (FRESH_CONTAINER_PRODUCERS.has(srcNode.typeId)) {
+    const consumers = s.index.outgoing(srcNode.id).filter((edge) => edge.sourcePinId === inEdge.sourcePinId);
+    if (consumers.length !== 1) return false;
+  } else {
+    return false;
+  }
+
+  const visited = new Set<string>();
+  const queue: ExecTarget[] = [...execSuccessorEdges(s.index, loopNode.id, loopBodyPin)];
+  while (queue.length > 0) {
+    const target = queue.pop()!;
+    if (target.targetNodeId === loopNode.id) continue;
+    const visitKey = `${target.targetNodeId}:${target.targetPinId}`;
+    if (visited.has(visitKey)) continue;
+    visited.add(visitKey);
+
+    const node = s.index.node(target.targetNodeId);
+    if (!node) continue;
+    if (s.shouldStrip(node)) {
+      queue.push(...stripExecSuccessors(s.index, node));
+      continue;
+    }
+    const def = s.options.registry.get(node.typeId);
+    if (!def || def.latent === true) return false;
+    if (OPAQUE_LOOP_BODY_NODES.has(node.typeId)) return false;
+
+    if (node.typeId === "variables.set") {
+      const setVarKey = variableIdentityKey(node);
+      if (varKey !== undefined && setVarKey === varKey) return false;
+      // A non-implicitSelf `variables.set` could target `ctx.self` at runtime.
+      if (
+        selfKey !== undefined &&
+        node.properties.scope !== "local" &&
+        node.properties.implicitSelf !== true &&
+        variableStoreKey(node) === selfKey
+      ) {
+        return false;
+      }
+    }
+
+    queue.push(...execSuccessorEdges(s.index, node.id));
+  }
+  return true;
+}
 
 function variableIdentityKey(node: GraphNode): string | undefined {
   if (node.typeId !== "variables.get" && node.typeId !== "variables.set") return undefined;

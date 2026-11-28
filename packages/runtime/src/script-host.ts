@@ -106,6 +106,7 @@ export class ScriptHost {
   private readonly lifecycleScriptsByClassId = new Map<string, Map<string, LoadedScript[] | null>>();
   /** `inputScriptsFor` per class; cleared with the other lineage caches. */
   private readonly inputScriptsByClassId = new Map<string, readonly LoadedScript[][]>();
+  private readonly interfaceTargetByClass = new Map<string, Map<string, LoadedScript | null>>();
   /**
    * Each loaded module's dispatchable entry points by event, in declaration
    * order, built on its first dispatch. A reload loads new `LoadedScript`s.
@@ -325,6 +326,7 @@ export class ScriptHost {
     this.functionScriptsByClassId.clear();
     this.lifecycleScriptsByClassId.clear();
     this.inputScriptsByClassId.clear();
+    this.interfaceTargetByClass.clear();
   }
 
   classIds(): string[] {
@@ -859,38 +861,78 @@ export class ScriptHost {
   private boundInterfaceHandler(object: EngineObject, assetGuid: string, classId: string, exportName: string): (args: Record<string, unknown>) => Record<string, unknown> {
     // Keep only identities in the live object's callback; a revised module
     // must not stay rooted through an older interface binding.
+    const cacheKey = `${assetGuid}\0${classId}\0${exportName}`;
     return (args) => {
-      for (const loaded of this.scriptLineage(object.classId)) {
-        const entry = loaded.find((candidate) => candidate.script.assetGuid === assetGuid && candidate.script.classId === classId);
-        if (entry) return this.invokeInterfaceHandler(object, loaded, entry, exportName, args);
-      }
-      return {};
+      const entry = this.resolveInterfaceTarget(object.classId, assetGuid, classId, exportName, cacheKey);
+      return entry !== null ? this.invokeInterfaceHandler(object, entry, exportName, args) : {};
     };
   }
 
   /**
-   * Run an interface implementation on `object`. A class between `object` and
-   * the declaring class that overrides the implementing function runs instead.
+   * Resolves (and caches per receiver class) the `LoadedScript` that handles an
+   * interface implementation: the nearest subclass exporting `exportName` ahead
+   * of the declaring script, or the declaring script itself. Cleared on reload.
+   */
+  private resolveInterfaceTarget(
+    receiverClassId: string,
+    declaringAssetGuid: string,
+    declaringClassId: string,
+    exportName: string,
+    cacheKey: string,
+  ): LoadedScript | null {
+    let byKey = this.interfaceTargetByClass.get(receiverClassId);
+    if (byKey !== undefined) {
+      const cached = byKey.get(cacheKey);
+      if (cached !== undefined) return cached;
+    } else {
+      byKey = new Map();
+      this.interfaceTargetByClass.set(receiverClassId, byKey);
+    }
+    const lineage = this.scriptLineage(receiverClassId);
+    let declaringIndex = -1;
+    let declaringEntry: LoadedScript | null = null;
+    for (let i = 0; i < lineage.length; i++) {
+      const loaded = lineage[i]!;
+      for (let j = 0; j < loaded.length; j++) {
+        const candidate = loaded[j]!;
+        if (candidate.script.assetGuid === declaringAssetGuid && candidate.script.classId === declaringClassId) {
+          declaringIndex = i;
+          declaringEntry = candidate;
+          break;
+        }
+      }
+      if (declaringEntry !== null) break;
+    }
+    if (declaringEntry === null) {
+      byKey.set(cacheKey, null);
+      return null;
+    }
+    let target = declaringEntry;
+    for (let i = 0; i < declaringIndex; i++) {
+      const loaded = lineage[i]!;
+      for (let j = 0; j < loaded.length; j++) {
+        const candidate = loaded[j]!;
+        if (typeof candidate.exports[exportName] === "function") {
+          target = candidate;
+          break;
+        }
+      }
+      if (target !== declaringEntry) break;
+    }
+    byKey.set(cacheKey, target);
+    return target;
+  }
+
+  /**
+   * Run an interface implementation on `object`.
    */
   private invokeInterfaceHandler(
     object: EngineObject,
-    declaringScripts: readonly LoadedScript[],
-    declaringEntry: LoadedScript,
+    entry: LoadedScript,
     exportName: string,
     args: Record<string, unknown>,
   ): Record<string, unknown> {
     if (!this.canInvokeOwner(object)) return {};
-    let entry = declaringEntry;
-    for (const loaded of this.scriptLineage(object.classId)) {
-      if (loaded === declaringScripts) break;
-      const override = loaded.find(
-        (candidate) => typeof candidate.exports[exportName] === "function",
-      );
-      if (override) {
-        entry = override;
-        break;
-      }
-    }
     const fn = entry.exports[exportName];
     if (typeof fn !== "function") return {};
     // The handler runs inside its caller's frame, so input and delta reads match the caller.

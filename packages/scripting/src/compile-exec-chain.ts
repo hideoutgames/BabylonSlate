@@ -117,13 +117,24 @@ export function emitExecChain(
 
     if (node.typeId === "flow.branch") {
       const ctx = makeCtx(s, node);
+      const condition = ctx.input("condition");
+      if (
+        s.options.stripDevelopmentOnly === true &&
+        !s.traceExecution &&
+        !s.checkBreakpoints &&
+        !s.index.incoming(node.id, "condition") &&
+        (condition === "true" || condition === "false")
+      ) {
+        emitAlong(s, execSuccessorEdges(s.index, node.id, condition), visited);
+        break;
+      }
       const anchor = {
         column: 1,
         assetGuid: s.options.assetGuid,
         graphId: s.graph.id,
         nodeId: node.id,
       };
-      emitBody(s, `  if (${ctx.input("condition")}) {`, anchor);
+      emitBody(s, `  if (${condition}) {`, anchor);
       emitAlong(s, execSuccessorEdges(s.index, node.id, "true"), visited);
       emitBody(s, `  } else {`, anchor);
       emitAlong(s, execSuccessorEdges(s.index, node.id, "false"), visited);

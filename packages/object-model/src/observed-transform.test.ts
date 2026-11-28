@@ -213,4 +213,37 @@ describe("observed transforms and WorldChangeObserver", () => {
       scale: { x: 2, y: 3, z: 4 },
     });
   });
+
+  it("filters actor variable notifications for keyed observers while delivering all writes to wildcard observers", () => {
+    const world = createTestWorld();
+    const keyedLog: Array<string | null> = [];
+    const wildcardLog: Array<string | null> = [];
+    const unsubKeyed = world.addChangeObserver({
+      variableKeys: new Set(["visible"]),
+      onActorVariableChanged: (_actor, name) => keyedLog.push(name),
+    });
+    const unsubWildcard = world.addChangeObserver({
+      onActorVariableChanged: (_actor, name) => wildcardLog.push(name),
+    });
+
+    const actor = world.spawnActorNow(world.createActor({ classId: "Actor", guid: "v1" }));
+    actor.setVariable("health", 100);
+    actor.setVariable("health", 100); // unchanged primitive: no notification
+    actor.setVariable("health", 80);
+    actor.setVariable("visible", false);
+    actor.setVariable("name", "Hero");
+    actor.variables.clear();
+
+    expect(keyedLog).toEqual(["visible", null]);
+    expect(wildcardLog).toEqual(["health", "health", "visible", "name", null]);
+
+    keyedLog.length = 0;
+    wildcardLog.length = 0;
+    unsubKeyed();
+    unsubWildcard();
+    actor.setVariable("visible", true);
+    actor.setVariable("health", 50);
+    expect(keyedLog).toEqual([]);
+    expect(wildcardLog).toEqual([]);
+  });
 });

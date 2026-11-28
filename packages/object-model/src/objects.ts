@@ -112,6 +112,13 @@ class VersionedVariables extends Map<string, unknown> {
 
   override set(name: string, value: unknown): this {
     const prev = super.get(name);
+    if (prev !== undefined && isPrimitive(prev) && isPrimitive(value)) {
+      if (Object.is(prev, value)) return this;
+      super.set(name, value);
+      this.revision++;
+      this.onChanged(name);
+      return this;
+    }
     const prevNonPrim = prev !== undefined && !isPrimitive(prev);
     const nextNonPrim = !isPrimitive(value);
     const unchanged = !nextNonPrim && Object.is(prev, value) && (value !== undefined || super.has(name));

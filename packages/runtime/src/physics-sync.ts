@@ -221,6 +221,7 @@ export class PhysicsWorldSync {
       }
       this.markTransformDescendantsDirty(actor);
     },
+    variableKeys: new Set(["generateHitEvents", "generateOverlapEvents"]),
     onActorVariableChanged: (actor, name) => {
       if (name !== null && name !== "generateHitEvents" && name !== "generateOverlapEvents") return;
       if (this.observedLayerId !== undefined && actor.sceneLayerId !== this.observedLayerId) return;

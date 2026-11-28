@@ -42,6 +42,12 @@ import { TICK_PHASES, TickClock, type PhaseHook, type TickPhase } from "./tick";
  * independent dirty sets without mutating shared flags on World.
  */
 export interface WorldChangeObserver {
+  /**
+   * Optional subset of actor variable keys `onActorVariableChanged` cares about.
+   * When omitted, the observer receives all actor variable writes; `name === null`
+   * (variable map clear) is always delivered to every observer with a callback.
+   */
+  readonly variableKeys?: ReadonlySet<string>;
   onActorSpawned?(actor: Actor): void;
   onActorDestroyed?(actor: Actor): void;
   onActorParentChanged?(actor: Actor, previousParentGuid: Guid | null, nextParentGuid: Guid | null): void;
@@ -199,6 +205,10 @@ export class World {
   private readonly childrenByParentGuid = new Map<Guid, Set<Actor>>();
   /** Multi-consumer change observers (each PhysicsWorldSync, SnapshotPublisher, etc.). */
   private readonly changeObservers: WorldChangeObserver[] = [];
+  /** Observers that receive all actor variable writes (those omitting `variableKeys`). */
+  private readonly wildcardVariableObservers: WorldChangeObserver[] = [];
+  /** Observers filtered by specific actor variable keys (`variableKeys`). */
+  private readonly keyedVariableObservers = new Map<string, WorldChangeObserver[]>();
   /** Guids reserved by queued spawns until each commits or is cancelled. */
   private readonly pendingSpawnGuids = new Set<Guid>();
   private readonly sceneLayers: SceneLayer[] = [];
@@ -779,10 +789,40 @@ export class World {
   addChangeObserver(observer: WorldChangeObserver): () => void {
     if (!this.changeObservers.includes(observer)) {
       this.changeObservers.push(observer);
+      if (observer.onActorVariableChanged) {
+        if (observer.variableKeys === undefined) {
+          this.wildcardVariableObservers.push(observer);
+        } else {
+          for (const key of observer.variableKeys) {
+            let list = this.keyedVariableObservers.get(key);
+            if (!list) {
+              list = [];
+              this.keyedVariableObservers.set(key, list);
+            }
+            list.push(observer);
+          }
+        }
+      }
     }
     return () => {
       const index = this.changeObservers.indexOf(observer);
-      if (index >= 0) this.changeObservers.splice(index, 1);
+      if (index >= 0) {
+        this.changeObservers.splice(index, 1);
+        if (observer.onActorVariableChanged) {
+          if (observer.variableKeys === undefined) {
+            const wi = this.wildcardVariableObservers.indexOf(observer);
+            if (wi >= 0) this.wildcardVariableObservers.splice(wi, 1);
+          } else {
+            for (const key of observer.variableKeys) {
+              const list = this.keyedVariableObservers.get(key);
+              if (!list) continue;
+              const ki = list.indexOf(observer);
+              if (ki >= 0) list.splice(ki, 1);
+              if (list.length === 0) this.keyedVariableObservers.delete(key);
+            }
+          }
+        }
+      }
     };
   }
 
@@ -827,9 +867,23 @@ export class World {
   }
 
   noteActorVariableChanged(actor: Actor, name: string | null): void {
-    if (name === "name" || name === null) this.actorNameRevision++;
-    for (let i = 0; i < this.changeObservers.length; i++) {
-      this.changeObservers[i]!.onActorVariableChanged?.(actor, name);
+    if (name === null) {
+      this.actorNameRevision++;
+      for (let i = 0; i < this.changeObservers.length; i++) {
+        this.changeObservers[i]!.onActorVariableChanged?.(actor, null);
+      }
+      return;
+    }
+    if (name === "name") this.actorNameRevision++;
+    const wildcards = this.wildcardVariableObservers;
+    for (let i = 0; i < wildcards.length; i++) {
+      wildcards[i]!.onActorVariableChanged!(actor, name);
+    }
+    const keyed = this.keyedVariableObservers.get(name);
+    if (keyed !== undefined) {
+      for (let i = 0; i < keyed.length; i++) {
+        keyed[i]!.onActorVariableChanged!(actor, name);
+      }
     }
   }
 

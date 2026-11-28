@@ -1,4 +1,5 @@
 import type { GraphNode } from "./ir";
+import { findPin } from "./ir";
 import { flowSwitchCaseValueFromPinId } from "./flow-switch-pins";
 import {
   isBreakableLoopKind,
@@ -15,13 +16,14 @@ import {
 import {
   emitBody,
   epochFragment,
+  isLoopBodyReadOnlyFor,
   loopCheck,
   trackEpochFragment,
   type BodyLine,
   emitComment,
   type CodegenState,
-  type EmitAlong,
   type ExecPath,
+  type EmitAlong,
 } from "./compile-codegen-state";
 import { makeCtx } from "./compile-expressions";
 import { declareDataOuts, emitOutputProbe } from "./compile-statements";
@@ -174,21 +176,53 @@ export function emitStructuredFlow(
       const lastExpr = ctx.input(meta.lastIndexPin);
       const iter = `__i_${jsIdent(node.id)}`;
       const bound = "__loopBound";
-      // Like `| 0` without the int32 wrap: Int pins carry safe integers.
-      // A non-finite bound (Int division by zero) is 0, not an endless loop.
-      // A module helper, so running the loop builds no function.
-      ctx.hoist("const __loopBound = (v) => { const n = Number(v); return Number.isFinite(n) ? Math.trunc(n) : 0; };");
+      const isSafeIntLiteral = (expr: string): boolean =>
+        /^-?\d+$/.test(expr) && Number.isSafeInteger(Number(expr));
+      const firstIsLiteral = isSafeIntLiteral(firstExpr);
+      const lastIsLiteral = isSafeIntLiteral(lastExpr);
+      const lastInEdge = s.index.incoming(node.id, meta.lastIndexPin);
+      const lastIsInvariant = lastInEdge === undefined || (() => {
+        const srcNode = s.index.node(lastInEdge.sourceNodeId);
+        const srcPin = srcNode ? findPin(srcNode, lastInEdge.sourcePinId) : undefined;
+        return srcNode !== undefined && srcPin !== undefined && s.pureExpressions.isConstant(srcNode, srcPin);
+      })();
+      if (!firstIsLiteral || !lastIsLiteral) {
+        // Like `| 0` without the int32 wrap: Int pins carry safe integers.
+        // A non-finite bound (Int division by zero) is 0, not an endless loop.
+        // A module helper, so running the loop builds no function.
+        ctx.hoist("const __loopBound = (v) => { const n = Number(v); return Number.isFinite(n) ? Math.trunc(n) : 0; };");
+      }
+      const firstBound = firstIsLiteral ? firstExpr : `${bound}(${firstExpr})`;
+      const lastBound = lastIsLiteral ? lastExpr : `${bound}(${lastExpr})`;
       emitBody(s, `  {`, anchor);
-      // The first Last Index check shares the For Loop's statement with
-      // First Index; each later check is a statement of its own.
-      const epochUpdate = `${iter}++, __stmt++) {`;
-      const plainUpdate = `${iter}++) {`;
-      const opening = emitBody(
-        s,
-        `    for (let ${iter} = ${bound}(${firstExpr}); ${iter} <= ${bound}(${lastExpr}); ${epochFragment(s, epochUpdate, plainUpdate)}`,
-        anchor,
-      );
-      trackEpochFragment(s, opening, epochUpdate, plainUpdate);
+      let opening: BodyLine;
+      if (lastIsInvariant) {
+        if (lastIsLiteral) {
+          opening = emitBody(
+            s,
+            `    for (let ${iter} = ${firstBound}; ${iter} <= ${lastBound}; ${iter}++) {`,
+            anchor,
+          );
+        } else {
+          const lastSlot = `__last_${jsIdent(node.id)}`;
+          opening = emitBody(
+            s,
+            `    for (let ${iter} = ${firstBound}, ${lastSlot} = ${lastBound}; ${iter} <= ${lastSlot}; ${iter}++) {`,
+            anchor,
+          );
+        }
+      } else {
+        // The first Last Index check shares the For Loop's statement with
+        // First Index; each later check is a statement of its own.
+        const epochUpdate = `${iter}++, __stmt++) {`;
+        const plainUpdate = `${iter}++) {`;
+        opening = emitBody(
+          s,
+          `    for (let ${iter} = ${firstBound}; ${iter} <= ${lastBound}; ${epochFragment(s, epochUpdate, plainUpdate)}`,
+          anchor,
+        );
+        trackEpochFragment(s, opening, epochUpdate, plainUpdate);
+      }
       if (s.instrumentLoops) emitBody(s, `      ${loopCheck(s, anchor.nodeId)}`, anchor);
       emitBody(s, `      ${indexSlot} = ${iter};`, anchor);
       emitOutputProbe(s, node, ctx);
@@ -205,32 +239,57 @@ export function emitStructuredFlow(
       const arrayExpr = ctx.input(meta.arrayPin);
       const elementSlot = ctx.output(meta.elementPin);
       const source = `__src_${jsIdent(node.id)}`;
-      const snap = `__snap_${jsIdent(node.id)}`;
       const iter = `__i_${jsIdent(node.id)}`;
+      const readOnly = isLoopBodyReadOnlyFor(s, node, meta.loopBodyPin, meta.arrayPin);
       emitBody(s, `  {`, anchor);
       emitBody(s, `    const ${source} = ${arrayExpr};`, anchor);
-      emitBody(
-        s,
-        `    const ${snap} = Array.isArray(${source}) ? ${source}.slice() : [];`,
-        anchor,
-      );
-      const opening = emitBody(
-        s,
-        `    for (let ${iter} = 0; ${iter} < ${snap}.length; ${iter}++) {`,
-        anchor,
-      );
-      if (s.instrumentLoops) emitBody(s, `      ${loopCheck(s, anchor.nodeId)}`, anchor);
-      emitBody(s, `      ${indexSlot} = ${iter};`, anchor);
-      emitBody(s, `      ${elementSlot} = ${snap}[${iter}];`, anchor);
-      emitOutputProbe(s, node, ctx);
-      const breakable = pushLoop(s, meta.kind, opening);
-      along(
-        s,
-        execSuccessorEdges(s.index, node.id, meta.loopBodyPin),
-        visited,
-      );
-      if (breakable) s.loopStack.pop();
-      emitBody(s, `    }`, anchor);
+      if (readOnly) {
+        const len = `__len_${jsIdent(node.id)}`;
+        emitBody(s, `    if (Array.isArray(${source})) {`, anchor);
+        emitBody(s, `      const ${len} = ${source}.length;`, anchor);
+        const opening = emitBody(
+          s,
+          `      for (let ${iter} = 0; ${iter} < ${len}; ${iter}++) {`,
+          anchor,
+        );
+        if (s.instrumentLoops) emitBody(s, `        ${loopCheck(s, anchor.nodeId)}`, anchor);
+        emitBody(s, `        ${indexSlot} = ${iter};`, anchor);
+        emitBody(s, `        ${elementSlot} = ${source}[${iter}];`, anchor);
+        emitOutputProbe(s, node, ctx);
+        const breakable = pushLoop(s, meta.kind, opening);
+        along(
+          s,
+          execSuccessorEdges(s.index, node.id, meta.loopBodyPin),
+          visited,
+        );
+        if (breakable) s.loopStack.pop();
+        emitBody(s, `      }`, anchor);
+        emitBody(s, `    }`, anchor);
+      } else {
+        const snap = `__snap_${jsIdent(node.id)}`;
+        emitBody(
+          s,
+          `    const ${snap} = Array.isArray(${source}) ? ${source}.slice() : [];`,
+          anchor,
+        );
+        const opening = emitBody(
+          s,
+          `    for (let ${iter} = 0; ${iter} < ${snap}.length; ${iter}++) {`,
+          anchor,
+        );
+        if (s.instrumentLoops) emitBody(s, `      ${loopCheck(s, anchor.nodeId)}`, anchor);
+        emitBody(s, `      ${indexSlot} = ${iter};`, anchor);
+        emitBody(s, `      ${elementSlot} = ${snap}[${iter}];`, anchor);
+        emitOutputProbe(s, node, ctx);
+        const breakable = pushLoop(s, meta.kind, opening);
+        along(
+          s,
+          execSuccessorEdges(s.index, node.id, meta.loopBodyPin),
+          visited,
+        );
+        if (breakable) s.loopStack.pop();
+        emitBody(s, `    }`, anchor);
+      }
       emitBody(s, `  }`, anchor);
     } else if (
       meta.kind === "forEachMap" ||
@@ -239,34 +298,63 @@ export function emitStructuredFlow(
       const mapExpr = ctx.input(meta.mapPin);
       const keySlot = ctx.output(meta.keyPin);
       const valueSlot = ctx.output(meta.valuePin);
-      const snap = `__snap_${jsIdent(node.id)}`;
       const iter = `__i_${jsIdent(node.id)}`;
+      const readOnly = isLoopBodyReadOnlyFor(s, node, meta.loopBodyPin, meta.mapPin);
       emitBody(s, `  {`, anchor);
-      // The loop walks a copy, so its body may change the Map. A Map is copied once, not twice.
-      ctx.hoist("const __mapEntries = (m) => m instanceof Map ? [...m] : [...new Map(m ?? [])];");
-      emitBody(
-        s,
-        `    const ${snap} = __mapEntries(${mapExpr});`,
-        anchor,
-      );
-      const opening = emitBody(
-        s,
-        `    for (let ${iter} = 0; ${iter} < ${snap}.length; ${iter}++) {`,
-        anchor,
-      );
-      if (s.instrumentLoops) emitBody(s, `      ${loopCheck(s, anchor.nodeId)}`, anchor);
-      emitBody(s, `      ${indexSlot} = ${iter};`, anchor);
-      emitBody(s, `      ${keySlot} = ${snap}[${iter}][0];`, anchor);
-      emitBody(s, `      ${valueSlot} = ${snap}[${iter}][1];`, anchor);
-      emitOutputProbe(s, node, ctx);
-      const breakable = pushLoop(s, meta.kind, opening);
-      along(
-        s,
-        execSuccessorEdges(s.index, node.id, meta.loopBodyPin),
-        visited,
-      );
-      if (breakable) s.loopStack.pop();
-      emitBody(s, `    }`, anchor);
+      if (readOnly) {
+        const source = `__src_${jsIdent(node.id)}`;
+        const keyVar = `__k_${jsIdent(node.id)}`;
+        const valVar = `__v_${jsIdent(node.id)}`;
+        emitBody(s, `    const ${source} = ${mapExpr};`, anchor);
+        emitBody(s, `    if (${source} instanceof Map) {`, anchor);
+        emitBody(s, `      let ${iter} = 0;`, anchor);
+        const opening = emitBody(
+          s,
+          `      for (const [${keyVar}, ${valVar}] of ${source}) {`,
+          anchor,
+        );
+        if (s.instrumentLoops) emitBody(s, `        ${loopCheck(s, anchor.nodeId)}`, anchor);
+        emitBody(s, `        ${indexSlot} = ${iter}++;`, anchor);
+        emitBody(s, `        ${keySlot} = ${keyVar};`, anchor);
+        emitBody(s, `        ${valueSlot} = ${valVar};`, anchor);
+        emitOutputProbe(s, node, ctx);
+        const breakable = pushLoop(s, meta.kind, opening);
+        along(
+          s,
+          execSuccessorEdges(s.index, node.id, meta.loopBodyPin),
+          visited,
+        );
+        if (breakable) s.loopStack.pop();
+        emitBody(s, `      }`, anchor);
+        emitBody(s, `    }`, anchor);
+      } else {
+        const snap = `__snap_${jsIdent(node.id)}`;
+        // The loop walks a copy, so its body may change the Map. A Map is copied once, not twice.
+        ctx.hoist("const __mapEntries = (m) => m instanceof Map ? [...m] : [...new Map(m ?? [])];");
+        emitBody(
+          s,
+          `    const ${snap} = __mapEntries(${mapExpr});`,
+          anchor,
+        );
+        const opening = emitBody(
+          s,
+          `    for (let ${iter} = 0; ${iter} < ${snap}.length; ${iter}++) {`,
+          anchor,
+        );
+        if (s.instrumentLoops) emitBody(s, `      ${loopCheck(s, anchor.nodeId)}`, anchor);
+        emitBody(s, `      ${indexSlot} = ${iter};`, anchor);
+        emitBody(s, `      ${keySlot} = ${snap}[${iter}][0];`, anchor);
+        emitBody(s, `      ${valueSlot} = ${snap}[${iter}][1];`, anchor);
+        emitOutputProbe(s, node, ctx);
+        const breakable = pushLoop(s, meta.kind, opening);
+        along(
+          s,
+          execSuccessorEdges(s.index, node.id, meta.loopBodyPin),
+          visited,
+        );
+        if (breakable) s.loopStack.pop();
+        emitBody(s, `    }`, anchor);
+      }
       emitBody(s, `  }`, anchor);
     }
     along(s, execSuccessorEdges(s.index, node.id, meta.completedPin), visited);
