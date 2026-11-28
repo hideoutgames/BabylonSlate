@@ -185,6 +185,7 @@ export class SnapshotPublisher {
       if (this.needsFullCompose) return;
       this.markPoseDirtyWithDescendants(actor);
     },
+    variableKeys: new Set(["visible"]),
     onActorVariableChanged: (actor, name) => {
       if (name === "visible" || name === null) {
         this.dirtySlotFrames.set(actor, 2);
