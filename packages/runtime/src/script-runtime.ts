@@ -9,7 +9,6 @@ import {
   isCreatableObjectChain,
   isLockedEngineClassId,
   hydrateClassVariableValue,
-  SceneLayer,
   type Actor,
   type EngineObject,
   type ClassKind,
@@ -98,6 +97,8 @@ export class ScriptRuntime {
   /** `Get <Subsystem>` matches by class id; cleared when live subsystems change. */
   private readonly subsystemMatches = new Map<string, readonly Subsystem[]>();
   private readonly ambiguousSubsystemWarnings = new Set<string>();
+  /** Reused scratch TickContext for `tickEmbeddedScripts` to avoid per-tick allocations. */
+  private readonly embeddedTickCtx: { dt: number; tickIndex: number; world: World | null } = { dt: 0, tickIndex: 0, world: null };
   private readonly admission: OwnerAdmission;
   private readonly host: ScriptRuntimeHost;
   /** This load's Rich Text Decorators, whose instances live until the next load or Stop. */
@@ -267,10 +268,24 @@ export class ScriptRuntime {
   /** While the game is paused, only the SceneLayerScripts of layers with Tick On Pause tick. */
   tickEmbeddedScripts(dt: number, gamePaused = false): void {
     const world = this.host.world();
-    const ctx = { dt, tickIndex: world.clock.tickIndex, world };
-    for (const owner of [world.currentScene, ...world.getSceneLayers()]) {
-      if (gamePaused && !(owner instanceof SceneLayer && owner.tickOnPause)) continue;
-      if (owner && !owner.destroyed && owner.ticks && this.admission.isCreated(owner) && this.admission.canRun(owner)) owner.callOnTick(ctx);
+    const ctx = this.embeddedTickCtx;
+    ctx.dt = dt;
+    ctx.tickIndex = world.clock.tickIndex;
+    ctx.world = world;
+    const tickCtx = ctx as TickContext;
+    if (!gamePaused) {
+      const scene = world.currentScene;
+      if (scene && !scene.destroyed && scene.ticks && this.admission.isCreated(scene) && this.admission.canRun(scene)) {
+        scene.callOnTick(tickCtx);
+      }
+    }
+    const layers = world.getSceneLayers();
+    for (let i = 0; i < layers.length; i++) {
+      const layer = layers[i]!;
+      if (gamePaused && !layer.tickOnPause) continue;
+      if (!layer.destroyed && layer.ticks && this.admission.isCreated(layer) && this.admission.canRun(layer)) {
+        layer.callOnTick(tickCtx);
+      }
     }
   }
 

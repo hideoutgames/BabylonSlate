@@ -1,6 +1,8 @@
 import { EVENT_DELEGATE_BRAND } from "@haptic/core";
 import { EngineObject } from "@haptic/object-model";
 
+const NO_ARGS: Record<string, unknown> = Object.freeze({});
+
 /**
  * A delegate value: runs the custom event or function export `name` on
  * `object`. `params` are the target's parameter names, in signature order: an
@@ -25,10 +27,12 @@ export class EventDelegate {
 
   /** Named arguments for one dispatcher Call. */
   argumentsFor(values: readonly unknown[]): Record<string, unknown> {
+    const count = this.params.length;
+    if (count === 0) return NO_ARGS;
     const args: Record<string, unknown> = {};
-    this.params.forEach((param, index) => {
-      args[param] = values[index];
-    });
+    for (let i = 0; i < count; i++) {
+      args[this.params[i]!] = values[i];
+    }
     return args;
   }
 }
@@ -90,7 +94,10 @@ export class DispatcherBindings {
     if (delegate.object.destroyed) return;
     const list = this.listFor(owner, name, true)!;
     if (list.bindings.some((binding) => !binding.removed && sameTarget(binding.delegate, delegate))) return;
-    list.bindings.push({ delegate, removed: false });
+    const added: Binding = { delegate, removed: false };
+    // Copy-on-write while a broadcast is active so `call` iterates without cloning on the common path.
+    if (list.depth > 0) list.bindings = [...list.bindings, added];
+    else list.bindings.push(added);
     let lists = this.listened.get(delegate.object);
     if (!lists) this.listened.set(delegate.object, lists = new Set());
     lists.add(list);
@@ -140,10 +147,13 @@ export class DispatcherBindings {
       tooDeep();
       return;
     }
-    const snapshot = list.bindings.slice();
+    // `bind` copies on write while `depth > 0`, and `unbind`/`unbindAll`/`forget` replace the array,
+    // so iterating `list.bindings` directly preserves snapshot semantics with zero per-call allocation.
+    const snapshot = list.bindings;
     list.depth += 1;
     try {
-      for (const binding of snapshot) {
+      for (let i = 0; i < snapshot.length; i++) {
+        const binding = snapshot[i]!;
         if (binding.removed) continue;
         if (binding.delegate.object.destroyed) {
           binding.removed = true;

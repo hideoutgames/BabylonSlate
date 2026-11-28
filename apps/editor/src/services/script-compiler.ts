@@ -169,13 +169,14 @@ export function compileGraphDocument(
         otherClassGraphs: options.otherClassGraphs,
       })
     : null;
+  const registry = defaultNodeRegistry();
   const latentFunctions =
     options.latentFunctions ??
     collectLatentFunctions(
       serialized
         ? latentSourcesFromSerializedGraph(classId, serialized)
         : [],
-      defaultNodeRegistry(),
+      registry,
       parentOf,
     );
   const isLatentFunction = (targetClassId: string, functionName: string) =>
@@ -200,7 +201,7 @@ export function compileGraphDocument(
       compileGraph(logic, {
         assetGuid: options.path,
         className,
-        registry: defaultNodeRegistry(),
+        registry,
         tagRegistry: options.tagRegistry,
         stripDevelopmentOnly: options.stripDevelopmentOnly,
         instrumentInfiniteLoops,
@@ -227,7 +228,7 @@ export function compileGraphDocument(
         compileGraph(fnLogic, {
           assetGuid: options.path,
           className,
-          registry: defaultNodeRegistry(),
+          registry,
           tagRegistry: options.tagRegistry,
           exportName,
           stripDevelopmentOnly: options.stripDevelopmentOnly,
@@ -244,7 +245,7 @@ export function compileGraphDocument(
       compileGraph(logic, {
         assetGuid: options.path,
         className,
-        registry: defaultNodeRegistry(),
+        registry,
         tagRegistry: options.tagRegistry,
         stripDevelopmentOnly: options.stripDevelopmentOnly,
         instrumentInfiniteLoops,
@@ -254,20 +255,34 @@ export function compileGraphDocument(
     );
   }
   if (compiledPieces.length === 0) return null;
-  let source = compiledPieces[0]!.source;
+  const firstSource = compiledPieces[0]!.source;
   const anchors = [...compiledPieces[0]!.anchors];
   const entryPoints = [...compiledPieces[0]!.entryPoints];
-  for (const extra of compiledPieces.slice(1)) {
-    const extraBody = extra.source
-      .split("\n")
-      .filter((line) => !line.startsWith("//# sourceURL"))
-      .join("\n");
-    const offset = source.split("\n").length - (source.endsWith("\n") ? 1 : 0);
-    source = `${source.replace(/\n$/, "")}\n${extraBody}`;
-    for (const anchor of extra.anchors) {
-      anchors.push({ ...anchor, line: anchor.line + offset });
+  let source = firstSource;
+  if (compiledPieces.length > 1) {
+    const parts: string[] = [firstSource.endsWith("\n") ? firstSource.slice(0, -1) : firstSource];
+    let lineOffset = countLines(parts[0]!);
+    for (let i = 1; i < compiledPieces.length; i++) {
+      const extra = compiledPieces[i]!;
+      const extraLines = extra.source.split("\n");
+      const filtered: string[] = [];
+      for (let j = 0; j < extraLines.length; j++) {
+        const line = extraLines[j]!;
+        if (!line.startsWith("//# sourceURL")) filtered.push(line);
+      }
+      // Trim trailing empty element from trailing newline so chunks join cleanly with "\n".
+      const hasTrailingNewline = filtered.length > 0 && filtered[filtered.length - 1] === "";
+      if (hasTrailingNewline) filtered.pop();
+      const chunk = filtered.join("\n");
+      parts.push(chunk);
+      for (let k = 0; k < extra.anchors.length; k++) {
+        const anchor = extra.anchors[k]!;
+        anchors.push({ ...anchor, line: anchor.line + lineOffset });
+      }
+      entryPoints.push(...extra.entryPoints);
+      lineOffset += filtered.length;
     }
-    entryPoints.push(...extra.entryPoints);
+    source = `${parts.join("\n")}\n`;
   }
   const metadata = classMetadataFromGraph(content, options.parentClassId, options.enums);
   const titled = bound ?? serialized;
@@ -283,6 +298,14 @@ export function compileGraphDocument(
     ...(components ? { components } : {}),
     ...trustGatedField(compiledPieces.flatMap((piece) => piece.trustGatedNodes)),
   };
+}
+
+function countLines(text: string): number {
+  let count = 1;
+  for (let i = 0; i < text.length; i++) {
+    if (text.charCodeAt(i) === 10) count++;
+  }
+  return count;
 }
 
 /** The bundle's `trustGatedNodes`, one per node id, left out when the module carries none. */

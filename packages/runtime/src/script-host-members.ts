@@ -86,20 +86,28 @@ import type { LatentFrameRoots } from "./latent-frame-roots";
 /** Get Locale: the JavaScript environment's default locale, which browsers take from the user's language. */
 type VectorWidth = 2 | 3 | 4;
 const VECTOR_KINDS = { 2: "vec2", 3: "vec3", 4: "vec4" } as const;
-const VECTOR_AXES = ["x", "y", "z", "w"] as const;
 
 /** The first `width` components of a vector value, or null when one is not a finite number. */
 function vectorComponents(value: unknown, width: VectorWidth): number[] | null {
   if (!value || typeof value !== "object") return null;
-  const components = VECTOR_AXES.slice(0, width).map((axis) => (value as Record<string, unknown>)[axis]);
-  return components.every((component): component is number => typeof component === "number" && Number.isFinite(component)) ? components : null;
+  const v = value as { x?: unknown; y?: unknown; z?: unknown; w?: unknown };
+  const x = v.x;
+  const y = v.y;
+  if (typeof x !== "number" || !Number.isFinite(x) || typeof y !== "number" || !Number.isFinite(y)) return null;
+  if (width === 2) return [x, y];
+  const z = v.z;
+  if (typeof z !== "number" || !Number.isFinite(z)) return null;
+  if (width === 3) return [x, y, z];
+  const w = v.w;
+  if (typeof w !== "number" || !Number.isFinite(w)) return null;
+  return [x, y, z, w];
 }
 
 /** `components` as a vector of `width`; a missing component is 0. */
 function vectorOf<W extends VectorWidth>(components: readonly number[], width: W): W extends 2 ? Vec2 : W extends 3 ? Vec3 : Vec4 {
-  const vector: Record<string, number> = {};
-  VECTOR_AXES.slice(0, width).forEach((axis, index) => { vector[axis] = components[index] ?? 0; });
-  return vector as never;
+  if (width === 2) return { x: components[0] ?? 0, y: components[1] ?? 0 } as never;
+  if (width === 3) return { x: components[0] ?? 0, y: components[1] ?? 0, z: components[2] ?? 0 } as never;
+  return { x: components[0] ?? 0, y: components[1] ?? 0, z: components[2] ?? 0, w: components[3] ?? 0 } as never;
 }
 
 function scriptLocale(): { locale: string; language: string } {
@@ -283,6 +291,7 @@ export function createHostMembers(host: HostMembersHost): HostContextMembers {
         throw error;
       }
     },
+    loopGuard: services.loopGuard,
     log: (severity, category, message) =>
       services.log(severity, category, message),
     nullAccess: (message) => services.log("error", "Script", message),

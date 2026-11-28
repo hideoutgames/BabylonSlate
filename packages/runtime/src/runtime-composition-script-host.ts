@@ -67,6 +67,7 @@ export function createScriptHost(rt: RuntimeComposition, options: RuntimeDriverO
     interfaceRegistry: rt.world.interfaceRegistry,
     classRegistry: registry,
     checkInfiniteLoop: () => rt.loopGuard.check(),
+    loopGuard: rt.loopGuard.state,
     traceDebugDraw: options.traceDebugDraw,
     cameraViewHalfHeight: (orthographicSize) => rt.camera.designHalfHeight(orthographicSize),
     ...createOutputHostBindings({

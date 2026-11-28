@@ -116,9 +116,10 @@ export const functionCallNodes: NodeDefinition[] = [
       }
       // The function reads and writes these through its Input node; the values above stay for callers that read args.
       if (references.length > 0) args.push(`${BY_REFERENCE_ARGS_KEY}: { ${references.join(", ")} }`);
+      const argsArg = args.length > 0 ? `, { ${args.join(", ")} }` : "";
       const invoked = runtime
-        ? `ctx.callComponentFunction(${targetExpr}, ${JSON.stringify(runtime)}, { ${args.join(", ")} })`
-        : `ctx.invokeFunction(${targetExpr}, ${JSON.stringify(functionName)}, { ${args.join(", ")} })`;
+        ? `ctx.callComponentFunction(${targetExpr}, ${JSON.stringify(runtime)}${argsArg})`
+        : `ctx.invokeFunction(${targetExpr}, ${JSON.stringify(functionName)}${argsArg})`;
       const outPins = ctx.node.pins.filter(
         (pinDef) => pinDef.direction === "out" && pinDef.kind === "data",
       );

@@ -51,6 +51,7 @@ export {
   createInfiniteLoopGuard,
   instrumentJsLoops,
   isInfiniteLoopError,
+  type InfiniteLoopCounter,
   type InfiniteLoopGuard,
   type ScriptLoopLocation,
 } from "./infinite-loop";

@@ -283,6 +283,7 @@ export function makeCtx(s: CodegenState, node: GraphNode, continuation?: (expres
   const definition = s.options.registry.get(node.typeId);
   const trustGate = trustGateOf(definition, node);
   if (trustGate && definition) s.trustGatedNodes.set(node.id, { nodeId: node.id, kind: trustGate, title: definition.title });
+  let loopCheckedThisNode = false;
   return {
     graph: s.graph,
     node,
@@ -339,14 +340,17 @@ export function makeCtx(s: CodegenState, node: GraphNode, continuation?: (expres
         graphId: s.graph.id,
         nodeId: anchorNodeId ?? node.id,
       };
-      if (s.instrumentLoops) emitBody(s, `  ${loopCheck(s, anchor.nodeId)}`, anchor);
+      if (s.instrumentLoops && !loopCheckedThisNode) {
+        loopCheckedThisNode = true;
+        emitBody(s, `  ${loopCheck(s, anchor.nodeId)}`, anchor);
+      }
       emitBody(s, `  ${statement}`, anchor);
     },
     hoist(source, bodyAnchors) {
       // Only an authored body can loop without end, and only its function takes `ctx`: a guard
       // in a module-scope helper would name a `ctx` that is not in scope there.
       const next = s.instrumentLoops && (bodyAnchors?.length ?? 0) > 0
-        ? instrumentJsLoops(source, loopCheck(s, node.id))
+        ? instrumentJsLoops(source, loopCheck(s, node.id, false))
         : source;
       if (s.hoisted.some((chunk) => chunk.source === next)) return;
       s.hoisted.push({ source: next, nodeId: node.id, bodyAnchors });

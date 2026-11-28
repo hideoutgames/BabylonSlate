@@ -70,6 +70,8 @@ export type CodegenState = {
   nextLabel: number;
   readonly shouldStrip: (node: GraphNode) => boolean;
   readonly instrumentLoops: boolean;
+  /** True when the current entry emitted at least one inline loop-guard check referencing `__lg`. */
+  usesLoopGuard: boolean;
   readonly traceExecution: boolean;
   /**
    * Breakpoint probes run for every instance: `__bp` is the graph's breakpoints, null when it has none.
@@ -169,6 +171,7 @@ export function createCodegenState(
     shouldStrip: (node: GraphNode) =>
       options.stripDevelopmentOnly === true && isDevelopmentOnlyNode(node),
     instrumentLoops: options.instrumentInfiniteLoops === true,
+    usesLoopGuard: false,
     traceExecution:
       options.instrumentExecutionTrace === true && options.stripDevelopmentOnly !== true,
     checkBreakpoints:
@@ -378,6 +381,7 @@ export function beginEntry(s: CodegenState): void {
   s.memoUnboxedByKey.clear();
   s.epochFragments.length = 0;
   s.isAsync = false;
+  s.usesLoopGuard = false;
 }
 
 /**
@@ -465,7 +469,7 @@ function identifierSafe(id: string): string {
   return id.replace(/[^A-Za-z0-9]/g, (char) => `$${char.charCodeAt(0).toString(16)}$`);
 }
 
-export function loopCheck(s: CodegenState, nodeId: string): string {
+export function loopCheck(s: CodegenState, nodeId: string, inlineLocal = true): string {
   let name = s.loopLocations.get(nodeId);
   if (name === undefined) {
     // Unique per graph and node: one module joins the graphs of an asset. `var` lets the same graph's
@@ -476,7 +480,11 @@ export function loopCheck(s: CodegenState, nodeId: string): string {
       assetGuid: s.options.assetGuid, graphId: s.graph.id, nodeId,
     })});` });
   }
-  return `ctx.checkInfiniteLoop(${name});`;
+  if (inlineLocal) {
+    s.usesLoopGuard = true;
+    return `if (__lg === undefined || ++__lg.n > __lg.max) ctx.checkInfiniteLoop(${name});`;
+  }
+  return `if (ctx.loopGuard === undefined || ++ctx.loopGuard.n > ctx.loopGuard.max) ctx.checkInfiniteLoop(${name});`;
 }
 
 /** Starts a statement epoch on a line of its own. */

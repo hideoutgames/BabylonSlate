@@ -1,5 +1,4 @@
 import { sourceUrlComment } from "@haptic/core";
-import { isPureNode } from "./node-registry";
 import type { GraphNode, LogicGraph } from "./ir";
 import { tagRuntimeSource } from "./tags";
 import type {
@@ -17,7 +16,6 @@ import {
   type CodegenState,
   type HoistChunk,
 } from "./compile-codegen-state";
-import { ensurePure } from "./compile-expressions";
 import { emitExecChain } from "./compile-exec-chain";
 
 /** Words a strict-mode module cannot use as a function declaration name. */
@@ -90,10 +88,6 @@ export function compileEntry(
 ): CompiledEntry {
   beginEntry(s);
 
-  for (const node of s.graph.nodes) {
-    if (s.shouldStrip(node)) continue;
-    if (isPureNode(s.options.registry.get(node.typeId), node)) ensurePure(s, node);
-  }
   // Always track epoch boundaries during exec emission; `entryDeclarations` strips them when no memo is used.
   s.useEpoch = true;
 
@@ -117,6 +111,7 @@ export function compileEntry(
       ...(entry ? entryComponentId(entry) : {}),
     },
     declLines: [
+      ...(s.usesLoopGuard ? ["  const __lg = ctx.loopGuard;"] : []),
       ...(s.traceExecution
         ? [`  const __dbg = ctx.debugTrace === null ? null : ctx.debugTrace.graph(${JSON.stringify(s.options.assetGuid)}, ${JSON.stringify(s.graph.id)});`]
         : []),

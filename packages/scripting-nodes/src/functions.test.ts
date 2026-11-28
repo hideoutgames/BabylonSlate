@@ -274,7 +274,7 @@ describe("functions.call", () => {
       spawnActorAsync: async () => "guard",
       invokeFunction: (...args: unknown[]) => { calls.push(args); return {}; },
     });
-    expect(calls).toEqual([["guard", "Alert", {}]]);
+    expect(calls).toEqual([["guard", "Alert"]]);
   });
 
   it("falls back to fn when functionName is missing", () => {
@@ -300,7 +300,7 @@ describe("functions.call", () => {
     const run = new Function(`${compiled.source.replace(/^export /gm, "")}\nreturn onBeginPlay;`)() as (context: unknown) => void;
     const calls: unknown[][] = [];
     run({ self: "hero", invokeFunction: (...args: unknown[]) => { calls.push(args); return {}; } });
-    expect(calls).toEqual([["hero", "fn", {}]]);
+    expect(calls).toEqual([["hero", "fn"]]);
   });
 
   it("compiles a static library Call Function to invokeFunction with the class id", () => {

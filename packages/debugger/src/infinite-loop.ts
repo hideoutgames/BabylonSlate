@@ -25,7 +25,13 @@ export function isInfiniteLoopError(value: unknown): value is InfiniteLoopError 
   );
 }
 
+export type InfiniteLoopCounter = {
+  n: number;
+  readonly max: number;
+};
+
 export type InfiniteLoopGuard = {
+  readonly state: InfiniteLoopCounter;
   check(): void;
   reset(): void;
 };
@@ -38,15 +44,19 @@ export function createInfiniteLoopGuard(options: {
     typeof options.loopCount === "number" && options.loopCount >= 1
       ? options.loopCount
       : DEFAULT_INFINITE_LOOP_COUNT;
-  let count = 0;
+  const state: InfiniteLoopCounter = {
+    n: 0,
+    max: options.enabled ? loopCount : Number.POSITIVE_INFINITY,
+  };
   return {
+    state,
     check() {
       if (!options.enabled) return;
-      count += 1;
-      if (count > loopCount) throw new InfiniteLoopError();
+      state.n += 1;
+      if (state.n > loopCount) throw new InfiniteLoopError();
     },
     reset() {
-      count = 0;
+      state.n = 0;
     },
   };
 }
