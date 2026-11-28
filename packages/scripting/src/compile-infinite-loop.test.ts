@@ -173,4 +173,30 @@ describe("compileGraph instrumentInfiniteLoops", () => {
     );
     expect(innerCheck).toBeGreaterThan(whileAt);
   });
+
+  it("uses the inline loopGuard counter fast path when ctx.loopGuard is provided and skips checkInfiniteLoop while within budget", () => {
+    const compiled = compileGraph(logGraph(), {
+      assetGuid: "a",
+      registry: registry(),
+      instrumentInfiniteLoops: true,
+    });
+    const name = /export function (\w+)\(/.exec(compiled.source)![1]!;
+    const entry = new Function(`${compiled.source.replace(/export function /g, "function ")}\nreturn ${name};`)() as (ctx: unknown) => void;
+    const locations: unknown[] = [];
+    const loopGuard = { n: 0, max: 2 };
+    const ctx = {
+      log: () => {},
+      loopGuard,
+      checkInfiniteLoop: (location: unknown) => {
+        locations.push(location);
+        throw new Error("limit exceeded");
+      },
+    };
+    entry(ctx);
+    entry(ctx);
+    expect(loopGuard.n).toBe(2);
+    expect(locations).toEqual([]);
+    expect(() => entry(ctx)).toThrow("limit exceeded");
+    expect(locations).toEqual([{ assetGuid: "a", graphId: "g", nodeId: "log" }]);
+  });
 });

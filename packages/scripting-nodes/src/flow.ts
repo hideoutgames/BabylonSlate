@@ -573,8 +573,9 @@ export const flowNodes: NodeDefinition[] = [
         }
         args.push(`${objectLiteralKey(pinDef.name)}: ${ctx.input(pinDef.id)}`);
       }
+      const argsArg = args.length > 0 ? `, { ${args.join(", ")} }` : "";
       ctx.emit(
-        `ctx.invokeCustomEvent(${targetExpr}, ${JSON.stringify(eventName)}, { ${args.join(", ")} });`,
+        `ctx.invokeCustomEvent(${targetExpr}, ${JSON.stringify(eventName)}${argsArg});`,
       );
     },
   },
@@ -608,6 +609,14 @@ export const flowNodes: NodeDefinition[] = [
       const fields = args
         .filter((arg) => !catalogEvent || ctx.isWired(arg.inId))
         .map((arg) => `${objectLiteralKey(arg.key)}: ${ctx.input(arg.inId)}`);
+      if (args.length === 0) {
+        if (catalogEvent) {
+          ctx.emit(`ctx.invokeEvent(${JSON.stringify(parentClassId)}, ${JSON.stringify(eventName)}, ctx.args);`);
+        } else {
+          ctx.emit(`ctx.invokeEvent(${JSON.stringify(parentClassId)}, ${JSON.stringify(eventName)});`);
+        }
+        return;
+      }
       const sent = catalogEvent
         ? `{ ...ctx.args${fields.map((field) => `, ${field}`).join("")} }`
         : `{ ${fields.join(", ")} }`;

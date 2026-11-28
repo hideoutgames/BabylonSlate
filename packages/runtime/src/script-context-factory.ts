@@ -85,6 +85,8 @@ const NO_BT_HOOK = (): undefined => undefined;
 /** The arguments of a call that passes none: shared, so nothing may write to it. */
 const NO_ARGS: Record<string, unknown> = Object.freeze({});
 const NO_GAMEPAD_CONNECTIONS: NonNullable<ScriptContext["gamepadConnections"]> = Object.freeze([]);
+const EMPTY_IGNORE_IDS: string[] = Object.freeze([]) as unknown as string[];
+const EMPTY_TRACE_OPTIONS = Object.freeze({ ignoreActorIds: EMPTY_IGNORE_IDS });
 /** Shared COW ownership WeakSet matching compiled script modules (`cow-helpers.ts`). */
 const COW_UNIQUE_KEY = Symbol.for("haptic.cow.unique");
 function markContainerShared(value: unknown): void {
@@ -137,6 +139,7 @@ export interface ScriptContextHost extends ComponentFunctionHost {
     commandArgs?: Record<string, unknown>,
     extras?: ScriptExtras,
     flowNamespace?: string,
+    callerOwner?: EngineObject | null,
   ): PooledScriptContext;
   releaseContext(ctx: PooledScriptContext): void;
 }
@@ -150,6 +153,7 @@ export interface PooledScriptContext extends ScriptContext {
     commandArgs?: Record<string, unknown>,
     extras?: ScriptExtras,
     flowNamespace?: string,
+    callerOwner?: EngineObject | null,
   ): void;
   release(): void;
 }
@@ -162,6 +166,7 @@ export type ScriptContextConstructor = new (
   commandArgs?: Record<string, unknown>,
   extras?: ScriptExtras,
   flowNamespace?: string,
+  callerOwner?: EngineObject | null,
 ) => PooledScriptContext;
 
 /** The members a context holds as its own values, set when it is built. */
@@ -216,16 +221,104 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
     worldDirection: hit?.worldDirection ?? { x: 0, y: 0, z: 0 },
   });
 
-  const queryOptions = (channel: string | undefined, actorsToIgnore: readonly (Actor | null)[] | undefined) => ({
-    ignoreActorIds: [
-      ...new Set(
-        (Array.isArray(actorsToIgnore) ? actorsToIgnore : [])
-          .filter((actor): actor is Actor => actor instanceof Actor && !actor.destroyed)
-          .map((actor) => actor.guid),
-      ),
-    ],
-    ...(channel ? { channel } : {}),
-  });
+  const ignoreActorIdsOf = (actorsToIgnore: readonly (Actor | null)[] | undefined): string[] => {
+    if (!Array.isArray(actorsToIgnore) || actorsToIgnore.length === 0) return EMPTY_IGNORE_IDS;
+    const ids: string[] = [];
+    let seen: Set<string> | undefined;
+    for (let i = 0; i < actorsToIgnore.length; i++) {
+      const actor = actorsToIgnore[i];
+      if (!(actor instanceof Actor) || actor.destroyed) continue;
+      if (ids.length === 0) {
+        ids.push(actor.guid);
+      } else {
+        if (!seen) seen = new Set(ids);
+        if (!seen.has(actor.guid)) {
+          seen.add(actor.guid);
+          ids.push(actor.guid);
+        }
+      }
+    }
+    return ids.length > 0 ? ids : EMPTY_IGNORE_IDS;
+  };
+
+  const queryOptions = (channel: string | undefined, actorsToIgnore: readonly (Actor | null)[] | undefined) => {
+    const ignoreActorIds = ignoreActorIdsOf(actorsToIgnore);
+    if (!channel && ignoreActorIds === EMPTY_IGNORE_IDS) return EMPTY_TRACE_OPTIONS;
+    return channel ? { ignoreActorIds, channel } : { ignoreActorIds };
+  };
+
+  const functionRecord = (value: unknown): Record<string, unknown> =>
+    (value && typeof value === "object" && !Array.isArray(value) ? value : NO_ARGS) as Record<string, unknown>;
+
+  const handleFunctionError = (
+    error: unknown,
+    receiver: EngineObject | null,
+    extras: ScriptExtras | undefined,
+  ): void => {
+    if (extras?.saveMigrationData || isInfiniteLoopError(error)) throw error;
+    host.reportLatentError(error, receiver);
+  };
+
+  const runFunctionChain = (
+    scripts: readonly LoadedScript[],
+    start: number,
+    initialResult: unknown,
+    receiver: EngineObject | null,
+    functionName: string,
+    fnArgs: Record<string, unknown>,
+    deltaSeconds: number,
+    tickIndex: number,
+    nestedExtras: ScriptExtras | undefined,
+    nestedCallerOwner: EngineObject | null,
+    contextOwner: EngineObject | null,
+    callerExtras: ScriptExtras | undefined,
+  ): Record<string, unknown> | PromiseLike<Record<string, unknown>> => {
+    if (start > 0 && receiver && !host.canInvokeOwner(receiver)) return functionRecord(initialResult);
+    let result = initialResult;
+    for (let index = start; index < scripts.length; index++) {
+      const entry = scripts[index]!;
+      const fn = entry.exports[functionName];
+      if (typeof fn !== "function") continue;
+      const nested = host.acquireContext(
+        receiver, deltaSeconds, tickIndex, fnArgs, nestedExtras, entry.script.assetGuid, nestedCallerOwner,
+      );
+      let keepNested = false;
+      try {
+        const value = host.invokeEntry(receiver, entry.script, functionName, fn as (ctx: ScriptContext) => unknown, nested);
+        if (isThenable(value)) {
+          keepNested = true;
+          const previous = result;
+          // A `TickWait` chain: the caller resumes in the tick the function finished in.
+          return TickWait.from(value).then(
+            (resolved) => {
+              if (contextOwner?.destroyed) throw new RuntimeContinuationCancelled("ownerDestroyed");
+              return runFunctionChain(
+                scripts, index + 1, resolved, receiver, functionName, fnArgs,
+                deltaSeconds, tickIndex, nestedExtras, nestedCallerOwner, contextOwner, callerExtras,
+              );
+            },
+            (error) => {
+              // A wait that was replaced, or that Stop ended, ends the caller's graph too:
+              // continuing would run the nodes after the Call at once, with default outputs.
+              if (error instanceof RuntimeContinuationCancelled && error.reason !== "ownerDestroyed") throw error;
+              if (contextOwner?.destroyed) throw new RuntimeContinuationCancelled("ownerDestroyed");
+              handleFunctionError(error, receiver, callerExtras);
+              return runFunctionChain(
+                scripts, index + 1, previous, receiver, functionName, fnArgs,
+                deltaSeconds, tickIndex, nestedExtras, nestedCallerOwner, contextOwner, callerExtras,
+              );
+            },
+          );
+        }
+        result = value;
+      } catch (error) {
+        handleFunctionError(error, receiver, callerExtras);
+      } finally {
+        if (!keepNested) host.releaseContext(nested);
+      }
+    }
+    return functionRecord(result);
+  };
 
   // The handle's Id is the number in the voice id (`script:<Id>`); 0 when no host names voices.
   /** Set Variable on an object, once any asset it needs is loaded: the property's own write path, then its refresh. */
@@ -319,8 +412,9 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
       commandArgs: Record<string, unknown> = NO_ARGS,
       extras?: ScriptExtras,
       flowNamespace = "",
+      callerOwner?: EngineObject | null,
     ) {
-      this.reset(self, deltaSeconds, tickIndex, commandArgs, extras, flowNamespace);
+      this.reset(self, deltaSeconds, tickIndex, commandArgs, extras, flowNamespace, callerOwner);
     }
 
     reset(
@@ -330,6 +424,7 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
       commandArgs: Record<string, unknown> = NO_ARGS,
       extras?: ScriptExtras,
       flowNamespace = "",
+      callerOwner?: EngineObject | null,
     ): void {
       const store = extras?.variableStore ?? self;
       this.self = self;
@@ -340,7 +435,7 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
       this.debugTrace = host.debugTraceFor(store);
       this.commandArgs = commandArgs;
       this.#store = store;
-      this.#owner = self ?? extras?.callerOwner ?? null;
+      this.#owner = self ?? callerOwner ?? extras?.callerOwner ?? null;
       this.#extras = extras;
       this.#flowNamespace = flowNamespace;
     }
@@ -693,11 +788,12 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
         callInterface(target, interfaceGuid, method, args) {
           const { deltaSeconds, tickIndex } = this;
           const registry = services.interfaceRegistry;
-          if (!registry) return {};
+          if (!registry) return NO_ARGS;
+          const callArgs = args ?? NO_ARGS;
           if (isReleasedObject(target)) {
             // No handler runs: the call reads the pin defaults, as for no receiver.
             reportDestroyedTarget(services, host.classDisplayName, "call", method, target);
-            return dispatchInterface(registry, NO_INTERFACE_RECEIVER, String(interfaceGuid), String(method), args ?? {});
+            return dispatchInterface(registry, NO_INTERFACE_RECEIVER, String(interfaceGuid), String(method), callArgs);
           }
           const receiver = target as InterfaceDispatchTarget | null | undefined;
           // A missing or unadmitted receiver runs no handler and reads the pin defaults.
@@ -705,7 +801,7 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
             : !(receiver instanceof EngineObject) || host.canInvokeOwner(receiver) ? receiver
               : { guid: receiver.guid, classId: receiver.classId, implementedInterfaces: receiver.implementedInterfaces };
           return host.withInterfaceCaller({ deltaSeconds, tickIndex }, () =>
-            dispatchInterface(registry, dispatchTarget, String(interfaceGuid), String(method), args ?? {}));
+            dispatchInterface(registry, dispatchTarget, String(interfaceGuid), String(method), callArgs));
         },
         getComponent(actor, classId) {
           const target = String(classId ?? "");
@@ -743,9 +839,9 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
         callComponentFunction(target, name, args) {
           if (isReleasedObject(target)) {
             reportDestroyedTarget(services, host.classDisplayName, "call", name, target);
-            return {};
+            return NO_ARGS;
           }
-          return callNativeComponentFunction(host, target, String(name ?? ""), args ?? {});
+          return callNativeComponentFunction(host, target, String(name ?? ""), args ?? NO_ARGS);
         },
         addComponent(actor, classId, transform) {
           const target = asActor(actor);
@@ -865,7 +961,7 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
           const loaded = host.eventScriptsFor(classId.trim(), eventName, self);
           if (!loaded) return;
           host.dispatchEvent(
-            loaded, eventName, self, deltaSeconds, tickIndex, eventArgs ?? {}, extras,
+            loaded, eventName, self, deltaSeconds, tickIndex, eventArgs ?? NO_ARGS, extras,
           );
         },
         invokeFunction(target, functionName, fnArgs) {
@@ -873,7 +969,7 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
           const contextOwner = this.#owner, extras = this.#extras;
           if (typeof functionName !== "string" || !functionName) {
             if (extras?.saveMigrationData) throw new SaveGameError("incompatible", "A save migration called an invalid function.");
-            return {};
+            return NO_ARGS;
           }
           let loaded: LoadedScript[] | undefined;
           let receiver: EngineObject | null = null;
@@ -883,78 +979,28 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
             const object = target as EngineObject | null | undefined;
             if (isReleasedObject(object) && !extras?.saveMigrationData) {
               reportDestroyedTarget(services, host.classDisplayName, "call", functionName, object);
-              return {};
+              return NO_ARGS;
             }
             if (!object || !host.canInvokeOwner(object)) {
               if (extras?.saveMigrationData) throw new SaveGameError("incompatible", "A save migration function's owner is unavailable.");
-              return {};
+              return NO_ARGS;
             }
             receiver = object;
             loaded = host.functionScriptsFor(object.classId, functionName);
           }
           if (!loaded) {
             if (extras?.saveMigrationData) throw new SaveGameError("incompatible", `Save migration function “${functionName}” is missing.`);
-            return {};
+            return NO_ARGS;
           }
-          const scripts = loaded;
           // A function on the caller keeps the call's extras; a static library call also gets its caller as
-          // owner. Another object's function runs on that object's own variables, so only what follows the
-          // whole call chain goes with it.
-          const nestedExtras = !receiver ? { ...extras, callerOwner: contextOwner }
-            : receiver === this.self ? extras : chainExtras(extras);
-          const failed = (error: unknown): void => {
-            if (extras?.saveMigrationData || isInfiniteLoopError(error)) throw error;
-            host.reportLatentError(error, receiver);
-          };
-          const record = (value: unknown): Record<string, unknown> =>
-            (value && typeof value === "object" && !Array.isArray(value) ? value : {}) as Record<string, unknown>;
-          // A caller destroyed while the function waited does not resume, like after its own Delay.
-          const resumeCaller = (): void => {
-            if (contextOwner?.destroyed) throw new RuntimeContinuationCancelled("ownerDestroyed");
-          };
-          // Every module exporting the function runs in order. A latent one is
-          // awaited before the next starts; the last result is returned. A
-          // continuation stops once its receiver may no longer run.
-          const run = (start: number, result: unknown): Record<string, unknown> | PromiseLike<Record<string, unknown>> => {
-            if (start > 0 && receiver && !host.canInvokeOwner(receiver)) return record(result);
-            for (let index = start; index < scripts.length; index++) {
-              const entry = scripts[index]!;
-              const fn = entry.exports[functionName];
-              if (typeof fn !== "function") continue;
-              const nested = host.acquireContext(receiver, deltaSeconds, tickIndex, fnArgs ?? NO_ARGS, nestedExtras, entry.script.assetGuid);
-              let keepNested = false;
-              try {
-                const value = host.invokeEntry(receiver, entry.script, functionName, fn as (ctx: ScriptContext) => unknown, nested);
-                if (isThenable(value)) {
-                  keepNested = true;
-                  const previous = result;
-                  // A `TickWait` chain: the caller resumes in the tick the function finished in.
-                  const settled = TickWait.from(value).then(
-                    (resolved) => {
-                      resumeCaller();
-                      return run(index + 1, resolved);
-                    },
-                    (error) => {
-                      // A wait that was replaced, or that Stop ended, ends the caller's graph too:
-                      // continuing would run the nodes after the Call at once, with default outputs.
-                      if (error instanceof RuntimeContinuationCancelled && error.reason !== "ownerDestroyed") throw error;
-                      resumeCaller();
-                      failed(error);
-                      return run(index + 1, previous);
-                    },
-                  );
-                  return settled;
-                }
-                result = value;
-              } catch (error) {
-                failed(error);
-              } finally {
-                if (!keepNested) host.releaseContext(nested);
-              }
-            }
-            return record(result);
-          };
-          return run(0, {});
+          // owner without allocating a spread object. Another object's function runs on that object's own
+          // variables, so only what follows the whole call chain goes with it.
+          const nestedExtras = !receiver ? extras : receiver === this.self ? extras : chainExtras(extras);
+          const nestedCallerOwner = !receiver ? contextOwner : null;
+          return runFunctionChain(
+            loaded, 0, NO_ARGS, receiver, functionName, fnArgs ?? NO_ARGS,
+            deltaSeconds, tickIndex, nestedExtras, nestedCallerOwner, contextOwner, extras,
+          );
         },
         getPressedKeys() {
           return input?.getPressedKeys?.() ?? [];
@@ -995,14 +1041,7 @@ export function createScriptContextClass(host: ScriptContextHost): ScriptContext
         },
         lineTrace(start, end, channel, options) {
           const contextOwner = this.#owner;
-          const ignoreActorIds = [
-            ...new Set(
-              (options?.actorsToIgnore ?? [])
-                .filter((actor): actor is Actor => actor instanceof Actor && !actor.destroyed)
-                .map((actor) => actor.guid),
-            ),
-          ];
-          const hit = services.lineTrace?.(start, end, { ignoreActorIds, ...(channel ? { channel } : {}) }, contextOwner) ?? {
+          const hit = services.lineTrace?.(start, end, queryOptions(channel, options?.actorsToIgnore), contextOwner) ?? {
             hit: false,
             location: null,
             actorId: null,

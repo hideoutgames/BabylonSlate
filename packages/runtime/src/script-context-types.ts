@@ -44,7 +44,7 @@ import type {
 } from "@haptic/object-model";
 import type { ColliderShape, OverlapResult, PhysicsTransform, TeleportOptions, Vec3 } from "@haptic/physics";
 import type { AnimStateFacts } from "@haptic/anim-graph";
-import type { ScriptLoopLocation } from "@haptic/debugger";
+import type { InfiniteLoopCounter, ScriptLoopLocation } from "@haptic/debugger";
 import type { ScriptAccessLocation } from "./destroyed-access";
 import type { InputBindingControls } from "@haptic/input";
 import type { EditorDataApi } from "@haptic/scripting";
@@ -107,6 +107,7 @@ export interface ScriptContext {
   breakpoints: ScriptBreakpoints | null;
   formatValue(value: unknown): string;
   checkInfiniteLoop(location?: ScriptLoopLocation): void;
+  loopGuard?: InfiniteLoopCounter;
   log(severity: LogSeverity, category: string, message: string): void;
   /**
    * A compiled node found null on an input it acts on and skipped itself. Logs `message` as an error
@@ -851,7 +852,7 @@ export type LoadedScript = {
  * is a value set per call or a method reading the call from its context (`createScriptContextClass`).
  */
 export type HostContextKey =
-  | "getSaveData" | "getSaveField" | "setSaveField" | "registerSaveActor" | "assetRegistry" | "breakpoints" | "formatValue" | "checkInfiniteLoop" | "log" | "nullAccess" | "destroyedAccess" | "holdFrame" | "createObject" | "collectGarbage" | "assertFailed" | "assertEqual" | "print"
+  | "getSaveData" | "getSaveField" | "setSaveField" | "registerSaveActor" | "assetRegistry" | "breakpoints" | "formatValue" | "checkInfiniteLoop" | "loopGuard" | "log" | "nullAccess" | "destroyedAccess" | "holdFrame" | "createObject" | "collectGarbage" | "assertFailed" | "assertEqual" | "print"
   | "eventDelegate" | "bindDispatcher" | "unbindDispatcher" | "unbindAllDispatcher"
   | "setGlobalFloatParameter" | "setGlobalVector2Parameter" | "setGlobalVector3Parameter" | "setGlobalVector4Parameter" | "setGlobalColorParameter"
   | "getGlobalFloatParameter" | "getGlobalVector2Parameter" | "getGlobalVector3Parameter" | "getGlobalVector4Parameter" | "getGlobalColorParameter"

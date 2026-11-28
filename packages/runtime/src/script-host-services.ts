@@ -288,6 +288,8 @@ export interface ScriptHostServices {
   reportError(error: unknown): void;
   /** Debugger loop guard; omitted in release players. */
   checkInfiniteLoop?(): void;
+  /** Shared mutable loop-guard counter for inline fast-path checks in compiled scripts. */
+  loopGuard?: import("@haptic/debugger").InfiniteLoopCounter;
   /**
    * Resolve a backend physics actor id to a live Actor. Missing / destroyed
    * actors must return undefined so query nodes never surface string ids.

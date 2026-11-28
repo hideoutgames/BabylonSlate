@@ -188,8 +188,8 @@ export class ScriptHost {
         this.dispatchEvent(loaded, event, self, deltaSeconds, tickIndex, commandArgs, extras, componentId),
       invokeEntry: (owner, script, exportName, fn, ctx) => this.invokeEntry(owner, script, exportName, fn, ctx),
       reportLatentError: (error, owner) => this.reportLatentError(error, owner),
-      acquireContext: (self, deltaSeconds, tickIndex, commandArgs, extras, flowNamespace) =>
-        this.acquireContext(self, deltaSeconds, tickIndex, commandArgs, extras, flowNamespace),
+      acquireContext: (self, deltaSeconds, tickIndex, commandArgs, extras, flowNamespace, callerOwner) =>
+        this.acquireContext(self, deltaSeconds, tickIndex, commandArgs, extras, flowNamespace, callerOwner),
       releaseContext: (ctx) => this.releaseContext(ctx),
     };
     this.Context = createScriptContextClass(this.contextHost);
@@ -527,7 +527,12 @@ export class ScriptHost {
    */
   fireDispatcher(owner: EngineObject, name: string, values: readonly unknown[]): void {
     if (owner.destroyed) return;
-    this.createContext(null, 0, 0).callDispatcher(owner, name, [...values]);
+    const ctx = this.acquireContext(null, 0, 0);
+    try {
+      ctx.callDispatcher(owner, name, values as unknown[]);
+    } finally {
+      this.releaseContext(ctx);
+    }
   }
 
   /**
@@ -1056,13 +1061,14 @@ export class ScriptHost {
     commandArgs?: Record<string, unknown>,
     extras?: ScriptExtras,
     flowNamespace = "",
+    callerOwner?: EngineObject | null,
   ): PooledScriptContext {
     const pooled = this.contextPool.pop();
     if (pooled) {
-      pooled.reset(self, deltaSeconds, tickIndex, commandArgs, extras, flowNamespace);
+      pooled.reset(self, deltaSeconds, tickIndex, commandArgs, extras, flowNamespace, callerOwner);
       return pooled;
     }
-    return new this.Context(self, deltaSeconds, tickIndex, commandArgs, extras, flowNamespace);
+    return new this.Context(self, deltaSeconds, tickIndex, commandArgs, extras, flowNamespace, callerOwner);
   }
 
   private releaseContext(ctx: PooledScriptContext): void {

@@ -88,8 +88,9 @@ export function createObjectMembers(services: ScriptHostServices): Pick<HostCont
     actorDistance: (a, b) => {
       const from = asActor(a);
       const to = asActor(b);
-      const start = from && !from.destroyed ? worldOf(from)?.position : null;
-      const end = to && !to.destroyed ? worldOf(to)?.position : null;
+      if (!from || from.destroyed || !to || to.destroyed) return 0;
+      const start = actorParentGuid(from) === null ? from.transform.position : worldOf(from)?.position;
+      const end = actorParentGuid(to) === null ? to.transform.position : worldOf(to)?.position;
       return start && end ? Math.hypot(end.x - start.x, end.y - start.y, end.z - start.z) : 0;
     },
     addActorLocalOffset: (actor, offset) => {
